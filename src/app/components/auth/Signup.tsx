@@ -30,23 +30,19 @@ export default function Signup() {
       return
     }
 
-    try {
-      const { data, error } = await signUp(email, password, fullName)
+    const { error } = await signUp(email, password, fullName)
 
-      if (error) {
-        setMessage(error.message)
-      } else {
-        setMessage('Success! Please check your email for a confirmation link.')
-        // Clear form
-        setEmail('')
-        setPassword('')
-        setFullName('')
-      }
-    } catch (error) {
-      setMessage('An unexpected error occurred')
-    } finally {
-      setLoading(false)
+    if (error) {
+      setMessage(error.message)
+    } else {
+      setMessage('Success! Please check your email for a confirmation link.')
+      // Clear form
+      setEmail('')
+      setPassword('')
+      setFullName('')
     }
+    
+    setLoading(false)
   }
 
   return (

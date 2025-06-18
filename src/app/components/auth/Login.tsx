@@ -22,20 +22,15 @@ export default function Login() {
     setLoading(true)
     setMessage('')
 
-    try {
-      const { error } = await signIn(email, password)
+    const { error } = await signIn(email, password)
 
-      if (error) {
-        setMessage(error.message)
-      } else {
-        setMessage('Login successful! Redirecting...')
-        // User will automatically be redirected by our auth logic
-      }
-    } catch (error) {
-      setMessage('An unexpected error occurred')
-    } finally {
-      setLoading(false)
+    if (error) {
+      setMessage(error.message)
+    } else {
+      setMessage('Login successful! Redirecting...')
     }
+    
+    setLoading(false)
   }
 
   return (

@@ -5,7 +5,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import type { User, Session } from '@supabase/supabase-js'
+import type { User, Session, AuthError } from '@supabase/supabase-js'
 
 // Your Supabase configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -14,13 +14,22 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // Create Supabase client
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// TypeScript interface for auth response
+interface AuthResponse {
+  data: {
+    user: User | null
+    session: Session | null
+  } | null
+  error: AuthError | null
+}
+
 // TypeScript interface for what our context provides
 interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
-  signUp: (email: string, password: string, fullName?: string) => Promise<any>
-  signIn: (email: string, password: string) => Promise<any>
+  signUp: (email: string, password: string, fullName?: string) => Promise<AuthResponse>
+  signIn: (email: string, password: string) => Promise<AuthResponse>
   signOut: () => Promise<void>
 }
 
@@ -59,7 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [])
 
   // Sign up function
-  const signUp = async (email: string, password: string, fullName?: string) => {
+  const signUp = async (email: string, password: string, fullName?: string): Promise<AuthResponse> => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -71,21 +80,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         },
       })
       return { data, error }
-    } catch (error) {
-      return { data: null, error }
+    } catch (err) {
+      return { data: null, error: err as AuthError }
     }
   }
 
   // Sign in function
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string): Promise<AuthResponse> => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       return { data, error }
-    } catch (error) {
-      return { data: null, error }
+    } catch (err) {
+      return { data: null, error: err as AuthError }
     }
   }
 
