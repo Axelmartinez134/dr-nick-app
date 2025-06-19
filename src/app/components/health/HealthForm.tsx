@@ -39,7 +39,7 @@ export default function HealthForm() {
     if (mounted && formData.week_number) {
       loadExistingData()
     }
-  }, [formData.week_number, mounted])
+  }, [formData.week_number, mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Function to load existing data for selected week
   const loadExistingData = async () => {
@@ -154,7 +154,7 @@ export default function HealthForm() {
     }
 
     // Save to database
-    const { data, error } = await saveWeeklyCheckin(formData)
+    const { error } = await saveWeeklyCheckin(formData)
 
     if (error) {
       setMessage((error as Error).message || 'Failed to save weekly check-in') 

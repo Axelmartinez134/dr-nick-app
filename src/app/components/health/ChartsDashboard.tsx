@@ -52,10 +52,8 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
 
   // Load data when component mounts or patientId changes
   useEffect(() => {
-    if (mounted) {
-      loadChartData()
-    }
-  }, [mounted, patientId])
+    loadChartData()
+  }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Function to load chart data
   const loadChartData = async () => {

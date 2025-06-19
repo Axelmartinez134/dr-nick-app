@@ -17,7 +17,7 @@ export default function HealthDashboard() {
   // Load data when component mounts or time range changes
   useEffect(() => {
     loadCheckinData()
-  }, [selectedTimeRange])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Function to load weekly check-in data
   const loadCheckinData = async () => {

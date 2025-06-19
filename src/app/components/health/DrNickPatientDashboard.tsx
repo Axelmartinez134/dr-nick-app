@@ -68,7 +68,7 @@ export default function DrNickPatientDashboard() {
       // Process patient data to create summaries
       const patientMap = new Map<string, PatientSummary>()
       
-      healthData?.forEach((record: Record<string, any>) => {
+      healthData?.forEach((record: { user_id: string; week_number: number; weight: number; initial_weight: number; date: string }) => {
         const userId = record.user_id
         const profile = profilesMap.get(userId)
         
