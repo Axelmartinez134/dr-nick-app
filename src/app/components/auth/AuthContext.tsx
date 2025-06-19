@@ -28,6 +28,8 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
+  isDoctor: boolean
+  isPatient: boolean
   signUp: (email: string, password: string, fullName?: string) => Promise<AuthResponse>
   signIn: (email: string, password: string) => Promise<AuthResponse>
   signOut: () => Promise<void>
@@ -46,6 +48,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+
+  // Role detection based on email
+  const isDoctor = user?.email === 'thefittesttribe@gmail.com'
+  const isPatient = !!user && !isDoctor
 
   useEffect(() => {
     // Get initial session
@@ -107,6 +113,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     user,
     session,
     loading,
+    isDoctor,
+    isPatient,
     signUp,
     signIn,
     signOut,
