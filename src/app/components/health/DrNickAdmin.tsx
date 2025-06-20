@@ -5,8 +5,29 @@
 
 import { useState, useEffect } from 'react'
 import { saveInitialSetup, updateSleepScore, type InitialSetupData, type DrNickUpdateData } from './healthService'
+import { getAllPatients } from './adminService'
+import UserCreationModal from './UserCreationModal'
+
+
+interface Patient {
+  id: string
+  email: string
+  full_name: string
+  created_at: string
+  patient_password: string
+}
 
 export default function DrNickAdmin() {
+  // State for patients
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [patientsLoading, setPatientsLoading] = useState(true)
+  const [patientsError, setPatientsError] = useState('')
+
+  // State for user creation modal
+  const [showCreateModal, setShowCreateModal] = useState(false)
+
+
+
   // State for initial setup (Week 0)
   const [setupData, setSetupData] = useState<InitialSetupData>({
     date: '', // Will be set after mount
@@ -36,7 +57,40 @@ export default function DrNickAdmin() {
       ...prev,
       date: new Date().toISOString().split('T')[0]
     }))
+    loadPatients()
   }, [])
+
+  // Load all patients
+  const loadPatients = async () => {
+    setPatientsLoading(true)
+    setPatientsError('')
+    
+    const result = await getAllPatients()
+    
+    if (result.error) {
+      setPatientsError(result.error)
+    } else {
+      setPatients(result.patients)
+    }
+    
+    setPatientsLoading(false)
+  }
+
+  // Handle patient creation success
+  const handlePatientCreated = () => {
+    loadPatients() // Refresh patient list
+  }
+
+  // Copy password to clipboard
+  const copyPassword = (password: string) => {
+    navigator.clipboard.writeText(password)
+  }
+
+  // Filter patients based on search term
+  const filteredPatients = patients.filter(patient =>
+    patient.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    patient.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   // Handle initial setup submission
   const handleSetupSubmit = async () => {
@@ -45,7 +99,7 @@ export default function DrNickAdmin() {
 
     // Validation
     if (!selectedPatientId) {
-      setSetupMessage('Please enter a patient ID')
+      setSetupMessage('Please select a patient')
       setSetupLoading(false)
       return
     }
@@ -87,7 +141,7 @@ export default function DrNickAdmin() {
 
     // Validation
     if (!selectedPatientId) {
-      setSleepMessage('Please enter a patient ID')
+      setSleepMessage('Please select a patient')
       setSleepLoading(false)
       return
     }
@@ -128,102 +182,215 @@ export default function DrNickAdmin() {
     setSleepLoading(false)
   }
 
+
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          👨‍⚕️ Dr. Nick Admin Panel
-        </h2>
-        <p className="text-gray-600">
-          Manage patient initial setup and sleep data from Whoop devices
-        </p>
-      </div>
-
-      {/* Patient Selection - Enhanced */}
-      <div className="bg-blue-50 rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          👤 Patient Selection
-        </h3>
-        
-        <div className="space-y-4">
-          {/* Quick Patient Search */}
+        <div className="flex justify-between items-center">
           <div>
-            <label htmlFor="patient_search" className="block text-sm font-medium text-gray-700 mb-2">
-              Search Patient by Name or Email
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="patient_search"
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Type patient name or email..."
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  // Placeholder for future patient search functionality
-                  alert('Patient search feature will be implemented with Supabase RLS policies')
-                }}
-                disabled={setupLoading || sleepLoading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                🔍 Search
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Feature coming soon - will search patient database securely
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              👨‍⚕️ Dr. Nick Admin Panel
+            </h2>
+            <p className="text-gray-600">
+              Create new patient accounts and manage basic admin functions
             </p>
           </div>
-
-          {/* Manual Patient ID Entry */}
-          <div>
-            <label htmlFor="patient_id" className="block text-sm font-medium text-gray-700 mb-2">
-              Patient ID (Manual Entry)
-            </label>
-            <input
-              id="patient_id"
-              type="text"
-              value={selectedPatientId}
-              onChange={(e) => setSelectedPatientId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter patient UUID..."
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Copy patient ID from the database for now
-            </p>
-          </div>
+          
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+          >
+            ➕ Create New Patient
+          </button>
         </div>
       </div>
 
-      {/* Week 0 Initial Setup Section */}
-      <div className="bg-green-50 rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          📋 Week 0: Initial Setup
-        </h3>
-        <p className="text-gray-600 mb-4">
-          Set up a new patient&apos;s baseline measurements and assessment date.
-        </p>
+      {/* Patient List with Passwords */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">
+            👥 Patient Management ({patients.length} patients)
+          </h3>
+          
+          <button
+            onClick={loadPatients}
+            disabled={patientsLoading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+          >
+            🔄 Refresh
+          </button>
+        </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Assessment Date */}
+        {/* Search Bar */}
+        <div className="mb-4">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            placeholder="🔍 Search patients by name or email..."
+          />
+        </div>
+
+        {/* Patients Display */}
+        {patientsLoading && (
+          <div className="text-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-2 text-gray-600">Loading patients...</p>
+          </div>
+        )}
+
+        {patientsError && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            Error loading patients: {patientsError}
+          </div>
+        )}
+
+        {!patientsLoading && !patientsError && filteredPatients.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            {patients.length === 0 ? (
+              <div>
+                <p className="text-lg mb-2">No patients found</p>
+                <p>Create your first patient account to get started!</p>
+              </div>
+            ) : (
+              <p>No patients match your search criteria</p>
+            )}
+          </div>
+        )}
+
+        {!patientsLoading && !patientsError && filteredPatients.length > 0 && (
+          <div className="space-y-3">
+            {filteredPatients.map((patient) => (
+              <div
+                key={patient.id}
+                className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                  selectedPatientId === patient.id
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setSelectedPatientId(patient.id)}
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <h4 className="font-medium text-gray-900">
+                        {patient.full_name || 'No name'}
+                      </h4>
+                      {selectedPatientId === patient.id && (
+                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    
+                    <p className="text-sm text-gray-600 mb-1">
+                      📧 {patient.email}
+                    </p>
+                    
+                    <p className="text-xs text-gray-500">
+                      Created: {new Date(patient.created_at).toLocaleDateString()}
+                    </p>
+                    
+                    <p className="text-xs text-gray-400 mt-1">
+                      ID: {patient.id}
+                    </p>
+                  </div>
+
+                  {/* Actions Section */}
+                  <div className="ml-4 text-right space-y-2">
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">
+                        Patient Password:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="bg-gray-100 px-3 py-1 rounded font-mono text-sm">
+                          {patient.patient_password || 'N/A'}
+                        </span>
+                        {patient.patient_password && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              copyPassword(patient.patient_password)
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-sm"
+                            title="Copy password"
+                          >
+                            📋
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedPatientId(patient.id)
+                        }}
+                        className={`px-3 py-1 rounded text-sm ${
+                          selectedPatientId === patient.id
+                            ? 'bg-green-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        ⚙️ Select for Admin Tools
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Selected Patient Info */}
+      {selectedPatientId && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <p className="text-green-800 font-medium">
+            ✅ Selected Patient: {filteredPatients.find(p => p.id === selectedPatientId)?.full_name || 'Unknown'}
+          </p>
+          <p className="text-green-600 text-sm">
+            You can now perform admin actions for this patient below.
+          </p>
+        </div>
+      )}
+
+      {/* Initial Setup Section (Week 0) */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          📊 Week 0 Initial Setup
+        </h3>
+        
+        {setupMessage && (
+          <div className={`mb-4 p-3 rounded ${
+            setupMessage.includes('successfully') 
+              ? 'bg-green-100 text-green-700' 
+              : 'bg-red-100 text-red-700'
+          }`}>
+            {setupMessage}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label htmlFor="assessment_date" className="block text-sm font-medium text-gray-700 mb-2">
-              Assessment Date
+            <label htmlFor="setup_date" className="block text-sm font-medium text-gray-700 mb-2">
+              Date
             </label>
             <input
-              id="assessment_date"
+              id="setup_date"
               type="date"
               value={setupData.date}
-              onChange={(e) => setSetupData(prev => ({ ...prev, date: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setSetupData({...setupData, date: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              disabled={setupLoading}
             />
           </div>
 
-          {/* Initial Weight */}
           <div>
             <label htmlFor="initial_weight" className="block text-sm font-medium text-gray-700 mb-2">
               Initial Weight (lbs)
@@ -233,63 +400,57 @@ export default function DrNickAdmin() {
               type="number"
               step="0.1"
               value={setupData.initial_weight}
-              onChange={(e) => setSetupData(prev => ({ ...prev, initial_weight: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter weight..."
+              onChange={(e) => setSetupData({...setupData, initial_weight: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              placeholder="185.5"
+              disabled={setupLoading}
             />
           </div>
 
-          {/* Sleep Consistency Score (Optional for Week 0) */}
-          <div className="md:col-span-2">
-            <label htmlFor="initial_sleep" className="block text-sm font-medium text-gray-700 mb-2">
-              Sleep Consistency Score (Optional, 0-100)
+          <div>
+            <label htmlFor="sleep_score" className="block text-sm font-medium text-gray-700 mb-2">
+              Sleep Score (0-100)
             </label>
             <input
-              id="initial_sleep"
+              id="sleep_score"
               type="number"
               min="0"
               max="100"
               value={setupData.sleep_consistency_score}
-              onChange={(e) => setSetupData(prev => ({ ...prev, sleep_consistency_score: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Leave blank if not available yet..."
+              onChange={(e) => setSetupData({...setupData, sleep_consistency_score: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              placeholder="85"
+              disabled={setupLoading}
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Can be added later when Whoop data becomes available
-            </p>
           </div>
         </div>
 
-        {/* Submit Button */}
-        <div className="mt-6">
-          <button
-            onClick={handleSetupSubmit}
-            disabled={setupLoading || !selectedPatientId}
-            className="w-full md:w-auto px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 font-medium"
-          >
-            {setupLoading ? '⏳ Saving...' : '✅ Save Week 0 Setup'}
-          </button>
-        </div>
-
-        {/* Success/Error Message */}
-        {setupMessage && (
-          <div className={`mt-4 p-3 rounded-md ${setupMessage.includes('successfully') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {setupMessage}
-          </div>
-        )}
+        <button
+          onClick={handleSetupSubmit}
+          disabled={setupLoading || !selectedPatientId}
+          className="mt-4 w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+        >
+          {setupLoading ? 'Saving...' : 'Save Week 0 Setup'}
+        </button>
       </div>
 
       {/* Sleep Score Update Section */}
-      <div className="bg-purple-50 rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          😴 Sleep Score Updates
+          😴 Update Sleep Consistency Score
         </h3>
-        <p className="text-gray-600 mb-4">
-          Update weekly sleep consistency scores from Whoop device data.
-        </p>
+        
+        {sleepMessage && (
+          <div className={`mb-4 p-3 rounded ${
+            sleepMessage.includes('successfully') 
+              ? 'bg-green-100 text-green-700' 
+              : 'bg-red-100 text-red-700'
+          }`}>
+            {sleepMessage}
+          </div>
+        )}
 
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Week Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="week_number" className="block text-sm font-medium text-gray-700 mb-2">
               Week Number
@@ -297,67 +458,49 @@ export default function DrNickAdmin() {
             <select
               id="week_number"
               value={sleepUpdateData.week_number}
-              onChange={(e) => setSleepUpdateData(prev => ({ ...prev, week_number: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => setSleepUpdateData({...sleepUpdateData, week_number: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              disabled={sleepLoading}
             >
-              {[...Array(52)].map((_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  Week {i + 1}
-                </option>
+              {Array.from({length: 12}, (_, i) => i + 1).map(week => (
+                <option key={week} value={week.toString()}>Week {week}</option>
               ))}
             </select>
           </div>
 
-          {/* Sleep Score */}
           <div>
-            <label htmlFor="sleep_score" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="sleep_consistency_score" className="block text-sm font-medium text-gray-700 mb-2">
               Sleep Consistency Score (0-100)
             </label>
             <input
-              id="sleep_score"
+              id="sleep_consistency_score"
               type="number"
               min="0"
               max="100"
               value={sleepUpdateData.sleep_consistency_score}
-              onChange={(e) => setSleepUpdateData(prev => ({ ...prev, sleep_consistency_score: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter score from Whoop..."
+              onChange={(e) => setSleepUpdateData({...sleepUpdateData, sleep_consistency_score: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              placeholder="From Whoop device..."
+              disabled={sleepLoading}
             />
           </div>
         </div>
 
-        {/* Submit Button */}
-        <div className="mt-6">
-          <button
-            onClick={handleSleepUpdate}
-            disabled={sleepLoading || !selectedPatientId}
-            className="w-full md:w-auto px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 font-medium"
-          >
-            {sleepLoading ? '⏳ Updating...' : '💤 Update Sleep Score'}
-          </button>
-        </div>
-
-        {/* Success/Error Message */}
-        {sleepMessage && (
-          <div className={`mt-4 p-3 rounded-md ${sleepMessage.includes('successfully') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {sleepMessage}
-          </div>
-        )}
+        <button
+          onClick={handleSleepUpdate}
+          disabled={sleepLoading || !selectedPatientId}
+          className="mt-4 w-full md:w-auto px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 transition-colors"
+        >
+          {sleepLoading ? 'Updating...' : 'Update Sleep Score'}
+        </button>
       </div>
 
-      {/* Quick Tips */}
-      <div className="bg-yellow-50 rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          💡 Quick Tips
-        </h3>
-        <ul className="list-disc list-inside space-y-2 text-gray-700">
-          <li>Always start with Week 0 setup for new patients</li>
-          <li>Sleep scores should be entered weekly from Whoop device data</li>
-          <li>Patient ID can be found in the patient database or user account settings</li>
-          <li>Initial weight will be used for calculating weight loss progress</li>
-          <li>Sleep scores help track recovery and consistency patterns</li>
-        </ul>
-      </div>
+      {/* User Creation Modal */}
+      <UserCreationModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onPatientCreated={handlePatientCreated}
+      />
     </div>
   )
 }

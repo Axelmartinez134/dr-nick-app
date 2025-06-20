@@ -237,36 +237,7 @@ export async function getWeeklyDataForCharts(patientUserId?: string) {
   }
 }
 
-// Function to get weekly check-ins (for existing dashboard)
-export async function getWeeklyCheckins(startDate?: string, endDate?: string) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return { data: null, error: { message: 'User not authenticated' } }
-    }
 
-    let query = supabase
-      .from('health_data')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('week_number', { ascending: false })
-
-    // Add date filtering if provided
-    if (startDate) {
-      query = query.gte('date', startDate)
-    }
-    if (endDate) {
-      query = query.lte('date', endDate)
-    }
-
-    const result = await query
-    return result
-  } catch (error) {
-    console.error('Error fetching weekly check-ins:', error)
-    return { data: null, error }
-  }
-}
 
 // Function to get check-in for a specific week
 export async function getCheckinForWeek(weekNumber: number) {
@@ -292,8 +263,54 @@ export async function getCheckinForWeek(weekNumber: number) {
   }
 }
 
-// Function to delete a weekly check-in record
-export async function deleteWeeklyCheckin(id: string) {
+
+
+// Helper function to calculate loss percentage rate
+export function calculateLossPercentageRate(currentWeight: number, previousWeight: number): number {
+  if (!previousWeight || previousWeight === 0) return 0
+  return Math.abs(100 - (currentWeight / previousWeight) * 100)
+}
+
+// Function to update a specific health record (for Dr. Nick's editable table)
+export async function updateHealthRecord(recordId: string, updates: Partial<WeeklyCheckin>) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { data: null, error: { message: 'User not authenticated' } }
+    }
+
+    // Prepare the update data with proper type conversion
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    }
+
+    // Convert and validate each field
+    if (updates.date !== undefined) updateData.date = updates.date
+    if (updates.weight !== undefined) updateData.weight = updates.weight ? parseFloat(String(updates.weight)) : null
+    if (updates.waist !== undefined) updateData.waist = updates.waist ? parseFloat(String(updates.waist)) : null
+    if (updates.resistance_training_days !== undefined) updateData.resistance_training_days = updates.resistance_training_days ? parseInt(String(updates.resistance_training_days)) : null
+    if (updates.focal_heart_rate_training !== undefined) updateData.focal_heart_rate_training = updates.focal_heart_rate_training || null
+    if (updates.hunger_days !== undefined) updateData.hunger_days = updates.hunger_days ? parseInt(String(updates.hunger_days)) : null
+    if (updates.poor_recovery_days !== undefined) updateData.poor_recovery_days = updates.poor_recovery_days ? parseInt(String(updates.poor_recovery_days)) : null
+    if (updates.sleep_consistency_score !== undefined) updateData.sleep_consistency_score = updates.sleep_consistency_score ? parseInt(String(updates.sleep_consistency_score)) : null
+    if (updates.initial_weight !== undefined) updateData.initial_weight = updates.initial_weight ? parseFloat(String(updates.initial_weight)) : null
+
+    const result = await supabase
+      .from('health_data')
+      .update(updateData)
+      .eq('id', recordId)
+      .select()
+
+    return result
+  } catch (error) {
+    console.error('Error updating health record:', error)
+    return { data: null, error }
+  }
+}
+
+// Function to delete a health record (for Dr. Nick's editable table)
+export async function deleteHealthRecord(recordId: string) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     
@@ -304,20 +321,13 @@ export async function deleteWeeklyCheckin(id: string) {
     const result = await supabase
       .from('health_data')
       .delete()
-      .eq('id', id)
-      .eq('user_id', user.id)
+      .eq('id', recordId)
 
     return result
   } catch (error) {
-    console.error('Error deleting weekly check-in:', error)
+    console.error('Error deleting health record:', error)
     return { data: null, error }
   }
-}
-
-// Helper function to calculate loss percentage rate
-export function calculateLossPercentageRate(currentWeight: number, previousWeight: number): number {
-  if (!previousWeight || previousWeight === 0) return 0
-  return Math.abs(100 - (currentWeight / previousWeight) * 100)
 }
 
 // Helper function to generate weight loss projections

@@ -1,13 +1,40 @@
 // src/app/components/health/charts/SleepConsistencyChart.tsx
-// Chart 5: Sleep Consistency Score
+// Chart 5: Sleep Consistency & Recovery (from Whoop data added by Dr. Nick)
 
 'use client'
 
+import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 
 interface SleepConsistencyChartProps {
   data: WeeklyCheckin[]
+}
+
+// Chart Tooltip Component
+function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  const [isVisible, setIsVisible] = useState(false)
+
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        className="cursor-help"
+      >
+        {children}
+      </div>
+      
+      {isVisible && (
+        <div className="absolute z-10 w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg -top-2 left-0 transform -translate-y-full">
+          <div className="font-medium mb-1">{title}</div>
+          <div className="text-gray-300">{description}</div>
+          {/* Arrow pointing down */}
+          <div className="absolute top-full left-6 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function SleepConsistencyChart({ data }: SleepConsistencyChartProps) {
@@ -102,12 +129,17 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
   if (chartData.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          😴 Sleep Consistency Score
-        </h3>
+        <ChartTooltip 
+          title="Sleep Consistency" 
+          description="Whoop device data showing sleep quality and recovery patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">
+            😴 Sleep Consistency & Recovery
+          </h3>
+        </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No sleep data available yet</p>
-          <p className="text-sm">Dr. Nick will add sleep data from Whoop device</p>
+          <p className="text-sm">Dr. Nick will add sleep consistency scores from your Whoop device data</p>
         </div>
       </div>
     )
@@ -116,11 +148,16 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          😴 Sleep Consistency Score
-        </h3>
+        <ChartTooltip 
+          title="Sleep Consistency" 
+          description="Whoop device data showing sleep quality and recovery patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">
+            😴 Sleep Consistency & Recovery
+          </h3>
+        </ChartTooltip>
         <p className="text-sm text-gray-600">
-          Sleep quality and consistency data from Whoop device (0-100 scale)
+          Weekly sleep quality scores from Whoop device (added by Dr. Nick)
         </p>
       </div>
 
@@ -132,7 +169,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Sleep Score (0-100)', angle: -90, position: 'insideLeft' }}
+            label={{ value: 'Sleep Score (%)', angle: -90, position: 'insideLeft' }}
             domain={[0, 100]}
           />
           
@@ -177,9 +214,9 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       </div>
 
       <div className="mt-4 text-xs text-gray-500">
-        <p>• Data collected from Whoop device and entered by Dr. Nick</p>
-        <p>• Higher scores indicate better sleep quality and consistency</p>
-        <p>• Dashed lines show score category thresholds</p>
+        <p>• Data sourced from Whoop device by Dr. Nick</p>
+        <p>• Higher scores indicate better sleep quality and recovery</p>
+        <p>• Sleep quality directly impacts weight loss and overall progress</p>
       </div>
     </div>
   )

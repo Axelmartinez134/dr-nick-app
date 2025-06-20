@@ -65,7 +65,7 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
               placeholder="Enter your email"
               disabled={loading}
             />
@@ -82,7 +82,7 @@ export default function Login() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
               placeholder="Enter your password"
               disabled={loading}
             />
@@ -103,13 +103,10 @@ export default function Login() {
 
         </form>
 
-        {/* Additional Links */}
+        {/* Additional Info */}
         <div className="mt-4 text-center">
           <p className="text-sm text-gray-600">
-            Don&apos;t have an account?{' '}
-            <span className="text-blue-600 hover:text-blue-800 cursor-pointer">
-              Click &quot;Sign Up&quot; above
-            </span>
+            Login credentials provided by Dr. Nick
           </p>
         </div>
 

@@ -10,8 +10,25 @@ import PatientDashboard from './health/PatientDashboard'
 export default function Dashboard() {
   const { user, signOut, isDoctor, isPatient, loading } = useAuth()
 
-  // Get user's first name for greeting
-  const firstName = user?.user_metadata?.full_name?.split(' ')[0] || 'User'
+  // Get user's first name for greeting - try multiple sources
+  const getFirstName = () => {
+    // Try user metadata first
+    if (user?.user_metadata?.full_name) {
+      const name = user.user_metadata.full_name.trim()
+      if (name) return name.split(' ')[0]
+    }
+    
+    // Try email as fallback (extract part before @)
+    if (user?.email) {
+      const emailName = user.email.split('@')[0]
+      // Capitalize first letter and remove numbers/special chars
+      return emailName.charAt(0).toUpperCase() + emailName.slice(1).replace(/[^a-zA-Z]/g, '')
+    }
+    
+    return 'User'
+  }
+
+  const firstName = getFirstName()
 
   const handleSignOut = async () => {
     await signOut()
@@ -38,7 +55,7 @@ export default function Dashboard() {
             {/* Logo and Title */}
             <div className="flex items-center">
               <h1 className="text-xl font-bold text-gray-900">
-                🏥 Dr. Nick Health Tracker
+                🏥 The Fittest You Health Tracker
               </h1>
               {isDoctor && (
                 <span className="ml-3 px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
@@ -71,7 +88,7 @@ export default function Dashboard() {
       <footer className="bg-white border-t mt-12">
         <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
           <div className="text-center text-sm text-gray-500">
-            Dr. Nick Health Tracker - {isDoctor ? 'Patient Management System' : 'Stay on track with your weekly check-ins!'} 📋
+            The Fittest You Health Tracker - {isDoctor ? 'Patient Management System' : 'Stay on track with your weekly check-ins!'} 📋
           </div>
         </div>
       </footer>

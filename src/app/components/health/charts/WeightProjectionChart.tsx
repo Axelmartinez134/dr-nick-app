@@ -3,11 +3,38 @@
 
 'use client'
 
+import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { WeeklyCheckin, generateWeightProjections } from '../healthService'
 
 interface WeightProjectionChartProps {
   data: WeeklyCheckin[]
+}
+
+// Chart Tooltip Component
+function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  const [isVisible, setIsVisible] = useState(false)
+
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        className="cursor-help"
+      >
+        {children}
+      </div>
+      
+      {isVisible && (
+        <div className="absolute z-10 w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg -top-2 left-0 transform -translate-y-full">
+          <div className="font-medium mb-1">{title}</div>
+          <div className="text-gray-300">{description}</div>
+          {/* Arrow pointing down */}
+          <div className="absolute top-full left-6 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function WeightProjectionChart({ data }: WeightProjectionChartProps) {
@@ -23,9 +50,14 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
   if (!initialWeight) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          📊 Weight Loss Trend vs. Projections
-        </h3>
+        <ChartTooltip 
+          title="Weight Loss Projections" 
+          description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
+            📊 Weight Loss Trend vs. Projections
+          </h3>
+        </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No initial weight data available</p>
           <p className="text-sm">Dr. Nick needs to set up Week 0 with initial weight</p>
@@ -90,9 +122,14 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          📊 Weight Loss Trend vs. Projections
-        </h3>
+        <ChartTooltip 
+          title="Weight Loss Projections" 
+          description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-blue-600 transition-colors">
+            📊 Weight Loss Trend vs. Projections
+          </h3>
+        </ChartTooltip>
         <p className="text-sm text-gray-600">
           Compares actual weight loss (red line) against 4 different fat loss projection rates
         </p>

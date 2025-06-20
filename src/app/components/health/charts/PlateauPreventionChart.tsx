@@ -3,11 +3,38 @@
 
 'use client'
 
+import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin, calculateLossPercentageRate } from '../healthService'
 
 interface PlateauPreventionChartProps {
   data: WeeklyCheckin[]
+}
+
+// Chart Tooltip Component
+function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  const [isVisible, setIsVisible] = useState(false)
+
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        className="cursor-help"
+      >
+        {children}
+      </div>
+      
+      {isVisible && (
+        <div className="absolute z-10 w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg -top-2 left-0 transform -translate-y-full">
+          <div className="font-medium mb-1">{title}</div>
+          <div className="text-gray-300">{description}</div>
+          {/* Arrow pointing down */}
+          <div className="absolute top-full left-6 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function PlateauPreventionChart({ data }: PlateauPreventionChartProps) {
@@ -55,9 +82,14 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
   if (chartData.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          📈 Plateau Prevention (Weight Loss Rate)
-        </h3>
+        <ChartTooltip 
+          title="Plateau Prevention" 
+          description="Tracks week-to-week loss percentage to identify plateaus early. Red zones indicate potential plateaus that may require program adjustments."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-green-600 transition-colors">
+            📈 Plateau Prevention (Weight Loss Rate)
+          </h3>
+        </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No weight data available yet</p>
           <p className="text-sm">Enter weight data for multiple weeks to see loss rate trends</p>
@@ -69,9 +101,14 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          📈 Plateau Prevention (Weight Loss Rate)
-        </h3>
+        <ChartTooltip 
+          title="Plateau Prevention" 
+          description="Tracks week-to-week loss percentage to identify plateaus early. Red zones indicate potential plateaus that may require program adjustments."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-green-600 transition-colors">
+            📈 Plateau Prevention (Weight Loss Rate)
+          </h3>
+        </ChartTooltip>
         <p className="text-sm text-gray-600">
           Tracks week-over-week weight loss percentage to identify potential plateaus
         </p>

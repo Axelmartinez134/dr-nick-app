@@ -17,21 +17,20 @@ const geistMono = Geist_Mono({
 
 // Updated metadata for your health app
 export const metadata: Metadata = {
-  title: "Dr. Nick Health Tracker",
+  title: "The Fittest You Health Tracker",
   description: "Track your health journey with Dr. Nick",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* NEW: Wrap children with AuthProvider */}
         <AuthProvider>
           {children}
         </AuthProvider>
