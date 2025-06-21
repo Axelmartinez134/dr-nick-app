@@ -9,6 +9,7 @@ import {
   getWeeklyDataForCharts 
 } from './healthService'
 import { uploadSingleImage, getSignedImageUrl } from './imageService'
+import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 
 interface QueueSubmission {
@@ -83,7 +84,7 @@ export default function DrNickQueue() {
       const { data, error } = await getSubmissionsNeedingReview()
       
       if (error) {
-        setError(error.message)
+        setError(typeof error === 'string' ? error : (error as any)?.message || 'Failed to load submissions')
         return
       }
       
@@ -162,7 +163,30 @@ export default function DrNickQueue() {
         setMonthlyPdfUploading(true)
       }
 
-      const uploadResult = await uploadSingleImage(file, 'whoop-pdfs')
+      // For PDF uploads, we'll use a different approach since uploadSingleImage is for images
+      // Create unique file path for PDF
+      const fileExt = file.name.split('.').pop()
+      const fileName = `whoop_${type}_${Date.now()}.${fileExt}`
+      const filePath = `whoop-pdfs/${fileName}`
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('checkin-images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        throw new Error(`Failed to upload PDF: ${uploadError.message}`)
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('checkin-images')
+        .getPublicUrl(filePath)
+
+      const uploadResult = { success: true, url: publicUrl }
       
       if (uploadResult.success && uploadResult.url) {
         if (type === 'weekly') {
@@ -171,7 +195,7 @@ export default function DrNickQueue() {
           setMonthlyPdfUrl(uploadResult.url)
         }
       } else {
-        alert(`Failed to upload ${type} PDF: ${uploadResult.error}`)
+        alert(`Failed to upload ${type} PDF`)
       }
     } catch (error) {
       console.error(`Error uploading ${type} PDF:`, error)
@@ -192,10 +216,10 @@ export default function DrNickQueue() {
     try {
       // Update analysis
       const analysisData = {
-        weekly_whoop_pdf_url: weeklyPdfUrl || null,
-        weekly_whoop_analysis: weeklyAnalysis || null,
-        monthly_whoop_pdf_url: monthlyPdfUrl || null,
-        monthly_whoop_analysis: monthlyAnalysis || null,
+        weekly_whoop_pdf_url: weeklyPdfUrl || undefined,
+        weekly_whoop_analysis: weeklyAnalysis || undefined,
+        monthly_whoop_pdf_url: monthlyPdfUrl || undefined,
+        monthly_whoop_analysis: monthlyAnalysis || undefined,
       }
 
       const { error: updateError } = await updateDrNickAnalysis(selectedSubmission.id, analysisData)
@@ -520,10 +544,11 @@ export default function DrNickQueue() {
               {/* Charts Dashboard */}
               {submissionChartData.length > 0 && (
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Client Progress Charts</h4>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                    {selectedSubmission.profiles.first_name} {selectedSubmission.profiles.last_name} - Progress Charts
+                  </h4>
                   <ChartsDashboard 
-                    data={submissionChartData} 
-                    patientName={`${selectedSubmission.profiles.first_name} ${selectedSubmission.profiles.last_name}`}
+                    patientId={selectedSubmission.user_id}
                   />
                 </div>
               )}
