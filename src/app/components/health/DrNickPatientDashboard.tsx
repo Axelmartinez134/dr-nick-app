@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 import DrNickAdmin from './DrNickAdmin'
+import DrNickQueue from './DrNickQueue'
 
 interface PatientSummary {
   user_id: string
@@ -186,6 +187,17 @@ export default function DrNickPatientDashboard() {
             )}
 
             <button
+              onClick={() => setActiveTab('queue')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'queue'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              📋 Review Queue
+            </button>
+
+            <button
               onClick={() => setActiveTab('admin')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'admin'
@@ -298,6 +310,11 @@ export default function DrNickPatientDashboard() {
       {/* Admin Tools */}
       {activeTab === 'admin' && (
         <DrNickAdmin />
+      )}
+
+      {/* Review Queue */}
+      {activeTab === 'queue' && (
+        <DrNickQueue />
       )}
 
     </div>

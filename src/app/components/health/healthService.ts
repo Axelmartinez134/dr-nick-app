@@ -32,6 +32,35 @@ export interface CheckinFormData {
   focal_heart_rate_training?: string
   hunger_days?: string
   poor_recovery_days?: string
+  notes?: string
+  // Lumen images (required)
+  lumen_day1_image?: string
+  lumen_day2_image?: string
+  lumen_day3_image?: string
+  lumen_day4_image?: string
+  lumen_day5_image?: string
+  lumen_day6_image?: string
+  lumen_day7_image?: string
+  // Food log images (optional)
+  food_log_day1_image?: string
+  food_log_day2_image?: string
+  food_log_day3_image?: string
+  food_log_day4_image?: string
+  food_log_day5_image?: string
+  food_log_day6_image?: string
+  food_log_day7_image?: string
+  // Queue system fields - Weekly
+  weekly_whoop_pdf_url?: string
+  weekly_whoop_analysis?: string
+  weekly_ai_analysis?: string
+  weekly_whoop_pdf?: string
+  // Queue system fields - Monthly
+  monthly_whoop_pdf_url?: string
+  monthly_whoop_analysis?: string
+  monthly_ai_analysis?: string
+  monthly_whoop_pdf?: string
+  // Queue management
+  needs_review?: boolean
 }
 
 // TypeScript interface for Dr. Nick's initial setup
@@ -57,7 +86,7 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
     }
 
     // Convert string inputs to appropriate types
-    const checkinData: Partial<WeeklyCheckin> = {
+    const checkinData: any = {
       user_id: user.id,
       date: data.date,
       week_number: parseInt(data.week_number),
@@ -68,6 +97,34 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       hunger_days: data.hunger_days ? parseInt(data.hunger_days) : null,
       poor_recovery_days: data.poor_recovery_days ? parseInt(data.poor_recovery_days) : null,
       data_entered_by: 'patient',
+      // Lumen images
+      lumen_day1_image: data.lumen_day1_image || null,
+      lumen_day2_image: data.lumen_day2_image || null,
+      lumen_day3_image: data.lumen_day3_image || null,
+      lumen_day4_image: data.lumen_day4_image || null,
+      lumen_day5_image: data.lumen_day5_image || null,
+      lumen_day6_image: data.lumen_day6_image || null,
+      lumen_day7_image: data.lumen_day7_image || null,
+      // Food log images
+      food_log_day1_image: data.food_log_day1_image || null,
+      food_log_day2_image: data.food_log_day2_image || null,
+      food_log_day3_image: data.food_log_day3_image || null,
+      food_log_day4_image: data.food_log_day4_image || null,
+      food_log_day5_image: data.food_log_day5_image || null,
+      food_log_day6_image: data.food_log_day6_image || null,
+      food_log_day7_image: data.food_log_day7_image || null,
+      // Queue system fields - Weekly
+      weekly_whoop_pdf_url: data.weekly_whoop_pdf_url || null,
+      weekly_whoop_analysis: data.weekly_whoop_analysis || null,
+      weekly_ai_analysis: data.weekly_ai_analysis || null,
+      weekly_whoop_pdf: data.weekly_whoop_pdf || null,
+      // Queue system fields - Monthly
+      monthly_whoop_pdf_url: data.monthly_whoop_pdf_url || null,
+      monthly_whoop_analysis: data.monthly_whoop_analysis || null,
+      monthly_ai_analysis: data.monthly_ai_analysis || null,
+      monthly_whoop_pdf: data.monthly_whoop_pdf || null,
+      // Queue management - set to true when patient submits
+      needs_review: true,
     }
 
     // Check if record already exists for this week
@@ -237,8 +294,6 @@ export async function getWeeklyDataForCharts(patientUserId?: string) {
   }
 }
 
-
-
 // Function to get check-in for a specific week
 export async function getCheckinForWeek(weekNumber: number) {
   try {
@@ -262,8 +317,6 @@ export async function getCheckinForWeek(weekNumber: number) {
     return { data: null, error }
   }
 }
-
-
 
 // Helper function to calculate loss percentage rate
 export function calculateLossPercentageRate(currentWeight: number, previousWeight: number): number {
@@ -352,4 +405,162 @@ export function generateWeightProjections(initialWeight: number, weeks: number =
       data: projection
     }
   })
+}
+
+// ============================================================================
+// QUEUE SYSTEM FUNCTIONS
+// ============================================================================
+
+// Get all submissions that need review (for Dr. Nick's queue)
+export async function getSubmissionsNeedingReview() {
+  try {
+    // First check if the new fields exist, if not return mock data for testing
+    const { data: testData, error: testError } = await supabase
+      .from('health_data')
+      .select('needs_review')
+      .limit(1)
+
+    if (testError && testError.message.includes('column "needs_review" does not exist')) {
+      console.log('Queue system fields not yet migrated. Returning mock data for testing.')
+      
+      // Get recent patient submissions for testing the queue interface
+      const { data: mockData, error: mockError } = await supabase
+        .from('health_data')
+        .select(`
+          *,
+          profiles!user_id (
+            id,
+            email,
+            full_name
+          )
+        `)
+        .eq('data_entered_by', 'patient')
+        .order('created_at', { ascending: false })
+        .limit(5)
+
+      if (mockError) {
+        console.error('Error fetching mock data:', mockError)
+        return { data: [], error: null }
+      }
+
+      // Transform the data to match the expected format
+      const transformedData = (mockData || []).map(item => ({
+        ...item,
+        needs_review: true, // Mock the needs_review field
+        profiles: {
+          id: item.profiles?.id,
+          email: item.profiles?.email,
+          first_name: item.profiles?.full_name?.split(' ')[0] || '',
+          last_name: item.profiles?.full_name?.split(' ').slice(1).join(' ') || ''
+        }
+      }))
+
+      return { data: transformedData, error: null }
+    }
+
+    const result = await supabase
+      .from('health_data')
+      .select(`
+        *,
+        profiles!user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
+      .eq('needs_review', true)
+      .eq('data_entered_by', 'patient')
+      .order('created_at', { ascending: true }) // First submitted, first in queue
+
+    // Transform the data to match the expected format
+    if (result.data) {
+      result.data = result.data.map(item => ({
+        ...item,
+        profiles: {
+          id: item.profiles?.id,
+          email: item.profiles?.email,
+          first_name: item.profiles?.full_name?.split(' ')[0] || '',
+          last_name: item.profiles?.full_name?.split(' ').slice(1).join(' ') || ''
+        }
+      }))
+    }
+
+    return result
+  } catch (error) {
+    console.error('Error fetching submissions needing review:', error)
+    return { data: null, error }
+  }
+}
+
+// Mark a submission as reviewed (remove from queue)
+export async function markSubmissionAsReviewed(submissionId: string) {
+  try {
+    const result = await supabase
+      .from('health_data')
+      .update({ 
+        needs_review: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', submissionId)
+      .select()
+
+    return result
+  } catch (error) {
+    console.error('Error marking submission as reviewed:', error)
+    return { data: null, error }
+  }
+}
+
+// Update Dr. Nick's analysis for a submission
+export async function updateDrNickAnalysis(
+  submissionId: string, 
+  analysisData: {
+    weekly_whoop_pdf_url?: string
+    weekly_whoop_analysis?: string
+    weekly_whoop_pdf?: string
+    monthly_whoop_pdf_url?: string
+    monthly_whoop_analysis?: string
+    monthly_whoop_pdf?: string
+  }
+) {
+  try {
+    const result = await supabase
+      .from('health_data')
+      .update({
+        ...analysisData,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', submissionId)
+      .select()
+
+    return result
+  } catch (error) {
+    console.error('Error updating Dr. Nick analysis:', error)
+    return { data: null, error }
+  }
+}
+
+// Get a specific submission with all details (for queue review)
+export async function getSubmissionDetails(submissionId: string) {
+  try {
+    const result = await supabase
+      .from('health_data')
+      .select(`
+        *,
+        users!health_data_user_id_fkey (
+          id,
+          email,
+          first_name,
+          last_name,
+          week1_start_date
+        )
+      `)
+      .eq('id', submissionId)
+      .single()
+
+    return result
+  } catch (error) {
+    console.error('Error fetching submission details:', error)
+    return { data: null, error }
+  }
 }

@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { saveInitialSetup, updateSleepScore, type InitialSetupData, type DrNickUpdateData } from './healthService'
 import { getAllPatients } from './adminService'
 import UserCreationModal from './UserCreationModal'
+import DrNickQueue from './DrNickQueue'
 
 
 interface Patient {
@@ -26,11 +27,9 @@ export default function DrNickAdmin() {
   // State for user creation modal
   const [showCreateModal, setShowCreateModal] = useState(false)
 
-
-
   // State for initial setup (Week 0)
   const [setupData, setSetupData] = useState<InitialSetupData>({
-    date: '', // Will be set after mount
+    date: '',
     initial_weight: '',
     sleep_consistency_score: '',
   })
@@ -50,12 +49,16 @@ export default function DrNickAdmin() {
   const [sleepLoading, setSleepLoading] = useState(false)
   const [setupMessage, setSetupMessage] = useState('')
   const [sleepMessage, setSleepMessage] = useState('')
+  const [mounted, setMounted] = useState(false)
 
   // Set mounted and default date after component mounts
   useEffect(() => {
+    setMounted(true)
+    const today = new Date()
+    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
     setSetupData(prev => ({
       ...prev,
-      date: new Date().toISOString().split('T')[0]
+      date: localDate.toISOString().split('T')[0]
     }))
     loadPatients()
   }, [])
@@ -124,8 +127,10 @@ export default function DrNickAdmin() {
     } else {
       setSetupMessage('Week 0 initial setup saved successfully!')
       // Clear form
+      const today = new Date()
+      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
       setSetupData({
-        date: new Date().toISOString().split('T')[0],
+        date: localDate.toISOString().split('T')[0],
         initial_weight: '',
         sleep_consistency_score: '',
       })
@@ -182,7 +187,19 @@ export default function DrNickAdmin() {
     setSleepLoading(false)
   }
 
-
+  // Prevent hydration issues by not rendering until mounted
+  if (!mounted) {
+    return (
+      <div className="max-w-6xl mx-auto space-y-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -192,10 +209,10 @@ export default function DrNickAdmin() {
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              👨‍⚕️ Dr. Nick Admin Panel
+              ⚙️ Admin Tools
             </h2>
             <p className="text-gray-600">
-              Create new patient accounts and manage basic admin functions
+              Manage patient accounts and setup data
             </p>
           </div>
           
@@ -208,11 +225,11 @@ export default function DrNickAdmin() {
         </div>
       </div>
 
-      {/* Patient List with Passwords */}
+      {/* Patient List for Selection */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
-            👥 Patient Management ({patients.length} patients)
+            👥 Patient Passwords ({patients.length} patients)
           </h3>
           
           <button
@@ -267,12 +284,7 @@ export default function DrNickAdmin() {
             {filteredPatients.map((patient) => (
               <div
                 key={patient.id}
-                className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                  selectedPatientId === patient.id
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-                onClick={() => setSelectedPatientId(patient.id)}
+                className="border border-gray-200 rounded-lg p-4"
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
@@ -280,11 +292,6 @@ export default function DrNickAdmin() {
                       <h4 className="font-medium text-gray-900">
                         {patient.full_name || 'No name'}
                       </h4>
-                      {selectedPatientId === patient.id && (
-                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                          Selected
-                        </span>
-                      )}
                     </div>
                     
                     <p className="text-sm text-gray-600 mb-1">
@@ -300,45 +307,26 @@ export default function DrNickAdmin() {
                     </p>
                   </div>
 
-                  {/* Actions Section */}
-                  <div className="ml-4 text-right space-y-2">
+                  {/* Password Section */}
+                  <div className="ml-4 text-right">
                     <div>
                       <label className="text-xs text-gray-500 block mb-1">
                         Patient Password:
                       </label>
                       <div className="flex items-center gap-2">
-                        <span className="bg-gray-100 px-3 py-1 rounded font-mono text-sm">
+                        <span className="bg-gray-800 text-white px-3 py-2 rounded font-mono text-lg font-bold">
                           {patient.patient_password || 'N/A'}
                         </span>
                         {patient.patient_password && (
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              copyPassword(patient.patient_password)
-                            }}
-                            className="text-blue-600 hover:text-blue-800 text-sm"
+                            onClick={() => copyPassword(patient.patient_password)}
+                            className="text-blue-600 hover:text-blue-800 text-lg"
                             title="Copy password"
                           >
                             📋
                           </button>
                         )}
                       </div>
-                    </div>
-                    
-                    <div className="flex gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedPatientId(patient.id)
-                        }}
-                        className={`px-3 py-1 rounded text-sm ${
-                          selectedPatientId === patient.id
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        ⚙️ Select for Admin Tools
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -348,152 +336,9 @@ export default function DrNickAdmin() {
         )}
       </div>
 
-      {/* Selected Patient Info */}
-      {selectedPatientId && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <p className="text-green-800 font-medium">
-            ✅ Selected Patient: {filteredPatients.find(p => p.id === selectedPatientId)?.full_name || 'Unknown'}
-          </p>
-          <p className="text-green-600 text-sm">
-            You can now perform admin actions for this patient below.
-          </p>
-        </div>
-      )}
 
-      {/* Initial Setup Section (Week 0) */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          📊 Week 0 Initial Setup
-        </h3>
-        
-        {setupMessage && (
-          <div className={`mb-4 p-3 rounded ${
-            setupMessage.includes('successfully') 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-red-100 text-red-700'
-          }`}>
-            {setupMessage}
-          </div>
-        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label htmlFor="setup_date" className="block text-sm font-medium text-gray-700 mb-2">
-              Date
-            </label>
-            <input
-              id="setup_date"
-              type="date"
-              value={setupData.date}
-              onChange={(e) => setSetupData({...setupData, date: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              disabled={setupLoading}
-            />
-          </div>
 
-          <div>
-            <label htmlFor="initial_weight" className="block text-sm font-medium text-gray-700 mb-2">
-              Initial Weight (lbs)
-            </label>
-            <input
-              id="initial_weight"
-              type="number"
-              step="0.1"
-              value={setupData.initial_weight}
-              onChange={(e) => setSetupData({...setupData, initial_weight: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              placeholder="185.5"
-              disabled={setupLoading}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="sleep_score" className="block text-sm font-medium text-gray-700 mb-2">
-              Sleep Score (0-100)
-            </label>
-            <input
-              id="sleep_score"
-              type="number"
-              min="0"
-              max="100"
-              value={setupData.sleep_consistency_score}
-              onChange={(e) => setSetupData({...setupData, sleep_consistency_score: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              placeholder="85"
-              disabled={setupLoading}
-            />
-          </div>
-        </div>
-
-        <button
-          onClick={handleSetupSubmit}
-          disabled={setupLoading || !selectedPatientId}
-          className="mt-4 w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
-        >
-          {setupLoading ? 'Saving...' : 'Save Week 0 Setup'}
-        </button>
-      </div>
-
-      {/* Sleep Score Update Section */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          😴 Update Sleep Consistency Score
-        </h3>
-        
-        {sleepMessage && (
-          <div className={`mb-4 p-3 rounded ${
-            sleepMessage.includes('successfully') 
-              ? 'bg-green-100 text-green-700' 
-              : 'bg-red-100 text-red-700'
-          }`}>
-            {sleepMessage}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="week_number" className="block text-sm font-medium text-gray-700 mb-2">
-              Week Number
-            </label>
-            <select
-              id="week_number"
-              value={sleepUpdateData.week_number}
-              onChange={(e) => setSleepUpdateData({...sleepUpdateData, week_number: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              disabled={sleepLoading}
-            >
-              {Array.from({length: 12}, (_, i) => i + 1).map(week => (
-                <option key={week} value={week.toString()}>Week {week}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label htmlFor="sleep_consistency_score" className="block text-sm font-medium text-gray-700 mb-2">
-              Sleep Consistency Score (0-100)
-            </label>
-            <input
-              id="sleep_consistency_score"
-              type="number"
-              min="0"
-              max="100"
-              value={sleepUpdateData.sleep_consistency_score}
-              onChange={(e) => setSleepUpdateData({...sleepUpdateData, sleep_consistency_score: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              placeholder="From Whoop device..."
-              disabled={sleepLoading}
-            />
-          </div>
-        </div>
-
-        <button
-          onClick={handleSleepUpdate}
-          disabled={sleepLoading || !selectedPatientId}
-          className="mt-4 w-full md:w-auto px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 transition-colors"
-        >
-          {sleepLoading ? 'Updating...' : 'Update Sleep Score'}
-        </button>
-      </div>
 
       {/* User Creation Modal */}
       <UserCreationModal
