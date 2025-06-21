@@ -6,6 +6,8 @@
 import { useState, useEffect } from 'react'
 import { saveWeeklyCheckin, getCheckinForWeek, type CheckinFormData } from './healthService'
 import { supabase } from '../auth/AuthContext'
+import ImageUpload from './ImageUpload'
+import { uploadImages, getImagesForWeek, deleteImages, type CheckinImage } from './imageService'
 
 // Extended CheckinFormData interface to include missing fields
 interface ExtendedCheckinFormData extends CheckinFormData {
@@ -90,6 +92,13 @@ export default function HealthForm() {
     notes: ''
   })
 
+  // Image upload state
+  const [lumenFiles, setLumenFiles] = useState<File[]>([])
+  const [foodLogFiles, setFoodLogFiles] = useState<File[]>([])
+  const [existingLumenImages, setExistingLumenImages] = useState<CheckinImage[]>([])
+  const [existingFoodLogImages, setExistingFoodLogImages] = useState<CheckinImage[]>([])
+  const [isUploadingImages, setIsUploadingImages] = useState(false)
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -161,6 +170,15 @@ export default function HealthForm() {
           notes: ''
         })
       }
+
+      // Load existing images for this week
+      const { lumenImages, foodLogImages } = await getImagesForWeek(user.id, activeWeek)
+      setExistingLumenImages(lumenImages)
+      setExistingFoodLogImages(foodLogImages)
+      
+      // Clear any selected files when switching weeks
+      setLumenFiles([])
+      setFoodLogFiles([])
     } catch (error) {
       console.error('Error loading form data:', error)
     }
@@ -211,12 +229,14 @@ export default function HealthForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
+    setIsUploadingImages(true)
     setMessage('')
     setValidationErrors({})
 
     // Validate form
     if (!validateForm()) {
       setIsSubmitting(false)
+      setIsUploadingImages(false)
       setMessage('Please fix the errors below and try again.')
       return
     }
@@ -237,22 +257,64 @@ export default function HealthForm() {
         poor_recovery_days: formData.poor_recovery_days
       }
 
+      // Step 1: Save the basic check-in data
       const result = await saveWeeklyCheckin(checkinData)
 
       if (result.error) {
         setMessage(`Error: ${(result.error as any)?.message || 'Unknown error'}`)
-      } else {
-        setMessage('✅ Weekly check-in saved successfully!')
-        // Recalculate smart week after successful submission
-        if (!devMode && user) {
-          const newSmartWeek = await calculateCurrentWeek(user.id)
-          setSmartWeek(newSmartWeek)
+        setIsSubmitting(false)
+        setIsUploadingImages(false)
+        return
+      }
+
+      // Step 2: Upload images if there are any new files
+      let imageUploadSuccess = true
+      let uploadErrorMessage = ''
+
+      if (lumenFiles.length > 0) {
+        const lumenUploadResult = await uploadImages(lumenFiles, user!.id, activeWeek, 'lumen')
+        if (!lumenUploadResult.success) {
+          imageUploadSuccess = false
+          uploadErrorMessage += `Lumen images: ${lumenUploadResult.error || 'Upload failed'}. `
         }
+      }
+
+      if (foodLogFiles.length > 0) {
+        const foodLogUploadResult = await uploadImages(foodLogFiles, user!.id, activeWeek, 'food_log')
+        if (!foodLogUploadResult.success) {
+          imageUploadSuccess = false
+          uploadErrorMessage += `Food log images: ${foodLogUploadResult.error || 'Upload failed'}. `
+        }
+      }
+
+      // Step 3: Show appropriate success/error message
+      if (imageUploadSuccess) {
+        const imageCount = lumenFiles.length + foodLogFiles.length
+        const imageText = imageCount > 0 ? ` and ${imageCount} image${imageCount > 1 ? 's' : ''}` : ''
+        setMessage(`✅ Weekly check-in${imageText} saved successfully!`)
+        
+        // Clear selected files after successful upload
+        setLumenFiles([])
+        setFoodLogFiles([])
+        
+        // Reload existing images to show the newly uploaded ones
+        const { lumenImages, foodLogImages } = await getImagesForWeek(user!.id, activeWeek)
+        setExistingLumenImages(lumenImages)
+        setExistingFoodLogImages(foodLogImages)
+      } else {
+        setMessage(`⚠️ Check-in data saved, but image upload failed: ${uploadErrorMessage}`)
+      }
+
+      // Recalculate smart week after successful submission
+      if (!devMode && user) {
+        const newSmartWeek = await calculateCurrentWeek(user.id)
+        setSmartWeek(newSmartWeek)
       }
     } catch (error) {
       setMessage('Error submitting form. Please try again.')
     } finally {
       setIsSubmitting(false)
+      setIsUploadingImages(false)
     }
   }
 
@@ -524,6 +586,32 @@ export default function HealthForm() {
           </div>
         </div>
 
+        {/* Lumen Screenshots - Required */}
+        <div className="space-y-4">
+          <ImageUpload
+            label="📸 Lumen Screenshots (Required)"
+            description="Upload your daily Lumen screenshots - up to 7 images for the week"
+            maxFiles={7}
+            filePrefix="Lumen Day"
+            onFilesChange={setLumenFiles}
+            existingFiles={existingLumenImages.map(img => img.image_url)}
+            disabled={isUploadingImages}
+          />
+        </div>
+
+        {/* Food Log Screenshots - Optional */}
+        <div className="space-y-4">
+          <ImageUpload
+            label="🍽️ Food Log Screenshots (Optional)"
+            description="Upload additional food log screenshots if there are any discrepancies with your Lumen data"
+            maxFiles={7}
+            filePrefix="Food Log Day"
+            onFilesChange={setFoodLogFiles}
+            existingFiles={existingFoodLogImages.map(img => img.image_url)}
+            disabled={isUploadingImages}
+          />
+        </div>
+
         {/* Notes */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">📝 Notes</h3>
@@ -547,11 +635,34 @@ export default function HealthForm() {
         <div className="pt-4">
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isUploadingImages}
             className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 font-medium"
           >
-            {isSubmitting ? 'Submitting...' : `Submit Week ${activeWeek} Check-in`}
+            {isUploadingImages 
+              ? '📤 Uploading Images...' 
+              : isSubmitting 
+              ? '💾 Saving Data...' 
+              : `Submit Week ${activeWeek} Check-in`
+            }
           </button>
+          
+          {/* Progress indicator */}
+          {(isSubmitting || isUploadingImages) && (
+            <div className="mt-3 text-center text-sm text-gray-600">
+              {isUploadingImages && (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Uploading {lumenFiles.length + foodLogFiles.length} image{lumenFiles.length + foodLogFiles.length !== 1 ? 's' : ''}...</span>
+                </div>
+              )}
+              {isSubmitting && !isUploadingImages && (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span>Saving check-in data...</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </form>
     </div>
