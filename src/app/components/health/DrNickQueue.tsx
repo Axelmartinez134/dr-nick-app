@@ -12,7 +12,7 @@ import { uploadSingleImage, getSignedImageUrl } from './imageService'
 import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 
-interface QueueSubmission {
+export interface QueueSubmission {
   id: string
   user_id: string
   date: string
@@ -58,7 +58,12 @@ interface QueueSubmission {
   }
 }
 
-export default function DrNickQueue() {
+// NEW: Props interface for DrNickQueue
+interface DrNickQueueProps {
+  onSubmissionSelect?: (submission: QueueSubmission) => void
+}
+
+export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
   const [queueSubmissions, setQueueSubmissions] = useState<QueueSubmission[]>([])
   const [selectedSubmission, setSelectedSubmission] = useState<QueueSubmission | null>(null)
   const [loading, setLoading] = useState(true)
@@ -141,6 +146,13 @@ export default function DrNickQueue() {
 
   // Select submission for review
   const selectSubmission = async (submission: QueueSubmission) => {
+    // NEW: If onSubmissionSelect prop is provided, use it (list-only mode)
+    if (onSubmissionSelect) {
+      onSubmissionSelect(submission)
+      return
+    }
+
+    // Original behavior: side-by-side mode
     setSelectedSubmission(submission)
     setWeeklyAnalysis(submission.weekly_whoop_analysis || '')
     setMonthlyAnalysis(submission.monthly_whoop_analysis || '')
@@ -292,7 +304,7 @@ export default function DrNickQueue() {
           <div className="text-green-600 mt-2">No submissions pending review.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={onSubmissionSelect ? "space-y-4" : "grid grid-cols-1 lg:grid-cols-2 gap-6"}>
           {/* Queue List */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900">
@@ -323,8 +335,8 @@ export default function DrNickQueue() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-medium text-blue-600">
-                        Click to Review
+                      <div className={`text-sm font-medium ${onSubmissionSelect ? 'text-green-600' : 'text-blue-600'}`}>
+                        {onSubmissionSelect ? '🔍 Open Full Review' : 'Click to Review'}
                       </div>
                     </div>
                   </div>
@@ -333,8 +345,8 @@ export default function DrNickQueue() {
             </div>
           </div>
 
-          {/* Selected Submission Review */}
-          {selectedSubmission && (
+          {/* Selected Submission Review - Only show in side-by-side mode */}
+          {!onSubmissionSelect && selectedSubmission && (
             <div className="space-y-6">
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -484,7 +496,7 @@ export default function DrNickQueue() {
                         value={weeklyAnalysis}
                         onChange={(e) => setWeeklyAnalysis(e.target.value)}
                         rows={4}
-                        className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                         placeholder="Enter your weekly analysis for this client..."
                       />
                     </div>
@@ -517,7 +529,7 @@ export default function DrNickQueue() {
                         value={monthlyAnalysis}
                         onChange={(e) => setMonthlyAnalysis(e.target.value)}
                         rows={4}
-                        className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                         placeholder="Enter your monthly analysis for this client (if applicable)..."
                       />
                     </div>

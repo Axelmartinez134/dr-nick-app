@@ -12,6 +12,33 @@ interface ChartsDashboardProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
 }
 
+// Table Tooltip Component (adapted from ChartTooltip pattern)
+function TableTooltip({ content, children }: { content: string; children: React.ReactNode }) {
+  const [isVisible, setIsVisible] = useState(false)
+
+  if (!content) return <>{children}</>
+
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        className="cursor-help"
+      >
+        {children}
+      </div>
+      
+      {isVisible && (
+        <div className="absolute z-10 max-w-sm p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg top-0 left-full ml-2">
+          <div className="text-gray-100">{content}</div>
+          {/* Arrow pointing left */}
+          <div className="absolute top-4 left-0 w-0 h-0 border-t-4 border-b-4 border-r-4 border-t-transparent border-b-transparent border-r-gray-900 transform -translate-x-full"></div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Dynamic imports for charts (client-side only)
 const WeightTrendChart = dynamic(() => import('./charts/WeightTrendChart'), { ssr: false })
 const WaistTrendChart = dynamic(() => import('./charts/WaistTrendChart'), { ssr: false })
@@ -51,9 +78,10 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
   // Sort data by week number for display (ascending order - Week 0 at top, new weeks added to bottom)
   const sortedData = [...data].sort((a, b) => a.week_number - b.week_number)
 
-  // Handle cell editing for Dr. Nick
+  // Handle cell editing for Dr. Nick and viewing for patients
   const handleCellClick = (recordId: string, field: string, currentValue: any) => {
-    if (!isDoctorView) return
+    // Allow patients to view notes, but prevent editing other fields
+    if (!isDoctorView && field !== 'notes') return
     
     setEditingCell({ recordId, field })
     setEditValue(currentValue?.toString() || '')
@@ -81,27 +109,66 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
     setEditValue('')
   }
 
-  const renderCell = (record: WeeklyCheckin, field: string, value: any) => {
+  const renderCell = (record: WeeklyCheckin, field: string, value: any, isLongText = false) => {
     const isEditing = editingCell?.recordId === record.id && editingCell?.field === field
     
     if (isEditing) {
+      // For patients viewing notes - read-only expanded view
+      if (!isDoctorView && field === 'notes') {
+        return (
+          <div className="flex items-start gap-1">
+            <textarea
+              value={value || ''}
+              readOnly
+              className="w-48 px-2 py-1 text-xs border rounded resize-none bg-gray-50 text-gray-900"
+              rows={3}
+              autoFocus
+            />
+            <button
+              onClick={handleCancelEdit}
+              className="text-gray-600 hover:text-gray-800 text-xs"
+              title="Close"
+            >
+              ✕
+            </button>
+          </div>
+        )
+      }
+
+      // For Dr. Nick - full edit functionality
       return (
-        <div className="flex items-center gap-1">
-          <input
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            className="w-20 px-2 py-1 text-xs border rounded"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSaveEdit()
-              if (e.key === 'Escape') handleCancelEdit()
-            }}
-          />
+        <div className="flex items-start gap-1">
+          {isLongText ? (
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-48 px-2 py-1 text-xs border rounded resize-none text-gray-900"
+              rows={3}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.ctrlKey) handleSaveEdit()
+                if (e.key === 'Escape') handleCancelEdit()
+              }}
+              placeholder="Enter self-reflection notes..."
+            />
+          ) : (
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-20 px-2 py-1 text-xs border rounded"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveEdit()
+                if (e.key === 'Escape') handleCancelEdit()
+              }}
+            />
+          )}
           <button
             onClick={handleSaveEdit}
             disabled={saving}
             className="text-green-600 hover:text-green-800 text-xs"
+            title={isLongText ? "Ctrl+Enter to save" : "Enter to save"}
           >
             ✓
           </button>
@@ -115,6 +182,44 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
       )
     }
 
+    // Special handling for notes field
+    if (field === 'notes') {
+      if (!value) {
+        const placeholder = (
+          <span className="text-gray-400 italic">No reflection</span>
+        )
+        
+        return isDoctorView ? (
+          <span
+            className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block"
+            onClick={() => handleCellClick(record.id!, field, value)}
+            title="Click to edit"
+          >
+            {placeholder}
+          </span>
+        ) : placeholder
+      }
+
+      const truncatedText = value.length > 30 ? value.substring(0, 30) + "..." : value
+      const displayElement = (
+        <span className="block">
+          {truncatedText}
+        </span>
+      )
+
+      // Both patients and Dr. Nick can click to view
+      return (
+        <span
+          className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block"
+          onClick={() => handleCellClick(record.id!, field, value)}
+          title={isDoctorView ? "Click to edit" : "Click to view"}
+        >
+          {displayElement}
+        </span>
+      )
+    }
+
+    // Regular field handling
     const displayValue = value !== null && value !== undefined ? value.toString() : '—'
     
     return (
@@ -153,6 +258,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Hunger Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Recovery Issues</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Score</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
               {isDoctorView && (
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
               )}
@@ -194,6 +300,9 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
                 </td>
+                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
+                  {renderCell(record, 'notes', record.notes, true)}
+                </td>
                 {isDoctorView && (
                   <td className="px-4 py-3 text-sm">
                     <button
@@ -222,9 +331,13 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
       
       <div className="mt-4 text-sm text-gray-500">
         <p><strong>Note:</strong> Week 0 represents baseline measurements. Sleep scores are added by Dr. Nick from Whoop device data.</p>
-        {isDoctorView && (
+        {isDoctorView ? (
           <p className="text-blue-600 mt-1">
-            <strong>Dr. Nick:</strong> Click any cell to edit values. Press Enter to save, Escape to cancel.
+            <strong>Dr. Nick:</strong> Click any cell to edit values. For notes, use Ctrl+Enter to save. Press Escape to cancel edits.
+          </p>
+        ) : (
+          <p className="text-blue-600 mt-1">
+            <strong>Tip:</strong> Click on any self reflection entry to view the full text.
           </p>
         )}
       </div>

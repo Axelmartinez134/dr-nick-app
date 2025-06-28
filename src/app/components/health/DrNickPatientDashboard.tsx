@@ -7,8 +7,10 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 import DrNickAdmin from './DrNickAdmin'
-import DrNickQueue from './DrNickQueue'
+import DrNickQueue, { QueueSubmission } from './DrNickQueue'
+import DrNickSubmissionReview from './DrNickSubmissionReview'
 
+// Import QueueSubmission interface from DrNickQueue
 interface PatientSummary {
   user_id: string
   email: string
@@ -27,6 +29,10 @@ export default function DrNickPatientDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('patients')
+
+  // NEW: Add state for submission review functionality
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null)
+  const [selectedSubmissionData, setSelectedSubmissionData] = useState<QueueSubmission | null>(null)
 
   // Load all patients and their summary data
   useEffect(() => {
@@ -119,7 +125,29 @@ export default function DrNickPatientDashboard() {
     setLoading(false)
   }
 
+  // NEW: Handler functions for submission review workflow
+  const handleSubmissionSelect = (submission: QueueSubmission) => {
+    setSelectedSubmissionData(submission)
+    setSelectedSubmissionId(submission.id)
+    setActiveTab('review')
+  }
+
+  const handleReviewComplete = () => {
+    // Clear review state
+    setSelectedSubmissionData(null)
+    setSelectedSubmissionId(null)
+    // Return to queue tab
+    setActiveTab('queue')
+    // Note: Queue will auto-refresh and remove completed items
+  }
+
+  const handleBackToQueue = () => {
+    // Keep submission data but return to queue view
+    setActiveTab('queue')
+  }
+
   const selectedPatient = patients.find(p => p.user_id === selectedPatientId)
+  const selectedSubmission = selectedSubmissionData
 
   if (loading) {
     return (
@@ -187,7 +215,12 @@ export default function DrNickPatientDashboard() {
             )}
 
             <button
-              onClick={() => setActiveTab('queue')}
+              onClick={() => {
+                setActiveTab('queue')
+                // Clear any active submission review when returning to queue
+                setSelectedSubmissionData(null)
+                setSelectedSubmissionId(null)
+              }}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'queue'
                   ? 'border-blue-500 text-blue-600'
@@ -196,6 +229,20 @@ export default function DrNickPatientDashboard() {
             >
               📋 Review Queue
             </button>
+
+            {/* NEW: Review Submission Tab - Green highlighting */}
+            {selectedSubmissionId && selectedSubmissionData && (
+              <button
+                onClick={() => setActiveTab('review')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'review'
+                    ? 'border-green-500 text-green-700 bg-green-50'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-green-50'
+                }`}
+              >
+                🔍 Reviewing {selectedSubmissionData.profiles.first_name} {selectedSubmissionData.profiles.last_name} - Week {selectedSubmissionData.week_number}
+              </button>
+            )}
 
             <button
               onClick={() => setActiveTab('admin')}
@@ -314,7 +361,16 @@ export default function DrNickPatientDashboard() {
 
       {/* Review Queue */}
       {activeTab === 'queue' && (
-        <DrNickQueue />
+        <DrNickQueue onSubmissionSelect={handleSubmissionSelect} />
+      )}
+
+      {/* NEW: Review Submission Tab Content */}
+      {activeTab === 'review' && selectedSubmissionData && (
+        <DrNickSubmissionReview 
+          submission={selectedSubmissionData}
+          onReviewComplete={handleReviewComplete}
+          onBackToQueue={handleBackToQueue}
+        />
       )}
 
     </div>

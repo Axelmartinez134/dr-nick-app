@@ -813,7 +813,7 @@ export default function HealthForm() {
               {validationErrors.waist && (
                 <p className="text-sm text-red-600 mt-1">{validationErrors.waist}</p>
               )}
-            </div>
+              </div>
             </div>
           </div>
 
@@ -864,7 +864,7 @@ export default function HealthForm() {
                 <p className="text-xs text-gray-500 mt-1">
                 Total minutes of heart rate training this week
                 </p>
-            </div>
+              </div>
             </div>
           </div>
 
@@ -914,6 +914,25 @@ export default function HealthForm() {
                 <p className="text-sm text-red-600 mt-1">{validationErrors.poor_recovery_days}</p>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Self Reflection - Moved above Lumen Screenshots */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🧠 Self Reflection</h3>
+          
+          <div>
+            <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
+              Self Reflection Of Your Choices/Behaviors Over The Last Week
+            </label>
+            <textarea
+              id="notes"
+              rows={4}
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+              placeholder="Reflect on your food choices, exercise habits, sleep patterns, stress levels, and any behaviors that impacted your progress this week..."
+            />
           </div>
         </div>
 
@@ -992,106 +1011,87 @@ export default function HealthForm() {
           </div>
         </div>
 
-        {/* Notes */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">📝 Notes</h3>
-          
-          <div>
-            <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
-              Additional Notes (Optional)
-            </label>
-            <textarea
-              id="notes"
-              rows={3}
-              value={formData.notes}
-              onChange={(e) => handleInputChange('notes', e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-              placeholder="Any additional observations, challenges, or questions for Dr. Nick..."
-            />
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <div className="pt-4">
-            <button
-            type="submit"
-            disabled={isSubmitting || isUploadingImages || Object.values(uploadingStates).some(Boolean)}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 font-medium"
-          >
-            {Object.values(uploadingStates).some(Boolean)
-              ? '📤 Uploading Images...' 
-              : isSubmitting 
-              ? '💾 Saving Data...' 
-              : `Submit Week ${devMode ? devWeek : activeWeek} Check-in`
-              }
-            </button>
-          
-          {/* Progress indicator */}
-          {(isSubmitting || Object.values(uploadingStates).some(Boolean)) && (
-            <div className="mt-3 text-center text-sm text-gray-600">
-              {Object.values(uploadingStates).some(Boolean) && (
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <span>Uploading images...</span>
-                </div>
-              )}
-              {isSubmitting && !Object.values(uploadingStates).some(Boolean) && (
-                <div className="flex items-center justify-center space-x-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <span>Saving check-in data...</span>
-                </div>
-              )}
-          </div>
-          )}
-        </div>
-      </form>
-
-      {/* Image Viewer Modal */}
-      {viewingImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="relative max-w-4xl max-h-full bg-white rounded-lg overflow-hidden">
-            {/* Modal Header */}
-            <div className="bg-gray-100 px-4 py-3 border-b flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
-              <button
-                onClick={() => setViewingImage(null)}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                title="Close"
-              >
-                ×
-              </button>
-            </div>
-            
-            {/* Modal Body */}
-            <div className="p-4">
-              <img
-                src={viewingImage.url}
-                alt={viewingImage.title}
-                className="max-w-full max-h-[70vh] object-contain mx-auto"
-              />
-        </div>
-
-            {/* Modal Footer */}
-            <div className="bg-gray-100 px-4 py-3 border-t flex justify-between items-center">
-              <div className="text-sm text-gray-600">
-                Click outside or press × to close
+        {/* Submit Button */}
+        <div className="pt-4">
+          <button
+          type="submit"
+          disabled={isSubmitting || isUploadingImages || Object.values(uploadingStates).some(Boolean)}
+          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 font-medium"
+        >
+          {Object.values(uploadingStates).some(Boolean)
+            ? '📤 Uploading Images...' 
+            : isSubmitting 
+            ? '💾 Saving Data...' 
+            : `Submit Week ${devMode ? devWeek : activeWeek} Check-in`
+            }
+          </button>
+      
+        {/* Progress indicator */}
+        {(isSubmitting || Object.values(uploadingStates).some(Boolean)) && (
+          <div className="mt-3 text-center text-sm text-gray-600">
+            {Object.values(uploadingStates).some(Boolean) && (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span>Uploading images...</span>
               </div>
-              <button
-                onClick={() => setViewingImage(null)}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-              >
-                Close
-              </button>
-            </div>
+            )}
+            {isSubmitting && !Object.values(uploadingStates).some(Boolean) && (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span>Saving check-in data...</span>
+              </div>
+            )}
+        </div>
+        )}
+      </div>
+    </form>
+
+    {/* Image Viewer Modal */}
+    {viewingImage && (
+      <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="relative max-w-4xl max-h-full bg-white rounded-lg overflow-hidden">
+          {/* Modal Header */}
+          <div className="bg-gray-100 px-4 py-3 border-b flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
+            <button
+              onClick={() => setViewingImage(null)}
+              className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              title="Close"
+            >
+              ×
+          </button>
         </div>
 
-          {/* Click outside to close */}
-          <div 
-            className="absolute inset-0 -z-10"
-            onClick={() => setViewingImage(null)}
-          ></div>
+          {/* Modal Body */}
+          <div className="p-4">
+            <img
+              src={viewingImage.url}
+              alt={viewingImage.title}
+              className="max-w-full max-h-[70vh] object-contain mx-auto"
+            />
       </div>
-      )}
+
+          {/* Modal Footer */}
+          <div className="bg-gray-100 px-4 py-3 border-t flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              Click outside or press × to close
+            </div>
+            <button
+              onClick={() => setViewingImage(null)}
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+      </div>
+
+        {/* Click outside to close */}
+        <div 
+          className="absolute inset-0 -z-10"
+          onClick={() => setViewingImage(null)}
+        ></div>
     </div>
-  )
+    )}
+  </div>
+)
 }

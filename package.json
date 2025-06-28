@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "pkill -f 'next dev' || true && rm -rf .next && rm -rf node_modules/.cache && echo 'Cache cleared! Run npm run dev to start fresh.'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.50.0",

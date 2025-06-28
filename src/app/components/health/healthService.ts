@@ -18,6 +18,7 @@ export interface WeeklyCheckin {
   sleep_consistency_score?: number | null
   initial_weight?: number | null
   data_entered_by?: string
+  notes?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -97,6 +98,7 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       hunger_days: data.hunger_days ? parseInt(data.hunger_days) : null,
       poor_recovery_days: data.poor_recovery_days ? parseInt(data.poor_recovery_days) : null,
       data_entered_by: 'patient',
+      notes: data.notes || null,
       // Lumen images
       lumen_day1_image: data.lumen_day1_image || null,
       lumen_day2_image: data.lumen_day2_image || null,
@@ -348,6 +350,7 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.poor_recovery_days !== undefined) updateData.poor_recovery_days = updates.poor_recovery_days ? parseInt(String(updates.poor_recovery_days)) : null
     if (updates.sleep_consistency_score !== undefined) updateData.sleep_consistency_score = updates.sleep_consistency_score ? parseInt(String(updates.sleep_consistency_score)) : null
     if (updates.initial_weight !== undefined) updateData.initial_weight = updates.initial_weight ? parseFloat(String(updates.initial_weight)) : null
+    if (updates.notes !== undefined) updateData.notes = updates.notes || null
 
     const result = await supabase
       .from('health_data')
