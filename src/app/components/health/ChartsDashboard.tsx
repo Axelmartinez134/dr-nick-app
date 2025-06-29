@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { getWeeklyDataForCharts, updateHealthRecord, deleteHealthRecord, type WeeklyCheckin } from './healthService'
+import { getPatientMetrics, type MetricsData } from './metricsService'
 
 // Props interface
 interface ChartsDashboardProps {
@@ -351,6 +352,10 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [mounted, setMounted] = useState(false)
+  
+  // State for metrics (patient view only)
+  const [metrics, setMetrics] = useState<MetricsData | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(false)
 
   // Determine if this is Dr. Nick's view or patient view
   const isDoctorView = !!patientId
@@ -379,6 +384,35 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
     }
 
     setLoading(false)
+    
+    // Also load metrics for patient view
+    if (!isDoctorView) {
+      loadMetrics()
+    }
+  }
+
+  // Function to load metrics data (patient view only)
+  const loadMetrics = async () => {
+    if (isDoctorView) return // Only for patient view
+    
+    setMetricsLoading(true)
+    try {
+      // For patient view, patientId is undefined, so getPatientMetrics will use current user from auth context
+      const metricsData = await getPatientMetrics(patientId)
+      setMetrics(metricsData)
+    } catch (error) {
+      console.error('Error loading metrics:', error)
+      setMetrics({
+        totalWeightLossPercentage: null,
+        weeklyWeightLossPercentage: null,
+        hasEnoughData: false,
+        dataPoints: 0,
+        performanceMs: 0,
+        error: 'Failed to load metrics data'
+      })
+    } finally {
+      setMetricsLoading(false)
+    }
   }
 
   // Don't render until mounted (avoids SSR mismatch)
@@ -462,6 +496,47 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      
+      {/* Metrics Hero Cards - Patient View Only */}
+      {!isDoctorView && metrics && metrics.hasEnoughData && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* Total Weight Loss % - Primary KPI */}
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-blue-900">Total Weight Loss</h3>
+              <div className="text-2xl">🎯</div>
+            </div>
+            <div className="text-3xl font-bold text-blue-800 mb-1">
+              {metrics.totalWeightLossPercentage !== null 
+                ? `${metrics.totalWeightLossPercentage}%` 
+                : '--'
+              }
+            </div>
+            <p className="text-sm text-blue-600">
+              Since starting your journey
+            </p>
+          </div>
+
+          {/* Weekly Weight Loss % */}
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-green-900">Weekly Progress</h3>
+              <div className="text-2xl">📈</div>
+            </div>
+            <div className="text-3xl font-bold text-green-800 mb-1">
+              {metrics.weeklyWeightLossPercentage !== null 
+                ? `${metrics.weeklyWeightLossPercentage}%` 
+                : '--'
+              }
+            </div>
+            <p className="text-sm text-green-600">
+              Week-over-week change
+            </p>
+          </div>
+
+        </div>
+      )}
       
       {/* Header with Summary Stats */}
       <div className="bg-white rounded-lg shadow-md p-6">
