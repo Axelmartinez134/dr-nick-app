@@ -49,11 +49,15 @@ export async function createPatientAccount(patientData: PatientCreationData) {
       return { success: false, error: emailCheck.error }
     }
 
-    // Step 2: Create auth user with email confirmation bypassed
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    // Step 2: Create auth user with regular signup
+    const { data: authData, error: authError } = await supabase.auth.signUp({
       email: patientData.email.toLowerCase(),
       password: patientData.password,
-      email_confirm: true // This bypasses email verification
+      options: {
+        data: {
+          full_name: patientData.fullName
+        }
+      }
     })
 
     if (authError) {
