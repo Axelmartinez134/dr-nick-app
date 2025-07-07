@@ -23,6 +23,8 @@ export interface QueueSubmission {
   focal_heart_rate_training: string | null
   hunger_days: number | null
   poor_recovery_days: number | null
+  sleep_consistency_score: number | null
+  energetic_constraints_reduction_ok: boolean | null
   notes: string | null
   created_at: string
   // Image fields
@@ -331,7 +333,12 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                         {submission.profiles.email}
                       </div>
                       <div className="text-sm text-gray-600 mt-1">
-                        Week {submission.week_number} • {new Date(submission.created_at).toLocaleDateString()}
+                        Week {submission.week_number} • {new Date(submission.created_at).toLocaleDateString()} at {new Date(submission.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        {submission.energetic_constraints_reduction_ok && (
+                          <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            ⚡ Constraints OK
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">

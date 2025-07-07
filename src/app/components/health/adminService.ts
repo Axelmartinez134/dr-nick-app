@@ -14,6 +14,7 @@ export interface PatientCreationData {
   password: string
   fullName: string
   weekZeroData: WeekZeroData
+  weightChangeGoalPercent?: number
 }
 
 // Check if email is already taken
@@ -70,14 +71,15 @@ export async function createPatientAccount(patientData: PatientCreationData) {
 
     const userId = authData.user.id
 
-    // Step 3: Create profile with password reference
+    // Step 3: Create profile with password reference and weight goal
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
         id: userId,
         email: patientData.email.toLowerCase(),
         full_name: patientData.fullName,
-        patient_password: patientData.password // Store for Dr. Nick's reference
+        patient_password: patientData.password, // Store for Dr. Nick's reference
+        weight_change_goal_percent: patientData.weightChangeGoalPercent || 1.0
       })
 
     if (profileError) {
@@ -118,7 +120,8 @@ export async function setupWeekZeroBaseline(userId: string, weekZeroData: WeekZe
         week_number: 0, // Week 0 = baseline
         weight: parseFloat(weekZeroData.weight) || null,
         waist: parseFloat(weekZeroData.waist) || null,
-        data_entered_by: 'doctor',
+        data_entered_by: 'dr_nick',
+        needs_review: false, // Dr. Nick's admin entries don't need review
         // Set initial_weight for reference
         initial_weight: parseFloat(weekZeroData.weight) || null
       })
@@ -178,5 +181,23 @@ export async function getPatientWeekZero(patientId: string) {
     return { weekZero: data, error: null }
   } catch (err) {
     return { weekZero: null, error: `Error fetching Week 0 data: ${err}` }
+  }
+}
+
+// Update patient's weight change goal
+export async function updatePatientWeightGoal(userId: string, goalPercent: number) {
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ weight_change_goal_percent: goalPercent })
+      .eq('id', userId)
+    
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    
+    return { success: true, error: null }
+  } catch (err) {
+    return { success: false, error: `Error updating goal: ${err}` }
   }
 } 

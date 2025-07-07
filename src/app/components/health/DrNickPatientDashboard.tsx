@@ -21,6 +21,7 @@ interface PatientSummary {
   initial_weight: number | null
   weight_loss: number | null
   last_checkin: string | null
+  latest_constraints_ok: boolean | null
 }
 
 export default function DrNickPatientDashboard() {
@@ -47,7 +48,7 @@ export default function DrNickPatientDashboard() {
       // First, get all unique user_ids from health_data
       const { data: healthData, error: healthError } = await supabase
         .from('health_data')
-        .select('user_id, week_number, weight, initial_weight, date')
+        .select('user_id, week_number, weight, initial_weight, date, energetic_constraints_reduction_ok')
         .order('date', { ascending: false })
 
       if (healthError) throw healthError
@@ -75,7 +76,7 @@ export default function DrNickPatientDashboard() {
       // Process patient data to create summaries
       const patientMap = new Map<string, PatientSummary>()
       
-      healthData?.forEach((record: { user_id: string; week_number: number; weight: number; initial_weight: number; date: string }) => {
+      healthData?.forEach((record: { user_id: string; week_number: number; weight: number; initial_weight: number; date: string; energetic_constraints_reduction_ok: boolean }) => {
         const userId = record.user_id
         const profile = profilesMap.get(userId)
         
@@ -94,7 +95,8 @@ export default function DrNickPatientDashboard() {
             latest_weight: null,
             initial_weight: record.initial_weight || null,
             weight_loss: null,
-            last_checkin: null
+            last_checkin: null,
+            latest_constraints_ok: null
           })
         }
 
@@ -108,6 +110,11 @@ export default function DrNickPatientDashboard() {
         if (record.weight && (!patient.latest_weight || !patient.last_checkin || record.date > patient.last_checkin)) {
           patient.latest_weight = record.weight
           patient.last_checkin = record.date
+        }
+
+        // Update latest constraints preference if this is the most recent record
+        if (!patient.last_checkin || record.date >= patient.last_checkin) {
+          patient.latest_constraints_ok = record.energetic_constraints_reduction_ok
         }
 
         // Calculate weight loss if we have both initial and latest
@@ -145,6 +152,8 @@ export default function DrNickPatientDashboard() {
     // Keep submission data but return to queue view
     setActiveTab('queue')
   }
+
+
 
   const selectedPatient = patients.find(p => p.user_id === selectedPatientId)
   const selectedSubmission = selectedSubmissionData
@@ -292,8 +301,6 @@ export default function DrNickPatientDashboard() {
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Patient</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Current Week</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Total Check-ins</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight Loss</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Last Check-in</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
                   </tr>
@@ -309,12 +316,6 @@ export default function DrNickPatientDashboard() {
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         Week {patient.current_week}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {patient.total_checkins}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {patient.weight_loss ? `${patient.weight_loss} lbs` : 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-sm text-gray-900">
                         {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}

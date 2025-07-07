@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { getWeeklyDataForCharts, updateHealthRecord, deleteHealthRecord, type WeeklyCheckin } from './healthService'
 import { getPatientMetrics, type MetricsData } from './metricsService'
+import { supabase } from '../auth/AuthContext'
 
 // Props interface
 interface ChartsDashboardProps {
@@ -259,6 +260,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Hunger Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Recovery Issues</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Score</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Constraints OK</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
               {isDoctorView && (
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
@@ -300,6 +302,31 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {isDoctorView ? (
+                    <input
+                      type="checkbox"
+                      checked={record.energetic_constraints_reduction_ok || false}
+                      onChange={(e) => {
+                        // Handle checkbox edit directly for better UX
+                        const updates = { energetic_constraints_reduction_ok: e.target.checked }
+                        updateHealthRecord(record.id!, updates).then(() => {
+                          onDataUpdate?.()
+                        }).catch((error) => {
+                          console.error('Error updating record:', error)
+                          alert('Failed to update record')
+                        })
+                      }}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                  ) : (
+                    record.energetic_constraints_reduction_ok ? (
+                      <span className="text-green-600">✅ Yes</span>
+                    ) : (
+                      <span className="text-gray-500">❌ No</span>
+                    )
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
                   {renderCell(record, 'notes', record.notes, true)}
@@ -347,17 +374,20 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
 }
 
 export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
-  // State for chart data
   const [chartData, setChartData] = useState<WeeklyCheckin[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   
-  // State for metrics (patient view only)
+  // Metrics state (patient view only)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(false)
+  
+  // Weight change goal editing (doctor view only)
+  const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
+  const [goalLoading, setGoalLoading] = useState(false)
 
-  // Determine if this is Dr. Nick's view or patient view
+  // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
 
   // Ensure component is mounted (client-side only)
@@ -365,10 +395,17 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
     setMounted(true)
   }, [])
 
-  // Load data when component mounts or patientId changes
+  // Load data on mount and when patientId changes
   useEffect(() => {
-    loadChartData()
-  }, [patientId]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (mounted) {
+      loadChartData()
+      if (!isDoctorView) {
+        loadMetrics()
+      } else {
+        loadWeightChangeGoal()
+      }
+    }
+  }, [mounted, patientId, isDoctorView])
 
   // Function to load chart data
   const loadChartData = async () => {
@@ -405,6 +442,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       setMetrics({
         totalWeightLossPercentage: null,
         weeklyWeightLossPercentage: null,
+        weightChangeGoalPercent: null,
         hasEnoughData: false,
         dataPoints: 0,
         performanceMs: 0,
@@ -412,6 +450,63 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       })
     } finally {
       setMetricsLoading(false)
+    }
+  }
+
+  // Function to load weight change goal (doctor view only)
+  const loadWeightChangeGoal = async () => {
+    if (!isDoctorView || !patientId) return
+    
+    try {
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('weight_change_goal_percent')
+        .eq('id', patientId)
+        .single()
+      
+      if (error) {
+        console.error('Error loading weight change goal:', error)
+        return
+      }
+      
+      const goalValue = profileData?.weight_change_goal_percent || 1.0
+      setWeightChangeGoal(goalValue.toFixed(2))
+    } catch (err) {
+      console.error('Failed to load weight change goal:', err)
+    }
+  }
+
+  // Function to update weight change goal (doctor view only)
+  const handleGoalUpdate = async () => {
+    if (!isDoctorView || !patientId) return
+    
+    const goalPercent = parseFloat(weightChangeGoal)
+    if (isNaN(goalPercent) || goalPercent < 0.1 || goalPercent > 5.0) {
+      alert('Goal must be between 0.10% and 5.00%')
+      return
+    }
+
+    setGoalLoading(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ weight_change_goal_percent: goalPercent })
+        .eq('id', patientId)
+      
+      if (error) {
+        console.error('Error updating weight change goal:', error)
+        alert('Failed to update weight change goal')
+        return
+      }
+      
+      // Format to 2 decimal places
+      setWeightChangeGoal(goalPercent.toFixed(2))
+      alert('Weight change goal updated successfully!')
+    } catch (err) {
+      console.error('Error updating weight change goal:', err)
+      alert('Failed to update weight change goal')
+    } finally {
+      setGoalLoading(false)
     }
   }
 
@@ -499,7 +594,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       
       {/* Metrics Hero Cards - Patient View Only */}
       {!isDoctorView && metrics && metrics.hasEnoughData && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           
           {/* Total Weight Loss % - Primary KPI */}
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
@@ -532,6 +627,23 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
             </div>
             <p className="text-sm text-green-600">
               Week-over-week change
+            </p>
+          </div>
+
+          {/* NEW: Weight Change Goal */}
+          <div className="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-purple-900">Current Aggregate Week over week Weight Change Goal (%)</h3>
+              <div className="text-2xl">🎯</div>
+            </div>
+            <div className="text-3xl font-bold text-purple-800 mb-1">
+              {metrics.weightChangeGoalPercent !== null 
+                ? `${metrics.weightChangeGoalPercent.toFixed(2)}%` 
+                : '1.00%'
+              }
+            </div>
+            <p className="text-sm text-purple-600">
+              Dr. Nick&apos;s target for you
             </p>
           </div>
 
@@ -636,6 +748,51 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
           </div>
         )}
       </div>
+
+      {/* Weight Change Goal Editing - Doctor View Only */}
+      {isDoctorView && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                🎯 Patient Weight Change Goal
+              </h3>
+              <p className="text-gray-600">
+                Set the target week-over-week weight loss percentage for this patient
+              </p>
+            </div>
+            
+            <div className="flex items-center space-x-3">
+              <div className="text-right">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Goal Percentage
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.10"
+                    max="5.00"
+                    value={weightChangeGoal}
+                    onChange={(e) => setWeightChangeGoal(e.target.value)}
+                    className="w-20 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={goalLoading}
+                  />
+                  <span className="text-gray-700 font-medium">%</span>
+                </div>
+              </div>
+              
+              <button
+                onClick={handleGoalUpdate}
+                disabled={goalLoading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {goalLoading ? 'Updating...' : 'Update Goal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charts Grid - Always render charts, they handle empty data themselves */}
       <div className="space-y-6">

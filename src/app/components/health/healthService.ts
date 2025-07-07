@@ -15,9 +15,11 @@ export interface WeeklyCheckin {
   focal_heart_rate_training?: string | null
   hunger_days?: number | null
   poor_recovery_days?: number | null
+  energetic_constraints_reduction_ok?: boolean | null
   sleep_consistency_score?: number | null
   initial_weight?: number | null
   data_entered_by?: string
+  needs_review?: boolean | null
   notes?: string | null
   created_at?: string
   updated_at?: string
@@ -34,6 +36,8 @@ export interface CheckinFormData {
   hunger_days?: string
   poor_recovery_days?: string
   notes?: string
+  // Energetic constraints question
+  energetic_constraints_reduction_ok?: boolean
   // Lumen images (required)
   lumen_day1_image?: string
   lumen_day2_image?: string
@@ -97,6 +101,7 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       focal_heart_rate_training: data.focal_heart_rate_training || null,
       hunger_days: data.hunger_days ? parseInt(data.hunger_days) : null,
       poor_recovery_days: data.poor_recovery_days ? parseInt(data.poor_recovery_days) : null,
+      energetic_constraints_reduction_ok: data.energetic_constraints_reduction_ok || false,
       data_entered_by: 'patient',
       notes: data.notes || null,
       // Lumen images
@@ -182,6 +187,7 @@ export async function saveInitialSetup(data: InitialSetupData, patientUserId: st
       weight: parseFloat(data.initial_weight), // Starting weight
       sleep_consistency_score: data.sleep_consistency_score ? parseInt(data.sleep_consistency_score) : null,
       data_entered_by: 'dr_nick',
+      needs_review: false, // Dr. Nick's baseline entries don't need review
     }
 
     // Check if Week 0 already exists
@@ -349,6 +355,7 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.hunger_days !== undefined) updateData.hunger_days = updates.hunger_days ? parseInt(String(updates.hunger_days)) : null
     if (updates.poor_recovery_days !== undefined) updateData.poor_recovery_days = updates.poor_recovery_days ? parseInt(String(updates.poor_recovery_days)) : null
     if (updates.sleep_consistency_score !== undefined) updateData.sleep_consistency_score = updates.sleep_consistency_score ? parseInt(String(updates.sleep_consistency_score)) : null
+    if (updates.energetic_constraints_reduction_ok !== undefined) updateData.energetic_constraints_reduction_ok = Boolean(updates.energetic_constraints_reduction_ok)
     if (updates.initial_weight !== undefined) updateData.initial_weight = updates.initial_weight ? parseFloat(String(updates.initial_weight)) : null
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
 
@@ -426,7 +433,7 @@ export async function getSubmissionsNeedingReview() {
     if (testError && testError.message.includes('column "needs_review" does not exist')) {
       console.log('Queue system fields not yet migrated. Returning mock data for testing.')
       
-      // Get recent patient submissions for testing the queue interface
+      // Get recent submissions for testing the queue interface
       const { data: mockData, error: mockError } = await supabase
         .from('health_data')
         .select(`
@@ -437,7 +444,6 @@ export async function getSubmissionsNeedingReview() {
             full_name
           )
         `)
-        .eq('data_entered_by', 'patient')
         .order('created_at', { ascending: false })
         .limit(5)
 
@@ -472,7 +478,6 @@ export async function getSubmissionsNeedingReview() {
         )
       `)
       .eq('needs_review', true)
-      .eq('data_entered_by', 'patient')
       .order('created_at', { ascending: true }) // First submitted, first in queue
 
     // Transform the data to match the expected format

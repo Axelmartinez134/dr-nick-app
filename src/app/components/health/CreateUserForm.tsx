@@ -18,7 +18,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     password: '',
     weight: '',
     waist: '',
-    initialNotes: ''
+    initialNotes: '',
+    weightChangeGoalPercent: '1.00'
   })
 
   const [loading, setLoading] = useState(false)
@@ -101,7 +102,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       email: formData.email.trim(),
       password: formData.password,
       fullName: formData.fullName.trim(),
-      weekZeroData
+      weekZeroData,
+      weightChangeGoalPercent: parseFloat(formData.weightChangeGoalPercent) || 1.0
     }
 
     const result = await createPatientAccount(patientData)
@@ -174,29 +176,50 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
             </div>
           </div>
 
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Patient Password *
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={formData.password}
-                onChange={(e) => handleInputChange('password', e.target.value)}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                placeholder="Enter password for patient"
-              />
-              <button
-                type="button"
-                onClick={generatePassword}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-              >
-                Generate
-              </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Patient Password *
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={formData.password}
+                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                  placeholder="Enter password for patient"
+                />
+                <button
+                  type="button"
+                  onClick={generatePassword}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  Generate
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Patient will use this password to login. You can view it later in the patient list.
+              </p>
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Patient will use this password to login. You can view it later in the patient list.
-            </p>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Weight Change Goal (%)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.10"
+                max="5.00"
+                value={formData.weightChangeGoalPercent}
+                onChange={(e) => handleInputChange('weightChangeGoalPercent', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                placeholder="1.00"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Target week-over-week weight loss percentage (e.g., 1.50 = 1.50%)
+              </p>
+            </div>
           </div>
         </div>
 

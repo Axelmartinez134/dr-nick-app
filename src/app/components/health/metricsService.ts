@@ -3,6 +3,7 @@
 // Uses runtime calculations with existing getWeeklyDataForCharts function
 
 import { getWeeklyDataForCharts, WeeklyCheckin } from './healthService'
+import { supabase } from '../auth/AuthContext'
 
 // Performance monitoring thresholds (based on our scaling strategy)
 const PERFORMANCE_THRESHOLDS = {
@@ -16,6 +17,7 @@ const PERFORMANCE_THRESHOLDS = {
 export interface MetricsData {
   totalWeightLossPercentage: number | null
   weeklyWeightLossPercentage: number | null
+  weightChangeGoalPercent: number | null
   hasEnoughData: boolean
   dataPoints: number
   performanceMs: number
@@ -35,6 +37,7 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
       return {
         totalWeightLossPercentage: null,
         weeklyWeightLossPercentage: null,
+        weightChangeGoalPercent: null,
         hasEnoughData: false,
         dataPoints: 0,
         performanceMs: performance.now() - startTime,
@@ -46,11 +49,31 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
       return {
         totalWeightLossPercentage: null,
         weeklyWeightLossPercentage: null,
+        weightChangeGoalPercent: null,
         hasEnoughData: false,
         dataPoints: 0,
         performanceMs: performance.now() - startTime,
         error: 'No health data found'
       }
+    }
+
+    // Get current user ID for profile lookup
+    let currentUserId = userId
+    if (!currentUserId) {
+      const { data: { user } } = await supabase.auth.getUser()
+      currentUserId = user?.id
+    }
+
+    // Fetch weight change goal from profile
+    let weightChangeGoalPercent: number | null = null
+    if (currentUserId) {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('weight_change_goal_percent')
+        .eq('id', currentUserId)
+        .single()
+      
+      weightChangeGoalPercent = profileData?.weight_change_goal_percent || 1.0
     }
 
     // Sort data by week number to ensure proper calculation
@@ -91,6 +114,7 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
     return {
       totalWeightLossPercentage,
       weeklyWeightLossPercentage,
+      weightChangeGoalPercent,
       hasEnoughData: sortedData.length >= 2 && !!weekZero, // Need baseline + at least 1 week
       dataPoints: sortedData.length,
       performanceMs,
@@ -104,6 +128,7 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
     return {
       totalWeightLossPercentage: null,
       weeklyWeightLossPercentage: null,
+      weightChangeGoalPercent: null,
       hasEnoughData: false,
       dataPoints: 0,
       performanceMs,

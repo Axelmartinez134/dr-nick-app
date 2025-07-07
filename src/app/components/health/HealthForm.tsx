@@ -64,6 +64,7 @@ export default function HealthForm() {
     focal_heart_rate_training: '',
     hunger_days: '',
     poor_recovery_days: '',
+    energetic_constraints_reduction_ok: false,
     notes: '',
     // Add all image fields
     lumen_day1_image: '',
@@ -151,6 +152,7 @@ export default function HealthForm() {
           focal_heart_rate_training: existingData.focal_heart_rate_training || '',
           hunger_days: existingData.hunger_days?.toString() || '',
           poor_recovery_days: existingData.poor_recovery_days?.toString() || '',
+          energetic_constraints_reduction_ok: existingData.energetic_constraints_reduction_ok || false,
           // Load image URLs
           lumen_day1_image: existingData.lumen_day1_image || '',
           lumen_day2_image: existingData.lumen_day2_image || '',
@@ -323,7 +325,7 @@ export default function HealthForm() {
   }
 
   // Handle input changes
-  const handleInputChange = (field: keyof ExtendedCheckinFormData, value: string) => {
+  const handleInputChange = (field: keyof ExtendedCheckinFormData, value: string | boolean) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -913,6 +915,31 @@ export default function HealthForm() {
               {validationErrors.poor_recovery_days && (
                 <p className="text-sm text-red-600 mt-1">{validationErrors.poor_recovery_days}</p>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* Energetic Constraints Question */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">⚡ Energetic Constraints</h3>
+          
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <input
+                type="checkbox"
+                id="energetic_constraints_reduction_ok"
+                checked={formData.energetic_constraints_reduction_ok}
+                onChange={(e) => handleInputChange('energetic_constraints_reduction_ok', e.target.checked)}
+                className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="energetic_constraints_reduction_ok" className="text-sm text-gray-700">
+                <span className="font-medium">
+                  Are you okay with me reducing your energetic constraints?
+                </span>
+                <span className="text-gray-500 block mt-1">
+                  (which I'll consider depending on other check in metrics)
+                </span>
+              </label>
             </div>
           </div>
         </div>

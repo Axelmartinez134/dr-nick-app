@@ -43,6 +43,9 @@ export default function DrNickSubmissionReview({
   const [weeklyPdfUrl, setWeeklyPdfUrl] = useState(submission.weekly_whoop_pdf_url || '')
   const [monthlyPdfUrl, setMonthlyPdfUrl] = useState(submission.monthly_whoop_pdf_url || '')
   
+  // Weight change goal state
+  const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
+  
   // Stored PDF states (downloaded by N8N from Whoop links)
   const [weeklyStoredPdf, setWeeklyStoredPdf] = useState<string | null>(submission.weekly_whoop_pdf || null)
   const [monthlyStoredPdf, setMonthlyStoredPdf] = useState<string | null>(submission.monthly_whoop_pdf || null)
@@ -291,23 +294,76 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // Load weight change goal from profile
+  const loadWeightChangeGoal = async () => {
+    try {
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('weight_change_goal_percent')
+        .eq('id', submission.user_id)
+        .single()
+      
+      if (error) {
+        console.error('Error loading weight change goal:', error)
+        return
+      }
+      
+      const goalValue = profileData?.weight_change_goal_percent || 1.0
+      setWeightChangeGoal(goalValue.toFixed(2))
+    } catch (err) {
+      console.error('Failed to load weight change goal:', err)
+    }
+  }
 
+  // Handle weight change goal update
+  const handleGoalUpdate = async () => {
+    const goalPercent = parseFloat(weightChangeGoal)
+    if (isNaN(goalPercent) || goalPercent < 0.1 || goalPercent > 5.0) {
+      alert('Goal must be between 0.10% and 5.00%')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ weight_change_goal_percent: goalPercent })
+        .eq('id', submission.user_id)
+      
+      if (error) {
+        console.error('Error updating weight change goal:', error)
+        alert('Failed to update weight change goal')
+        return
+      }
+      
+      // Update local state with formatted value
+      setWeightChangeGoal(goalPercent.toFixed(2))
+      
+      alert('Weight change goal updated successfully!')
+    } catch (err) {
+      console.error('Error updating weight change goal:', err)
+      alert('Failed to update weight change goal')
+    }
+  }
 
   // Initialize component
   useEffect(() => {
     const initializeReview = async () => {
       setLoading(true)
-      await Promise.all([
-        loadSubmissionChartData(submission.user_id),
-        generateSignedUrls(submission)
-      ])
+      
+      // Load chart data for the patient
+      await loadSubmissionChartData(submission.user_id)
+      
+      // Generate signed URLs for images and PDFs
+      await generateSignedUrls(submission)
+      
+      // Load weight change goal
+      await loadWeightChangeGoal()
+      
       setLoading(false)
     }
-
+    
     initializeReview()
-  }, [submission])
-
-
+  }, [submission.user_id])
 
   // Poll for analysis completion when processing
   useEffect(() => {
@@ -381,7 +437,7 @@ export default function DrNickSubmissionReview({
         </h3>
 
         {/* Key Metrics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-6 mb-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-blue-700">Weight</label>
             <div className="text-2xl font-bold text-blue-900">{submission.weight || 'N/A'} lbs</div>
@@ -403,8 +459,33 @@ export default function DrNickSubmissionReview({
             <div className="text-2xl font-bold text-red-900">{submission.hunger_days || 'N/A'}</div>
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-yellow-700">Poor Recovery Days</label>
+            <label className="block text-sm font-medium text-yellow-700">Recovery Issues</label>
             <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days || 'N/A'}</div>
+          </div>
+          <div className="bg-indigo-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-indigo-700">Sleep Score</label>
+            <div className="text-2xl font-bold text-indigo-900">{submission.sleep_consistency_score || 'N/A'}</div>
+          </div>
+          <div className="bg-pink-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-pink-700">Weight Goal %</label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="number"
+                step="0.01"
+                min="0.10"
+                max="5.00"
+                value={weightChangeGoal}
+                onChange={(e) => setWeightChangeGoal(e.target.value)}
+                className="w-20 px-2 py-1 border border-pink-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500"
+              />
+              <button
+                onClick={handleGoalUpdate}
+                className="px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
+                title="Update weight change goal"
+              >
+                Update
+              </button>
+            </div>
           </div>
         </div>
 
