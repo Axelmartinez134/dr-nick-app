@@ -3,9 +3,10 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { WeeklyCheckin, generateWeightProjections } from '../healthService'
+import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 
 interface WeightProjectionChartProps {
   data: WeeklyCheckin[]
@@ -66,10 +67,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     )
   }
 
-  // Generate projection data for 16 weeks
-  const projections = generateWeightProjections(initialWeight, 16)
-
-  // Process actual weight data
+  // Process actual weight data first to determine max week
   const actualWeightData = data
     .filter(entry => entry.weight !== null)
     .sort((a, b) => a.week_number - b.week_number)
@@ -78,9 +76,13 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
       actualWeight: entry.weight
     }))
 
-  // Create combined dataset for chart
-  const maxWeek = Math.max(16, Math.max(...actualWeightData.map(d => d.week)))
-  const chartData = []
+  // Calculate max week needed (latest actual data, minimum 16 weeks)
+  const latestActualWeek = actualWeightData.length > 0 ? Math.max(...actualWeightData.map(d => d.week)) : 0
+  const maxWeek = Math.max(16, latestActualWeek)
+
+  // Generate projection data to match actual data length
+  const projections = generateWeightProjections(initialWeight, maxWeek)
+  const chartData: any[] = []
 
   for (let week = 0; week <= maxWeek; week++) {
     const dataPoint: any = { week }
@@ -102,13 +104,72 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     chartData.push(dataPoint)
   }
 
+  // Calculate regression for actual weight trend line
+  const regressionResult = useMemo(() => {
+    if (actualWeightData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+    
+    const regressionData = actualWeightData.map(d => ({ week: d.week, value: d.actualWeight! }))
+    const minWeek = Math.min(...actualWeightData.map(d => d.week))
+    const maxWeekForRegression = Math.max(...actualWeightData.map(d => d.week))
+    
+    return calculateLinearRegression(regressionData, minWeek, maxWeekForRegression)
+  }, [actualWeightData])
+
+  // Add trend line data to chart data - ONLY FOR WEEKS WITH ACTUAL DATA
+  const enhancedChartData = useMemo(() => {
+    if (!regressionResult.isValid) return chartData
+    
+    return chartData.map(point => {
+      // Only add trend line values for weeks where we have actual weight data
+      const hasActualData = actualWeightData.some(d => d.week === point.week)
+      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
+      
+      return {
+        ...point,
+        actualWeightTrendLine: (hasActualData && trendPoint) ? trendPoint.value : null
+      }
+    })
+  }, [chartData, regressionResult, actualWeightData])
+
+  // Calculate Y-axis domain excluding trend line values to prevent skewing
+  const calculateYAxisDomain = () => {
+    const allValues: number[] = []
+    
+    // Add actual weight values
+    actualWeightData.forEach(d => {
+      if (d.actualWeight !== null && d.actualWeight !== undefined) allValues.push(d.actualWeight)
+    })
+    
+    // Add all projection values since they now match actual data length
+    chartData.forEach(point => {
+      ['projection0', 'projection1', 'projection2', 'projection3'].forEach(key => {
+        if (point[key] !== null && point[key] !== undefined) {
+          allValues.push(point[key])
+        }
+      })
+    })
+    
+    if (allValues.length === 0) return [0, 100]
+    
+    const minValue = Math.min(...allValues)
+    const maxValue = Math.max(...allValues)
+    const padding = (maxValue - minValue) * 0.1 // 10% padding
+    
+    return [minValue - padding, maxValue + padding]
+  }
+
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      // Filter out the trend line from tooltip display
+      const filteredPayload = payload.filter((entry: any) => 
+        entry.dataKey !== 'actualWeightTrendLine'
+      )
+      
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
-          <p className="font-medium">{`Week ${label}`}</p>
-          {payload.map((entry: any, index: number) => (
+          <p className="font-medium text-gray-800">{`Week ${label}`}</p>
+          {filteredPayload.map((entry: any, index: number) => (
             <p key={index} style={{ color: entry.color }}>
               {`${entry.name}: ${entry.value ? Math.round(entry.value * 10) / 10 : 'N/A'} lbs`}
             </p>
@@ -139,7 +200,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
       </div>
 
       <ResponsiveContainer width="100%" height={400}>
-        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
@@ -147,7 +208,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
           />
           <YAxis 
             label={{ value: 'Weight (lbs)', angle: -90, position: 'insideLeft' }}
-            domain={['dataMin - 5', 'dataMax + 5']}
+            domain={calculateYAxisDomain()}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
@@ -160,8 +221,23 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
             strokeWidth={4}
             dot={{ fill: '#ef4444', strokeWidth: 2, r: 6 }}
             name="Actual Weight"
-            connectNulls={false}
+            connectNulls={true}
           />
+          
+          {/* Actual weight trend line - Dark black as requested */}
+          {regressionResult.isValid && (
+            <Line 
+              type="monotone" 
+              dataKey="actualWeightTrendLine" 
+              stroke="#000000" 
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+              name=""
+              connectNulls={true}
+              legendType="none"
+            />
+          )}
           
           {/* Projection lines - dotted opaque lines in different colors */}
           <Line 
@@ -209,7 +285,8 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Red line shows actual progress (irregular pattern expected)</p>
-        <p>• Dotted lines show theoretical projections based on consistent fat loss rates</p>
+        <p>• Dark black trend line shows actual weight trajectory</p>
+        <p>• Dotted lines show theoretical projections extending to match your current progress</p>
         <p>• Projections help identify if progress is on track with expectations</p>
       </div>
     </div>

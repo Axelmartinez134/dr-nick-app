@@ -3,9 +3,10 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
+import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 
 interface SleepConsistencyChartProps {
   data: WeeklyCheckin[]
@@ -48,22 +49,69 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       date: entry.date // Keep raw date
     }))
 
+  // Calculate regression for trend line (Week 0 to latest week)
+  const regressionResult = useMemo(() => {
+    if (chartData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+    
+    const regressionData = chartData.map(d => ({ week: d.week, value: d.sleepScore! }))
+    const minWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+    
+    return calculateLinearRegression(regressionData, minWeek, maxWeek)
+  }, [chartData])
+
+  // Merge trend line data with chart data
+  const enhancedChartData = useMemo(() => {
+    if (!regressionResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
+    
+    return chartData.map(point => {
+      // Only add trend line values for weeks where we have actual sleep data
+      const hasActualData = chartData.some(d => d.week === point.week && d.sleepScore !== null)
+      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
+      
+      return {
+        ...point,
+        trendLine: (hasActualData && trendPoint) ? trendPoint.value : null
+      }
+    })
+  }, [chartData, regressionResult])
+
+  // Calculate Y-axis domain excluding trend line values to prevent skewing
+  const calculateYAxisDomain = () => {
+    const allValues: number[] = []
+    
+    // Add actual sleep score values
+    chartData.forEach(d => {
+      if (d.sleepScore !== null && d.sleepScore !== undefined && !isNaN(d.sleepScore)) {
+        allValues.push(d.sleepScore)
+      }
+    })
+    
+    if (allValues.length === 0) return [0, 100] // Default range for sleep scores
+    
+    const minValue = Math.min(...allValues)
+    const maxValue = Math.max(...allValues)
+    
+    // For sleep scores, we want to show the full 0-100 range with some padding
+    const padding = 5 // 5 point padding
+    
+    return [Math.max(0, minValue - padding), Math.min(100, maxValue + padding)]
+  }
+
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      // Regular tooltip for data points
       const score = payload[0].value
-      let category = 'Poor'
+      let category = 'Red Score'
       let color = '#ef4444'
       
-      if (score >= 80) {
-        category = 'Excellent'
+      if (score >= 67) {
+        category = 'Green Score'
         color = '#10b981'
-      } else if (score >= 60) {
-        category = 'Good'
-        color = '#3b82f6'
-      } else if (score >= 40) {
-        category = 'Fair'
-        color = '#f59e0b'
+      } else if (score >= 34) {
+        category = 'Orange Score'
+        color = '#eab308'
       }
 
       const formatDate = (dateStr: string) => {
@@ -79,7 +127,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
-          <p className="font-medium">{`Week ${label}`}</p>
+          <p className="font-medium text-gray-800">{`Week ${label}`}</p>
           <p style={{ color }}>
             {`Sleep Score: ${score}/100`}
           </p>
@@ -99,10 +147,9 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
 
   // Function to get line color based on score
   const getScoreColor = (score: number) => {
-    if (score >= 80) return '#10b981' // Green
-    if (score >= 60) return '#3b82f6' // Blue
-    if (score >= 40) return '#f59e0b' // Orange
-    return '#ef4444' // Red
+    if (score >= 67) return '#10b981' // Green - High Score
+    if (score >= 34) return '#eab308' // Yellow - Middle Score
+    return '#ef4444' // Red - Low Score
   }
 
   // Create segments with different colors based on score ranges
@@ -162,21 +209,20 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Sleep Score (%)', angle: -90, position: 'insideLeft' }}
-            domain={[0, 100]}
+            label={{ value: 'Sleep Score', angle: -90, position: 'insideLeft' }}
+            domain={calculateYAxisDomain()}
           />
           
           {/* Reference lines for score categories */}
-          <ReferenceLine y={80} stroke="#10b981" strokeDasharray="2 2" opacity={0.5} />
-          <ReferenceLine y={60} stroke="#3b82f6" strokeDasharray="2 2" opacity={0.5} />
-          <ReferenceLine y={40} stroke="#f59e0b" strokeDasharray="2 2" opacity={0.5} />
+          <ReferenceLine y={67} stroke="#10b981" strokeDasharray="2 2" opacity={0.5} />
+          <ReferenceLine y={34} stroke="#eab308" strokeDasharray="2 2" opacity={0.5} />
           
           <Tooltip content={<CustomTooltip />} />
           
@@ -189,32 +235,44 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
             dot={{ fill: '#6366f1', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
             name="Sleep Score"
+            connectNulls={true}
           />
+          
+          {/* Regression trend line - Dark black as requested */}
+          {regressionResult.isValid && (
+            <Line 
+              type="monotone" 
+              dataKey="trendLine" 
+              stroke="#000000" 
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+              name="Trend Line"
+              connectNulls={true}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
 
       {/* Score legend */}
-      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-        <div className="flex items-center">
+      <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+        <div className="flex items-center justify-center">
           <div className="w-3 h-3 bg-green-500 rounded mr-2"></div>
-          <span>80-100: Excellent</span>
+          <span className="text-gray-800 font-medium">67-100: Green Score</span>
         </div>
-        <div className="flex items-center">
-          <div className="w-3 h-3 bg-blue-500 rounded mr-2"></div>
-          <span>60-79: Good</span>
-        </div>
-        <div className="flex items-center">
+        <div className="flex items-center justify-center">
           <div className="w-3 h-3 bg-orange-500 rounded mr-2"></div>
-          <span>40-59: Fair</span>
+          <span className="text-gray-800 font-medium">34-66: Orange Score</span>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center justify-center">
           <div className="w-3 h-3 bg-red-500 rounded mr-2"></div>
-          <span>0-39: Poor</span>
+          <span className="text-gray-800 font-medium">0-33: Red Score</span>
         </div>
       </div>
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Data sourced from Whoop device by Dr. Nick</p>
+        <p>• Dark black trend line shows overall sleep quality direction</p>
         <p>• Higher scores indicate better sleep quality and recovery</p>
         <p>• Sleep quality directly impacts weight loss and overall progress</p>
       </div>

@@ -3,9 +3,10 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin, calculateLossPercentageRate } from '../healthService'
+import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 
 interface PlateauPreventionChartProps {
   data: WeeklyCheckin[]
@@ -59,12 +60,61 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
       }
     })
 
+  // Calculate regression for loss rate trend line
+  const regressionResult = useMemo(() => {
+    if (chartData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+    
+    const regressionData = chartData.map(d => ({ week: d.week, value: d.lossRate }))
+    const minWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+    
+    return calculateLinearRegression(regressionData, minWeek, maxWeek)
+  }, [chartData])
+
+  // Merge trend line data with chart data
+  const enhancedChartData = useMemo(() => {
+    if (!regressionResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
+    
+    return chartData.map(point => {
+      // Only add trend line values for weeks where we have actual loss rate data
+      const hasActualData = chartData.some(d => d.week === point.week)
+      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
+      
+      return {
+        ...point,
+        trendLine: (hasActualData && trendPoint) ? trendPoint.value : null
+      }
+    })
+  }, [chartData, regressionResult])
+
+  // Calculate Y-axis domain excluding trend line values to prevent skewing
+  const calculateYAxisDomain = () => {
+    const allValues: number[] = []
+    
+    // Add actual loss rate values
+    chartData.forEach(d => {
+      if (d.lossRate !== null && d.lossRate !== undefined && !isNaN(d.lossRate)) {
+        allValues.push(d.lossRate)
+      }
+    })
+    
+    if (allValues.length === 0) return [0, 5] // Default range for percentages
+    
+    const minValue = Math.min(...allValues)
+    const maxValue = Math.max(...allValues)
+    
+    // For loss rates, we want to show from 0 to a reasonable maximum
+    const padding = Math.max(1, maxValue * 0.2) // At least 1% padding
+    
+    return [0, maxValue + padding]
+  }
+
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
-          <p className="font-medium">{`Week ${label}`}</p>
+          <p className="font-medium text-gray-800">{`Week ${label}`}</p>
           <p className="text-blue-600">
             {`Loss Rate: ${payload[0].value}%`}
           </p>
@@ -115,7 +165,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
@@ -123,9 +173,12 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
           />
           <YAxis 
             label={{ value: '% Loss Rate', angle: -90, position: 'insideLeft' }}
-            domain={[0, 'dataMax + 1']}
+            domain={calculateYAxisDomain()}
+            tickFormatter={(value) => `${value.toFixed(1)}%`}
           />
           <Tooltip content={<CustomTooltip />} />
+          
+          {/* Original loss rate data line */}
           <Line 
             type="monotone" 
             dataKey="lossRate" 
@@ -133,12 +186,29 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
             strokeWidth={3}
             dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
+            name="Loss Rate"
+            connectNulls={true}
           />
+          
+          {/* Regression trend line - Dark black as requested */}
+          {regressionResult.isValid && (
+            <Line 
+              type="monotone" 
+              dataKey="trendLine" 
+              stroke="#000000" 
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+              name="Trend Line"
+              connectNulls={true}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Higher percentages indicate faster weight loss</p>
+        <p>• Dark black trend line shows overall loss rate direction</p>
         <p>• Declining trend may signal an approaching plateau</p>
         <p>• Formula: ABS(100 - (Current Week Weight ÷ Previous Week Weight) × 100)</p>
       </div>
