@@ -125,27 +125,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     })
   }, [chartData, regressionResult, actualWeightData])
 
-  // NOW check for early return after all hooks are called
-  if (!initialWeight) {
-    return (
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <ChartTooltip 
-          title="Weight Loss Projections" 
-          description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
-        >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
-            📊 Weight Loss Trend vs. Projections
-          </h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No initial weight data available</p>
-          <p className="text-sm">Dr. Nick needs to set up Week 0 with initial weight</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Calculate Y-axis domain excluding trend line values to prevent skewing
+  // Calculate Y-axis domain excluding trend line values to prevent skewing - MOVED BEFORE EARLY RETURN
   const calculateYAxisDomain = useMemo(() => {
     const allValues: number[] = []
     
@@ -171,6 +151,26 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     
     return [minValue - padding, maxValue + padding]
   }, [actualWeightData, chartData])
+
+  // NOW check for early return after ALL hooks are called
+  if (!initialWeight) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <ChartTooltip 
+          title="Weight Loss Projections" 
+          description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
+            📊 Weight Loss Trend vs. Projections
+          </h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No initial weight data available</p>
+          <p className="text-sm">Dr. Nick needs to set up Week 0 with initial weight</p>
+        </div>
+      </div>
+    )
+  }
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
