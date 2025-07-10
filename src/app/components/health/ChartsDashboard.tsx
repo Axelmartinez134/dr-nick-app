@@ -47,6 +47,8 @@ const WaistTrendChart = dynamic(() => import('./charts/WaistTrendChart'), { ssr:
 const WeightProjectionChart = dynamic(() => import('./charts/WeightProjectionChart'), { ssr: false })
 const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionChart'), { ssr: false })
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
+const MorningFatBurnChart = dynamic(() => import('./charts/MorningFatBurnChart'), { ssr: false })
+const BodyFatPercentageChart = dynamic(() => import('./charts/BodyFatPercentageChart'), { ssr: false })
 
 // Data Table Component - Different versions for Patient vs Dr. Nick
 function DataTable({ data, isDoctorView, onDataUpdate }: { 
@@ -260,6 +262,8 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Hunger Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Recovery Issues</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Score</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat %</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Constraints OK</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
               {isDoctorView && (
@@ -302,6 +306,16 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  <TableTooltip content="Your morning fat burn efficiency measured monthly using Lumen device data">
+                    {renderCell(record, 'morning_fat_burn_percent', record.morning_fat_burn_percent)}
+                  </TableTooltip>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  <TableTooltip content="Your body fat percentage from precise Fit 3-D body composition scans">
+                    {renderCell(record, 'body_fat_percentage', record.body_fat_percentage)}
+                  </TableTooltip>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {isDoctorView ? (
@@ -358,7 +372,8 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
       </div>
       
       <div className="mt-4 text-sm text-gray-500">
-        <p><strong>Note:</strong> Week 0 represents baseline measurements. Sleep scores are added by Dr. Nick from Whoop device data.</p>
+        <p><strong>Note:</strong> Week 0 represents your baseline measurements. Sleep scores, Morning Fat %, and Body Fat % are tracked throughout your program.</p>
+        <p><strong>Morning Fat %:</strong> Monthly Lumen device analysis showing metabolic flexibility. <strong>Body Fat %:</strong> Periodic Fit 3-D scans tracking body composition.</p>
         {isDoctorView ? (
           <p className="text-blue-600 mt-1">
             <strong>Dr. Nick:</strong> Click any cell to edit values. For notes, use Ctrl+Enter to save. Press Escape to cancel edits.
@@ -812,6 +827,12 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
         {/* Row 3: Sleep Chart (Full Width) */}
         <div className="grid grid-cols-1">
           <SleepConsistencyChart data={chartData} />
+        </div>
+
+        {/* Row 4: New Dr. Nick Charts */}
+        <div className="grid lg:grid-cols-2 gap-6">
+          <MorningFatBurnChart data={chartData} />
+          <BodyFatPercentageChart data={chartData} />
         </div>
 
         {/* Data Table - Different for Patient vs Dr. Nick */}

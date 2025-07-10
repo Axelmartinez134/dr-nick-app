@@ -18,6 +18,8 @@ export interface WeeklyCheckin {
   energetic_constraints_reduction_ok?: boolean | null
   sleep_consistency_score?: number | null
   initial_weight?: number | null
+  morning_fat_burn_percent?: number | null
+  body_fat_percentage?: number | null
   data_entered_by?: string
   needs_review?: boolean | null
   notes?: string | null
@@ -355,6 +357,8 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.hunger_days !== undefined) updateData.hunger_days = updates.hunger_days ? parseInt(String(updates.hunger_days)) : null
     if (updates.poor_recovery_days !== undefined) updateData.poor_recovery_days = updates.poor_recovery_days ? parseInt(String(updates.poor_recovery_days)) : null
     if (updates.sleep_consistency_score !== undefined) updateData.sleep_consistency_score = updates.sleep_consistency_score ? parseInt(String(updates.sleep_consistency_score)) : null
+    if (updates.morning_fat_burn_percent !== undefined) updateData.morning_fat_burn_percent = updates.morning_fat_burn_percent ? parseFloat(String(updates.morning_fat_burn_percent)) : null
+    if (updates.body_fat_percentage !== undefined) updateData.body_fat_percentage = updates.body_fat_percentage ? parseFloat(String(updates.body_fat_percentage)) : null
     if (updates.energetic_constraints_reduction_ok !== undefined) updateData.energetic_constraints_reduction_ok = Boolean(updates.energetic_constraints_reduction_ok)
     if (updates.initial_weight !== undefined) updateData.initial_weight = updates.initial_weight ? parseFloat(String(updates.initial_weight)) : null
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
