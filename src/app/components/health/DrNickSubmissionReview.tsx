@@ -46,6 +46,12 @@ export default function DrNickSubmissionReview({
   // Weight change goal state
   const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
   
+  // Nutrition compliance days state
+  const [nutritionComplianceDays, setNutritionComplianceDays] = useState('0')
+  
+  // Sleep consistency score state
+  const [sleepScore, setSleepScore] = useState('0')
+  
   // Stored PDF states (downloaded by N8N from Whoop links)
   const [weeklyStoredPdf, setWeeklyStoredPdf] = useState<string | null>(submission.weekly_whoop_pdf || null)
   const [monthlyStoredPdf, setMonthlyStoredPdf] = useState<string | null>(submission.monthly_whoop_pdf || null)
@@ -294,10 +300,10 @@ export default function DrNickSubmissionReview({
     }
   }
 
-  // Load weight change goal from profile
+  // Load current weight change goal for the selected patient
   const loadWeightChangeGoal = async () => {
     try {
-      const { data: profileData, error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('weight_change_goal_percent')
         .eq('id', submission.user_id)
@@ -308,25 +314,18 @@ export default function DrNickSubmissionReview({
         return
       }
       
-      const goalValue = profileData?.weight_change_goal_percent || 1.0
-      setWeightChangeGoal(goalValue.toFixed(2))
+      setWeightChangeGoal(data.weight_change_goal_percent || '1.00')
     } catch (err) {
       console.error('Failed to load weight change goal:', err)
     }
   }
 
-  // Handle weight change goal update
+  // Handle weight goal update
   const handleGoalUpdate = async () => {
-    const goalPercent = parseFloat(weightChangeGoal)
-    if (isNaN(goalPercent) || goalPercent < 0.1 || goalPercent > 5.0) {
-      alert('Goal must be between 0.10% and 5.00%')
-      return
-    }
-
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ weight_change_goal_percent: goalPercent })
+        .update({ weight_change_goal_percent: parseFloat(weightChangeGoal) })
         .eq('id', submission.user_id)
       
       if (error) {
@@ -335,13 +334,101 @@ export default function DrNickSubmissionReview({
         return
       }
       
-      // Update local state with formatted value
-      setWeightChangeGoal(goalPercent.toFixed(2))
-      
       alert('Weight change goal updated successfully!')
     } catch (err) {
-      console.error('Error updating weight change goal:', err)
+      console.error('Failed to update weight change goal:', err)
       alert('Failed to update weight change goal')
+    }
+  }
+
+  // Load current nutrition compliance days and weight change goal
+  const loadSubmissionData = async () => {
+    try {
+      // Load weight change goal
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('weight_change_goal_percent')
+        .eq('id', submission.user_id)
+        .single()
+      
+      if (profileError) {
+        console.error('Error loading profile data:', profileError)
+      } else {
+        setWeightChangeGoal(profileData.weight_change_goal_percent || '1.00')
+      }
+      
+      // Load current nutrition compliance days for this submission
+      setNutritionComplianceDays(String(submission.nutrition_compliance_days || 0))
+      
+      // Load current sleep consistency score for this submission
+      setSleepScore(String(submission.sleep_consistency_score || 0))
+      
+    } catch (err) {
+      console.error('Failed to load submission data:', err)
+    }
+  }
+
+  // Handle nutrition compliance days update
+  const handleNutritionUpdate = async () => {
+    const nutritionDays = parseInt(nutritionComplianceDays)
+    
+    // Validation
+    if (isNaN(nutritionDays) || nutritionDays < 0 || nutritionDays > 7) {
+      alert('Nutrition compliance days must be between 0 and 7')
+      return
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('health_data')
+        .update({ nutrition_compliance_days: nutritionDays })
+        .eq('id', submission.id)
+      
+      if (error) {
+        console.error('Error updating nutrition compliance days:', error)
+        alert('Failed to update nutrition compliance days')
+        return
+      }
+      
+      // Refresh chart data to show the updated nutrition compliance
+      await loadSubmissionChartData(submission.user_id)
+      
+      alert('Nutrition compliance days updated successfully!')
+    } catch (err) {
+      console.error('Failed to update nutrition compliance days:', err)
+      alert('Failed to update nutrition compliance days')
+    }
+  }
+
+  // Handle sleep score update
+  const handleSleepScoreUpdate = async () => {
+    const sleepScoreValue = parseInt(sleepScore)
+    
+    // Validation
+    if (isNaN(sleepScoreValue) || sleepScoreValue < 0 || sleepScoreValue > 100) {
+      alert('Sleep consistency score must be between 0 and 100')
+      return
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('health_data')
+        .update({ sleep_consistency_score: sleepScoreValue })
+        .eq('id', submission.id)
+      
+      if (error) {
+        console.error('Error updating sleep consistency score:', error)
+        alert('Failed to update sleep consistency score')
+        return
+      }
+      
+      // Refresh chart data to show the updated sleep score
+      await loadSubmissionChartData(submission.user_id)
+      
+      alert('Sleep consistency score updated successfully!')
+    } catch (err) {
+      console.error('Failed to update sleep consistency score:', err)
+      alert('Failed to update sleep consistency score')
     }
   }
 
@@ -358,6 +445,9 @@ export default function DrNickSubmissionReview({
       
       // Load weight change goal
       await loadWeightChangeGoal()
+      
+      // Load current nutrition compliance days and weight change goal
+      await loadSubmissionData()
       
       setLoading(false)
     }
@@ -460,7 +550,24 @@ export default function DrNickSubmissionReview({
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-indigo-700">Sleep Score</label>
-            <div className="text-2xl font-bold text-indigo-900">{submission.sleep_consistency_score || 'N/A'}</div>
+            <div className="flex items-center space-x-2">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={sleepScore}
+                onChange={(e) => setSleepScore(e.target.value)}
+                className="w-20 px-2 py-1 border border-indigo-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-indigo-700">%</span>
+              <button
+                onClick={handleSleepScoreUpdate}
+                className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 transition-colors"
+                title="Update sleep consistency score"
+              >
+                Update
+              </button>
+            </div>
           </div>
           <div className="bg-pink-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-pink-700">Weight Goal %</label>
@@ -478,6 +585,26 @@ export default function DrNickSubmissionReview({
                 onClick={handleGoalUpdate}
                 className="px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
                 title="Update weight change goal"
+              >
+                Update
+              </button>
+            </div>
+          </div>
+          <div className="bg-orange-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-orange-700">Nutrition Days</label>
+            <div className="flex items-center space-x-2">
+              <input
+                type="number"
+                min="0"
+                max="7"
+                value={nutritionComplianceDays}
+                onChange={(e) => setNutritionComplianceDays(e.target.value)}
+                className="w-16 px-2 py-1 border border-orange-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+              <button
+                onClick={handleNutritionUpdate}
+                className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors"
+                title="Update nutrition compliance days"
               >
                 Update
               </button>

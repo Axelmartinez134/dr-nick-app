@@ -23,6 +23,7 @@ export interface WeeklyCheckin {
   initial_weight?: number | null
   morning_fat_burn_percent?: number | null
   body_fat_percentage?: number | null
+  nutrition_compliance_days?: number | null
   data_entered_by?: string
   needs_review?: boolean | null
   notes?: string | null
@@ -374,6 +375,7 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.energetic_constraints_reduction_ok !== undefined) updateData.energetic_constraints_reduction_ok = Boolean(updates.energetic_constraints_reduction_ok)
     if (updates.initial_weight !== undefined) updateData.initial_weight = updates.initial_weight ? parseFloat(String(updates.initial_weight)) : null
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
+    if (updates.nutrition_compliance_days !== undefined) updateData.nutrition_compliance_days = updates.nutrition_compliance_days ? parseInt(String(updates.nutrition_compliance_days)) : null
 
     const result = await supabase
       .from('health_data')

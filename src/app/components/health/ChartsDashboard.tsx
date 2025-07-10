@@ -8,6 +8,9 @@ import dynamic from 'next/dynamic'
 import { getWeeklyDataForCharts, updateHealthRecord, deleteHealthRecord, type WeeklyCheckin } from './healthService'
 import { getPatientMetrics, type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
+import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
+import MorningFatBurnChart from './charts/MorningFatBurnChart'
+import ComplianceMetricsTable from './ComplianceMetricsTable'
 
 // Props interface
 interface ChartsDashboardProps {
@@ -47,8 +50,6 @@ const WaistTrendChart = dynamic(() => import('./charts/WaistTrendChart'), { ssr:
 const WeightProjectionChart = dynamic(() => import('./charts/WeightProjectionChart'), { ssr: false })
 const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionChart'), { ssr: false })
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
-const MorningFatBurnChart = dynamic(() => import('./charts/MorningFatBurnChart'), { ssr: false })
-const BodyFatPercentageChart = dynamic(() => import('./charts/BodyFatPercentageChart'), { ssr: false })
 
 // Data Table Component - Different versions for Patient vs Dr. Nick
 function DataTable({ data, isDoctorView, onDataUpdate }: { 
@@ -251,23 +252,20 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
       
       <div className="overflow-x-auto">
         <table className="min-w-full table-auto">
-          <thead>
-            <tr className="bg-gray-50">
+          <thead className="bg-gray-100">
+            <tr>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Week</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight (lbs)</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist (in)</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Purposeful Exercise</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Hunger</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Purposeful Exercise</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Score</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat %</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Constraints OK</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
-              {isDoctorView && (
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
-              )}
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -283,25 +281,28 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {new Date(record.date).toLocaleDateString()}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'weight', record.weight)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'waist', record.waist)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'purposeful_exercise_days', record.purposeful_exercise_days)}
+                  {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
+                  {renderCell(record, 'notes', record.notes, true)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'purposeful_exercise_days', record.purposeful_exercise_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'poor_recovery_days', record.poor_recovery_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'nutrition_compliance_days', record.nutrition_compliance_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   <TableTooltip content="Your morning fat burn efficiency measured monthly using Lumen device data">
@@ -313,54 +314,24 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                     {renderCell(record, 'body_fat_percentage', record.body_fat_percentage)}
                   </TableTooltip>
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {isDoctorView ? (
-                    <input
-                      type="checkbox"
-                      checked={record.energetic_constraints_reduction_ok || false}
-                      onChange={(e) => {
-                        // Handle checkbox edit directly for better UX
-                        const updates = { energetic_constraints_reduction_ok: e.target.checked }
-                        updateHealthRecord(record.id!, updates).then(() => {
+                <td className="px-4 py-3 text-sm">
+                  <button
+                    onClick={async () => {
+                      if (confirm('Delete this record? This cannot be undone.')) {
+                        try {
+                          await deleteHealthRecord(record.id!)
                           onDataUpdate?.()
-                        }).catch((error) => {
-                          console.error('Error updating record:', error)
-                          alert('Failed to update record')
-                        })
-                      }}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                  ) : (
-                    record.energetic_constraints_reduction_ok ? (
-                      <span className="text-green-600">✅ Yes</span>
-                    ) : (
-                      <span className="text-gray-500">❌ No</span>
-                    )
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
-                  {renderCell(record, 'notes', record.notes, true)}
-                </td>
-                {isDoctorView && (
-                  <td className="px-4 py-3 text-sm">
-                    <button
-                      onClick={async () => {
-                        if (confirm('Delete this record? This cannot be undone.')) {
-                          try {
-                            await deleteHealthRecord(record.id!)
-                            onDataUpdate?.()
-                          } catch (error) {
-                            alert('Failed to delete record')
-                          }
+                        } catch (error) {
+                          alert('Failed to delete record')
                         }
-                      }}
-                      className="text-red-600 hover:text-red-800 text-xs"
-                      title="Delete record"
-                    >
-                      🗑️
-                    </button>
-                  </td>
-                )}
+                      }
+                    }}
+                    className="text-red-600 hover:text-red-800 text-xs"
+                    title="Delete record"
+                  >
+                    🗑️
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -829,6 +800,11 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
         <div className="grid lg:grid-cols-2 gap-6">
           <MorningFatBurnChart data={chartData} />
           <BodyFatPercentageChart data={chartData} />
+        </div>
+
+        {/* Compliance Metrics Table */}
+        <div className="grid grid-cols-1">
+          <ComplianceMetricsTable patientId={patientId} />
         </div>
 
         {/* Data Table - Different for Patient vs Dr. Nick */}

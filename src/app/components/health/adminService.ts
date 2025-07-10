@@ -6,6 +6,7 @@ import { supabase } from '../auth/AuthContext'
 export interface WeekZeroData {
   weight: string
   waist: string
+  height: string
   initial_notes?: string
 }
 
@@ -71,7 +72,7 @@ export async function createPatientAccount(patientData: PatientCreationData) {
 
     const userId = authData.user.id
 
-    // Step 3: Create profile with password reference and weight goal
+    // Step 3: Create profile with password reference, weight goal, and height
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -79,7 +80,8 @@ export async function createPatientAccount(patientData: PatientCreationData) {
         email: patientData.email.toLowerCase(),
         full_name: patientData.fullName,
         patient_password: patientData.password, // Store for Dr. Nick's reference
-        weight_change_goal_percent: patientData.weightChangeGoalPercent || 1.0
+        weight_change_goal_percent: patientData.weightChangeGoalPercent || 1.0,
+        height: parseFloat(patientData.weekZeroData.height) || null
       })
 
     if (profileError) {
@@ -145,6 +147,8 @@ export async function getAllPatients() {
         id,
         email,
         full_name,
+        height,
+        weight_change_goal_percent,
         created_at,
         patient_password
       `)

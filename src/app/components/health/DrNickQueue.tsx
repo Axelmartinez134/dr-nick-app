@@ -25,6 +25,7 @@ export interface QueueSubmission {
   poor_recovery_days: number | null
   sleep_consistency_score: number | null
   energetic_constraints_reduction_ok: boolean | null
+  nutrition_compliance_days: number | null
   notes: string | null
   created_at: string
   // Image fields

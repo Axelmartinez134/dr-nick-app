@@ -18,6 +18,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     password: '',
     weight: '',
     waist: '',
+    height: '',
     initialNotes: '',
     weightChangeGoalPercent: '1.00'
   })
@@ -72,6 +73,11 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       return false
     }
 
+    if (!formData.height.trim()) {
+      setError('Height is required for waist/height ratio calculations')
+      return false
+    }
+
     // Validate numeric inputs
     if (isNaN(Number(formData.weight)) || Number(formData.weight) <= 0) {
       setError('Please enter a valid weight')
@@ -80,6 +86,11 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
 
     if (isNaN(Number(formData.waist)) || Number(formData.waist) <= 0) {
       setError('Please enter a valid waist measurement')
+      return false
+    }
+
+    if (isNaN(Number(formData.height)) || Number(formData.height) <= 0) {
+      setError('Please enter a valid height')
       return false
     }
 
@@ -95,6 +106,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     const weekZeroData: WeekZeroData = {
       weight: formData.weight,
       waist: formData.waist,
+      height: formData.height,
       initial_notes: formData.initialNotes.trim() || undefined
     }
 
@@ -255,6 +267,20 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 placeholder="34.0"
               />
             </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Height (inches) *
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={formData.height}
+              onChange={(e) => handleInputChange('height', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+              placeholder="72.0"
+            />
           </div>
 
           <div className="mt-4">
