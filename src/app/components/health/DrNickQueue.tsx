@@ -19,9 +19,9 @@ export interface QueueSubmission {
   week_number: number
   weight: number | null
   waist: number | null
-  resistance_training_days: number | null
-  focal_heart_rate_training: string | null
-  hunger_days: number | null
+  symptom_tracking_days: number | null
+  detailed_symptom_notes: string | null
+  purposeful_exercise_days: number | null
   poor_recovery_days: number | null
   sleep_consistency_score: number | null
   energetic_constraints_reduction_ok: boolean | null
@@ -371,16 +371,12 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                     <div className="text-lg font-semibold">{selectedSubmission.waist || 'N/A'} inches</div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Resistance Training Days</label>
-                    <div className="text-lg font-semibold">{selectedSubmission.resistance_training_days || 'N/A'}</div>
+                    <label className="block text-sm font-medium text-gray-700">Days Purposeful Exercise</label>
+                    <div className="text-lg font-semibold">{selectedSubmission.purposeful_exercise_days || 'N/A'}</div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Heart Rate Training</label>
-                    <div className="text-lg font-semibold">{selectedSubmission.focal_heart_rate_training || 'N/A'}</div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Hunger Days</label>
-                    <div className="text-lg font-semibold">{selectedSubmission.hunger_days || 'N/A'}</div>
+                    <label className="block text-sm font-medium text-gray-700">Days of Hunger</label>
+                    <div className="text-lg font-semibold">{selectedSubmission.symptom_tracking_days || 'N/A'}</div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Poor Recovery Days</label>
@@ -391,9 +387,22 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                 {/* Notes */}
                 {selectedSubmission.notes && (
                   <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Client Notes</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Client Self-Reflection</label>
                     <div className="bg-gray-50 p-3 rounded border">
                       {selectedSubmission.notes}
+                    </div>
+                  </div>
+                )}
+
+                {/* Detailed Symptom Notes */}
+                {selectedSubmission.detailed_symptom_notes && (
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Detailed Symptom Notes
+                      <span className="text-xs text-gray-500 font-normal ml-2">(Related to Days of Hunger above)</span>
+                    </label>
+                    <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
+                      {selectedSubmission.detailed_symptom_notes}
                     </div>
                   </div>
                 )}

@@ -257,10 +257,9 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight (lbs)</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist (in)</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Training Days</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Heart Rate Training</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Hunger Days</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Recovery Issues</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Purposeful Exercise</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Hunger</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Score</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
@@ -293,13 +292,10 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                   {renderCell(record, 'waist', record.waist)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'resistance_training_days', record.resistance_training_days)}
+                  {renderCell(record, 'purposeful_exercise_days', record.purposeful_exercise_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'focal_heart_rate_training', record.focal_heart_rate_training)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'hunger_days', record.hunger_days)}
+                  {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'poor_recovery_days', record.poor_recovery_days)}

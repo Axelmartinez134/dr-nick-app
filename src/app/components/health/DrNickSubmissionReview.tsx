@@ -447,19 +447,15 @@ export default function DrNickSubmissionReview({
             <div className="text-2xl font-bold text-green-900">{submission.waist || 'N/A'} inches</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-purple-700">Resistance Training Days</label>
-            <div className="text-2xl font-bold text-purple-900">{submission.resistance_training_days || 'N/A'}</div>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-orange-700">Heart Rate Training</label>
-            <div className="text-lg font-bold text-orange-900">{submission.focal_heart_rate_training || 'N/A'}</div>
+            <label className="block text-sm font-medium text-purple-700">Days Purposeful Exercise</label>
+            <div className="text-2xl font-bold text-purple-900">{submission.purposeful_exercise_days || 'N/A'}</div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-red-700">Hunger Days</label>
-            <div className="text-2xl font-bold text-red-900">{submission.hunger_days || 'N/A'}</div>
+            <label className="block text-sm font-medium text-red-700">Days of Hunger</label>
+            <div className="text-2xl font-bold text-red-900">{submission.symptom_tracking_days || 'N/A'}</div>
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-yellow-700">Recovery Issues</label>
+            <label className="block text-sm font-medium text-yellow-700">Poor Recovery Days</label>
             <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days || 'N/A'}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
@@ -495,6 +491,19 @@ export default function DrNickSubmissionReview({
             <label className="block text-lg font-medium text-gray-900 mb-3">🧠 Client Self-Reflection</label>
             <div className="bg-gray-50 p-4 rounded-lg border">
               <p className="text-gray-800 whitespace-pre-wrap">{submission.notes}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Detailed Symptom Notes */}
+        {submission.detailed_symptom_notes && (
+          <div className="border-t pt-6">
+            <label className="block text-lg font-medium text-gray-900 mb-3">
+              ⚠️ Detailed Symptom Notes
+              <span className="text-sm text-gray-500 font-normal ml-2">(Related to Days of Hunger above)</span>
+            </label>
+            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+              <p className="text-gray-800 whitespace-pre-wrap">{submission.detailed_symptom_notes}</p>
             </div>
           </div>
         )}

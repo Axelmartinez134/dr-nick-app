@@ -60,9 +60,9 @@ export default function HealthForm() {
     week_number: '1',
     weight: '',
     waist: '',
-    resistance_training_days: '',
-    focal_heart_rate_training: '',
-    hunger_days: '',
+    symptom_tracking_days: '',
+    detailed_symptom_notes: '',
+    purposeful_exercise_days: '',
     poor_recovery_days: '',
     energetic_constraints_reduction_ok: false,
     notes: '',
@@ -148,9 +148,9 @@ export default function HealthForm() {
           week_number: weekNumber.toString(),
           weight: existingData.weight?.toString() || '',
           waist: existingData.waist?.toString() || '',
-          resistance_training_days: existingData.resistance_training_days?.toString() || '',
-          focal_heart_rate_training: existingData.focal_heart_rate_training || '',
-          hunger_days: existingData.hunger_days?.toString() || '',
+          symptom_tracking_days: existingData.symptom_tracking_days?.toString() || '',
+          detailed_symptom_notes: existingData.detailed_symptom_notes || '',
+          purposeful_exercise_days: existingData.purposeful_exercise_days?.toString() || '',
           poor_recovery_days: existingData.poor_recovery_days?.toString() || '',
           energetic_constraints_reduction_ok: existingData.energetic_constraints_reduction_ok || false,
           // Load image URLs
@@ -230,27 +230,20 @@ export default function HealthForm() {
       errors.waist = 'Waist measurement must be a positive number'
     }
     
-    // Resistance training days validation
-    if (formData.resistance_training_days && 
-        (isNaN(Number(formData.resistance_training_days)) || 
-         Number(formData.resistance_training_days) < 0 || 
-         Number(formData.resistance_training_days) > 7)) {
-      errors.resistance_training_days = 'Resistance training days must be between 0 and 7'
+        // Symptom tracking days validation
+    if (formData.symptom_tracking_days &&
+      (isNaN(Number(formData.symptom_tracking_days)) ||
+      Number(formData.symptom_tracking_days) < 0 ||
+      Number(formData.symptom_tracking_days) > 7)) {
+      errors.symptom_tracking_days = 'Symptom tracking days must be between 0 and 7'
     }
-    
-    // Focal heart rate training validation
-    if (formData.focal_heart_rate_training && 
-        (isNaN(Number(formData.focal_heart_rate_training)) || 
-         Number(formData.focal_heart_rate_training) < 0)) {
-      errors.focal_heart_rate_training = 'Focal heart rate training must be a positive number'
-    }
-    
-    // Hunger days validation
-    if (formData.hunger_days && 
-        (isNaN(Number(formData.hunger_days)) || 
-         Number(formData.hunger_days) < 0 || 
-         Number(formData.hunger_days) > 7)) {
-      errors.hunger_days = 'Hunger days must be between 0 and 7'
+
+    // Days purposeful exercise validation
+    if (formData.purposeful_exercise_days &&
+      (isNaN(Number(formData.purposeful_exercise_days)) ||
+      Number(formData.purposeful_exercise_days) < 0 ||
+      Number(formData.purposeful_exercise_days) > 7)) {
+      errors.purposeful_exercise_days = 'Days purposeful exercise must be between 0 and 7'
     }
     
     // Poor recovery days validation
@@ -823,90 +816,71 @@ export default function HealthForm() {
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">💪 Exercise & Training</h3>
               
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="resistance_training_days" className="block text-sm font-medium text-gray-700 mb-1">
-                Resistance Training Days (0-7) - Numbers Only
-                </label>
-              <input
-                type="number"
-                  id="resistance_training_days"
-                min="0"
-                max="7"
-                  value={formData.resistance_training_days}
-                  onChange={(e) => handleInputChange('resistance_training_days', e.target.value)}
-                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                  validationErrors.resistance_training_days ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="3"
-              />
-              {validationErrors.resistance_training_days && (
-                <p className="text-sm text-red-600 mt-1">{validationErrors.resistance_training_days}</p>
-              )}
-              </div>
-
-              <div>
-                <label htmlFor="focal_heart_rate_training" className="block text-sm font-medium text-gray-700 mb-1">
-                Focal Heart Rate Training (minutes) - Numbers Only
-                </label>
-                <input
-                type="number"
-                  id="focal_heart_rate_training"
-                min="0"
-                  value={formData.focal_heart_rate_training}
-                  onChange={(e) => handleInputChange('focal_heart_rate_training', e.target.value)}
-                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                  validationErrors.focal_heart_rate_training ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="45"
-              />
-              {validationErrors.focal_heart_rate_training && (
-                <p className="text-sm text-red-600 mt-1">{validationErrors.focal_heart_rate_training}</p>
-              )}
-                <p className="text-xs text-gray-500 mt-1">
-                Total minutes of heart rate training this week
-                </p>
-              </div>
-            </div>
+          <div>
+            <label htmlFor="purposeful_exercise_days" className="block text-sm font-medium text-gray-700 mb-1">
+              Days Purposeful Exercise (0-7) - Numbers Only
+            </label>
+            <input
+              type="number"
+              id="purposeful_exercise_days"
+              min="0"
+              max="7"
+              value={formData.purposeful_exercise_days}
+              onChange={(e) => handleInputChange('purposeful_exercise_days', e.target.value)}
+              className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                validationErrors.purposeful_exercise_days ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="3"
+            />
+            {validationErrors.purposeful_exercise_days && (
+              <p className="text-sm text-red-600 mt-1">{validationErrors.purposeful_exercise_days}</p>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              Dr. Nick will define what this means for you. Please reach out if you need clarification on your specific exercise plan.
+            </p>
           </div>
+        </div>
 
           {/* Recovery & Nutrition */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">😴 Recovery & Nutrition</h3>
               
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="hunger_days" className="block text-sm font-medium text-gray-700 mb-1">
-                Days with Excessive Hunger (0-7) - Numbers Only
-                </label>
+            <div>
+              <label htmlFor="symptom_tracking_days" className="block text-sm font-medium text-gray-700 mb-1">
+                Days of hunger/newfound mood disturbances, impaired focus, constipation, prolonged muscle soreness, menstrual irregularity, fatigue over the week (0-7) - Numbers Only
+              </label>
               <input
                 type="number"
-                  id="hunger_days"
+                id="symptom_tracking_days"
                 min="0"
                 max="7"
-                  value={formData.hunger_days}
-                  onChange={(e) => handleInputChange('hunger_days', e.target.value)}
+                value={formData.symptom_tracking_days}
+                onChange={(e) => handleInputChange('symptom_tracking_days', e.target.value)}
                 className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                  validationErrors.hunger_days ? 'border-red-500' : 'border-gray-300'
+                  validationErrors.symptom_tracking_days ? 'border-red-500' : 'border-gray-300'
                 }`}
                 placeholder="2"
               />
-              {validationErrors.hunger_days && (
-                <p className="text-sm text-red-600 mt-1">{validationErrors.hunger_days}</p>
+              {validationErrors.symptom_tracking_days && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.symptom_tracking_days}</p>
               )}
-              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Hover over the label for details on what symptoms to track
+              </p>
+            </div>
 
-              <div>
-                <label htmlFor="poor_recovery_days" className="block text-sm font-medium text-gray-700 mb-1">
+            <div>
+              <label htmlFor="poor_recovery_days" className="block text-sm font-medium text-gray-700 mb-1">
                 Days with Poor Recovery (0-7) - Numbers Only
-                </label>
+              </label>
               <input
                 type="number"
-                  id="poor_recovery_days"
+                id="poor_recovery_days"
                 min="0"
                 max="7"
-                  value={formData.poor_recovery_days}
-                  onChange={(e) => handleInputChange('poor_recovery_days', e.target.value)}
+                value={formData.poor_recovery_days}
+                onChange={(e) => handleInputChange('poor_recovery_days', e.target.value)}
                 className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
                   validationErrors.poor_recovery_days ? 'border-red-500' : 'border-gray-300'
                 }`}
@@ -916,6 +890,21 @@ export default function HealthForm() {
                 <p className="text-sm text-red-600 mt-1">{validationErrors.poor_recovery_days}</p>
               )}
             </div>
+          </div>
+
+          {/* Detailed Symptom Notes - Full width below the two fields */}
+          <div>
+            <label htmlFor="detailed_symptom_notes" className="block text-sm font-medium text-gray-700 mb-1">
+              Detailed Symptom Notes <span className="text-gray-500">(Optional)</span>
+            </label>
+            <textarea
+              id="detailed_symptom_notes"
+              rows={3}
+              value={formData.detailed_symptom_notes}
+              onChange={(e) => handleInputChange('detailed_symptom_notes', e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+              placeholder="Please provide additional details about any symptoms you experienced this week..."
+            />
           </div>
         </div>
 

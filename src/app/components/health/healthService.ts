@@ -15,6 +15,9 @@ export interface WeeklyCheckin {
   focal_heart_rate_training?: string | null
   hunger_days?: number | null
   poor_recovery_days?: number | null
+  symptom_tracking_days?: number | null
+  detailed_symptom_notes?: string | null
+  purposeful_exercise_days?: number | null
   energetic_constraints_reduction_ok?: boolean | null
   sleep_consistency_score?: number | null
   initial_weight?: number | null
@@ -33,9 +36,9 @@ export interface CheckinFormData {
   week_number: string
   weight?: string
   waist?: string
-  resistance_training_days?: string
-  focal_heart_rate_training?: string
-  hunger_days?: string
+  symptom_tracking_days?: string
+  detailed_symptom_notes?: string
+  purposeful_exercise_days?: string
   poor_recovery_days?: string
   notes?: string
   // Energetic constraints question
@@ -99,9 +102,9 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       week_number: parseInt(data.week_number),
       weight: data.weight ? parseFloat(data.weight) : null,
       waist: data.waist ? parseFloat(data.waist) : null,
-      resistance_training_days: data.resistance_training_days ? parseInt(data.resistance_training_days) : null,
-      focal_heart_rate_training: data.focal_heart_rate_training || null,
-      hunger_days: data.hunger_days ? parseInt(data.hunger_days) : null,
+      symptom_tracking_days: data.symptom_tracking_days ? parseInt(data.symptom_tracking_days) : null,
+      detailed_symptom_notes: data.detailed_symptom_notes || null,
+      purposeful_exercise_days: data.purposeful_exercise_days ? parseInt(data.purposeful_exercise_days) : null,
       poor_recovery_days: data.poor_recovery_days ? parseInt(data.poor_recovery_days) : null,
       energetic_constraints_reduction_ok: data.energetic_constraints_reduction_ok || false,
       data_entered_by: 'patient',
@@ -352,9 +355,18 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.date !== undefined) updateData.date = updates.date
     if (updates.weight !== undefined) updateData.weight = updates.weight ? parseFloat(String(updates.weight)) : null
     if (updates.waist !== undefined) updateData.waist = updates.waist ? parseFloat(String(updates.waist)) : null
+    
+    // Handle NEW field names (current database schema)
+    if (updates.symptom_tracking_days !== undefined) updateData.symptom_tracking_days = updates.symptom_tracking_days ? parseInt(String(updates.symptom_tracking_days)) : null
+    if (updates.detailed_symptom_notes !== undefined) updateData.detailed_symptom_notes = updates.detailed_symptom_notes || null
+    if (updates.purposeful_exercise_days !== undefined) updateData.purposeful_exercise_days = updates.purposeful_exercise_days ? parseInt(String(updates.purposeful_exercise_days)) : null
+    
+    // Handle LEGACY field names (for backward compatibility with old data)
     if (updates.resistance_training_days !== undefined) updateData.resistance_training_days = updates.resistance_training_days ? parseInt(String(updates.resistance_training_days)) : null
     if (updates.focal_heart_rate_training !== undefined) updateData.focal_heart_rate_training = updates.focal_heart_rate_training || null
     if (updates.hunger_days !== undefined) updateData.hunger_days = updates.hunger_days ? parseInt(String(updates.hunger_days)) : null
+    
+    // Handle other fields
     if (updates.poor_recovery_days !== undefined) updateData.poor_recovery_days = updates.poor_recovery_days ? parseInt(String(updates.poor_recovery_days)) : null
     if (updates.sleep_consistency_score !== undefined) updateData.sleep_consistency_score = updates.sleep_consistency_score ? parseInt(String(updates.sleep_consistency_score)) : null
     if (updates.morning_fat_burn_percent !== undefined) updateData.morning_fat_burn_percent = updates.morning_fat_burn_percent ? parseFloat(String(updates.morning_fat_burn_percent)) : null
