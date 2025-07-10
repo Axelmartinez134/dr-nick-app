@@ -39,70 +39,64 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function WeightProjectionChart({ data }: WeightProjectionChartProps) {
-  // Find initial weight from Week 0 or first available weight
-  const initialWeightEntry = data.find(entry => 
-    entry.week_number === 0 && (entry.initial_weight || entry.weight)
-  )
+  // MOVE ALL HOOKS TO THE TOP - Fix React Rules of Hooks violation
   
-  const initialWeight = initialWeightEntry?.initial_weight || 
-                       initialWeightEntry?.weight || 
-                       data.find(entry => entry.weight)?.weight
+  // Process actual weight data - using useMemo to fix dependency warning
+  const actualWeightData = useMemo(() => {
+    return data
+      .filter(entry => entry.weight !== null)
+      .sort((a, b) => a.week_number - b.week_number)
+      .map(entry => ({
+        week: entry.week_number,
+        actualWeight: entry.weight
+      }))
+  }, [data])
 
-  if (!initialWeight) {
-    return (
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <ChartTooltip 
-          title="Weight Loss Projections" 
-          description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
-        >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
-            📊 Weight Loss Trend vs. Projections
-          </h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No initial weight data available</p>
-          <p className="text-sm">Dr. Nick needs to set up Week 0 with initial weight</p>
-        </div>
-      </div>
+  // Calculate chart data and projections - using useMemo  
+  const { initialWeight, chartData } = useMemo(() => {
+    // Find initial weight from Week 0 or first available weight
+    const initialWeightEntry = data.find(entry => 
+      entry.week_number === 0 && (entry.initial_weight || entry.weight)
     )
-  }
-
-  // Process actual weight data first to determine max week
-  const actualWeightData = data
-    .filter(entry => entry.weight !== null)
-    .sort((a, b) => a.week_number - b.week_number)
-    .map(entry => ({
-      week: entry.week_number,
-      actualWeight: entry.weight
-    }))
-
-  // Calculate max week needed (latest actual data, minimum 16 weeks)
-  const latestActualWeek = actualWeightData.length > 0 ? Math.max(...actualWeightData.map(d => d.week)) : 0
-  const maxWeek = Math.max(16, latestActualWeek)
-
-  // Generate projection data to match actual data length
-  const projections = generateWeightProjections(initialWeight, maxWeek)
-  const chartData: any[] = []
-
-  for (let week = 0; week <= maxWeek; week++) {
-    const dataPoint: any = { week }
     
-    // Add actual weight if available
-    const actualData = actualWeightData.find(d => d.week === week)
-    if (actualData) {
-      dataPoint.actualWeight = actualData.actualWeight
+    const initialWeight = initialWeightEntry?.initial_weight || 
+                         initialWeightEntry?.weight || 
+                         data.find(entry => entry.weight)?.weight
+
+    if (!initialWeight) {
+      return { initialWeight: null, chartData: [] }
     }
-    
-    // Add projection data
-    projections.forEach((projection, index) => {
-      const projectionPoint = projection.data.find(p => p.week === week)
-      if (projectionPoint) {
-        dataPoint[`projection${index}`] = projectionPoint.weight
+
+    // Calculate max week needed (latest actual data, minimum 16 weeks)
+    const latestActualWeek = actualWeightData.length > 0 ? Math.max(...actualWeightData.map(d => d.week)) : 0
+    const maxWeek = Math.max(16, latestActualWeek)
+
+    // Generate projection data to match actual data length
+    const projections = generateWeightProjections(initialWeight, maxWeek)
+    const chartData: any[] = []
+
+    for (let week = 0; week <= maxWeek; week++) {
+      const dataPoint: any = { week }
+      
+      // Add actual weight if available
+      const actualData = actualWeightData.find(d => d.week === week)
+      if (actualData) {
+        dataPoint.actualWeight = actualData.actualWeight
       }
-    })
-    
-    chartData.push(dataPoint)
-  }
+      
+      // Add projection data
+      projections.forEach((projection, index) => {
+        const projectionPoint = projection.data.find(p => p.week === week)
+        if (projectionPoint) {
+          dataPoint[`projection${index}`] = projectionPoint.weight
+        }
+      })
+      
+      chartData.push(dataPoint)
+    }
+
+    return { initialWeight, chartData }
+  }, [data, actualWeightData])
 
   // Calculate regression for actual weight trend line
   const regressionResult = useMemo(() => {
@@ -131,8 +125,28 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     })
   }, [chartData, regressionResult, actualWeightData])
 
+  // NOW check for early return after all hooks are called
+  if (!initialWeight) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <ChartTooltip 
+          title="Weight Loss Projections" 
+          description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
+        >
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">
+            📊 Weight Loss Trend vs. Projections
+          </h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No initial weight data available</p>
+          <p className="text-sm">Dr. Nick needs to set up Week 0 with initial weight</p>
+        </div>
+      </div>
+    )
+  }
+
   // Calculate Y-axis domain excluding trend line values to prevent skewing
-  const calculateYAxisDomain = () => {
+  const calculateYAxisDomain = useMemo(() => {
     const allValues: number[] = []
     
     // Add actual weight values
@@ -156,7 +170,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     const padding = (maxValue - minValue) * 0.1 // 10% padding
     
     return [minValue - padding, maxValue + padding]
-  }
+  }, [actualWeightData, chartData])
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -208,7 +222,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
           />
           <YAxis 
             label={{ value: 'Weight (lbs)', angle: -90, position: 'insideLeft' }}
-            domain={calculateYAxisDomain()}
+            domain={calculateYAxisDomain}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
