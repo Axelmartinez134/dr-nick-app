@@ -20,7 +20,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     waist: '',
     height: '',
     initialNotes: '',
-    weightChangeGoalPercent: '1.00'
+    weightChangeGoalPercent: '1.00',
+    proteinGoalGrams: '150'
   })
 
   const [loading, setLoading] = useState(false)
@@ -94,6 +95,11 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       return false
     }
 
+    if (isNaN(Number(formData.proteinGoalGrams)) || Number(formData.proteinGoalGrams) < 50 || Number(formData.proteinGoalGrams) > 300) {
+      setError('Please enter a valid protein goal between 50-300 grams')
+      return false
+    }
+
     return true
   }
 
@@ -115,7 +121,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       password: formData.password,
       fullName: formData.fullName.trim(),
       weekZeroData,
-      weightChangeGoalPercent: parseFloat(formData.weightChangeGoalPercent) || 1.0
+      weightChangeGoalPercent: parseFloat(formData.weightChangeGoalPercent) || 1.0,
+      proteinGoalGrams: parseInt(formData.proteinGoalGrams) || 150
     }
 
     const result = await createPatientAccount(patientData)
@@ -129,14 +136,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     setLoading(false)
   }
 
-  const generatePassword = () => {
-    // Generate a simple password: FirstName + random 3 digits
-    const firstName = formData.fullName.split(' ')[0].toLowerCase()
-    const randomNum = Math.floor(Math.random() * 900) + 100
-    const generatedPassword = `${firstName}${randomNum}`
-    
-    handleInputChange('password', generatedPassword)
-  }
+
 
   return (
     <div className="bg-white rounded-lg p-6 max-w-2xl mx-auto">
@@ -163,7 +163,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name *
+                Patient's Full Name *
               </label>
               <input
                 type="text"
@@ -172,6 +172,9 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 placeholder="John Doe"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter first and last name together (e.g., "John Doe"). The Monday morning message automations will extract the first name from this field.
+              </p>
             </div>
 
             <div>
@@ -185,30 +188,24 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 placeholder="john@example.com"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Account will be automatically approved - patient can login immediately after creation.
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Patient Password *
               </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={formData.password}
-                  onChange={(e) => handleInputChange('password', e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  placeholder="Enter password for patient"
-                />
-                <button
-                  type="button"
-                  onClick={generatePassword}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                >
-                  Generate
-                </button>
-              </div>
+              <input
+                type="text"
+                value={formData.password}
+                onChange={(e) => handleInputChange('password', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                placeholder="Enter password for patient"
+              />
               <p className="text-xs text-gray-500 mt-1">
                 Patient will use this password to login. You can view it later in the patient list.
               </p>
@@ -230,6 +227,24 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               />
               <p className="text-xs text-gray-500 mt-1">
                 Target week-over-week weight loss percentage (e.g., 1.50 = 1.50%)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Daily Protein Goal (grams)
+              </label>
+              <input
+                type="number"
+                min="50"
+                max="300"
+                value={formData.proteinGoalGrams}
+                onChange={(e) => handleInputChange('proteinGoalGrams', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                placeholder="150"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Daily protein target in grams (used in Monday morning messages)
               </p>
             </div>
           </div>
@@ -285,15 +300,18 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
 
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Initial Notes (Optional)
+              Initial Coaching Notes
             </label>
             <textarea
               value={formData.initialNotes}
               onChange={(e) => handleInputChange('initialNotes', e.target.value)}
-              rows={3}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              placeholder="Initial goals, health conditions, or other notes..."
+              rows={3}
+              placeholder="Enter any initial notes about this patient's goals, health conditions, or special considerations..."
             />
+            <p className="text-xs text-gray-500 mt-1">
+              These notes will appear in all future check-ins with this client. Any changes made here will be reflected in those sections as well.
+            </p>
           </div>
         </div>
 

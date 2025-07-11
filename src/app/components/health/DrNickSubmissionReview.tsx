@@ -11,6 +11,8 @@ import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 import { QueueSubmission } from './DrNickQueue'
 import StickyNotes from './StickyNotes'
+import { generateMondayMessage, loadMondayMessage, saveMondayMessage } from './mondayMessageService'
+import { useMondayMessageAutoSave } from './hooks/useMondayMessageAutoSave'
 
 interface DrNickSubmissionReviewProps {
   submission: QueueSubmission
@@ -60,9 +62,21 @@ export default function DrNickSubmissionReview({
   // Start Message state (placeholder for future dynamic message system)
   const [startMessage, setStartMessage] = useState('')
   
+  // Monday Message state
+  const [mondayMessage, setMondayMessage] = useState('')
+  const [generatingMessage, setGeneratingMessage] = useState(false)
+  const [messageError, setMessageError] = useState<string | null>(null)
+  
   // N8N Processing states
   const [weeklyProcessing, setWeeklyProcessing] = useState(false)
   const [monthlyProcessing, setMonthlyProcessing] = useState(false)
+  
+  // Monday message auto-save functionality
+  const { saveStatus: messageSaveStatus, forceSave: forceMessageSave } = useMondayMessageAutoSave(
+    mondayMessage,
+    submission.id,
+    !generatingMessage && !messageError
+  )
   
   // Loading states
   const [loading, setLoading] = useState(true)
@@ -264,6 +278,45 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // Generate Monday message (always fresh - clears cache first)
+  const handleGenerateMondayMessage = async () => {
+    setGeneratingMessage(true)
+    setMessageError(null)
+    
+    try {
+      // Step 1: Clear any existing cached message first
+      console.log('Clearing existing Monday message cache...')
+      await saveMondayMessage(submission.id, '') // Clear the cache
+      
+      // Step 2: Generate completely fresh message with latest calculations
+      console.log('Generating fresh Monday message with latest data...')
+      const message = await generateMondayMessage(
+        submission.user_id,
+        submission.week_number,
+        nutritionComplianceDays ? parseInt(nutritionComplianceDays) : 0
+      )
+      
+      // Step 3: Set the new message (this will trigger auto-save)
+      setMondayMessage(message)
+      console.log('Fresh Monday message generated successfully')
+    } catch (error) {
+      console.error('Error generating Monday message:', error)
+      setMessageError('Failed to generate message. Please check that all required data is available.')
+    } finally {
+      setGeneratingMessage(false)
+    }
+  }
+
+  // Load existing Monday message
+  const loadExistingMondayMessage = async () => {
+    try {
+      const existingMessage = await loadMondayMessage(submission.id)
+      setMondayMessage(existingMessage)
+    } catch (error) {
+      console.error('Error loading existing Monday message:', error)
+    }
+  }
+
   // Save analysis and mark as reviewed
   const handleCompleteReview = async () => {
     setCompleting(true)
@@ -449,6 +502,9 @@ export default function DrNickSubmissionReview({
       
       // Load current nutrition compliance days and weight change goal
       await loadSubmissionData()
+      
+      // Load existing Monday message
+      await loadExistingMondayMessage()
       
       setLoading(false)
     }
@@ -716,65 +772,118 @@ export default function DrNickSubmissionReview({
 
       </div>
 
-      {/* 3. Monday Morning Start Message - Full Width (Placeholder) */}
+      {/* 3. Monday Morning Start Message - Full Width */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-xl font-semibold text-gray-900 mb-6">📞 Monday Morning Start Message</h4>
         
         <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
             <div className="flex items-start">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">i</span>
+                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-bold">✓</span>
                 </div>
               </div>
               <div className="ml-3">
-                <h5 className="text-sm font-medium text-blue-800">Future Feature - Dynamic Message System</h5>
-                <div className="mt-1 text-sm text-blue-700">
-                  <p>This section will automatically populate with patient-specific data including:</p>
+                <h5 className="text-sm font-medium text-green-800">Dynamic Message Generation Active</h5>
+                <div className="mt-1 text-sm text-green-700">
+                  <p>Click "🔄 Generate Fresh Message" to create a personalized message using:</p>
                   <ul className="mt-2 list-disc list-inside space-y-1 text-xs">
                     <li>Current plateau prevention metrics and loss percentages</li>
-                    <li>Macronutrient compliance rates and protein goal tracking</li>
-                    <li>Historical trend analysis and two-week averages</li>
-                    <li>Personalized recommendations based on chart data</li>
+                    <li>Macronutrient compliance rates (enter nutrition days above first)</li>
+                    <li>Historical trend analysis and progress averages</li>
+                    <li>Personalized protein goals and recommendations</li>
                   </ul>
                 </div>
               </div>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Start Message Content
-              <span className="text-xs text-gray-500 ml-2">(Currently manual - will be auto-populated in future)</span>
+          <div className="flex items-center justify-between mb-4">
+            <label className="block text-sm font-medium text-gray-700">
+              Monday Morning Message Content
             </label>
+            <div className="flex items-center space-x-4">
+              {/* Save status indicator */}
+              {messageSaveStatus === 'typing' && (
+                <div className="flex items-center gap-1 text-yellow-600">
+                  <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                  <span className="text-xs">Typing...</span>
+                </div>
+              )}
+              {messageSaveStatus === 'saving' && (
+                <div className="flex items-center gap-1 text-blue-600">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs">Saving...</span>
+                </div>
+              )}
+              {messageSaveStatus === 'saved' && (
+                <div className="flex items-center gap-1 text-green-600">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-xs">Saved ✓</span>
+                </div>
+              )}
+              {messageSaveStatus === 'error' && (
+                <div className="flex items-center gap-1 text-red-600">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <span className="text-xs">Error ⚠</span>
+                </div>
+              )}
+              
+              <button
+                onClick={handleGenerateMondayMessage}
+                disabled={generatingMessage || !nutritionComplianceDays}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  generatingMessage || !nutritionComplianceDays
+                    ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+                title={!nutritionComplianceDays ? "Please enter nutrition compliance days first" : "Generate personalized Monday message"}
+              >
+                {generatingMessage ? 'Generating...' : '🔄 Generate Fresh Message'}
+              </button>
+            </div>
+          </div>
+
+          {messageError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-red-800 text-sm">{messageError}</div>
+            </div>
+          )}
+
+          <div className="relative">
             <textarea
-              value={startMessage}
-              onChange={(e) => setStartMessage(e.target.value)}
-              rows={12}
-              className="w-full border border-gray-300 rounded-lg p-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm text-gray-900"
-              placeholder="This will be the first message sent to the client on Monday morning, before the weekly and monthly analyses. Future implementation will auto-populate with dynamic patient data from charts and historical records.
-
-Example template variables to be implemented:
-- {{patientfirstname}} - Patient's first name
-- {{currentlossrate}} - Current percentage loss rate
-- {{proteingoal}} - Daily protein target
-- {{compliancerate}} - Weekly macronutrient compliance
-- {{waistloss}} - Total waist circumference change
-- {{weeklytrend}} - Two-week average progress
-
-For now, enter the message content manually..."
+              value={mondayMessage}
+              onChange={(e) => setMondayMessage(e.target.value)}
+              rows={16}
+              className="w-full border border-gray-300 rounded-lg p-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm text-gray-900 leading-relaxed"
+              placeholder="Click '🔄 Generate Fresh Message' above to create a personalized Monday morning message using this patient's latest data and progress metrics. The button always clears any cached content and generates fresh calculations. You can edit the generated message before sending."
+              onKeyDown={(e) => {
+                // Ctrl+S to force save
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                  e.preventDefault()
+                  forceMessageSave()
+                }
+              }}
             />
+            {generatingMessage && (
+              <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                <div className="text-center">
+                  <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                  <div className="mt-2 text-sm text-gray-600">Generating personalized message...</div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h6 className="text-sm font-medium text-gray-700 mb-2">Message Flow Sequence:</h6>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">1. Start Message</span>
+              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">1. Monday Message</span>
               <span className="text-gray-400">→</span>
               <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">2. Weekly Analysis</span>
               <span className="text-gray-400">→</span>
-              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded font-medium">3. Monday Analysis</span>
+              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded font-medium">3. Monthly Analysis</span>
             </div>
           </div>
         </div>

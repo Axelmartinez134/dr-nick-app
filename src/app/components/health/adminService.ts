@@ -16,6 +16,7 @@ export interface PatientCreationData {
   fullName: string
   weekZeroData: WeekZeroData
   weightChangeGoalPercent?: number
+  proteinGoalGrams?: number
 }
 
 // Check if email is already taken
@@ -72,7 +73,7 @@ export async function createPatientAccount(patientData: PatientCreationData) {
 
     const userId = authData.user.id
 
-    // Step 3: Create profile with password reference, weight goal, and height
+    // Step 3: Create profile with password reference, weight goal, height, and protein goal
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -81,7 +82,8 @@ export async function createPatientAccount(patientData: PatientCreationData) {
         full_name: patientData.fullName,
         patient_password: patientData.password, // Store for Dr. Nick's reference
         weight_change_goal_percent: patientData.weightChangeGoalPercent || 1.0,
-        height: parseFloat(patientData.weekZeroData.height) || null
+        height: parseFloat(patientData.weekZeroData.height) || null,
+        protein_goal_grams: patientData.proteinGoalGrams || 150
       })
 
     if (profileError) {
