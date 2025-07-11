@@ -30,9 +30,6 @@ export default function StickyNotes({ patientId, patientName }: StickyNotesProps
   const dragStartRef = useRef<{ x: number, y: number } | null>(null)
   const resizeStartRef = useRef<{ x: number, y: number, width: number, height: number } | null>(null)
   
-  // Only show for Dr. Nick
-  if (!isDoctor) return null
-
   // Auto-save functionality
   const { saveStatus, forceSave } = useAutoSave(
     notes,
@@ -76,25 +73,6 @@ export default function StickyNotes({ patientId, patientName }: StickyNotesProps
     await loadNotesForPatient(patientId)
   }, [currentPatientId, loadNotesForPatient])
 
-  // Load preferences
-  useEffect(() => {
-    const loadPreferences = async () => {
-      try {
-        const { data, error } = await getNotesPreferences()
-        if (data?.notes_preferences && !error) {
-          const prefs = data.notes_preferences
-          if (prefs.position) setPosition(prefs.position)
-          if (prefs.size) setSize(prefs.size)
-          if (typeof prefs.isMinimized === 'boolean') setIsMinimized(prefs.isMinimized)
-        }
-      } catch (error) {
-        console.error('Error loading notes preferences:', error)
-      }
-    }
-    
-    loadPreferences()
-  }, [])
-
   // Save preferences with debouncing
   const savePreferencesDebounced = useCallback((prefs: any) => {
     const timeoutId = setTimeout(async () => {
@@ -113,23 +91,16 @@ export default function StickyNotes({ patientId, patientName }: StickyNotesProps
     return () => clearTimeout(timeoutId)
   }, [position, size, isMinimized])
 
-  // Handle patient changes
-  useEffect(() => {
-    if (patientId !== currentPatientId) {
-      switchPatient(patientId || null)
-    }
-  }, [patientId, currentPatientId, switchPatient])
-
   // Control functions
-  const maximize = () => {
+  const maximize = useCallback(() => {
     setIsMinimized(false)
     savePreferencesDebounced({ isMinimized: false })
-  }
+  }, [savePreferencesDebounced])
 
-  const minimize = () => {
+  const minimize = useCallback(() => {
     setIsMinimized(true)
     savePreferencesDebounced({ isMinimized: true })
-  }
+  }, [savePreferencesDebounced])
 
   // Drag handlers
   const dragHandlers = {
@@ -176,6 +147,32 @@ export default function StickyNotes({ patientId, patientName }: StickyNotesProps
       }
     }
   }
+
+  // Load preferences
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const { data, error } = await getNotesPreferences()
+        if (data?.notes_preferences && !error) {
+          const prefs = data.notes_preferences
+          if (prefs.position) setPosition(prefs.position)
+          if (prefs.size) setSize(prefs.size)
+          if (typeof prefs.isMinimized === 'boolean') setIsMinimized(prefs.isMinimized)
+        }
+      } catch (error) {
+        console.error('Error loading notes preferences:', error)
+      }
+    }
+    
+    loadPreferences()
+  }, [])
+
+  // Handle patient changes
+  useEffect(() => {
+    if (patientId !== currentPatientId) {
+      switchPatient(patientId || null)
+    }
+  }, [patientId, currentPatientId, switchPatient])
 
   // Global mouse/touch handlers
   useEffect(() => {
@@ -232,7 +229,7 @@ export default function StickyNotes({ patientId, patientName }: StickyNotesProps
       document.removeEventListener('mouseup', handleEnd)
       document.removeEventListener('touchend', handleEnd)
     }
-  }, [isDragging, isResizing, savePreferencesDebounced])
+  }, [isDragging, isResizing, position, size, savePreferencesDebounced])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -251,7 +248,10 @@ export default function StickyNotes({ patientId, patientName }: StickyNotesProps
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isMinimized, forceSave])
+  }, [isMinimized, forceSave, minimize])
+
+  // Only show for Dr. Nick - moved AFTER all hooks
+  if (!isDoctor) return null
 
   // Don't render if no patient selected
   if (!currentPatientId) return null

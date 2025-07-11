@@ -114,7 +114,7 @@ export function useAutoSave(
   // Update previous notes ref when patient changes
   useEffect(() => {
     previousNotesRef.current = notes
-  }, [patientId])
+  }, [patientId, notes])
 
   return {
     saveStatus,
