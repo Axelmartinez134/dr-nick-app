@@ -10,6 +10,7 @@ import { getSignedImageUrl } from './imageService'
 import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 import { QueueSubmission } from './DrNickQueue'
+import StickyNotes from './StickyNotes'
 
 interface DrNickSubmissionReviewProps {
   submission: QueueSubmission
@@ -1225,6 +1226,11 @@ For now, enter the message content manually..."
           </div>
         </div>
       )}
+
+      <StickyNotes 
+        patientId={submission.user_id}
+        patientName={`${submission.profiles.first_name} ${submission.profiles.last_name}`}
+      />
     </div>
   )
 } 

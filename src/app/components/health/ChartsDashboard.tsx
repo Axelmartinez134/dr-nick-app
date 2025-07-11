@@ -11,6 +11,7 @@ import { supabase } from '../auth/AuthContext'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
 import MorningFatBurnChart from './charts/MorningFatBurnChart'
 import ComplianceMetricsTable from './ComplianceMetricsTable'
+import StickyNotes from './StickyNotes'
 
 // Props interface
 interface ChartsDashboardProps {
@@ -836,6 +837,12 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
           </div>
         </div>
       )}
+
+      {/* Floating Sticky Notes - Dr. Nick Only */}
+      <StickyNotes 
+        patientId={patientId}
+        patientName={undefined}
+      />
 
     </div>
   )

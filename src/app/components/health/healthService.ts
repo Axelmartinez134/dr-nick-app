@@ -390,8 +390,6 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
   }
 }
 
-
-
 // Helper function to generate weight loss projections
 export function generateWeightProjections(initialWeight: number, weeks: number = 16) {
   const projectionRates = [0.5, 1.0, 1.5, 2.0] // Fat loss percentages
@@ -570,4 +568,115 @@ export async function getSubmissionDetails(submissionId: string) {
     console.error('Error fetching submission details:', error)
     return { data: null, error }
   }
+}
+
+// =============================================================================
+// COACHING NOTES FUNCTIONS
+// =============================================================================
+
+export async function saveCoachingNotes(patientId: string, notes: string) {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ 
+        dr_nick_coaching_notes: notes
+      })
+      .eq('id', patientId)
+      .select()
+
+    if (error) {
+      console.log('Could not save coaching notes (column may not exist):', error.message)
+      return { data: null, error: error.message }
+    }
+
+    return { data, error: null }
+  } catch (err) {
+    console.error('Error saving coaching notes:', err)
+    return { data: null, error: 'Failed to save notes' }
+  }
+}
+
+export async function getCoachingNotes(patientId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('dr_nick_coaching_notes')
+      .eq('id', patientId)
+      .single()
+
+    if (error) {
+      console.log('Could not get coaching notes (column may not exist):', error.message)
+      return { data: { dr_nick_coaching_notes: '' }, error: null } // Return empty notes instead of error
+    }
+
+    return { data, error: null }
+  } catch (err) {
+    console.error('Error getting coaching notes:', err)
+    return { data: { dr_nick_coaching_notes: '' }, error: null } // Return empty notes instead of error
+  }
+}
+
+export async function saveNotesPreferences(preferences: any) {
+  try {
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      console.log('User not authenticated for saving notes preferences')
+      return { data: null, error: null }
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ 
+        notes_preferences: preferences
+      })
+      .eq('id', userData.user.id)
+      .select()
+
+    if (error) {
+      console.log('Could not save notes preferences (column may not exist):', error.message)
+      return { data: null, error: null } // Don't throw, just log
+    }
+
+    return { data, error: null }
+  } catch (err) {
+    console.log('Error saving notes preferences, continuing without saving:', err)
+    return { data: null, error: null }
+  }
+}
+
+export async function getNotesPreferences() {
+  try {
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !userData?.user) {
+      console.log('User not authenticated for notes preferences')
+      return { data: null, error: null } // Return null instead of throwing
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('notes_preferences')
+      .eq('id', userData.user.id)
+      .single()
+
+    if (error) {
+      // If the column doesn't exist or other DB error, return default
+      console.log('Notes preferences column may not exist, using defaults')
+      return { data: null, error: null }
+    }
+
+    return { data, error: null }
+  } catch (err) {
+    console.log('Error getting notes preferences, using defaults:', err)
+    return { data: null, error: null } // Return defaults instead of throwing
+  }
+}
+
+export function countNotesEntries(notes: string): number {
+  if (!notes || notes.trim() === '') return 0
+  
+  // Count lines that have substantial content (more than just whitespace)
+  const lines = notes.split('\n').filter(line => line.trim().length > 0)
+  return lines.length
 }
