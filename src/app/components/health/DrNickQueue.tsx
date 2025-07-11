@@ -52,6 +52,8 @@ export interface QueueSubmission {
   monthly_whoop_analysis: string | null
   monthly_ai_analysis: string | null
   monthly_whoop_pdf: string | null
+  // Grok analysis field
+  grok_analysis_response: string | null
   // User info
   profiles: {
     id: string

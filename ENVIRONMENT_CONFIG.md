@@ -11,6 +11,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 # Optional: Service Role Key (for admin operations)
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+# Grok AI API Configuration (for Dr. Nick's AI analysis feature)
+GROK_API_BASE_URL=https://api.x.ai/v1
+GROK_API_KEY=your_grok_api_key_here
+GROK_MODEL=grok-3-latest
 ```
 
 ## **Database Configuration**

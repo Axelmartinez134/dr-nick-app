@@ -13,6 +13,8 @@ import { QueueSubmission } from './DrNickQueue'
 import StickyNotes from './StickyNotes'
 import { generateMondayMessage, loadMondayMessage, saveMondayMessage } from './mondayMessageService'
 import { useMondayMessageAutoSave } from './hooks/useMondayMessageAutoSave'
+import { getActiveGrokPrompt, updateGlobalGrokPrompt } from './grokService'
+import { useGrokAutoSave } from './hooks/useGrokAutoSave'
 
 interface DrNickSubmissionReviewProps {
   submission: QueueSubmission
@@ -28,7 +30,13 @@ export default function DrNickSubmissionReview({
   // State management
   const [submissionChartData, setSubmissionChartData] = useState<any[]>([])
   const [signedUrls, setSignedUrls] = useState<{[key: string]: string}>({})
-  const [viewingImage, setViewingImage] = useState<{url: string, title: string} | null>(null)
+  
+  // Enhanced image viewer with navigation
+  const [viewingImageSet, setViewingImageSet] = useState<{
+    currentIndex: number,
+    imageType: 'lumen' | 'food_log',
+    images: Array<{url: string, title: string, day: string, fieldName: string}>
+  } | null>(null)
   
   // PDF viewing modal state
   const [viewingPdf, setViewingPdf] = useState<{
@@ -67,6 +75,12 @@ export default function DrNickSubmissionReview({
   const [generatingMessage, setGeneratingMessage] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
   
+  // Grok Analysis state
+  const [grokPrompt, setGrokPrompt] = useState('')
+  const [grokResponse, setGrokResponse] = useState(submission.grok_analysis_response || '')
+  const [grokAnalyzing, setGrokAnalyzing] = useState(false)
+  const [grokError, setGrokError] = useState<string | null>(null)
+  
   // N8N Processing states
   const [weeklyProcessing, setWeeklyProcessing] = useState(false)
   const [monthlyProcessing, setMonthlyProcessing] = useState(false)
@@ -77,6 +91,15 @@ export default function DrNickSubmissionReview({
     submission.id,
     !generatingMessage && !messageError
   )
+  
+  // Grok analysis auto-save functionality
+  const { saveStatus: grokSaveStatus, forceSave: forceGrokSave } = useGrokAutoSave(
+    grokResponse,
+    submission.id,
+    !grokAnalyzing && !grokError
+  )
+  
+
   
   // Loading states
   const [loading, setLoading] = useState(true)
@@ -317,6 +340,72 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // Load Grok prompt
+  const loadGrokPrompt = async () => {
+    try {
+      // Add a small delay to ensure Supabase client is fully initialized
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const prompt = await getActiveGrokPrompt()
+      setGrokPrompt(prompt)
+    } catch (error) {
+      console.error('Error loading Grok prompt:', error)
+      setGrokPrompt('Please analyze this patient\'s health data and provide actionable recommendations.')
+    }
+  }
+
+  // Handle Grok prompt update (saves globally)
+  const handleGrokPromptUpdate = async () => {
+    try {
+      await updateGlobalGrokPrompt(grokPrompt)
+      alert('Global Grok prompt updated successfully!')
+    } catch (error) {
+      console.error('Error updating Grok prompt:', error)
+      alert('Failed to update Grok prompt')
+    }
+  }
+
+  // Send to Grok for analysis
+  const handleSendToGrok = async () => {
+    setGrokAnalyzing(true)
+    setGrokError(null)
+    
+    try {
+      // Get auth token for API call
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('No authentication token available')
+      }
+
+      const response = await fetch('/api/grok/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          submissionId: submission.id,
+          userId: submission.user_id,
+          customPrompt: grokPrompt
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      setGrokResponse(data.analysis)
+      console.log('Grok analysis completed successfully')
+    } catch (error) {
+      console.error('Error sending to Grok:', error)
+      setGrokError(error instanceof Error ? error.message : 'Failed to analyze with Grok')
+    } finally {
+      setGrokAnalyzing(false)
+    }
+  }
+
   // Save analysis and mark as reviewed
   const handleCompleteReview = async () => {
     setCompleting(true)
@@ -486,6 +575,77 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // Helper function to build image sets for navigation
+  const buildImageSet = (clickedImageType: 'lumen' | 'food_log', clickedIndex: number) => {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    const images: Array<{url: string, title: string, day: string, fieldName: string}> = []
+    
+    days.forEach((day, index) => {
+      const fieldName = `${clickedImageType}_day${index + 1}_image`
+      const imageUrl = submission[fieldName as keyof QueueSubmission] as string
+      const displayUrl = signedUrls[fieldName] || imageUrl
+      
+      if (displayUrl) {
+        images.push({
+          url: displayUrl,
+          title: `${day} ${clickedImageType === 'lumen' ? 'Lumen' : 'Food Log'} Screenshot - Week ${submission.week_number}`,
+          day,
+          fieldName
+        })
+      }
+    })
+    
+    // Find the correct index in the filtered images array
+    const actualIndex = images.findIndex(img => img.fieldName === `${clickedImageType}_day${clickedIndex + 1}_image`)
+    
+    return {
+      currentIndex: actualIndex >= 0 ? actualIndex : 0,
+      imageType: clickedImageType,
+      images
+    }
+  }
+
+  // Navigation functions
+  const navigateImage = (direction: 'prev' | 'next') => {
+    if (!viewingImageSet) return
+    
+    const { currentIndex, images } = viewingImageSet
+    let newIndex: number
+    
+    if (direction === 'prev') {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : images.length - 1
+    } else {
+      newIndex = currentIndex < images.length - 1 ? currentIndex + 1 : 0
+    }
+    
+    setViewingImageSet(prev => prev ? { ...prev, currentIndex: newIndex } : null)
+  }
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      if (!viewingImageSet) return
+      
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault()
+          navigateImage('prev')
+          break
+        case 'ArrowRight':
+          event.preventDefault()
+          navigateImage('next')
+          break
+        case 'Escape':
+          event.preventDefault()
+          setViewingImageSet(null)
+          break
+      }
+    }
+    
+    document.addEventListener('keydown', handleKeyPress)
+    return () => document.removeEventListener('keydown', handleKeyPress)
+  }, [viewingImageSet])
+
   // Initialize component
   useEffect(() => {
     const initializeReview = async () => {
@@ -505,6 +665,9 @@ export default function DrNickSubmissionReview({
       
       // Load existing Monday message
       await loadExistingMondayMessage()
+      
+      // Load Grok prompt
+      await loadGrokPrompt()
       
       setLoading(false)
     }
@@ -607,20 +770,42 @@ export default function DrNickSubmissionReview({
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-indigo-700">Sleep Score</label>
-            <div className="flex items-center space-x-2">
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={sleepScore}
+                  onChange={(e) => setSleepScore(e.target.value)}
+                  className="w-20 px-2 py-1 border border-indigo-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-indigo-700">%</span>
+              </div>
+              <button
+                onClick={handleSleepScoreUpdate}
+                className="w-full px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 transition-colors"
+                title="Update sleep consistency score"
+              >
+                Update
+              </button>
+            </div>
+          </div>
+          <div className="bg-orange-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-orange-700">Nutrition Days</label>
+            <div className="space-y-2">
               <input
                 type="number"
                 min="0"
-                max="100"
-                value={sleepScore}
-                onChange={(e) => setSleepScore(e.target.value)}
-                className="w-20 px-2 py-1 border border-indigo-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                max="7"
+                value={nutritionComplianceDays}
+                onChange={(e) => setNutritionComplianceDays(e.target.value)}
+                className="w-16 px-2 py-1 border border-orange-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
               />
-              <span className="text-sm text-indigo-700">%</span>
               <button
-                onClick={handleSleepScoreUpdate}
-                className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 transition-colors"
-                title="Update sleep consistency score"
+                onClick={handleNutritionUpdate}
+                className="w-full px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors"
+                title="Update nutrition compliance days"
               >
                 Update
               </button>
@@ -628,7 +813,7 @@ export default function DrNickSubmissionReview({
           </div>
           <div className="bg-pink-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-pink-700">Weight Goal %</label>
-            <div className="flex items-center space-x-2">
+            <div className="space-y-2">
               <input
                 type="number"
                 step="0.01"
@@ -640,28 +825,8 @@ export default function DrNickSubmissionReview({
               />
               <button
                 onClick={handleGoalUpdate}
-                className="px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
+                className="w-full px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
                 title="Update weight change goal"
-              >
-                Update
-              </button>
-            </div>
-          </div>
-          <div className="bg-orange-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-orange-700">Nutrition Days</label>
-            <div className="flex items-center space-x-2">
-              <input
-                type="number"
-                min="0"
-                max="7"
-                value={nutritionComplianceDays}
-                onChange={(e) => setNutritionComplianceDays(e.target.value)}
-                className="w-16 px-2 py-1 border border-orange-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
-              />
-              <button
-                onClick={handleNutritionUpdate}
-                className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors"
-                title="Update nutrition compliance days"
               >
                 Update
               </button>
@@ -717,10 +882,7 @@ export default function DrNickSubmissionReview({
                       src={displayUrl}
                       alt={`${day} Lumen`}
                       className="w-full h-24 object-cover rounded-lg border-2 border-blue-200 cursor-pointer hover:border-blue-400 transition-colors shadow-sm"
-                      onClick={() => setViewingImage({
-                        url: displayUrl,
-                        title: `${day} Lumen Screenshot - Week ${submission.week_number}`
-                      })}
+                      onClick={() => setViewingImageSet(buildImageSet('lumen', index))}
                     />
                   ) : (
                     <div className="w-full h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
@@ -753,10 +915,7 @@ export default function DrNickSubmissionReview({
                       src={displayUrl}
                       alt={`${day} Food Log`}
                       className="w-full h-24 object-cover rounded-lg border-2 border-green-200 cursor-pointer hover:border-green-400 transition-colors shadow-sm"
-                      onClick={() => setViewingImage({
-                        url: displayUrl,
-                        title: `${day} Food Log Screenshot - Week ${submission.week_number}`
-                      })}
+                      onClick={() => setViewingImageSet(buildImageSet('food_log', index))}
                     />
                   ) : (
                     <div className="w-full h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
@@ -777,27 +936,7 @@ export default function DrNickSubmissionReview({
         <h4 className="text-xl font-semibold text-gray-900 mb-6">📞 Monday Morning Start Message</h4>
         
         <div className="space-y-4">
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">✓</span>
-                </div>
-              </div>
-              <div className="ml-3">
-                <h5 className="text-sm font-medium text-green-800">Dynamic Message Generation Active</h5>
-                <div className="mt-1 text-sm text-green-700">
-                  <p>Click "🔄 Generate Fresh Message" to create a personalized message using:</p>
-                  <ul className="mt-2 list-disc list-inside space-y-1 text-xs">
-                    <li>Current plateau prevention metrics and loss percentages</li>
-                    <li>Macronutrient compliance rates (enter nutrition days above first)</li>
-                    <li>Historical trend analysis and progress averages</li>
-                    <li>Personalized protein goals and recommendations</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
+
 
           <div className="flex items-center justify-between mb-4">
             <label className="block text-sm font-medium text-gray-700">
@@ -876,16 +1015,7 @@ export default function DrNickSubmissionReview({
             )}
           </div>
 
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <h6 className="text-sm font-medium text-gray-700 mb-2">Message Flow Sequence:</h6>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-medium">1. Monday Message</span>
-              <span className="text-gray-400">→</span>
-              <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-medium">2. Weekly Analysis</span>
-              <span className="text-gray-400">→</span>
-              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded font-medium">3. Monthly Analysis</span>
-            </div>
-          </div>
+
         </div>
       </div>
 
@@ -1182,6 +1312,104 @@ export default function DrNickSubmissionReview({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 5. Grok Analysis - Full Width */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h4 className="text-xl font-semibold text-gray-900 mb-6">🤖 Grok Analysis</h4>
+        
+        <div className="space-y-6">
+          {/* Prompt Section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Analysis Prompt
+              </label>
+              <button
+                onClick={handleGrokPromptUpdate}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium"
+              >
+                💾 Update Global Prompt
+              </button>
+            </div>
+            <textarea
+              value={grokPrompt}
+              onChange={(e) => setGrokPrompt(e.target.value)}
+              rows={4}
+              className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+              placeholder="Loading prompt from database..."
+              onKeyDown={(e) => {
+                // Ctrl+S to manually save
+                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                  e.preventDefault()
+                  handleGrokPromptUpdate()
+                }
+              }}
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              This prompt applies to all patients. Changes are saved globally and automatically (2s delay). Press Ctrl+S to force save.
+            </div>
+          </div>
+
+          {/* Send Button and Status */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={handleSendToGrok}
+              disabled={grokAnalyzing}
+              className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                grokAnalyzing
+                  ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {grokAnalyzing ? 'Analyzing...' : '🤖 Send to Grok for Analysis'}
+            </button>
+            
+            {grokError && (
+              <div className="text-red-600 text-sm font-medium">
+                Error: {grokError}
+              </div>
+            )}
+          </div>
+
+          {/* Response Section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Grok Analysis Response
+              </label>
+              <div className="flex items-center space-x-2 text-xs">
+                {grokSaveStatus === 'saving' && <span className="text-blue-600">💾 Saving...</span>}
+                {grokSaveStatus === 'saved' && <span className="text-green-600">✅ Saved</span>}
+                {grokSaveStatus === 'error' && <span className="text-red-600">❌ Save error</span>}
+              </div>
+            </div>
+            <div className="relative">
+              <textarea
+                value={grokResponse}
+                onChange={(e) => setGrokResponse(e.target.value)}
+                rows={12}
+                className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-mono text-sm"
+                placeholder="Grok analysis will appear here after sending... You can edit the response if needed."
+                onKeyDown={(e) => {
+                  // Ctrl+S to force save
+                  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                    e.preventDefault()
+                    forceGrokSave()
+                  }
+                }}
+              />
+              {grokAnalyzing && (
+                <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center rounded-lg">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                    <div className="mt-2 text-sm text-gray-600">Analyzing with Grok...</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Action Buttons */}
         <div className="flex space-x-4 pt-6 border-t mt-6">
@@ -1214,26 +1442,90 @@ export default function DrNickSubmissionReview({
         </div>
       )}
 
-      {/* Image Viewer Modal */}
-      {viewingImage && (
+      {/* Enhanced Image Viewer Modal with Navigation */}
+      {viewingImageSet && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="relative max-w-5xl max-h-full bg-white rounded-lg overflow-hidden">
+          <div className="relative max-w-6xl max-h-full bg-white rounded-lg overflow-hidden">
+            {/* Modal Header */}
             <div className="bg-gray-100 px-6 py-4 border-b flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
+              <div className="flex items-center space-x-4">
+                <h3 className="text-lg font-medium text-gray-900">
+                  {viewingImageSet.images[viewingImageSet.currentIndex].title}
+                </h3>
+                <div className="text-sm text-gray-600 bg-gray-200 px-3 py-1 rounded-full">
+                  {viewingImageSet.currentIndex + 1} of {viewingImageSet.images.length} 
+                  {viewingImageSet.imageType === 'lumen' ? ' Lumen' : ' Food Log'} images
+                </div>
+              </div>
               <button
-                onClick={() => setViewingImage(null)}
+                onClick={() => setViewingImageSet(null)}
                 className="text-gray-400 hover:text-gray-600 text-3xl font-bold leading-none"
+                title="Close (ESC)"
               >
                 ×
               </button>
             </div>
-            <div className="p-6">
+            
+            {/* Modal Body with Navigation */}
+            <div className="relative p-6">
+              {/* Previous Button */}
+              {viewingImageSet.images.length > 1 && (
+                <button
+                  onClick={() => navigateImage('prev')}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-3 rounded-full hover:bg-opacity-70 transition-all z-10"
+                  title="Previous image (Left Arrow)"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
+              
+              {/* Image */}
               <img
-                src={viewingImage.url}
-                alt={viewingImage.title}
+                src={viewingImageSet.images[viewingImageSet.currentIndex].url}
+                alt={viewingImageSet.images[viewingImageSet.currentIndex].title}
                 className="max-w-full max-h-[85vh] object-contain mx-auto"
               />
+              
+              {/* Next Button */}
+              {viewingImageSet.images.length > 1 && (
+                <button
+                  onClick={() => navigateImage('next')}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white p-3 rounded-full hover:bg-opacity-70 transition-all z-10"
+                  title="Next image (Right Arrow)"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
             </div>
+            
+            {/* Modal Footer with Day Indicators */}
+            {viewingImageSet.images.length > 1 && (
+              <div className="bg-gray-100 px-6 py-3 border-t">
+                <div className="flex items-center justify-center space-x-2">
+                  {viewingImageSet.images.map((image, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setViewingImageSet(prev => prev ? { ...prev, currentIndex: index } : null)}
+                      className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                        index === viewingImageSet.currentIndex
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                      title={`Jump to ${image.day}`}
+                    >
+                      {image.day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-center text-xs text-gray-500 mt-2">
+                  Use ← → arrow keys or click day buttons to navigate
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1342,4 +1634,4 @@ export default function DrNickSubmissionReview({
       />
     </div>
   )
-} 
+}
