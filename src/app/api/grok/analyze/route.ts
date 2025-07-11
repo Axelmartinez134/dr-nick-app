@@ -8,7 +8,7 @@ import { formatDataForGrok, saveGrokAnalysisResponse, GrokDataPackage } from '..
 // Create Supabase client for API routes
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Use service role for API routes
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use standard anon key pattern
 )
 
 // ============================================================================
