@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { getWeeklyDataForCharts, updateHealthRecord, deleteHealthRecord, type WeeklyCheckin } from './healthService'
+import { getWeeklyDataForCharts, updateHealthRecord, type WeeklyCheckin } from './healthService'
 import { getPatientMetrics, type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
@@ -258,14 +258,13 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Hunger</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Purposeful Exercise</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Score</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -313,24 +312,6 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                   <TableTooltip content="Your body fat percentage from precise Fit 3-D body composition scans">
                     {renderCell(record, 'body_fat_percentage', record.body_fat_percentage)}
                   </TableTooltip>
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  <button
-                    onClick={async () => {
-                      if (confirm('Delete this record? This cannot be undone.')) {
-                        try {
-                          await deleteHealthRecord(record.id!)
-                          onDataUpdate?.()
-                        } catch (error) {
-                          alert('Failed to delete record')
-                        }
-                      }
-                    }}
-                    className="text-red-600 hover:text-red-800 text-xs"
-                    title="Delete record"
-                  >
-                    🗑️
-                  </button>
                 </td>
               </tr>
             ))}

@@ -249,7 +249,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-            />
+          />
           )}
         </LineChart>
       </ResponsiveContainer>

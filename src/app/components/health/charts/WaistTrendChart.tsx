@@ -187,7 +187,7 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-            />
+          />
           )}
         </LineChart>
       </ResponsiveContainer>

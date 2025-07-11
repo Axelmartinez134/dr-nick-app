@@ -54,16 +54,16 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
 
   // Calculate chart data and projections - using useMemo  
   const { initialWeight, chartData } = useMemo(() => {
-    // Find initial weight from Week 0 or first available weight
-    const initialWeightEntry = data.find(entry => 
-      entry.week_number === 0 && (entry.initial_weight || entry.weight)
-    )
-    
-    const initialWeight = initialWeightEntry?.initial_weight || 
-                         initialWeightEntry?.weight || 
-                         data.find(entry => entry.weight)?.weight
+  // Find initial weight from Week 0 or first available weight
+  const initialWeightEntry = data.find(entry => 
+    entry.week_number === 0 && (entry.initial_weight || entry.weight)
+  )
+  
+  const initialWeight = initialWeightEntry?.initial_weight || 
+                       initialWeightEntry?.weight || 
+                       data.find(entry => entry.weight)?.weight
 
-    if (!initialWeight) {
+  if (!initialWeight) {
       return { initialWeight: null, chartData: [] }
     }
 
@@ -75,24 +75,24 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     const projections = generateWeightProjections(initialWeight, maxWeek)
     const chartData: any[] = []
 
-    for (let week = 0; week <= maxWeek; week++) {
-      const dataPoint: any = { week }
-      
-      // Add actual weight if available
-      const actualData = actualWeightData.find(d => d.week === week)
-      if (actualData) {
-        dataPoint.actualWeight = actualData.actualWeight
+  for (let week = 0; week <= maxWeek; week++) {
+    const dataPoint: any = { week }
+    
+    // Add actual weight if available
+    const actualData = actualWeightData.find(d => d.week === week)
+    if (actualData) {
+      dataPoint.actualWeight = actualData.actualWeight
+    }
+    
+    // Add projection data
+    projections.forEach((projection, index) => {
+      const projectionPoint = projection.data.find(p => p.week === week)
+      if (projectionPoint) {
+        dataPoint[`projection${index}`] = projectionPoint.weight
       }
-      
-      // Add projection data
-      projections.forEach((projection, index) => {
-        const projectionPoint = projection.data.find(p => p.week === week)
-        if (projectionPoint) {
-          dataPoint[`projection${index}`] = projectionPoint.weight
-        }
-      })
-      
-      chartData.push(dataPoint)
+    })
+    
+    chartData.push(dataPoint)
     }
 
     return { initialWeight, chartData }

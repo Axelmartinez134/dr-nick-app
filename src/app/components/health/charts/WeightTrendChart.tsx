@@ -187,7 +187,7 @@ export default function WeightTrendChart({ data }: WeightTrendChartProps) {
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-            />
+          />
           )}
         </LineChart>
       </ResponsiveContainer>

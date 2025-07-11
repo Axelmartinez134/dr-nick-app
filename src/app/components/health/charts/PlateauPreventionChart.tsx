@@ -201,7 +201,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-            />
+          />
           )}
         </LineChart>
       </ResponsiveContainer>

@@ -390,26 +390,7 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
   }
 }
 
-// Function to delete a health record (for Dr. Nick's editable table)
-export async function deleteHealthRecord(recordId: string) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return { data: null, error: { message: 'User not authenticated' } }
-    }
 
-    const result = await supabase
-      .from('health_data')
-      .delete()
-      .eq('id', recordId)
-
-    return result
-  } catch (error) {
-    console.error('Error deleting health record:', error)
-    return { data: null, error }
-  }
-}
 
 // Helper function to generate weight loss projections
 export function generateWeightProjections(initialWeight: number, weeks: number = 16) {
