@@ -11,6 +11,7 @@ import { supabase } from '../auth/AuthContext'
 import ChartsDashboard from './ChartsDashboard'
 import { QueueSubmission } from './DrNickQueue'
 import StickyNotes from './StickyNotes'
+import StickySummary from './StickySummary'
 import { generateMondayMessage, loadMondayMessage, saveMondayMessage } from './mondayMessageService'
 import { useMondayMessageAutoSave } from './hooks/useMondayMessageAutoSave'
 import { getActiveGrokPrompt, updateGlobalGrokPrompt } from './grokService'
@@ -71,7 +72,7 @@ export default function DrNickSubmissionReview({
   const [startMessage, setStartMessage] = useState('')
   
   // Monday Message state
-  const [mondayMessage, setMondayMessage] = useState('')
+  const [mondayMessage, setMondayMessage] = useState(submission.monday_message_content || '')
   const [generatingMessage, setGeneratingMessage] = useState(false)
   const [messageError, setMessageError] = useState<string | null>(null)
   
@@ -80,6 +81,14 @@ export default function DrNickSubmissionReview({
   const [grokResponse, setGrokResponse] = useState(submission.grok_analysis_response || '')
   const [grokAnalyzing, setGrokAnalyzing] = useState(false)
   const [grokError, setGrokError] = useState<string | null>(null)
+  
+  // Ensure state is synchronized with submission data changes
+  useEffect(() => {
+    setMondayMessage(submission.monday_message_content || '')
+    setWeeklyAnalysis(submission.weekly_whoop_analysis || '')
+    setMonthlyAnalysis(submission.monthly_whoop_analysis || '')
+    setGrokResponse(submission.grok_analysis_response || '')
+  }, [submission.id, submission.monday_message_content, submission.weekly_whoop_analysis, submission.monthly_whoop_analysis, submission.grok_analysis_response])
   
   // N8N Processing states
   const [weeklyProcessing, setWeeklyProcessing] = useState(false)
@@ -726,10 +735,10 @@ export default function DrNickSubmissionReview({
       }
     }, 3000) // Poll every 3 seconds
 
-    return () => clearInterval(pollInterval)
-  }, [weeklyProcessing, monthlyProcessing, submission.id, submission.user_id])
-
-  if (loading) {
+          return () => clearInterval(pollInterval)
+    }, [weeklyProcessing, monthlyProcessing, submission.id, submission.user_id])
+  
+    if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-lg">Loading review data...</div>
@@ -1631,6 +1640,15 @@ export default function DrNickSubmissionReview({
       <StickyNotes 
         patientId={submission.user_id}
         patientName={`${submission.profiles.first_name} ${submission.profiles.last_name}`}
+      />
+      
+      <StickySummary
+        patientId={submission.user_id}
+        patientName={`${submission.profiles.first_name} ${submission.profiles.last_name}`}
+        mondayMessage={mondayMessage}
+        weeklyAnalysis={weeklyAnalysis}
+        monthlyAnalysis={monthlyAnalysis}
+        grokResponse={grokResponse}
       />
     </div>
   )

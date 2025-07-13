@@ -5,20 +5,36 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { formatDataForGrok, saveGrokAnalysisResponse, GrokDataPackage } from '../../../components/health/grokService'
 
-// Create Supabase client for API routes
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use standard anon key pattern
-)
+// Type definition for health data record
+interface HealthDataRecord {
+  id: string
+  user_id: string
+  week_number: number
+  date?: string
+  created_at?: string
+  weight?: number
+  waist?: number
+  purposeful_exercise_days?: number
+  symptom_tracking_days?: number
+  detailed_symptom_notes?: string
+  poor_recovery_days?: number
+  sleep_consistency_score?: number
+  nutrition_compliance_days?: number
+  energetic_constraints_reduction_ok?: boolean
+  notes?: string
+  weekly_whoop_analysis?: string
+  monthly_whoop_analysis?: string
+  [key: string]: any
+}
 
 // ============================================================================
-// API-SPECIFIC DATA FETCHING FUNCTIONS (using service role client)
+// API-SPECIFIC DATA FETCHING FUNCTIONS
 // ============================================================================
 
-// API version of getWeeklyDataForCharts - uses service role client directly
-async function getWeeklyDataForChartsAPI(userId: string) {
+// API version of getWeeklyDataForCharts
+async function getWeeklyDataForChartsAPI(userId: string, supabaseClient: any) {
   try {
-    const result = await supabase
+    const result = await supabaseClient
       .from('health_data')
       .select('*')
       .eq('user_id', userId)
@@ -31,120 +47,83 @@ async function getWeeklyDataForChartsAPI(userId: string) {
   }
 }
 
-// API version of getPatientMetrics - uses service role client directly
-async function getPatientMetricsAPI(userId: string) {
+// API version of getPatientMetrics
+async function getPatientMetricsAPI(userId: string, supabaseClient: any) {
   try {
-    // Get health data using API version
-    const { data: healthData, error: healthError } = await getWeeklyDataForChartsAPI(userId)
+    const { data: historicalData, error: historyError } = await supabaseClient
+      .from('health_data')
+      .select('*')
+      .eq('user_id', userId)
+      .order('week_number', { ascending: true })
     
-    if (healthError) {
-      return {
-        totalWeightLossPercentage: null,
-        weeklyWeightLossPercentage: null,
-        weightChangeGoalPercent: null,
-        hasEnoughData: false,
-        dataPoints: 0,
-        error: typeof healthError === 'string' ? healthError : 'Error fetching health data'
+    if (historyError) {
+      console.error('Historical data fetch error:', historyError)
+      throw new Error(`Failed to load historical data: ${historyError.message}`)
+    }
+    
+    // Calculate metrics from historical data
+    const calculations = {
+      totalWeightLossPercentage: null as number | null,
+      weeklyWeightLossPercentage: null as number | null,
+      dataPoints: historicalData?.length || 0,
+      hasEnoughData: false
+    }
+    
+    if (historicalData && historicalData.length >= 2) {
+      const sortedData = historicalData.sort((a: HealthDataRecord, b: HealthDataRecord) => a.week_number - b.week_number)
+      const firstEntry = sortedData[0]
+      const lastEntry = sortedData[sortedData.length - 1]
+      
+      if (firstEntry.weight && lastEntry.weight) {
+        const initialWeight = firstEntry.weight
+        const currentWeight = lastEntry.weight
+        const weightLoss = initialWeight - currentWeight
+        
+        calculations.totalWeightLossPercentage = (weightLoss / initialWeight) * 100
+        calculations.hasEnoughData = true
+        
+        // Calculate weekly loss rate
+        const weeksDiff = lastEntry.week_number - firstEntry.week_number
+        if (weeksDiff > 0) {
+          calculations.weeklyWeightLossPercentage = calculations.totalWeightLossPercentage / weeksDiff
+        }
       }
     }
-
-    if (!healthData || healthData.length === 0) {
-      return {
-        totalWeightLossPercentage: null,
-        weeklyWeightLossPercentage: null,
-        weightChangeGoalPercent: null,
-        hasEnoughData: false,
-        dataPoints: 0,
-        error: 'No health data found'
-      }
-    }
-
-    // Fetch weight change goal from profile using service role client
-    let weightChangeGoalPercent: number | null = null
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('weight_change_goal_percent')
-      .eq('id', userId)
-      .single()
     
-    weightChangeGoalPercent = profileData?.weight_change_goal_percent || 1.0
-
-    // Sort data by week number to ensure proper calculation
-    const sortedData = [...healthData].sort((a, b) => a.week_number - b.week_number)
-    
-    // Find Week 0 (baseline) and most recent week with weight data
-    const weekZero = sortedData.find(d => d.week_number === 0 && d.weight)
-    const latestWeek = [...sortedData].reverse().find(d => d.weight && d.week_number > 0)
-    const secondLatestWeek = [...sortedData].reverse().find(d => 
-      d.weight && d.week_number > 0 && d.week_number < (latestWeek?.week_number || 0)
-    )
-
-    // Calculate Total Weight Loss % (primary KPI)
-    let totalWeightLossPercentage: number | null = null
-    if (weekZero?.weight && latestWeek?.weight) {
-      const weightLoss = weekZero.weight - latestWeek.weight
-      totalWeightLossPercentage = Math.round((weightLoss / weekZero.weight) * 100 * 10) / 10 // Round to 1 decimal
-    }
-
-    // Calculate Week-over-Week Weight Loss %
-    let weeklyWeightLossPercentage: number | null = null
-    if (secondLatestWeek?.weight && latestWeek?.weight) {
-      const weeklyLoss = secondLatestWeek.weight - latestWeek.weight
-      weeklyWeightLossPercentage = Math.round((weeklyLoss / secondLatestWeek.weight) * 100 * 10) / 10 // Round to 1 decimal
-    }
-
-    return {
-      totalWeightLossPercentage,
-      weeklyWeightLossPercentage,
-      weightChangeGoalPercent,
-      hasEnoughData: sortedData.length >= 2 && !!weekZero, // Need baseline + at least 1 week
-      dataPoints: sortedData.length,
-      error: null
-    }
-
+    return calculations
   } catch (error) {
     console.error('Error calculating patient metrics (API):', error)
     return {
       totalWeightLossPercentage: null,
       weeklyWeightLossPercentage: null,
-      weightChangeGoalPercent: null,
-      hasEnoughData: false,
       dataPoints: 0,
-      error: error instanceof Error ? error.message : 'Error calculating metrics'
+      hasEnoughData: false
     }
   }
 }
 
-// API version of profile data fetching - uses service role client directly
-async function getPatientProfileAPI(userId: string) {
+// API version of getPatientProfile
+async function getPatientProfileAPI(userId: string, supabaseClient: any) {
   try {
-    const { data: profileData, error: profileError } = await supabase
+    const { data: profileData, error: profileError } = await supabaseClient
       .from('profiles')
-      .select('full_name, email, height, protein_goal_grams, weight_change_goal_percent, created_at')
+      .select('*')
       .eq('id', userId)
       .single()
-
+    
     if (profileError) {
-      console.error('Profile fetch error (API):', profileError)
-      return {
-        full_name: 'Patient',
-        email: 'unknown@email.com',
-        height: null,
-        protein_goal_grams: null,
-        weight_change_goal_percent: null,
-        created_at: null
-      }
+      console.error('Profile fetch error:', profileError)
+      throw new Error(`Failed to load profile: ${profileError.message}`)
     }
-
-    return {
-      full_name: profileData.full_name || 'Patient',
-      email: profileData.email || 'unknown@email.com',
-      height: profileData.height,
-      protein_goal_grams: profileData.protein_goal_grams,
-      weight_change_goal_percent: profileData.weight_change_goal_percent,
-      created_at: profileData.created_at
+    
+    return profileData || {
+      full_name: 'Patient',
+      email: 'unknown@email.com',
+      height: null,
+      protein_goal_grams: null,
+      weight_change_goal_percent: null,
+      created_at: null
     }
-
   } catch (error) {
     console.error('Error fetching patient profile (API):', error)
     return {
@@ -158,20 +137,21 @@ async function getPatientProfileAPI(userId: string) {
   }
 }
 
-// API version of Monday message loading - uses service role client directly
-async function getMondayMessageAPI(submissionId: string) {
+// API version of getMondayMessage
+async function getMondayMessageAPI(submissionId: string, supabaseClient: any) {
   try {
-    const { data: messageData, error: messageError } = await supabase
+    const { data: messageData, error: messageError } = await supabaseClient
       .from('health_data')
       .select('monday_message_content')
       .eq('id', submissionId)
       .single()
     
-    if (messageError || !messageData?.monday_message_content) {
+    if (messageError) {
+      console.log('Monday message fetch error:', messageError)
       return null
     }
-
-    return messageData.monday_message_content
+    
+    return messageData?.monday_message_content || null
   } catch (error) {
     console.error('Error fetching Monday message (API):', error)
     return null
@@ -179,34 +159,13 @@ async function getMondayMessageAPI(submissionId: string) {
 }
 
 // API version of buildGrokDataPackage - uses all API functions above
-async function buildGrokDataPackageAPI(submissionId: string, userId: string, submissionData?: any): Promise<GrokDataPackage> {
+async function buildGrokDataPackageAPI(submissionId: string, userId: string, submissionData: HealthDataRecord, supabaseClient: any): Promise<GrokDataPackage> {
   try {
-    // Use provided submission data if available, otherwise fetch it
-    let currentSubmission = submissionData
-    if (!currentSubmission) {
-      console.log(`Fetching submission data for ID: ${submissionId}`)
-      const { data: fetchedSubmission, error: submissionError } = await supabase
-        .from('health_data')
-        .select('*')
-        .eq('id', submissionId)
-        .single()
-      
-      if (submissionError) {
-        console.error('Supabase submission fetch error:', submissionError)
-        throw new Error(`Failed to load submission data: ${submissionError.message}`)
-      }
-      currentSubmission = fetchedSubmission
-    }
-
-    if (!currentSubmission) {
-      throw new Error('No submission data available after fetch attempt')
-    }
-
-    console.log(`Processing submission for user ${userId}, week ${currentSubmission.week_number}`)
+    console.log(`Processing submission for user ${userId}, week ${submissionData.week_number}`)
 
     // Get patient profile data using API function
     console.log('Fetching patient profile...')
-    const profileData = await getPatientProfileAPI(userId)
+    const profileData = await getPatientProfileAPI(userId, supabaseClient)
     console.log('✅ Profile data loaded successfully:', {
       name: profileData.full_name,
       email: profileData.email,
@@ -217,7 +176,7 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
     
     // Get all historical data for this patient using API function
     console.log(`Fetching historical data for user: ${userId}`)
-    const { data: historicalData, error: historyError } = await getWeeklyDataForChartsAPI(userId)
+    const { data: historicalData, error: historyError } = await getWeeklyDataForChartsAPI(userId, supabaseClient)
     
     if (historyError) {
       console.error('Historical data fetch error:', historyError)
@@ -228,12 +187,12 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
     
     // Get Monday message using API function
     console.log(`Fetching Monday message for submission: ${submissionId}`)
-    const mondayMessage = await getMondayMessageAPI(submissionId)
+    const mondayMessage = await getMondayMessageAPI(submissionId, supabaseClient)
     console.log(mondayMessage ? '✅ Monday message loaded' : 'ℹ️ No Monday message found')
     
     // Calculate metrics using API function
     console.log('Calculating patient metrics...')
-    const calculatedMetrics = await getPatientMetricsAPI(userId)
+    const calculatedMetrics = await getPatientMetricsAPI(userId, supabaseClient)
     console.log('✅ Metrics calculated:', {
       totalLoss: calculatedMetrics.totalWeightLossPercentage,
       weeklyLoss: calculatedMetrics.weeklyWeightLossPercentage,
@@ -252,35 +211,35 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
         created_date: profileData.created_at || ''
       },
       current_week: {
-        week_number: currentSubmission.week_number,
-        submission_date: currentSubmission.date || currentSubmission.created_at,
-        weight: currentSubmission.weight,
-        waist: currentSubmission.waist,
-        purposeful_exercise_days: currentSubmission.purposeful_exercise_days,
-        symptom_tracking_days: currentSubmission.symptom_tracking_days,
-        detailed_symptom_notes: currentSubmission.detailed_symptom_notes,
-        poor_recovery_days: currentSubmission.poor_recovery_days,
-        sleep_consistency_score: currentSubmission.sleep_consistency_score,
-        nutrition_compliance_days: currentSubmission.nutrition_compliance_days,
-        energetic_constraints_reduction_ok: currentSubmission.energetic_constraints_reduction_ok,
-        patient_notes: currentSubmission.notes
+        week_number: submissionData.week_number,
+        submission_date: submissionData.date || submissionData.created_at || '',
+        weight: submissionData.weight || null,
+        waist: submissionData.waist || null,
+        purposeful_exercise_days: submissionData.purposeful_exercise_days || null,
+        symptom_tracking_days: submissionData.symptom_tracking_days || null,
+        detailed_symptom_notes: submissionData.detailed_symptom_notes || null,
+        poor_recovery_days: submissionData.poor_recovery_days || null,
+        sleep_consistency_score: submissionData.sleep_consistency_score || null,
+        nutrition_compliance_days: submissionData.nutrition_compliance_days || null,
+        energetic_constraints_reduction_ok: submissionData.energetic_constraints_reduction_ok || null,
+        patient_notes: submissionData.notes || null
       },
-      historical_data: (historicalData || []).map(entry => ({
+      historical_data: (historicalData || []).map((entry: HealthDataRecord) => ({
         week_number: entry.week_number,
-        date: entry.date || entry.created_at,
-        weight: entry.weight,
-        waist: entry.waist,
-        purposeful_exercise_days: entry.purposeful_exercise_days,
-        symptom_tracking_days: entry.symptom_tracking_days,
-        detailed_symptom_notes: entry.detailed_symptom_notes,
-        poor_recovery_days: entry.poor_recovery_days,
-        sleep_consistency_score: entry.sleep_consistency_score,
-        nutrition_compliance_days: entry.nutrition_compliance_days,
-        patient_notes: entry.notes
+        date: entry.date || entry.created_at || '',
+        weight: entry.weight || null,
+        waist: entry.waist || null,
+        purposeful_exercise_days: entry.purposeful_exercise_days || null,
+        symptom_tracking_days: entry.symptom_tracking_days || null,
+        detailed_symptom_notes: entry.detailed_symptom_notes || null,
+        poor_recovery_days: entry.poor_recovery_days || null,
+        sleep_consistency_score: entry.sleep_consistency_score || null,
+        nutrition_compliance_days: entry.nutrition_compliance_days || null,
+        patient_notes: entry.notes || null
       })),
       current_week_analysis: {
-        weekly_whoop_analysis: currentSubmission.weekly_whoop_analysis,
-        monthly_whoop_analysis: currentSubmission.monthly_whoop_analysis
+        weekly_whoop_analysis: submissionData.weekly_whoop_analysis || null,
+        monthly_whoop_analysis: submissionData.monthly_whoop_analysis || null
       },
       monday_message: {
         message_content: mondayMessage,
@@ -291,7 +250,7 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
         weekly_weight_loss_percentage: calculatedMetrics.weeklyWeightLossPercentage,
         plateau_prevention_rate: calculatedMetrics.weeklyWeightLossPercentage, // Same as weekly
         weeks_of_data: calculatedMetrics.dataPoints,
-        baseline_weight: historicalData?.find(d => d.week_number === 0)?.weight || null,
+        baseline_weight: historicalData?.find((d: HealthDataRecord) => d.week_number === 0)?.weight || null,
         current_trend: calculatedMetrics.weeklyWeightLossPercentage && calculatedMetrics.weeklyWeightLossPercentage > 0 ? 'improving' : 
                       calculatedMetrics.weeklyWeightLossPercentage && calculatedMetrics.weeklyWeightLossPercentage < 0 ? 'declining' : 'stable'
       }
@@ -318,8 +277,14 @@ export async function POST(request: NextRequest) {
     
     const token = authHeader.split(' ')[1]
     
+    // Create Supabase client with anon key initially for user verification
+    const verificationClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    
     // Verify the JWT token
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
+    const { data: { user }, error: userError } = await verificationClient.auth.getUser(token)
     if (userError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -328,6 +293,20 @@ export async function POST(request: NextRequest) {
     if (user.email !== 'thefittesttribe@gmail.com') {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
+    
+    // CRITICAL FIX: Create a new authenticated Supabase client for database operations
+    // This client will be properly authenticated as Dr. Nick for all database queries
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      }
+    )
     
     // Parse request body
     const { submissionId, userId, customPrompt } = await request.json()
@@ -342,7 +321,6 @@ export async function POST(request: NextRequest) {
       .from('health_data')
       .select('*')
       .eq('id', submissionId)
-      .single()
     
     if (submissionError) {
       console.error('Failed to fetch submission:', submissionError)
@@ -351,9 +329,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    if (!submissionData || submissionData.length === 0) {
+      console.error('No submission found with ID:', submissionId)
+      return NextResponse.json({ 
+        error: 'Submission not found' 
+      }, { status: 404 })
+    }
+
     // Build comprehensive data package using NEW API function
     console.log('Building data package for Grok analysis...')
-    const dataPackage = await buildGrokDataPackageAPI(submissionId, userId, submissionData)
+    const dataPackage = await buildGrokDataPackageAPI(submissionId, userId, submissionData[0], supabase)
     
     // Format data for Grok
     const prompt = customPrompt || 'Please analyze this patient\'s health data and provide actionable recommendations.'

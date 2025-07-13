@@ -54,6 +54,8 @@ export interface QueueSubmission {
   monthly_whoop_pdf: string | null
   // Grok analysis field
   grok_analysis_response: string | null
+  // Monday message field
+  monday_message_content: string | null
   // User info
   profiles: {
     id: string
