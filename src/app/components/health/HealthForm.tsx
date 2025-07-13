@@ -1020,7 +1020,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="weight"
-                step="0.1"
+                step="0.01"
                 min="0"
                 value={formData.weight}
                 onChange={(e) => handleInputChange('weight', e.target.value)}
@@ -1041,7 +1041,7 @@ export default function HealthForm() {
               <input
                   type="number"
                   id="waist"
-                  step="0.1"
+                  step="0.01"
                   min="0"
                   value={formData.waist}
                   onChange={(e) => handleInputChange('waist', e.target.value)}

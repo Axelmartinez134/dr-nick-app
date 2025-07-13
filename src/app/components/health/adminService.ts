@@ -7,7 +7,6 @@ export interface WeekZeroData {
   weight: string
   waist: string
   height: string
-  initial_notes?: string
 }
 
 export interface PatientCreationData {
@@ -17,6 +16,7 @@ export interface PatientCreationData {
   weekZeroData: WeekZeroData
   weightChangeGoalPercent?: number
   proteinGoalGrams?: number
+  drNickCoachingNotes?: string
 }
 
 // Check if email is already taken

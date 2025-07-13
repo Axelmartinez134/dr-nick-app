@@ -15,7 +15,7 @@ const adminClient = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams } = await request.json()
+    const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams, drNickCoachingNotes } = await request.json()
 
     // Validate required fields
     if (!email || !password || !fullName || !weekZeroData) {
@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
         patient_password: password,
         weight_change_goal_percent: weightChangeGoalPercent || 1.0,
         height: parseFloat(weekZeroData.height) || null,
-        protein_goal_grams: proteinGoalGrams || 150
+        protein_goal_grams: proteinGoalGrams || 150,
+        dr_nick_coaching_notes: drNickCoachingNotes || null
       })
 
     if (profileError) {

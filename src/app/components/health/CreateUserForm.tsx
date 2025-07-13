@@ -112,8 +112,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     const weekZeroData: WeekZeroData = {
       weight: formData.weight,
       waist: formData.waist,
-      height: formData.height,
-      initial_notes: formData.initialNotes.trim() || undefined
+      height: formData.height
     }
 
     const patientData: PatientCreationData = {
@@ -122,7 +121,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       fullName: formData.fullName.trim(),
       weekZeroData,
       weightChangeGoalPercent: parseFloat(formData.weightChangeGoalPercent) || 1.0,
-      proteinGoalGrams: parseInt(formData.proteinGoalGrams) || 150
+      proteinGoalGrams: parseInt(formData.proteinGoalGrams) || 150,
+      drNickCoachingNotes: formData.initialNotes.trim() || undefined
     }
 
     const result = await createPatientAccount(patientData)
@@ -261,7 +261,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               </label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 value={formData.weight}
                 onChange={(e) => handleInputChange('weight', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
@@ -275,7 +275,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               </label>
               <input
                 type="number"
-                step="0.1"
+                step="0.01"
                 value={formData.waist}
                 onChange={(e) => handleInputChange('waist', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
@@ -290,7 +290,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
             </label>
             <input
               type="number"
-              step="0.1"
+              step="0.01"
               value={formData.height}
               onChange={(e) => handleInputChange('height', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
