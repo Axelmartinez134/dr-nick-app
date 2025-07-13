@@ -46,64 +46,26 @@ export async function validateEmailAvailability(email: string) {
 // Create a new patient account with Week 0 baseline
 export async function createPatientAccount(patientData: PatientCreationData) {
   try {
-    // Step 1: Check email availability
-    const emailCheck = await validateEmailAvailability(patientData.email)
-    if (!emailCheck.available) {
-      return { success: false, error: emailCheck.error }
-    }
-
-    // Step 2: Create auth user with regular signup
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: patientData.email.toLowerCase(),
-      password: patientData.password,
-      options: {
-        data: {
-          full_name: patientData.fullName
-        }
-      }
+    // Call the API route to create the patient server-side
+    const response = await fetch('/api/admin/create-patient', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(patientData),
     })
 
-    if (authError) {
-      return { success: false, error: `Failed to create account: ${authError.message}` }
+    const result = await response.json()
+
+    if (!response.ok) {
+      return { success: false, error: result.error || 'Failed to create patient' }
     }
 
-    if (!authData.user) {
-      return { success: false, error: 'Failed to create user account' }
-    }
-
-    const userId = authData.user.id
-
-    // Step 3: Create profile with password reference, weight goal, height, and protein goal
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        email: patientData.email.toLowerCase(),
-        full_name: patientData.fullName,
-        patient_password: patientData.password, // Store for Dr. Nick's reference
-        weight_change_goal_percent: patientData.weightChangeGoalPercent || 1.0,
-        height: parseFloat(patientData.weekZeroData.height) || null,
-        protein_goal_grams: patientData.proteinGoalGrams || 150
-      })
-
-    if (profileError) {
-      return { success: false, error: `Failed to create profile: ${profileError.message}` }
-    }
-
-    // Step 4: Create Week 0 baseline data
-    const weekZeroError = await setupWeekZeroBaseline(userId, patientData.weekZeroData)
-    if (weekZeroError) {
-      return { success: false, error: `Failed to setup Week 0 baseline: ${weekZeroError}` }
-    }
-
-    return { 
-      success: true, 
+    return {
+      success: true,
       error: null,
-      patientId: userId,
-      credentials: {
-        email: patientData.email,
-        password: patientData.password
-      }
+      patientId: result.patientId,
+      credentials: result.credentials
     }
 
   } catch (err) {
