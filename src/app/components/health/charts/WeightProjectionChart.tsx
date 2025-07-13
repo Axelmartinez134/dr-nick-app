@@ -131,7 +131,10 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
     
     // Add actual weight values
     actualWeightData.forEach(d => {
-      if (d.actualWeight !== null && d.actualWeight !== undefined) allValues.push(d.actualWeight)
+      if (d.actualWeight !== null && d.actualWeight !== undefined) {
+        allValues.push(d.actualWeight)
+        console.log('Adding actual weight:', d.actualWeight, 'from week:', d.week)
+      }
     })
     
     // Add all projection values since they now match actual data length
@@ -139,9 +142,14 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
       ['projection0', 'projection1', 'projection2', 'projection3'].forEach(key => {
         if (point[key] !== null && point[key] !== undefined) {
           allValues.push(point[key])
+          console.log('Adding projection value:', point[key], 'from week:', point.week, 'type:', key)
         }
       })
     })
+    
+    console.log('All Y-axis values:', allValues)
+    console.log('Min value:', Math.min(...allValues))
+    console.log('Max value:', Math.max(...allValues))
     
     if (allValues.length === 0) return [0, 100]
     
@@ -223,6 +231,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
           <YAxis 
             label={{ value: 'Weight (lbs)', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain}
+            tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend />

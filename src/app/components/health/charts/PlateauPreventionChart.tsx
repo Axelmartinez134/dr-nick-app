@@ -172,7 +172,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: '% Loss Rate', angle: -90, position: 'insideLeft' }}
+            label={{ value: '% Loss Rate', angle: -90, position: 'insideLeft', offset: -10 }}
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${value.toFixed(1)}%`}
           />

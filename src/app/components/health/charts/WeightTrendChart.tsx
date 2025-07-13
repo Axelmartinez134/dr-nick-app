@@ -161,6 +161,7 @@ export default function WeightTrendChart({ data }: WeightTrendChartProps) {
           <YAxis 
             label={{ value: 'Weight (lbs)', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain()}
+            tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
           />
           <Tooltip content={<CustomTooltip />} />
           

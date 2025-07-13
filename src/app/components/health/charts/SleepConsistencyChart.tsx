@@ -103,16 +103,6 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
     if (active && payload && payload.length) {
       // Regular tooltip for data points
       const score = payload[0].value
-      let category = 'Red Score'
-      let color = '#ef4444'
-      
-      if (score >= 67) {
-        category = 'Green Score'
-        color = '#10b981'
-      } else if (score >= 34) {
-        category = 'Orange Score'
-        color = '#eab308'
-      }
 
       const formatDate = (dateStr: string) => {
         try {
@@ -128,11 +118,8 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
           <p className="font-medium text-gray-800">{`Week ${label}`}</p>
-          <p style={{ color }}>
-            {`Sleep Score: ${score}/100`}
-          </p>
-          <p style={{ color }} className="text-sm">
-            {`Category: ${category}`}
+          <p className="text-gray-800">
+            {`Sleep Consistency Score: ${score}/100`}
           </p>
           {payload[0].payload.date && (
             <p className="text-gray-600 text-sm">
@@ -181,7 +168,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
           description="Whoop device data showing sleep quality and recovery patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">
-            😴 Sleep Consistency & Recovery
+            😴 Sleep Consistency Score
           </h3>
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
@@ -200,7 +187,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
           description="Whoop device data showing sleep quality and recovery patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">
-            😴 Sleep Consistency & Recovery
+            😴 Sleep Consistency Score
           </h3>
         </ChartTooltip>
         <p className="text-sm text-gray-600">
@@ -216,8 +203,9 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Sleep Score', angle: -90, position: 'insideLeft' }}
+            label={{ value: 'Sleep Consistency Score', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain()}
+            tickFormatter={(value) => `${Math.round(value)}`}
           />
           
           {/* Reference lines for score categories */}
@@ -253,22 +241,6 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
           )}
         </LineChart>
       </ResponsiveContainer>
-
-      {/* Score legend */}
-      <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-        <div className="flex items-center justify-center">
-          <div className="w-3 h-3 bg-green-500 rounded mr-2"></div>
-          <span className="text-gray-800 font-medium">67-100: Green Score</span>
-        </div>
-        <div className="flex items-center justify-center">
-          <div className="w-3 h-3 bg-orange-500 rounded mr-2"></div>
-          <span className="text-gray-800 font-medium">34-66: Orange Score</span>
-        </div>
-        <div className="flex items-center justify-center">
-          <div className="w-3 h-3 bg-red-500 rounded mr-2"></div>
-          <span className="text-gray-800 font-medium">0-33: Red Score</span>
-        </div>
-      </div>
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Data sourced from Whoop device by Dr. Nick</p>

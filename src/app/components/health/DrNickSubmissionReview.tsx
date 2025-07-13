@@ -778,7 +778,7 @@ export default function DrNickSubmissionReview({
             <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days || 'N/A'}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-indigo-700">Sleep Score</label>
+            <label className="block text-sm font-medium text-indigo-700">Sleep Consistency Score</label>
             <div className="space-y-2">
               <div className="flex items-center space-x-2">
                 <input

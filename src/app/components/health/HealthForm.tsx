@@ -13,7 +13,7 @@ interface ExtendedCheckinFormData extends CheckinFormData {
   notes?: string
 }
 
-// Smart week calculation based on existing submissions and grace period
+// Calendar-based week calculation with Monday start boundaries (Eastern Time)
 const calculateCurrentWeek = async (userId: string): Promise<number> => {
   try {
     const { data: submissions, error } = await supabase
@@ -29,25 +29,74 @@ const calculateCurrentWeek = async (userId: string): Promise<number> => {
     }
 
     if (!submissions || submissions.length === 0) {
-      return 1 // First submission
+      return 1 // First submission after Week 0
     }
 
     const lastWeek = submissions[0].week_number
-    const today = new Date()
-    const dayOfWeek = today.getDay() // 0 = Sunday, 1 = Monday, etc.
     
-    // Grace period: Allow submitting current week until Wednesday (day 3)
-    // After Wednesday, move to next week
-    if (dayOfWeek >= 3) {
-      return lastWeek + 1
-    } else {
-      // Before Wednesday - can still submit for current week
-      return lastWeek
-    }
+    // Get current time in Eastern Time
+    const now = new Date()
+    const etOffset = -5 * 60 // EST offset in minutes (UTC-5)
+    const etTime = new Date(now.getTime() + (etOffset * 60000))
+    
+    // Get current day of week (0 = Sunday, 1 = Monday, etc.)
+    const dayOfWeek = etTime.getDay()
+    
+    // Calculate days since last Monday
+    const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6, Monday = 0
+    
+    // Get the Monday of this week
+    const thisMonday = new Date(etTime)
+    thisMonday.setDate(etTime.getDate() - daysSinceMonday)
+    thisMonday.setHours(0, 0, 0, 0)
+    
+    // Week boundaries are every Monday at midnight ET
+    // If current week number exists in DB, stay on that week
+    // Otherwise, increment to next week
+    const currentWeek = lastWeek + 1
+    
+    return currentWeek
   } catch (error) {
     console.error('Error calculating current week:', error)
     return 1
   }
+}
+
+// Check if user already submitted for current week
+const checkIfAlreadySubmitted = async (userId: string, weekNumber: number): Promise<boolean> => {
+  try {
+    const { data: existing, error } = await supabase
+      .from('health_data')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('week_number', weekNumber)
+      .limit(1)
+
+    if (error) {
+      console.error('Error checking existing submission:', error)
+      return false
+    }
+
+    return existing && existing.length > 0
+  } catch (error) {
+    console.error('Error checking submission:', error)
+    return false
+  }
+}
+
+// Check if current day is within submission window (Monday-Wednesday)
+const isValidSubmissionDay = (devMode: boolean): boolean => {
+  if (devMode) return true // Dev mode bypasses restrictions
+  
+  // Get current time in Eastern Time
+  const now = new Date()
+  const etOffset = -5 * 60 // EST offset in minutes (UTC-5)
+  const etTime = new Date(now.getTime() + (etOffset * 60000))
+  
+  const dayOfWeek = etTime.getDay() // 0 = Sunday, 1 = Monday, etc.
+  
+  // Monday (1), Tuesday (2), Wednesday (3) are valid
+  return dayOfWeek >= 1 && dayOfWeek <= 3
 }
 
 // Day names for labeling
@@ -95,6 +144,28 @@ export default function HealthForm() {
   const [activeWeek, setActiveWeek] = useState(1)
   const [devMode, setDevMode] = useState(false)
   const [devWeek, setDevWeek] = useState(1)
+  
+  // Submission state management
+  const [hasSubmittedForCurrentWeek, setHasSubmittedForCurrentWeek] = useState(false)
+  const [isSubmissionSuccessful, setIsSubmissionSuccessful] = useState(false)
+
+  // Reset submission success state when dev week changes
+  useEffect(() => {
+    if (devMode) {
+      setIsSubmissionSuccessful(false)
+      
+      // Check if already submitted for the selected dev week
+      const checkDevWeekSubmission = async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          const alreadySubmitted = await checkIfAlreadySubmitted(user.id, devWeek)
+          setHasSubmittedForCurrentWeek(alreadySubmitted)
+        }
+      }
+      
+      checkDevWeekSubmission()
+    }
+  }, [devWeek, devMode])
 
   // Image upload states for each day
   const [uploadingStates, setUploadingStates] = useState<{[key: string]: boolean}>({})
@@ -123,6 +194,10 @@ export default function HealthForm() {
       const calculatedWeek = await calculateCurrentWeek(user.id)
       setActiveWeek(calculatedWeek)
       setDevWeek(calculatedWeek)
+      
+      // Check if user already submitted for current week
+      const alreadySubmitted = await checkIfAlreadySubmitted(user.id, calculatedWeek)
+      setHasSubmittedForCurrentWeek(alreadySubmitted)
       
       // Load existing form data if available
       await loadExistingFormData(user.id, calculatedWeek)
@@ -280,9 +355,25 @@ export default function HealthForm() {
       // Use dev week if in dev mode, otherwise use calculated week
       const weekToSubmit = devMode ? devWeek : activeWeek
 
+      // Check if current day is within submission window (Monday-Wednesday)
+      if (!isValidSubmissionDay(devMode)) {
+        setMessage('Submissions only allowed Monday')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Check if user already submitted for current week
+      const alreadySubmitted = await checkIfAlreadySubmitted(user.id, weekToSubmit)
+      if (alreadySubmitted) {
+        setMessage(`You already submitted for Week ${weekToSubmit}`)
+        setIsSubmitting(false)
+        return
+      }
+
       // Check if user is trying to submit for a future week (unless in dev mode)
       if (!devMode && weekToSubmit > activeWeek) {
         setMessage(`Cannot submit for Week ${weekToSubmit}. Current week is ${activeWeek}.`)
+        setIsSubmitting(false)
         return
       }
 
@@ -296,6 +387,8 @@ export default function HealthForm() {
       
       if (result.data) {
         setMessage(`✅ Week ${weekToSubmit} check-in submitted successfully!`)
+        setIsSubmissionSuccessful(true)
+        setHasSubmittedForCurrentWeek(true)
         
         // If not in dev mode, recalculate the current week
         if (!devMode) {
@@ -678,6 +771,158 @@ export default function HealthForm() {
     )
   }
 
+  // Show success message if submission was successful
+  if (isSubmissionSuccessful) {
+    return (
+      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+        {/* Developer Mode Toggle (visible in all states) */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+              <p className="text-sm text-gray-600">
+                {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDevMode(!devMode)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                devMode 
+                  ? 'bg-green-600 text-white hover:bg-green-700' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+            </button>
+          </div>
+          
+          {/* Week Selection in Dev Mode */}
+          {devMode && (
+            <div className="mt-4 p-3 bg-yellow-100 rounded">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Week for Testing:
+              </label>
+              <select
+                value={devWeek}
+                onChange={(e) => setDevWeek(Number(e.target.value))}
+                className="p-2 border border-gray-300 rounded text-gray-900"
+              >
+                {[...Array(40)].map((_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    Week {i + 1}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-yellow-700 mt-2">
+                ⚠️ Testing mode - You can submit forms for any week
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Success Message */}
+        <div className="text-center py-8">
+          <div className="mb-4">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            ✅ Your information has been submitted to Dr. Nick
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Updates have been made to your dashboard - check out your progress!
+          </p>
+          <div className="text-sm text-gray-500 mb-6">
+            You cannot submit again until next Monday
+          </div>
+          <button
+            onClick={() => setIsSubmissionSuccessful(false)}
+            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Back to Form
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Show restriction message if not in valid submission window
+  if (!isValidSubmissionDay(devMode)) {
+    return (
+      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+        {/* Developer Mode Toggle (visible in all states) */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+              <p className="text-sm text-gray-600">
+                {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDevMode(!devMode)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                devMode 
+                  ? 'bg-green-600 text-white hover:bg-green-700' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+            </button>
+          </div>
+          
+          {/* Week Selection in Dev Mode */}
+          {devMode && (
+            <div className="mt-4 p-3 bg-yellow-100 rounded">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Week for Testing:
+              </label>
+              <select
+                value={devWeek}
+                onChange={(e) => setDevWeek(Number(e.target.value))}
+                className="p-2 border border-gray-300 rounded text-gray-900"
+              >
+                {[...Array(40)].map((_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    Week {i + 1}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-yellow-700 mt-2">
+                ⚠️ Testing mode - You can submit forms for any week
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Restriction Message */}
+        <div className="text-center py-8">
+          <div className="mb-4">
+            <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Submissions only allowed Monday
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Please return on Monday to submit your weekly check-in
+          </p>
+          <div className="text-sm text-gray-500">
+            Current week: {devMode ? devWeek : activeWeek}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
       
@@ -714,7 +959,7 @@ export default function HealthForm() {
               onChange={(e) => setDevWeek(Number(e.target.value))}
               className="p-2 border border-gray-300 rounded text-gray-900"
             >
-              {[...Array(20)].map((_, i) => (
+              {[...Array(40)].map((_, i) => (
                 <option key={i + 1} value={i + 1}>
                   Week {i + 1}
                 </option>
@@ -895,7 +1140,7 @@ export default function HealthForm() {
           {/* Detailed Symptom Notes - Full width below the two fields */}
           <div>
             <label htmlFor="detailed_symptom_notes" className="block text-sm font-medium text-gray-700 mb-1">
-              Detailed Symptom Notes <span className="text-gray-500">(Optional)</span>
+              Detailed Symptoms Notes <span className="text-gray-500">(Only fill this in if any days of hunger/newfound mood disturbances, etc...are endorsed)</span>
             </label>
             <textarea
               id="detailed_symptom_notes"

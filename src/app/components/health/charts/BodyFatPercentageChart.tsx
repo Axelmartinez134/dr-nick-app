@@ -132,6 +132,7 @@ export default function BodyFatPercentageChart({ data }: BodyFatPercentageChartP
           <YAxis 
             label={{ value: 'Body Fat %', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain}
+            tickFormatter={(value) => `${Math.round(value * 10) / 10}%`}
           />
           <Tooltip content={<CustomTooltip />} />
           
@@ -149,7 +150,7 @@ export default function BodyFatPercentageChart({ data }: BodyFatPercentageChartP
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
-        <p>• Measured using precise Fit 3-D body composition scans</p>
+        <p>• Measured using the most precise testing methodology Dr. Nick has determined available in your situation</p>
         <p>• Scheduled periodically based on your progress milestones</p>
         <p>• More accurate than weight alone for tracking fat loss</p>
       </div>

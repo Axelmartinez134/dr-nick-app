@@ -161,6 +161,7 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
           <YAxis 
             label={{ value: 'Waist (inches)', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain()}
+            tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
           />
           <Tooltip content={<CustomTooltip />} />
           

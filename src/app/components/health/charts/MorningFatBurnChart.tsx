@@ -92,7 +92,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       <div className="bg-white rounded-lg shadow-md p-6">
         <ChartTooltip 
           title="Morning Fat Burn %" 
-          description="Your morning fat burn percentage shows how efficiently your body burns fat when you wake up. Higher percentages indicate your metabolism is adapting well to the program and you're becoming more metabolically flexible."
+          description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-orange-600 transition-colors">
             🔥 Morning Fat Burn %
@@ -111,14 +111,14 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       <div className="mb-4">
         <ChartTooltip 
           title="Morning Fat Burn %" 
-          description="Your morning fat burn percentage shows how efficiently your body burns fat when you wake up. Higher percentages indicate your metabolism is adapting well to the program and you're becoming more metabolically flexible."
+          description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors">
             🔥 Morning Fat Burn %
           </h3>
         </ChartTooltip>
         <p className="text-sm text-gray-600">
-          Your morning fat burn percentage shows how efficiently your body burns fat when you wake up. Higher percentages mean better metabolic adaptation.
+          Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.
         </p>
       </div>
 
@@ -130,8 +130,9 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Fat Burn %', angle: -90, position: 'insideLeft' }}
+            label={{ value: 'Fat Burn %', angle: -90, position: 'insideLeft', offset: -10 }}
             domain={calculateYAxisDomain}
+            tickFormatter={(value) => `${Math.round(value * 10) / 10}%`}
           />
           <Tooltip content={<CustomTooltip />} />
           
@@ -150,7 +151,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Measured monthly using your Lumen device data</p>
-        <p>• Higher percentages mean you're becoming more metabolically flexible</p>
+        <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
         <p>• Shows how well your body burns fat in a fasted state</p>
       </div>
     </div>
