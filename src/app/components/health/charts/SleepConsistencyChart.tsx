@@ -165,7 +165,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       <div className="bg-white rounded-lg shadow-md p-6">
         <ChartTooltip 
           title="Sleep Consistency" 
-          description="Whoop device data showing sleep quality and recovery patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
+          description="Sleep quality and recovery biometrics showing your rest patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">
             😴 Sleep Consistency Score
@@ -173,7 +173,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No sleep data available yet</p>
-          <p className="text-sm">Dr. Nick will add sleep consistency scores from your Whoop device data</p>
+          <p className="text-sm">Dr. Nick will add sleep consistency scores from your biometric data</p>
         </div>
       </div>
     )
@@ -184,14 +184,14 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       <div className="mb-4">
         <ChartTooltip 
           title="Sleep Consistency" 
-          description="Whoop device data showing sleep quality and recovery patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
+          description="Sleep quality and recovery biometrics showing your rest patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">
             😴 Sleep Consistency Score
           </h3>
         </ChartTooltip>
         <p className="text-sm text-gray-600">
-          Weekly sleep quality scores from Whoop device (added by Dr. Nick)
+          Weekly sleep quality scores from biometric analysis (added by Dr. Nick)
         </p>
       </div>
 
@@ -243,7 +243,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
-        <p>• Data sourced from Whoop device by Dr. Nick</p>
+        <p>• Data sourced from biometric analysis by Dr. Nick</p>
         <p>• Dark black trend line shows overall sleep quality direction</p>
         <p>• Higher scores indicate better sleep quality and recovery</p>
         <p>• Sleep quality directly impacts weight loss and overall progress</p>

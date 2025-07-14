@@ -19,6 +19,7 @@ export interface QueueSubmission {
   week_number: number
   weight: number | null
   waist: number | null
+  resistance_training_days: number | null
   symptom_tracking_days: number | null
   detailed_symptom_notes: string | null
   purposeful_exercise_days: number | null

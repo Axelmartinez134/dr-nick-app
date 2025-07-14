@@ -109,6 +109,7 @@ export default function HealthForm() {
     week_number: '1',
     weight: '',
     waist: '',
+    resistance_training_days: '',
     symptom_tracking_days: '',
     detailed_symptom_notes: '',
     purposeful_exercise_days: '',
@@ -148,6 +149,9 @@ export default function HealthForm() {
   // Submission state management
   const [hasSubmittedForCurrentWeek, setHasSubmittedForCurrentWeek] = useState(false)
   const [isSubmissionSuccessful, setIsSubmissionSuccessful] = useState(false)
+  
+  // Resistance training goal state
+  const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState<number>(0)
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -181,6 +185,29 @@ export default function HealthForm() {
   // Signed URLs for displaying images
   const [signedUrls, setSignedUrls] = useState<{[key: string]: string}>({})
 
+  // Load resistance training goal from profile
+  const loadResistanceTrainingGoal = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('resistance_training_days_goal')
+        .eq('id', user.id)
+        .single()
+
+      if (error) {
+        console.error('Error loading resistance training goal:', error)
+        return
+      }
+
+      setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
+    } catch (error) {
+      console.error('Error loading resistance training goal:', error)
+    }
+  }
+
   // Load user and calculate current week
   const loadUserAndCalculateWeek = async () => {
     try {
@@ -198,6 +225,9 @@ export default function HealthForm() {
       // Check if user already submitted for current week
       const alreadySubmitted = await checkIfAlreadySubmitted(user.id, calculatedWeek)
       setHasSubmittedForCurrentWeek(alreadySubmitted)
+      
+      // Load resistance training goal
+      await loadResistanceTrainingGoal()
       
       // Load existing form data if available
       await loadExistingFormData(user.id, calculatedWeek)
@@ -223,6 +253,7 @@ export default function HealthForm() {
           week_number: weekNumber.toString(),
           weight: existingData.weight?.toString() || '',
           waist: existingData.waist?.toString() || '',
+          resistance_training_days: existingData.resistance_training_days?.toString() || '',
           symptom_tracking_days: existingData.symptom_tracking_days?.toString() || '',
           detailed_symptom_notes: existingData.detailed_symptom_notes || '',
           purposeful_exercise_days: existingData.purposeful_exercise_days?.toString() || '',
@@ -295,38 +326,49 @@ export default function HealthForm() {
   const validateForm = () => {
     const errors: {[key: string]: string} = {}
     
-    // Weight validation
-    if (formData.weight && (isNaN(Number(formData.weight)) || Number(formData.weight) <= 0)) {
+    // Weight validation - REQUIRED
+    if (!formData.weight || !formData.weight.trim()) {
+      errors.weight = 'Weight is required'
+    } else if (isNaN(Number(formData.weight)) || Number(formData.weight) <= 0) {
       errors.weight = 'Weight must be a positive number'
     }
     
-    // Waist validation
-    if (formData.waist && (isNaN(Number(formData.waist)) || Number(formData.waist) <= 0)) {
+    // Waist validation - REQUIRED
+    if (!formData.waist || !formData.waist.trim()) {
+      errors.waist = 'Waist measurement is required'
+    } else if (isNaN(Number(formData.waist)) || Number(formData.waist) <= 0) {
       errors.waist = 'Waist measurement must be a positive number'
     }
     
-        // Symptom tracking days validation
+    // Days purposeful exercise validation - REQUIRED
+    if (!formData.purposeful_exercise_days || !formData.purposeful_exercise_days.trim()) {
+      errors.purposeful_exercise_days = 'Days purposeful exercise is required'
+    } else if (isNaN(Number(formData.purposeful_exercise_days)) ||
+      Number(formData.purposeful_exercise_days) < 0 ||
+      Number(formData.purposeful_exercise_days) > 7) {
+      errors.purposeful_exercise_days = 'Days purposeful exercise must be between 0 and 7'
+    }
+    
+    // Poor recovery days validation - REQUIRED
+    if (!formData.poor_recovery_days || !formData.poor_recovery_days.trim()) {
+      errors.poor_recovery_days = 'Poor recovery days is required'
+    } else if (isNaN(Number(formData.poor_recovery_days)) || 
+         Number(formData.poor_recovery_days) < 0 || 
+         Number(formData.poor_recovery_days) > 7) {
+      errors.poor_recovery_days = 'Poor recovery days must be between 0 and 7'
+    }
+    
+    // Self reflection validation - REQUIRED
+    if (!formData.notes || !formData.notes.trim()) {
+      errors.notes = 'Self reflection is required'
+    }
+    
+    // Symptom tracking days validation - OPTIONAL (only validate format if provided)
     if (formData.symptom_tracking_days &&
       (isNaN(Number(formData.symptom_tracking_days)) ||
       Number(formData.symptom_tracking_days) < 0 ||
       Number(formData.symptom_tracking_days) > 7)) {
       errors.symptom_tracking_days = 'Symptom tracking days must be between 0 and 7'
-    }
-    
-    // Days purposeful exercise validation
-    if (formData.purposeful_exercise_days &&
-      (isNaN(Number(formData.purposeful_exercise_days)) ||
-      Number(formData.purposeful_exercise_days) < 0 ||
-      Number(formData.purposeful_exercise_days) > 7)) {
-      errors.purposeful_exercise_days = 'Days purposeful exercise must be between 0 and 7'
-    }
-    
-    // Poor recovery days validation
-    if (formData.poor_recovery_days && 
-        (isNaN(Number(formData.poor_recovery_days)) || 
-         Number(formData.poor_recovery_days) < 0 || 
-         Number(formData.poor_recovery_days) > 7)) {
-      errors.poor_recovery_days = 'Poor recovery days must be between 0 and 7'
     }
 
     setValidationErrors(errors)
@@ -1015,13 +1057,14 @@ export default function HealthForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label htmlFor="weight" className="block text-sm font-medium text-gray-700 mb-1">
-                Weight (lbs) - Numbers Only
+                Weight (lbs) - Numbers Only <span className="text-red-500">*Required</span>
               </label>
               <input
                 type="number"
                 id="weight"
                 step="0.01"
                 min="0"
+                required
                 value={formData.weight}
                 onChange={(e) => handleInputChange('weight', e.target.value)}
                 className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
@@ -1036,13 +1079,14 @@ export default function HealthForm() {
 
             <div>
               <label htmlFor="waist" className="block text-sm font-medium text-gray-700 mb-1">
-                Waist Circumference (inches) - Numbers Only
+                Waist Circumference (inches) - Numbers Only <span className="text-red-500">*Required</span>
               </label>
               <input
                   type="number"
                   id="waist"
                   step="0.01"
                   min="0"
+                  required
                   value={formData.waist}
                   onChange={(e) => handleInputChange('waist', e.target.value)}
                 className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
@@ -1060,31 +1104,59 @@ export default function HealthForm() {
           {/* Exercise & Training */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">💪 Exercise & Training</h3>
-              
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Resistance Training - Left Half */}
+            <div className="space-y-3">
               <div>
-            <label htmlFor="purposeful_exercise_days" className="block text-sm font-medium text-gray-700 mb-1">
-              Days Purposeful Exercise (0-7) - Numbers Only
+                <label htmlFor="resistance_training_days" className="block text-sm font-medium text-gray-700 mb-1">
+                  Resistance Training Days (0-7) - Numbers Only
                 </label>
-              <input
-                type="number"
-              id="purposeful_exercise_days"
-                min="0"
-                max="7"
-              value={formData.purposeful_exercise_days}
-              onChange={(e) => handleInputChange('purposeful_exercise_days', e.target.value)}
-                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                validationErrors.purposeful_exercise_days ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="3"
-              />
-            {validationErrors.purposeful_exercise_days && (
-              <p className="text-sm text-red-600 mt-1">{validationErrors.purposeful_exercise_days}</p>
-              )}
+                <input
+                  type="number"
+                  id="resistance_training_days"
+                  min="0"
+                  max="7"
+                  value={formData.resistance_training_days}
+                  onChange={(e) => handleInputChange('resistance_training_days', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  placeholder="3"
+                />
                 <p className="text-xs text-gray-500 mt-1">
-              Dr. Nick will define what this means for you. Please reach out if you need clarification on your specific exercise plan.
+                  Goal: {resistanceTrainingGoal} days
                 </p>
+              </div>
+            </div>
+
+            {/* Purposeful Exercise - Right Half */}
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="purposeful_exercise_days" className="block text-sm font-medium text-gray-700 mb-1">
+                  Days Purposeful Exercise (0-7) - Numbers Only <span className="text-red-500">*Required</span>
+                </label>
+                <input
+                  type="number"
+                  id="purposeful_exercise_days"
+                  min="0"
+                  max="7"
+                  required
+                  value={formData.purposeful_exercise_days}
+                  onChange={(e) => handleInputChange('purposeful_exercise_days', e.target.value)}
+                  className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                    validationErrors.purposeful_exercise_days ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="3"
+                />
+                {validationErrors.purposeful_exercise_days && (
+                  <p className="text-sm text-red-600 mt-1">{validationErrors.purposeful_exercise_days}</p>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Dr. Nick will define what this means for you. Please reach out if you need clarification on your specific exercise plan.
+                </p>
+              </div>
             </div>
           </div>
+        </div>
 
           {/* Recovery & Nutrition */}
         <div className="space-y-4">
@@ -1117,13 +1189,14 @@ export default function HealthForm() {
 
               <div>
                 <label htmlFor="poor_recovery_days" className="block text-sm font-medium text-gray-700 mb-1">
-                Days with Poor Recovery (0-7) - Numbers Only
+                Days with Poor Recovery (0-7) - Numbers Only <span className="text-red-500">*Required</span>
                 </label>
               <input
                 type="number"
                   id="poor_recovery_days"
                 min="0"
                 max="7"
+                required
                   value={formData.poor_recovery_days}
                   onChange={(e) => handleInputChange('poor_recovery_days', e.target.value)}
                 className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
@@ -1184,16 +1257,22 @@ export default function HealthForm() {
           
           <div>
             <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
-              Self Reflection Of Your Choices/Behaviors Over The Last Week
+              Self Reflection Of Your Choices/Behaviors Over The Last Week <span className="text-red-500">*Required</span>
             </label>
             <textarea
               id="notes"
               rows={4}
+              required
               value={formData.notes}
               onChange={(e) => handleInputChange('notes', e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+              className={`w-full p-3 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                validationErrors.notes ? 'border-red-500' : 'border-gray-300'
+              }`}
               placeholder="Reflect on your food choices, exercise habits, sleep patterns, stress levels, and any behaviors that impacted your progress this week..."
             />
+            {validationErrors.notes && (
+              <p className="text-sm text-red-600 mt-1">{validationErrors.notes}</p>
+            )}
           </div>
         </div>
 

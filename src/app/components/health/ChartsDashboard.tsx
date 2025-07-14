@@ -305,7 +305,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                   {renderCell(record, 'nutrition_compliance_days', record.nutrition_compliance_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  <TableTooltip content="Your morning fat burn efficiency measured monthly using Lumen device data">
+                  <TableTooltip content="Your morning fat burn efficiency measured through monthly metabolic analysis">
                     {renderCell(record, 'morning_fat_burn_percent', record.morning_fat_burn_percent)}
                   </TableTooltip>
                 </td>
@@ -322,7 +322,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
       
       <div className="mt-4 text-sm text-gray-500">
         <p><strong>Note:</strong> Week 0 represents your baseline measurements. Sleep scores, Morning Fat %, and Body Fat % are tracked throughout your program.</p>
-        <p><strong>Morning Fat %:</strong> Monthly Lumen device analysis showing metabolic flexibility. <strong>Body Fat %:</strong> Periodic Fit 3-D scans tracking body composition.</p>
+        <p><strong>Morning Fat %:</strong> Monthly metabolic analysis showing fat burning efficiency. <strong>Body Fat %:</strong> Periodic body composition scans tracking your progress.</p>
         {isDoctorView ? (
           <p className="text-blue-600 mt-1">
             <strong>Dr. Nick:</strong> Click any cell to edit values. For notes, use Ctrl+Enter to save. Press Escape to cancel edits.
@@ -350,6 +350,13 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
   // Weight change goal editing (doctor view only)
   const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
   const [goalLoading, setGoalLoading] = useState(false)
+  
+  // Resistance training goal editing (doctor view only)
+  const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState(0)
+  const [resistanceGoalLoading, setResistanceGoalLoading] = useState(false)
+  
+  // Patient name for display
+  const [patientName, setPatientName] = useState<string>('')
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
@@ -366,7 +373,8 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       if (!isDoctorView) {
         loadMetrics()
       } else {
-        loadWeightChangeGoal()
+        loadSubmissionData()
+        loadPatientName()
       }
     }
   }, [mounted, patientId, isDoctorView])
@@ -417,26 +425,56 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
     }
   }
 
-  // Function to load weight change goal (doctor view only)
-  const loadWeightChangeGoal = async () => {
+  // Function to load weight change goal and resistance training goal (doctor view only)
+  // Load current goals data (exact copy of working DrNickSubmissionReview pattern)
+  const loadSubmissionData = async () => {
+    if (!isDoctorView || !patientId) return
+    
+    try {
+      // Load weight change goal and resistance training goal
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('weight_change_goal_percent, resistance_training_days_goal')
+        .eq('id', patientId)
+        .single()
+      
+      if (profileError) {
+        console.error('Error loading profile data:', profileError)
+      } else {
+        setWeightChangeGoal(profileData.weight_change_goal_percent || '1.00')
+        setResistanceTrainingGoal(profileData.resistance_training_days_goal || 0)
+      }
+      
+    } catch (err) {
+      console.error('Failed to load submission data:', err)
+    }
+  }
+
+  // Load patient name separately  
+  const loadPatientName = async () => {
     if (!isDoctorView || !patientId) return
     
     try {
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('weight_change_goal_percent')
+        .select('full_name, first_name, last_name')
         .eq('id', patientId)
         .single()
       
       if (error) {
-        console.error('Error loading weight change goal:', error)
+        console.error('Error loading patient name:', error)
         return
       }
       
-      const goalValue = profileData?.weight_change_goal_percent || 1.0
-      setWeightChangeGoal(goalValue.toFixed(2))
+      // Set patient name (try full_name first, then first_name + last_name, fallback to "this patient")
+      const name = profileData?.full_name || 
+                   (profileData?.first_name && profileData?.last_name 
+                     ? `${profileData.first_name} ${profileData.last_name}` 
+                     : profileData?.first_name || 'this patient')
+      setPatientName(name)
+      
     } catch (err) {
-      console.error('Failed to load weight change goal:', err)
+      console.error('Failed to load patient name:', err)
     }
   }
 
@@ -471,6 +509,37 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       alert('Failed to update weight change goal')
     } finally {
       setGoalLoading(false)
+    }
+  }
+
+  // Function to update resistance training goal (doctor view only)
+  const handleResistanceGoalUpdate = async () => {
+    if (!isDoctorView || !patientId) return
+    
+    if (isNaN(resistanceTrainingGoal) || resistanceTrainingGoal < 0 || resistanceTrainingGoal > 7) {
+      alert('Goal must be between 0 and 7 days')
+      return
+    }
+
+    setResistanceGoalLoading(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ resistance_training_days_goal: resistanceTrainingGoal })
+        .eq('id', patientId)
+      
+      if (error) {
+        console.error('Error updating resistance training goal:', error)
+        alert('Failed to update resistance training goal')
+        return
+      }
+      
+      alert('Resistance training goal updated successfully!')
+    } catch (err) {
+      console.error('Error updating resistance training goal:', err)
+      alert('Failed to update resistance training goal')
+    } finally {
+      setResistanceGoalLoading(false)
     }
   }
 
@@ -515,7 +584,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       return latestWithWeight?.weight || null;
     })(),
     totalWeightLoss: 0,
-    hasInitialSetup: chartData.some(d => d.week_number === 0 && (d.initial_weight || d.weight))
+
   }
 
   // Calculate total weight loss
@@ -531,7 +600,6 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
       currentWeight: stats.currentWeight,
       totalWeightLoss: stats.totalWeightLoss,
       hasWeek0: stats.hasWeek0,
-      hasInitialSetup: stats.hasInitialSetup,
       sampleData: chartData.slice(0, 3).map(d => ({
         week: d.week_number,
         weight: d.weight,
@@ -637,15 +705,11 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
 
         {/* Summary Stats - Different for Doctor vs Patient */}
         {isDoctorView ? (
-          // Doctor View - Show all stats
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          // Doctor View - Show stats (removed Total Data Points and Week 0 Setup cards)
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-blue-600">{stats.currentWeek}</div>
               <div className="text-sm text-blue-800">Current Week</div>
-            </div>
-            <div className="bg-green-50 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{stats.totalWeeks}</div>
-              <div className="text-sm text-green-800">Total Data Points</div>
             </div>
             <div className="bg-purple-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-purple-600">
@@ -664,12 +728,6 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
                 {stats.totalWeightLoss > 0 ? `-${stats.totalWeightLoss} lbs` : 'N/A'}
               </div>
               <div className="text-sm text-orange-800">Total Loss</div>
-            </div>
-            <div className="bg-red-50 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-red-600">
-                {stats.hasInitialSetup ? '✅' : '❌'}
-              </div>
-              <div className="text-sm text-red-800">Week 0 Setup</div>
             </div>
           </div>
         ) : (
@@ -700,59 +758,95 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
           </div>
         )}
 
-        {/* Setup Warning - Only for Doctor View */}
-        {isDoctorView && !stats.hasInitialSetup && (
-          <div className="mt-4 p-4 bg-yellow-100 border border-yellow-300 rounded">
-            <div className="flex items-center">
-              <div className="text-yellow-800">
-                <strong>⚠️ Setup Required:</strong> Dr. Nick needs to complete the initial Week 0 setup 
-                to enable all chart features, especially the weight loss projections.
+
+      </div>
+
+      {/* Goals Editing - Doctor View Only */}
+      {isDoctorView && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Weight Change Goal - Left Side */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  🎯 Patient Weight Change Goal
+                </h3>
+                <p className="text-gray-600">
+                  Set the target week-over-week weight loss<br />
+                  percentage for {patientName || 'this patient'}
+                </p>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <div className="text-right">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Goal Percentage
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.10"
+                      max="5.00"
+                      value={weightChangeGoal}
+                      onChange={(e) => setWeightChangeGoal(e.target.value)}
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={goalLoading}
+                    />
+                    <span className="text-gray-700 font-medium">%</span>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={handleGoalUpdate}
+                  disabled={goalLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {goalLoading ? 'Updating...' : 'Update Goal'}
+                </button>
               </div>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Weight Change Goal Editing - Doctor View Only */}
-      {isDoctorView && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                🎯 Patient Weight Change Goal
-              </h3>
-              <p className="text-gray-600">
-                Set the target week-over-week weight loss percentage for this patient
-              </p>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <div className="text-right">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Goal Percentage
-                </label>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.10"
-                    max="5.00"
-                    value={weightChangeGoal}
-                    onChange={(e) => setWeightChangeGoal(e.target.value)}
-                    className="w-20 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={goalLoading}
-                  />
-                  <span className="text-gray-700 font-medium">%</span>
-                </div>
+          {/* Resistance Training Goal - Right Side */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  🏋️ Patient Strength Days Target Goal
+                </h3>
+                <p className="text-gray-600">
+                  Set the target resistance training days per week<br />
+                  for {patientName || 'this patient'}
+                </p>
               </div>
               
-              <button
-                onClick={handleGoalUpdate}
-                disabled={goalLoading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                {goalLoading ? 'Updating...' : 'Update Goal'}
-              </button>
+              <div className="flex items-center space-x-3">
+                <div className="text-right">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Goal Days
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="7"
+                      value={resistanceTrainingGoal}
+                      onChange={(e) => setResistanceTrainingGoal(parseInt(e.target.value) || 0)}
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={resistanceGoalLoading}
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  onClick={handleResistanceGoalUpdate}
+                  disabled={resistanceGoalLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {resistanceGoalLoading ? 'Updating...' : 'Update Goal'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -830,7 +924,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
               <ul className="text-sm text-blue-800 space-y-1 text-left">
                 <li>1. Dr. Nick sets up Week 0 with initial weight</li>
                 <li>2. Patient completes weekly check-ins (Weeks 1+)</li>
-                <li>3. Dr. Nick adds sleep data from Whoop</li>
+                <li>3. Dr. Nick adds sleep and recovery data</li>
                 <li>4. Charts automatically populate with data</li>
               </ul>
             </div>

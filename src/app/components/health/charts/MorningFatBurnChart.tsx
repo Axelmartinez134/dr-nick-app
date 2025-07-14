@@ -100,7 +100,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No morning fat burn data available yet</p>
-          <p className="text-sm">Your Lumen device data will be analyzed monthly</p>
+          <p className="text-sm">Your metabolic data will be analyzed monthly</p>
         </div>
       </div>
     )
@@ -150,7 +150,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
-        <p>• Measured monthly using your Lumen device data</p>
+        <p>• Measured monthly through metabolic analysis</p>
         <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
         <p>• Shows how well your body burns fat in a fasted state</p>
       </div>

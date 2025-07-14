@@ -58,6 +58,9 @@ export default function DrNickSubmissionReview({
   // Weight change goal state
   const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
   
+  // Resistance training goal state
+  const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState(0)
+  
   // Nutrition compliance days state
   const [nutritionComplianceDays, setNutritionComplianceDays] = useState('0')
   
@@ -493,13 +496,34 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // Handle resistance training goal update
+  const handleResistanceGoalUpdate = async () => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ resistance_training_days_goal: resistanceTrainingGoal })
+        .eq('id', submission.user_id)
+      
+      if (error) {
+        console.error('Error updating resistance training goal:', error)
+        alert('Failed to update resistance training goal')
+        return
+      }
+      
+      alert('Resistance training goal updated successfully!')
+    } catch (err) {
+      console.error('Failed to update resistance training goal:', err)
+      alert('Failed to update resistance training goal')
+    }
+  }
+
   // Load current nutrition compliance days and weight change goal
   const loadSubmissionData = async () => {
     try {
-      // Load weight change goal
+      // Load weight change goal and resistance training goal
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('weight_change_goal_percent')
+        .select('weight_change_goal_percent, resistance_training_days_goal')
         .eq('id', submission.user_id)
         .single()
       
@@ -507,6 +531,7 @@ export default function DrNickSubmissionReview({
         console.error('Error loading profile data:', profileError)
       } else {
         setWeightChangeGoal(profileData.weight_change_goal_percent || '1.00')
+        setResistanceTrainingGoal(profileData.resistance_training_days_goal || 0)
       }
       
       // Load current nutrition compliance days for this submission
@@ -751,12 +776,14 @@ export default function DrNickSubmissionReview({
       
       {/* 1. Patient Submission Overview - Full Width */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-gray-900 mb-6">
-          Patient Submission Data - Week {submission.week_number}
-        </h3>
-
-        {/* Key Metrics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-6 mb-6">
+        {/* Patient Weekly Submission Data */}
+        <div className="mb-8">
+          <div className="text-center mb-4">
+            <h4 className="text-lg font-semibold text-gray-800 mb-1">📝 Patient Weekly Check-In Submissions</h4>
+            <p className="text-sm text-gray-600">Data submitted by {submission.profiles.first_name} {submission.profiles.last_name} for Week {submission.week_number}</p>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-blue-700">Weight</label>
             <div className="text-2xl font-bold text-blue-900">{submission.weight || 'N/A'} lbs</div>
@@ -768,6 +795,10 @@ export default function DrNickSubmissionReview({
           <div className="bg-purple-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-purple-700">Days Purposeful Exercise</label>
             <div className="text-2xl font-bold text-purple-900">{submission.purposeful_exercise_days || 'N/A'}</div>
+          </div>
+          <div className="bg-teal-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-teal-700">Resistance Training Days</label>
+            <div className="text-2xl font-bold text-teal-900">{submission.resistance_training_days || 'N/A'}</div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-red-700">Days of Hunger</label>
@@ -820,25 +851,59 @@ export default function DrNickSubmissionReview({
               </button>
             </div>
           </div>
-          <div className="bg-pink-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-pink-700">Weight Goal %</label>
-            <div className="space-y-2">
-              <input
-                type="number"
-                step="0.01"
-                min="0.10"
-                max="5.00"
-                value={weightChangeGoal}
-                onChange={(e) => setWeightChangeGoal(e.target.value)}
-                className="w-20 px-2 py-1 border border-pink-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500"
-              />
-              <button
-                onClick={handleGoalUpdate}
-                className="w-full px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
-                title="Update weight change goal"
-              >
-                Update
-              </button>
+        </div>
+        </div>
+
+        {/* Patient Profile Goals Section */}
+        <div className="mt-8 mb-6">
+          <div className="text-center mb-4">
+            <h4 className="text-lg font-semibold text-gray-800 mb-1">🎯 Patient Profile Goals</h4>
+            <p className="text-sm text-gray-600">These goals persist throughout the entire program and apply to all weekly submissions</p>
+          </div>
+          
+          <div className="flex justify-center gap-6">
+            <div className="bg-pink-50 p-4 rounded-lg">
+              <label className="block text-sm font-medium text-pink-700">Week-over-Week Weight Loss %</label>
+              <p className="text-xs text-pink-600 mb-2">Target percentage for weekly weight reduction</p>
+              <div className="space-y-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.10"
+                  max="5.00"
+                  value={weightChangeGoal}
+                  onChange={(e) => setWeightChangeGoal(e.target.value)}
+                  className="w-20 px-2 py-1 border border-pink-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                />
+                <button
+                  onClick={handleGoalUpdate}
+                  className="w-full px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
+                  title="Update weight change goal"
+                >
+                  Update
+                </button>
+              </div>
+            </div>
+            <div className="bg-purple-50 p-4 rounded-lg">
+              <label className="block text-sm font-medium text-purple-700">Training Days Per Week Goal</label>
+              <p className="text-xs text-purple-600 mb-2">Target resistance training days for this client</p>
+              <div className="space-y-2">
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  value={resistanceTrainingGoal}
+                  onChange={(e) => setResistanceTrainingGoal(parseInt(e.target.value) || 0)}
+                  className="w-16 px-2 py-1 border border-purple-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  onClick={handleResistanceGoalUpdate}
+                  className="w-full px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 transition-colors"
+                  title="Update resistance training goal"
+                >
+                  Update
+                </button>
+              </div>
             </div>
           </div>
         </div>

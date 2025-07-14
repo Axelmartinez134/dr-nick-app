@@ -37,6 +37,7 @@ export interface CheckinFormData {
   week_number: string
   weight?: string
   waist?: string
+  resistance_training_days?: string
   symptom_tracking_days?: string
   detailed_symptom_notes?: string
   purposeful_exercise_days?: string

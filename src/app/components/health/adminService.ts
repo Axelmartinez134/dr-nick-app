@@ -16,6 +16,7 @@ export interface PatientCreationData {
   weekZeroData: WeekZeroData
   weightChangeGoalPercent?: number
   proteinGoalGrams?: number
+  resistanceTrainingGoal?: number
   drNickCoachingNotes?: string
 }
 
