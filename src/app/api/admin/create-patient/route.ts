@@ -17,6 +17,9 @@ export async function POST(request: NextRequest) {
   try {
     const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams, resistanceTrainingGoal, drNickCoachingNotes } = await request.json()
 
+    // DEBUG: Log the coaching notes being received
+    console.log('DEBUG: Received drNickCoachingNotes:', drNickCoachingNotes)
+
     // Validate required fields
     if (!email || !password || !fullName || !weekZeroData) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 })
@@ -53,24 +56,31 @@ export async function POST(request: NextRequest) {
 
     const userId = authData.user.id
 
+    // DEBUG: Log the profile data being inserted
+    const profileData = {
+      id: userId,
+      email: email.toLowerCase(),
+      full_name: fullName,
+      patient_password: password,
+      weight_change_goal_percent: weightChangeGoalPercent || 1.0,
+      height: parseFloat(weekZeroData.height) || null,
+      protein_goal_grams: proteinGoalGrams || 150,
+      resistance_training_days_goal: resistanceTrainingGoal || 0,
+      dr_nick_coaching_notes: drNickCoachingNotes || null
+    }
+    console.log('DEBUG: Profile data to insert:', profileData)
+
     // Step 3: Create profile using admin client (bypasses RLS)
     const { error: profileError } = await adminClient
       .from('profiles')
-      .insert({
-        id: userId,
-        email: email.toLowerCase(),
-        full_name: fullName,
-        patient_password: password,
-        weight_change_goal_percent: weightChangeGoalPercent || 1.0,
-        height: parseFloat(weekZeroData.height) || null,
-        protein_goal_grams: proteinGoalGrams || 150,
-        resistance_training_days_goal: resistanceTrainingGoal || 0,
-        dr_nick_coaching_notes: drNickCoachingNotes || null
-      })
+      .insert(profileData)
 
     if (profileError) {
+      console.error('DEBUG: Profile creation error:', profileError)
       return NextResponse.json({ success: false, error: `Failed to create profile: ${profileError.message}` }, { status: 500 })
     }
+
+    console.log('DEBUG: Profile created successfully')
 
     // Step 4: Create Week 0 baseline data using admin client (bypasses RLS)
     const today = new Date().toISOString().split('T')[0]
@@ -101,6 +111,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (err) {
+    console.error('DEBUG: Unexpected error in create-patient:', err)
     return NextResponse.json({ success: false, error: `Unexpected error: ${err}` }, { status: 500 })
   }
 } 

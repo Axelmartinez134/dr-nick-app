@@ -5,15 +5,64 @@
 
 import { useState, useEffect } from 'react'
 import { getComplianceMetrics, ComplianceMetrics } from './complianceMetricsService'
+import { supabase } from '../auth/AuthContext'
 
 interface ComplianceMetricsTableProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
+}
+
+// Compliance Metrics Tooltip Component
+function MetricsTooltip({ title, formula, explanation, interpretation, children }: { 
+  title: string
+  formula: string
+  explanation: string
+  interpretation: string
+  children: React.ReactNode 
+}) {
+  const [isVisible, setIsVisible] = useState(false)
+
+  return (
+    <div className="relative inline-block w-full">
+      <div
+        onMouseEnter={() => setIsVisible(true)}
+        onMouseLeave={() => setIsVisible(false)}
+        className="cursor-help w-full"
+      >
+        {children}
+      </div>
+      
+      {isVisible && (
+        <div className="absolute z-10 w-80 p-4 bg-gray-900 text-white text-sm rounded-lg shadow-lg bottom-full left-1/2 transform -translate-x-1/2 mb-2">
+          <div className="font-semibold text-blue-300 mb-2">{title}</div>
+          
+          <div className="mb-2">
+            <div className="font-medium text-green-300 mb-1">Formula:</div>
+            <div className="font-mono text-xs bg-gray-800 p-2 rounded">{formula}</div>
+          </div>
+          
+          <div className="mb-2">
+            <div className="font-medium text-yellow-300 mb-1">What it measures:</div>
+            <div className="text-gray-300">{explanation}</div>
+          </div>
+          
+          <div>
+            <div className="font-medium text-purple-300 mb-1">Why it matters:</div>
+            <div className="text-gray-300">{interpretation}</div>
+          </div>
+          
+          {/* Arrow pointing down */}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsTableProps) {
   const [metrics, setMetrics] = useState<ComplianceMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
+  const [proteinGoal, setProteinGoal] = useState<number | null>(null)
 
   // Determine if this is Dr. Nick's view
   const isDoctorView = !!patientId
@@ -33,8 +82,31 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
   const loadMetrics = async () => {
     setLoading(true)
     try {
+      // Load compliance metrics
       const metricsData = await getComplianceMetrics(patientId)
       setMetrics(metricsData)
+
+      // Load protein goal from profiles table
+      let currentUserId = patientId
+      if (!currentUserId) {
+        const { data: { user } } = await supabase.auth.getUser()
+        currentUserId = user?.id
+      }
+
+      if (currentUserId) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('protein_goal_grams')
+          .eq('id', currentUserId)
+          .single()
+        
+        if (profileError) {
+          console.error('Error loading protein goal:', profileError)
+          setProteinGoal(150) // Default fallback
+        } else {
+          setProteinGoal(profileData?.protein_goal_grams || 150)
+        }
+      }
     } catch (error) {
       console.error('Error loading compliance metrics:', error)
       setMetrics({
@@ -47,6 +119,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
         performanceMs: 0,
         error: error instanceof Error ? error.message : 'Failed to load metrics'
       })
+      setProteinGoal(150) // Default fallback
     } finally {
       setLoading(false)
     }
@@ -108,6 +181,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
           ? "Key performance indicators for this patient's program compliance and progress"
           : "Key performance indicators tracking your program compliance and health goals"
         }
+        <span className="text-sm text-blue-600 ml-2">💡 Hover over each metric for detailed explanations</span>
       </p>
 
       {loading ? (
@@ -136,65 +210,81 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
           
           {/* Top Row - Nutrition Goal Met (Full Width) */}
           <div className="grid grid-cols-1 gap-4 mb-4">
-            <div className="bg-green-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-green-700 mb-2">% AVERAGE DAYS NUTRITION GOAL MET</h3>
-              <div className="text-2xl font-bold text-green-900">
-                {metrics.nutritionGoalMet !== null 
-                  ? `${metrics.nutritionGoalMet.toFixed(1)}%` 
-                  : 'N/A'
-                }
+            <MetricsTooltip
+              title="Average Days Nutrition Goal Met"
+              formula={`Daily Protein Goal: ${proteinGoal || 150}g (±3g) | Valid Range: ${(proteinGoal || 150) - 3}g - ${(proteinGoal || 150) + 3}g | Weekly Score: (Compliant Days ÷ 7) × 100`}
+              explanation={`Compliance is BINARY for each day: either you hit your daily protein goal of ${proteinGoal || 150}g within ±3g range, or you didn't. Even being off by 5g means that day was non-compliant. This measures how many days per week you stayed within ${(proteinGoal || 150) - 3}g to ${(proteinGoal || 150) + 3}g protein intake.`}
+              interpretation="Your protein goal is the highest priority of all nutrition recommendations. Hitting protein within the ±3g range every day is critical for maintaining muscle mass, controlling hunger, and preventing overeating on carbs/fats. This binary compliance system ensures precision in your nutrition execution."
+            >
+              <div className="bg-green-50 p-4 rounded-lg hover:bg-green-100 transition-colors">
+                <h3 className="text-sm font-medium text-green-700 mb-2">% AVERAGE DAYS NUTRITION GOAL MET</h3>
+                <div className="text-2xl font-bold text-green-900">
+                  {metrics.nutritionGoalMet !== null 
+                    ? `${metrics.nutritionGoalMet.toFixed(1)}%` 
+                    : 'N/A'
+                  }
+                </div>
               </div>
-              <p className="text-xs text-green-600 mt-1">
-                (Nutrition Days ÷ 7) × 100
-              </p>
-            </div>
+            </MetricsTooltip>
           </div>
 
           {/* Bottom Row - Other Metrics (3 Cards) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Strain Target Goal Met */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-blue-700 mb-2">% AVERAGE DAYS STRAIN TARGET GOAL MET</h3>
-              <div className="text-2xl font-bold text-blue-900">
-                {metrics.strainTargetGoalMet !== null 
-                  ? `${metrics.strainTargetGoalMet.toFixed(1)}%` 
-                  : 'N/A'
-                }
+            <MetricsTooltip
+              title="Average Days Strain Target Goal Met"
+              formula="(Purposeful Exercise Days ÷ 7 Days per Week) × 100"
+              explanation="This tracks how consistently you're meeting your weekly exercise targets. It measures the percentage of days you completed purposeful physical activity versus your goal."
+              interpretation="Regular exercise is crucial for maintaining muscle mass during weight loss, improving metabolic health, and optimizing body composition. Consistency is more important than intensity - aim for steady progress."
+            >
+              <div className="bg-blue-50 p-4 rounded-lg hover:bg-blue-100 transition-colors">
+                <h3 className="text-sm font-medium text-blue-700 mb-2">% AVERAGE DAYS STRAIN TARGET GOAL MET</h3>
+                <div className="text-2xl font-bold text-blue-900">
+                  {metrics.strainTargetGoalMet !== null 
+                    ? `${metrics.strainTargetGoalMet.toFixed(1)}%` 
+                    : 'N/A'
+                  }
+                </div>
               </div>
-              <p className="text-xs text-blue-600 mt-1">
-                (Exercise Days ÷ 7) × 100
-              </p>
-            </div>
+            </MetricsTooltip>
 
             {/* Poor Recovery Percentage */}
-            <div className="bg-yellow-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-yellow-700 mb-2">% AVERAGE DAYS POOR RECOVERY</h3>
-              <div className="text-2xl font-bold text-yellow-900">
-                {metrics.poorRecoveryPercentage !== null 
-                  ? `${metrics.poorRecoveryPercentage.toFixed(1)}%` 
-                  : 'N/A'
-                }
+            <MetricsTooltip
+              title="Average Days Poor Recovery"
+              formula="(Poor Recovery Days ÷ Total Days Tracked) × 100"
+              explanation="This measures how often you experience poor recovery, which includes inadequate sleep, high stress, or feeling unrecovered. It's calculated across all your check-in periods."
+              interpretation="Lower percentages are better. Poor recovery can sabotage weight loss efforts by affecting hormones, increasing cravings, and reducing motivation. Focus on sleep quality, stress management, and adequate rest between workouts."
+            >
+              <div className="bg-yellow-50 p-4 rounded-lg hover:bg-yellow-100 transition-colors">
+                <h3 className="text-sm font-medium text-yellow-700 mb-2">% AVERAGE DAYS POOR RECOVERY</h3>
+                <div className="text-2xl font-bold text-yellow-900">
+                  {metrics.poorRecoveryPercentage !== null 
+                    ? `${metrics.poorRecoveryPercentage.toFixed(1)}%` 
+                    : 'N/A'
+                  }
+                </div>
               </div>
-              <p className="text-xs text-yellow-600 mt-1">
-                (Recovery Days ÷ Total Days) × 100
-              </p>
-            </div>
+            </MetricsTooltip>
 
             {/* Waist/Height Goal Distance */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-blue-700 mb-2">DISTANCE FROM WAIST/HEIGHT GOAL</h3>
-              <div className="text-2xl font-bold text-blue-900">
-                {metrics.waistHeightGoalDistance !== null 
-                  ? (metrics.waistHeightGoalDistance >= 0 
-                      ? `+${metrics.waistHeightGoalDistance.toFixed(3)}` 
-                      : metrics.waistHeightGoalDistance.toFixed(3))
-                  : 'N/A'
-                }
+                         <MetricsTooltip
+               title="Distance from Waist-to-Height Goal"
+               formula="Goal = 0.5 (unitless ratio) | Current: (Waist ÷ Height) | Distance: Current - 0.5"
+               explanation="This measures how close you are to the ideal waist-to-height ratio of 0.5. The goal of 0.5 is the universally recommended ratio for both men and women, calculated as waist measurement ÷ height measurement (works with any units since you're dividing the same units)."
+               interpretation="A ratio of 0.5 or below indicates optimal metabolic health. Values above 0.5 suggest increased health risks. This unitless measure is one of the strongest predictors of cardiovascular risk and metabolic health, regardless of your overall body size."
+             >
+              <div className="bg-purple-50 p-4 rounded-lg hover:bg-purple-100 transition-colors">
+                <h3 className="text-sm font-medium text-purple-700 mb-2">DISTANCE FROM WAIST/HEIGHT GOAL</h3>
+                <div className="text-2xl font-bold text-purple-900">
+                  {metrics.waistHeightGoalDistance !== null 
+                    ? (metrics.waistHeightGoalDistance >= 0 
+                        ? `+${metrics.waistHeightGoalDistance.toFixed(3)}` 
+                        : metrics.waistHeightGoalDistance.toFixed(3))
+                    : 'N/A'
+                  }
+                </div>
               </div>
-              <p className="text-xs text-blue-600 mt-1">
-                (Current Waist ÷ Height) - 0.5
-              </p>
-            </div>
+            </MetricsTooltip>
           </div>
 
         </>

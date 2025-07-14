@@ -39,7 +39,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="text-center">
             <h1 className="text-4xl font-bold text-gray-900">
-              The Fittest You Health Tracker
+              Your Metabolic Health Improvement Journey Starts Here
             </h1>
             <p className="mt-2 text-lg text-gray-600">
               Your Personal Health Journey Starts Here
@@ -80,7 +80,7 @@ export default function Home() {
                 Track Your Progress
               </h3>
               <p className="text-gray-600">
-                Monitor weight, waist circumference, and sleep patterns with beautiful charts.
+                Monitor weight, waist circumference, metabolic fuel substrate utilization, and sleep patterns with beautiful charts.
               </p>
             </div>
 

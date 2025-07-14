@@ -39,53 +39,97 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function PlateauPreventionChart({ data }: PlateauPreventionChartProps) {
-  // Process data to calculate loss percentage rates
-  const chartData = data
-    .filter(entry => entry.weight !== null && entry.week_number > 0) // Exclude Week 0 and null weights
-    .sort((a, b) => a.week_number - b.week_number)
-    .map((entry, index, sortedData) => {
-      let lossPercentageRate = 0
+  // Process data to calculate plateau prevention using Dr. Nick's progressive averaging method
+  const chartData = useMemo(() => {
+    // Include Week 0 in sorting for baseline calculations but filter out null weights
+    const allWeeks = data
+      .filter(entry => entry.weight !== null)
+      .sort((a, b) => a.week_number - b.week_number)
+    
+    // Step 1: Calculate individual week losses for all weeks (including Week 1 from Week 0)
+    const individualLosses: { week: number; individualLoss: number; weight: number }[] = []
+    
+    for (let i = 1; i < allWeeks.length; i++) {
+      const currentWeek = allWeeks[i]
+      const previousWeek = allWeeks[i - 1]
       
-      if (index > 0) {
-        const previousWeek = sortedData[index - 1]
-        if (previousWeek.weight && entry.weight) {
-          lossPercentageRate = calculateLossPercentageRate(entry.weight, previousWeek.weight)
-        }
+      if (currentWeek.weight && previousWeek.weight && currentWeek.week_number > 0) {
+        // Individual week loss = ((previousWeight - currentWeight) / previousWeight) × 100
+        const individualLoss = ((previousWeek.weight - currentWeek.weight) / previousWeek.weight) * 100
+        
+        individualLosses.push({
+          week: currentWeek.week_number,
+          individualLoss: individualLoss,
+          weight: currentWeek.weight
+        })
+      }
+    }
+    
+    // Step 2: Calculate plateau prevention values using progressive averaging
+    const plateauPreventionData = individualLosses.map((entry, index) => {
+      let plateauPreventionValue = 0
+      
+      if (entry.week === 1) {
+        // Week 1: Just the individual week loss
+        plateauPreventionValue = entry.individualLoss
+      } else if (entry.week === 2) {
+        // Week 2: Average of weeks 1 and 2
+        const week1Loss = individualLosses.find(w => w.week === 1)?.individualLoss || 0
+        plateauPreventionValue = (week1Loss + entry.individualLoss) / 2
+      } else if (entry.week === 3) {
+        // Week 3: Average of weeks 1, 2, and 3
+        const week1Loss = individualLosses.find(w => w.week === 1)?.individualLoss || 0
+        const week2Loss = individualLosses.find(w => w.week === 2)?.individualLoss || 0
+        plateauPreventionValue = (week1Loss + week2Loss + entry.individualLoss) / 3
+      } else if (entry.week === 4) {
+        // Week 4: Average of weeks 1, 2, 3, and 4
+        const week1Loss = individualLosses.find(w => w.week === 1)?.individualLoss || 0
+        const week2Loss = individualLosses.find(w => w.week === 2)?.individualLoss || 0
+        const week3Loss = individualLosses.find(w => w.week === 3)?.individualLoss || 0
+        plateauPreventionValue = (week1Loss + week2Loss + week3Loss + entry.individualLoss) / 4
+      } else {
+        // Week 5+: Rolling 4-week average of most recent weeks only
+        const currentWeekIndex = individualLosses.findIndex(w => w.week === entry.week)
+        const last4Weeks = individualLosses.slice(Math.max(0, currentWeekIndex - 3), currentWeekIndex + 1)
+        const sum = last4Weeks.reduce((acc, w) => acc + w.individualLoss, 0)
+        plateauPreventionValue = sum / last4Weeks.length
       }
       
       return {
-        week: entry.week_number,
-        lossRate: Math.round(lossPercentageRate * 100) / 100, // Round to 2 decimal places
+        week: entry.week,
+        lossRate: Math.round(plateauPreventionValue * 100) / 100, // Round to 2 decimal places
+        individualLoss: Math.round(entry.individualLoss * 100) / 100, // Store individual loss for tooltip
         weight: entry.weight
       }
     })
+    
+    return plateauPreventionData
+  }, [data])
 
-  // Calculate regression for loss rate trend line
-  const regressionResult = useMemo(() => {
-    if (chartData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+  // Calculate horizontal average line (mean of all plateau prevention values)
+  const averageLineResult = useMemo(() => {
+    if (chartData.length === 0) return { isValid: false, averageValue: 0 }
     
-    const regressionData = chartData.map(d => ({ week: d.week, value: d.lossRate }))
-    const minWeek = Math.min(...chartData.map(d => d.week))
-    const maxWeek = Math.max(...chartData.map(d => d.week))
+    // Calculate the average of all plateau prevention values
+    const sum = chartData.reduce((acc, d) => acc + d.lossRate, 0)
+    const averageValue = sum / chartData.length
     
-    return calculateLinearRegression(regressionData, minWeek, maxWeek)
+    return {
+      isValid: true,
+      averageValue: Math.round(averageValue * 100) / 100 // Round to 2 decimal places
+    }
   }, [chartData])
 
-  // Merge trend line data with chart data
+  // Add horizontal average line to chart data
   const enhancedChartData = useMemo(() => {
-    if (!regressionResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
+    if (!averageLineResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
     
-    return chartData.map(point => {
-      // Only add trend line values for weeks where we have actual loss rate data
-      const hasActualData = chartData.some(d => d.week === point.week)
-      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
-      
-      return {
-        ...point,
-        trendLine: (hasActualData && trendPoint) ? trendPoint.value : null
-      }
-    })
-  }, [chartData, regressionResult])
+    // Add the horizontal average line value to each data point
+    return chartData.map(point => ({
+      ...point,
+      trendLine: averageLineResult.averageValue
+    }))
+  }, [chartData, averageLineResult])
 
   // Calculate Y-axis domain excluding trend line values to prevent skewing
   const calculateYAxisDomain = () => {
@@ -112,17 +156,30 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      const data = payload[0].payload
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
           <p className="font-medium text-gray-800">{`Week ${label}`}</p>
           <p className="text-blue-600">
-            {`Loss Rate: ${payload[0].value}%`}
+            {`Plateau Prevention: ${payload[0].value}%`}
           </p>
-          {payload[0].payload.weight && (
-            <p className="text-gray-600 text-sm">
-              {`Weight: ${payload[0].payload.weight} lbs`}
+          {data.individualLoss !== undefined && (
+            <p className="text-green-600 text-sm">
+              {`Individual Week Loss: ${data.individualLoss}%`}
             </p>
           )}
+          {data.weight && (
+            <p className="text-gray-600 text-sm">
+              {`Weight: ${data.weight} lbs`}
+            </p>
+          )}
+          <div className="text-xs text-gray-500 mt-1 border-t pt-1">
+            {label <= 1 && "= Individual week loss"}
+            {label === 2 && "= Avg of weeks 1-2"} 
+            {label === 3 && "= Avg of weeks 1-3"}
+            {label === 4 && "= Avg of weeks 1-4"}
+            {label > 4 && "= Rolling 4-week average"}
+          </div>
         </div>
       )
     }
@@ -134,7 +191,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
       <div className="bg-white rounded-lg shadow-md p-6">
         <ChartTooltip 
           title="Plateau Prevention" 
-          description="Tracks week-to-week loss percentage to identify plateaus early. Red zones indicate potential plateaus that may require program adjustments."
+          description="Tracks average weekly weight loss percentage using progressive averaging (weeks 1-4) then rolling 4-week averages (week 5+) to identify plateaus early. Declining trends may signal program adjustments are needed."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-green-600 transition-colors">
             📈 Plateau Prevention (Weight Loss Rate)
@@ -142,7 +199,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No weight data available yet</p>
-          <p className="text-sm">Enter weight data for multiple weeks to see loss rate trends</p>
+          <p className="text-sm">Enter weight data for multiple weeks to see plateau prevention analysis</p>
         </div>
       </div>
     )
@@ -160,7 +217,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
           </h3>
         </ChartTooltip>
         <p className="text-sm text-gray-600">
-          Tracks week-over-week weight loss percentage to identify potential plateaus
+          Tracks average weight loss percentage using progressive averaging to identify potential plateaus
         </p>
       </div>
 
@@ -190,8 +247,8 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
             connectNulls={true}
           />
           
-          {/* Regression trend line - Dark black as requested */}
-          {regressionResult.isValid && (
+          {/* Horizontal average line - Dark black as requested */}
+          {averageLineResult.isValid && (
             <Line 
               type="monotone" 
               dataKey="trendLine" 
@@ -199,7 +256,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
               strokeWidth={2}
               dot={false}
               activeDot={false}
-              name="Trend Line"
+              name="Average Line"
               connectNulls={true}
           />
           )}
@@ -207,10 +264,12 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
-        <p>• Higher percentages indicate faster weight loss</p>
-        <p>• Dark black trend line shows overall loss rate direction</p>
-        <p>• Declining trend may signal an approaching plateau</p>
-        <p>• Formula: ABS(100 - (Current Week Weight ÷ Previous Week Weight) × 100)</p>
+        <p>• Tracks average weekly weight loss % over time to detect plateaus early</p>
+        <p>• Week 1-4: Progressive averaging (Week 2 = avg of weeks 1-2, Week 3 = avg of weeks 1-3, etc.)</p>
+        <p>• Week 5+: Rolling 4-week average of most recent weeks only</p>
+        <p>• Dark black line shows average plateau prevention across all weeks</p>
+        <p>• Points above the line indicate better than average performance</p>
+        <p>• Individual Week Formula: ((Previous Weight - Current Weight) ÷ Previous Weight) × 100</p>
       </div>
     </div>
   )
