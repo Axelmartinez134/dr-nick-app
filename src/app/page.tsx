@@ -39,10 +39,10 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="text-center">
             <h1 className="text-4xl font-bold text-gray-900">
-              Your Metabolic Health Improvement Journey Starts Here
+              The Fittest You Metabolic Health Tracker
             </h1>
             <p className="mt-2 text-lg text-gray-600">
-              Your Personal Health Journey Starts Here
+              Your Metabolic Health Improvement Journey Starts Here
             </p>
           </div>
         </div>

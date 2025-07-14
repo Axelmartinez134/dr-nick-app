@@ -1282,7 +1282,7 @@ export default function DrNickSubmissionReview({
             <h5 className="text-lg font-medium text-gray-800 mb-4 border-b pb-2">Weekly Analysis</h5>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: '#000000' }}>
                 Weekly Whoop Link
               </label>
               <div className="flex items-start space-x-3">
@@ -1344,7 +1344,7 @@ export default function DrNickSubmissionReview({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: '#000000' }}>
                 Weekly Whoop PDF Upload
               </label>
               
@@ -1486,7 +1486,7 @@ export default function DrNickSubmissionReview({
             <h5 className="text-lg font-medium text-gray-800 mb-4 border-b pb-2">Monthly Analysis</h5>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: '#000000' }}>
                 Monthly Whoop Link
               </label>
               <div className="flex items-start space-x-3">
@@ -1548,7 +1548,7 @@ export default function DrNickSubmissionReview({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: '#000000' }}>
                 Monthly Whoop PDF Upload
               </label>
               
