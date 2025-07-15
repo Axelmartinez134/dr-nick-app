@@ -83,7 +83,7 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
     const weekZero = sortedData.find(d => d.week_number === 0 && d.weight)
     const latestWeek = [...sortedData].reverse().find(d => d.weight && d.week_number > 0)
     const secondLatestWeek = [...sortedData].reverse().find(d => 
-      d.weight && d.week_number > 0 && d.week_number < (latestWeek?.week_number || 0)
+      d.weight && d.week_number >= 0 && d.week_number < (latestWeek?.week_number || 0)
     )
 
     // Calculate Total Weight Loss % (primary KPI)

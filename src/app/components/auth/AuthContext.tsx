@@ -104,9 +104,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  // Sign out function
+  // Sign out function with 403 error handling
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      // Strategy 1: Try normal logout first
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        console.warn('Normal logout failed:', error)
+        
+        // Strategy 2: Try logout without global scope
+        try {
+          const { error: localError } = await supabase.auth.signOut({ scope: 'local' })
+          if (localError) {
+            throw localError
+          }
+        } catch (localLogoutError) {
+          console.warn('Local logout also failed:', localLogoutError)
+          throw localLogoutError
+        }
+      }
+      
+      console.log('Logout successful')
+      
+    } catch (error) {
+      console.error('All logout strategies failed:', error)
+      
+      // Strategy 3: Manual session clearing as fallback
+      console.log('Forcing manual logout...')
+      
+      // Clear all possible storage locations
+      try {
+        localStorage.removeItem('supabase.auth.token')
+        localStorage.removeItem('sb-pobkamvdnbxhmyfwbnsj-auth-token')
+        sessionStorage.clear()
+        
+        // Clear any cookies
+        document.cookie.split(";").forEach(function(c) { 
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+        })
+      } catch (storageError) {
+        console.warn('Storage clearing failed:', storageError)
+      }
+    }
+    
+    // Always force clear auth state regardless of API success/failure
+    setSession(null)
+    setUser(null)
+    setLoading(false)
+    
+    // Force page refresh to ensure clean state
+    window.location.href = '/'
   }
 
   const value = {

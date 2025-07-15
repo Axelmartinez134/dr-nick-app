@@ -374,9 +374,8 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
   useEffect(() => {
     if (mounted) {
       loadChartData()
-      if (!isDoctorView) {
-        loadMetrics()
-      } else {
+      loadMetrics() // Load metrics for both patient and doctor views
+      if (isDoctorView) {
         loadSubmissionData()
         loadPatientName()
       }
@@ -397,20 +396,14 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
     }
 
     setLoading(false)
-    
-    // Also load metrics for patient view
-    if (!isDoctorView) {
-      loadMetrics()
-    }
   }
 
-  // Function to load metrics data (patient view only)
+  // Function to load metrics data (both patient and doctor views)
   const loadMetrics = async () => {
-    if (isDoctorView) return // Only for patient view
-    
     setMetricsLoading(true)
     try {
       // For patient view, patientId is undefined, so getPatientMetrics will use current user from auth context
+      // For doctor view, patientId is passed to get metrics for the specific patient
       const metricsData = await getPatientMetrics(patientId)
       setMetrics(metricsData)
     } catch (error) {
@@ -628,8 +621,8 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
-      {/* Metrics Hero Cards - Patient View Only */}
-      {!isDoctorView && metrics && metrics.hasEnoughData && (
+      {/* Metrics Hero Cards - Both Patient and Doctor Views */}
+      {metrics && metrics.hasEnoughData && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           
           {/* Total Weight Loss % - Primary KPI */}
@@ -645,7 +638,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
               }
             </div>
             <p className="text-sm text-blue-600">
-              Since starting your journey
+              Since starting {isDoctorView ? 'their journey' : 'your journey'}
             </p>
           </div>
 
@@ -679,7 +672,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
               }
             </div>
             <p className="text-sm text-purple-600">
-              Dr. Nick&apos;s target for you
+              Dr. Nick&apos;s target for {isDoctorView ? 'them' : 'you'}
             </p>
           </div>
 

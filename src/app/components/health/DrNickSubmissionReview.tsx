@@ -40,6 +40,16 @@ export default function DrNickSubmissionReview({
     images: Array<{url: string, title: string, day: string, fieldName: string}>
   } | null>(null)
   
+  // NEW: Day-based unified image viewer state
+  const [viewingDayImageSet, setViewingDayImageSet] = useState<{
+    currentIndex: number,
+    days: Array<{
+      day: string,
+      lumenImage: {url: string, title: string, fieldName: string} | null,
+      foodLogImage: {url: string, title: string, fieldName: string} | null
+    }>
+  } | null>(null)
+  
   // PDF viewing modal state
   const [viewingPdf, setViewingPdf] = useState<{
     url: string, 
@@ -806,30 +816,111 @@ export default function DrNickSubmissionReview({
     setViewingImageSet(prev => prev ? { ...prev, currentIndex: newIndex } : null)
   }
 
-  // Keyboard navigation
+  // NEW: Helper function to build day-based image sets for unified viewing
+  const buildDayImageSet = (clickedIndex: number) => {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    const dayImagePairs: Array<{
+      day: string,
+      lumenImage: {url: string, title: string, fieldName: string} | null,
+      foodLogImage: {url: string, title: string, fieldName: string} | null
+    }> = []
+    
+    days.forEach((day, index) => {
+      const lumenFieldName = `lumen_day${index + 1}_image`
+      const foodLogFieldName = `food_log_day${index + 1}_image`
+      
+      const lumenImageUrl = submission[lumenFieldName as keyof QueueSubmission] as string
+      const foodLogImageUrl = submission[foodLogFieldName as keyof QueueSubmission] as string
+      
+      const lumenDisplayUrl = signedUrls[lumenFieldName] || lumenImageUrl
+      const foodLogDisplayUrl = signedUrls[foodLogFieldName] || foodLogImageUrl
+      
+      const lumenImage = lumenDisplayUrl ? {
+        url: lumenDisplayUrl,
+        title: `${day} Lumen Screenshot - Week ${submission.week_number}`,
+        fieldName: lumenFieldName
+      } : null
+      
+      const foodLogImage = foodLogDisplayUrl ? {
+        url: foodLogDisplayUrl,
+        title: `${day} Food Log Screenshot - Week ${submission.week_number}`,
+        fieldName: foodLogFieldName
+      } : null
+      
+      // Include all days (even if both images are missing) for consistent navigation
+      dayImagePairs.push({
+        day,
+        lumenImage,
+        foodLogImage
+      })
+    })
+    
+    return {
+      currentIndex: clickedIndex,
+      days: dayImagePairs
+    }
+  }
+
+  // NEW: Navigation function for day-based viewing
+  const dayNavigateImage = (direction: 'prev' | 'next') => {
+    if (!viewingDayImageSet) return
+    
+    const { currentIndex, days } = viewingDayImageSet
+    let newIndex: number
+    
+    if (direction === 'prev') {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : days.length - 1
+    } else {
+      newIndex = currentIndex < days.length - 1 ? currentIndex + 1 : 0
+    }
+    
+    setViewingDayImageSet(prev => prev ? { ...prev, currentIndex: newIndex } : null)
+  }
+
+  // Keyboard navigation (updated to handle both modal types)
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      if (!viewingImageSet) return
+      // Handle day-based unified viewer
+      if (viewingDayImageSet) {
+        switch (event.key) {
+          case 'ArrowLeft':
+            event.preventDefault()
+            dayNavigateImage('prev')
+            break
+          case 'ArrowRight':
+            event.preventDefault()
+            dayNavigateImage('next')
+            break
+          case 'Escape':
+            event.preventDefault()
+            setViewingDayImageSet(null)
+            break
+        }
+        return
+      }
       
-      switch (event.key) {
-        case 'ArrowLeft':
-          event.preventDefault()
-          navigateImage('prev')
-          break
-        case 'ArrowRight':
-          event.preventDefault()
-          navigateImage('next')
-          break
-        case 'Escape':
-          event.preventDefault()
-          setViewingImageSet(null)
-          break
+      // Handle original single-type viewer (fallback)
+      if (viewingImageSet) {
+        switch (event.key) {
+          case 'ArrowLeft':
+            event.preventDefault()
+            navigateImage('prev')
+            break
+          case 'ArrowRight':
+            event.preventDefault()
+            navigateImage('next')
+            break
+          case 'Escape':
+            event.preventDefault()
+            setViewingImageSet(null)
+            break
+        }
       }
     }
     
     document.addEventListener('keydown', handleKeyPress)
     return () => document.removeEventListener('keydown', handleKeyPress)
-  }, [viewingImageSet])
+  }, [viewingImageSet, viewingDayImageSet])
 
   // Initialize component
   useEffect(() => {
@@ -1135,10 +1226,14 @@ export default function DrNickSubmissionReview({
                       src={displayUrl}
                       alt={`${day} Lumen`}
                       className="w-full h-24 object-cover rounded-lg border-2 border-blue-200 cursor-pointer hover:border-blue-400 transition-colors shadow-sm"
-                      onClick={() => setViewingImageSet(buildImageSet('lumen', index))}
+                      onClick={() => setViewingDayImageSet(buildDayImageSet(index))}
                     />
                   ) : (
-                    <div className="w-full h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
+                    <div 
+                      className="w-full h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400 cursor-pointer hover:border-gray-400 transition-colors"
+                      onClick={() => setViewingDayImageSet(buildDayImageSet(index))}
+                      title="Click to view daily comparison"
+                    >
                       No Image
                     </div>
                   )}
@@ -1168,10 +1263,14 @@ export default function DrNickSubmissionReview({
                       src={displayUrl}
                       alt={`${day} Food Log`}
                       className="w-full h-24 object-cover rounded-lg border-2 border-green-200 cursor-pointer hover:border-green-400 transition-colors shadow-sm"
-                      onClick={() => setViewingImageSet(buildImageSet('food_log', index))}
+                      onClick={() => setViewingDayImageSet(buildDayImageSet(index))}
                     />
                   ) : (
-                    <div className="w-full h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400">
+                    <div 
+                      className="w-full h-24 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400 cursor-pointer hover:border-gray-400 transition-colors"
+                      onClick={() => setViewingDayImageSet(buildDayImageSet(index))}
+                      title="Click to view daily comparison"
+                    >
                       No Image
                     </div>
                   )}
@@ -1812,6 +1911,129 @@ export default function DrNickSubmissionReview({
           <ChartsDashboard 
             patientId={submission.user_id}
           />
+        </div>
+      )}
+
+      {/* NEW: Unified Day-Based Image Viewer Modal */}
+      {viewingDayImageSet && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-[90vw] max-h-full bg-white rounded-lg overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gray-100 px-6 py-4 border-b flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <h3 className="text-lg font-medium text-gray-900">
+                  {viewingDayImageSet.days[viewingDayImageSet.currentIndex].day} Daily Comparison - Week {submission.week_number}
+                </h3>
+                <div className="text-sm text-gray-600 bg-gray-200 px-3 py-1 rounded-full">
+                  {viewingDayImageSet.currentIndex + 1} of {viewingDayImageSet.days.length} days
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingDayImageSet(null)}
+                className="text-gray-400 hover:text-gray-600 text-3xl font-bold leading-none"
+                title="Close (ESC)"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Modal Body with Navigation */}
+            <div className="flex items-center justify-center p-6 min-h-[80vh]">
+              {/* Previous Button - Outside the images */}
+              <button
+                onClick={() => dayNavigateImage('prev')}
+                className="bg-white text-gray-800 p-4 rounded-full hover:bg-gray-100 transition-all shadow-lg border-2 border-gray-200 mr-6"
+                title="Previous day (Left Arrow)"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              
+              {/* Side-by-Side Images Container */}
+              <div className="flex justify-center items-center space-x-8 flex-1">
+                {/* Lumen Image */}
+                <div className="flex-1 text-center">
+                  <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium mb-4 inline-block">
+                    Lumen Screenshot
+                  </div>
+                  <div className="flex items-center justify-center" style={{ minHeight: '70vh' }}>
+                    {viewingDayImageSet.days[viewingDayImageSet.currentIndex].lumenImage ? (
+                      <img
+                        src={viewingDayImageSet.days[viewingDayImageSet.currentIndex].lumenImage!.url}
+                        alt={viewingDayImageSet.days[viewingDayImageSet.currentIndex].lumenImage!.title}
+                        className="max-w-full max-h-[70vh] object-contain border-2 border-blue-200 rounded-lg shadow-sm"
+                      />
+                    ) : (
+                      <div className="max-w-full max-h-[70vh] bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-500" style={{ minHeight: '500px', width: '300px' }}>
+                        <div className="text-center">
+                          <div className="text-4xl mb-2">📱</div>
+                          <div className="text-sm">No Lumen Image</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Food Log Image */}
+                <div className="flex-1 text-center">
+                  <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium mb-4 inline-block">
+                    Food Log Screenshot
+                  </div>
+                  <div className="flex items-center justify-center" style={{ minHeight: '70vh' }}>
+                    {viewingDayImageSet.days[viewingDayImageSet.currentIndex].foodLogImage ? (
+                      <img
+                        src={viewingDayImageSet.days[viewingDayImageSet.currentIndex].foodLogImage!.url}
+                        alt={viewingDayImageSet.days[viewingDayImageSet.currentIndex].foodLogImage!.title}
+                        className="max-w-full max-h-[70vh] object-contain border-2 border-green-200 rounded-lg shadow-sm"
+                      />
+                    ) : (
+                      <div className="max-w-full max-h-[70vh] bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-500" style={{ minHeight: '500px', width: '300px' }}>
+                        <div className="text-center">
+                          <div className="text-4xl mb-2">🍽️</div>
+                          <div className="text-sm">No Food Log Image</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Next Button - Outside the images */}
+              <button
+                onClick={() => dayNavigateImage('next')}
+                className="bg-white text-gray-800 p-4 rounded-full hover:bg-gray-100 transition-all shadow-lg border-2 border-gray-200 ml-6"
+                title="Next day (Right Arrow)"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+            
+            {/* Modal Footer with Day Indicators */}
+            <div className="bg-gray-100 px-6 py-3 border-t">
+              <div className="flex items-center justify-center space-x-2">
+                {viewingDayImageSet.days.map((dayData, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setViewingDayImageSet(prev => prev ? { ...prev, currentIndex: index } : null)}
+                    className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                      index === viewingDayImageSet.currentIndex
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                    title={`Jump to ${dayData.day}`}
+                  >
+                    {dayData.day.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+              <div className="text-center text-xs text-gray-500 mt-2">
+                Use ← → arrow keys or click day buttons to navigate
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
