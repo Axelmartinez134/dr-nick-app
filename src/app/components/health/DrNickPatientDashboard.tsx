@@ -9,6 +9,7 @@ import ChartsDashboard from './ChartsDashboard'
 import DrNickAdmin from './DrNickAdmin'
 import DrNickQueue, { QueueSubmission } from './DrNickQueue'
 import DrNickSubmissionReview from './DrNickSubmissionReview'
+import MarketingTab from './marketing/MarketingTab'
 
 // Import QueueSubmission interface from DrNickQueue
 interface PatientSummary {
@@ -254,6 +255,17 @@ export default function DrNickPatientDashboard() {
             )}
 
             <button
+              onClick={() => setActiveTab('marketing')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'marketing'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              🎬 Marketing
+            </button>
+
+            <button
               onClick={() => setActiveTab('admin')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
                 activeTab === 'admin'
@@ -372,6 +384,11 @@ export default function DrNickPatientDashboard() {
           onReviewComplete={handleReviewComplete}
           onBackToQueue={handleBackToQueue}
         />
+      )}
+
+      {/* Marketing Tab Content */}
+      {activeTab === 'marketing' && (
+        <MarketingTab />
       )}
 
     </div>
