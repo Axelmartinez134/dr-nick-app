@@ -260,11 +260,11 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Hunger</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Purposeful Exercise</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resistance Training Days</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resistance Training Days Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Consistency Score</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
             </tr>

@@ -210,7 +210,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
       <div className="mb-4">
         <ChartTooltip 
           title="Plateau Prevention" 
-          description="Tracks week-to-week loss percentage to identify plateaus early. Red zones indicate potential plateaus that may require program adjustments."
+          description="Tracks week-to-week loss percentage to identify plateaus early. Any data point trends approaching 0% may require program adjustments."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-green-600 transition-colors">
             📈 Plateau Prevention (Weight Loss Rate)

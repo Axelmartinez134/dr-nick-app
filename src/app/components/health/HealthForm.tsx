@@ -1132,7 +1132,7 @@ export default function HealthForm() {
             <div className="space-y-3">
               <div>
                 <label htmlFor="purposeful_exercise_days" className="block text-sm font-medium text-gray-700 mb-1">
-                  Days Purposeful Exercise (0-7) - Numbers Only <span className="text-red-500">*Required</span>
+                  Days Strain Goal Met (0-7) - Numbers Only <span className="text-red-500">*Required</span>
                 </label>
                 <input
                   type="number"

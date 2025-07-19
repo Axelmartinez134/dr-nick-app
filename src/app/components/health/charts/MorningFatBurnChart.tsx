@@ -95,7 +95,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
           description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-orange-600 transition-colors">
-            🔥 Morning Fat Burn %
+            🔥 Morning Fat Oxidation %
           </h3>
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
@@ -114,7 +114,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
           description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors">
-            🔥 Morning Fat Burn %
+            🔥 Morning Fat Oxidation %
           </h3>
         </ChartTooltip>
         <p className="text-sm text-gray-600">
@@ -150,7 +150,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
-        <p>• Measured monthly through metabolic analysis</p>
+        <p>• Measured weekly through metabolic analysis</p>
         <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
         <p>• Shows how well your body burns fat in a fasted state</p>
       </div>

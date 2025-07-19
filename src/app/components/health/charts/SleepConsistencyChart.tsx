@@ -165,7 +165,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       <div className="bg-white rounded-lg shadow-md p-6">
         <ChartTooltip 
           title="Sleep Consistency" 
-          description="Sleep quality and recovery biometrics showing your rest patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
+          description="Sleep quality and recovery biometrics showing your rest patterns. Sleep consistency measures how similar your bed and wake times are over a 4-day period. It's scored on a 0-100% scale where 'low' is under 70%, 'moderate' is between 70% and 80%, and 'high' is 80%+. Consistent sleep-wake times regulate your internal clock, improving sleep quality, metabolism, and immune function."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">
             😴 Sleep Consistency Score
@@ -184,7 +184,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       <div className="mb-4">
         <ChartTooltip 
           title="Sleep Consistency" 
-          description="Sleep quality and recovery biometrics showing your rest patterns. Sleep quality directly impacts weight loss, recovery, and overall health progress."
+          description="Sleep quality and recovery biometrics showing your rest patterns. Sleep consistency measures how similar your bed and wake times are over a 4-day period. It's scored on a 0-100% scale where 'low' is under 70%, 'moderate' is between 70% and 80%, and 'high' is 80%+. Consistent sleep-wake times regulate your internal clock, improving sleep quality, metabolism, and immune function."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">
             😴 Sleep Consistency Score
@@ -244,9 +244,9 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Data sourced from biometric analysis by Dr. Nick</p>
-        <p>• Dark black trend line shows overall sleep quality direction</p>
-        <p>• Higher scores indicate better sleep quality and recovery</p>
-        <p>• Sleep quality directly impacts weight loss and overall progress</p>
+        <p>• Dark black trend line shows overall sleep consistency direction</p>
+        <p>• Higher scores indicate better sleep consistency and recovery</p>
+        <p>• Sleep consistency directly impacts weight loss and overall progress</p>
       </div>
     </div>
   )

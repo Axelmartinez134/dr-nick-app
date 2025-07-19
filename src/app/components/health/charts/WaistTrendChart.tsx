@@ -121,7 +121,7 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
       <div className="bg-white rounded-lg shadow-md p-6">
         <ChartTooltip 
           title="Waist Trend" 
-          description="Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress."
+          description="Tracks waist circumference changes over time. Often more reliable for measuring visceral fat changes and body composition progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-orange-600 transition-colors">
             📏 Waist Trend Analysis
@@ -195,8 +195,8 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Often more accurate than weight for fat loss tracking</p>
-        <p>• Dark black trend line shows overall waist measurement direction</p>
-        <p>• Measure at the widest part of your waist</p>
+        <p>• Dark black trend line shows overall waist measurement change direction</p>
+        <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
         <p>• Consistent measurement location is important</p>
       </div>
     </div>

@@ -121,7 +121,7 @@ export default function WeightTrendChart({ data }: WeightTrendChartProps) {
       <div className="bg-white rounded-lg shadow-md p-6">
         <ChartTooltip 
           title="Weight Trend" 
-          description="Basic progress tracking with trend lines for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
+          description="Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-purple-600 transition-colors">
             ⚖️ Weight Trend Analysis
@@ -140,7 +140,7 @@ export default function WeightTrendChart({ data }: WeightTrendChartProps) {
       <div className="mb-4">
         <ChartTooltip 
           title="Weight Trend" 
-          description="Basic progress tracking with trend lines for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
+          description="Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-purple-600 transition-colors">
             ⚖️ Weight Trend Analysis
@@ -196,7 +196,7 @@ export default function WeightTrendChart({ data }: WeightTrendChartProps) {
       <div className="mt-4 text-xs text-gray-500">
         <p>• Track weekly progress</p>
         <p>• Dark black trend line shows overall direction</p>
-        <p>• Weekly fluctuations are normal</p>
+        <p>• Weekly fluctuations are normal - focus on trendline should be prioritized</p>
       </div>
     </div>
   )
