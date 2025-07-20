@@ -290,7 +290,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Verify user is Dr. Nick
-    if (user.email !== 'thefittesttribe@gmail.com') {
+    if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
     

@@ -42,7 +42,7 @@ npm run dev
 ## 🏥 Dr. Nick Admin Features
 
 ### Creating Patients:
-1. Login as Dr. Nick (thefittesttribe@gmail.com)
+1. Login as Dr. Nick ({ADMIN_EMAIL})
 2. Click "➕ Create New Patient"
 3. Fill patient details and Week 0 baseline measurements
 4. System automatically handles week progression from first submission

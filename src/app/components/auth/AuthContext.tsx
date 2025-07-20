@@ -50,7 +50,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loading, setLoading] = useState(true)
 
   // Role detection based on email
-  const isDoctor = user?.email === 'thefittesttribe@gmail.com'
+  const isDoctor = !!(user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAIL && user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
   const isPatient = !!user && !isDoctor
 
   useEffect(() => {

@@ -12,6 +12,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 # Optional: Service Role Key (for admin operations)
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
+# Admin Email Configuration
+NEXT_PUBLIC_ADMIN_EMAIL=your_admin_email_here
+
 # Grok AI API Configuration (for Dr. Nick's AI analysis feature)
 GROK_API_BASE_URL=https://api.x.ai/v1
 GROK_API_KEY=your_grok_api_key_here
@@ -21,10 +24,11 @@ GROK_MODEL=grok-3-latest
 ## **Database Configuration**
 
 ### **Admin Email Setup**
-The admin email address is hardcoded in the RLS policies. Before deploying:
+The admin email address is now configured via environment variable for better security and flexibility:
 
-1. **Update RLS Policies**: Replace `{ADMIN_EMAIL}` placeholder with actual admin email in all policies
-2. **Update Application Code**: Ensure the email matches in `AuthContext.tsx` and other admin detection logic
+1. **Set Environment Variable**: Add `NEXT_PUBLIC_ADMIN_EMAIL` to your `.env.local` and Vercel configuration
+2. **Update RLS Policies**: Replace `{ADMIN_EMAIL}` placeholder with actual admin email in all policies
+3. **Application Code**: Now automatically uses the environment variable for admin detection
 
 ### **Example RLS Policy Update**
 ```sql
