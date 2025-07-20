@@ -18,6 +18,7 @@ export interface PatientCreationData {
   proteinGoalGrams?: number
   resistanceTrainingGoal?: number
   drNickCoachingNotes?: string
+  clientStatus?: string
 }
 
 // Check if email is already taken

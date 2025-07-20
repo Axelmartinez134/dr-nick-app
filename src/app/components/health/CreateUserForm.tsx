@@ -22,7 +22,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     initialNotes: '',
     weightChangeGoalPercent: '1.00',
     proteinGoalGrams: '150',
-    resistanceTrainingGoal: '0'
+    resistanceTrainingGoal: '0',
+    clientStatus: 'Current'
   })
 
   const [loading, setLoading] = useState(false)
@@ -124,7 +125,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       weightChangeGoalPercent: parseFloat(formData.weightChangeGoalPercent) || 1.0,
       proteinGoalGrams: parseInt(formData.proteinGoalGrams) || 150,
       resistanceTrainingGoal: parseInt(formData.resistanceTrainingGoal) || 0,
-      drNickCoachingNotes: formData.initialNotes.trim() || undefined
+      drNickCoachingNotes: formData.initialNotes.trim() || undefined,
+      clientStatus: formData.clientStatus
     }
 
     const result = await createPatientAccount(patientData)
@@ -250,6 +252,10 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               </p>
             </div>
 
+          </div>
+
+          {/* Goals and Status Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Resistance Training Goal (days per week)
@@ -265,6 +271,24 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               />
               <p className="text-xs text-gray-500 mt-1">
                 Target resistance training days per week (0-7) - patient will see this as their goal
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Client Status
+              </label>
+              <select
+                value={formData.clientStatus}
+                onChange={(e) => handleInputChange('clientStatus', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+              >
+                <option value="Current">Current</option>
+                <option value="Onboarding">Onboarding</option>
+                <option value="Past">Past</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Initial status for patient categorization on dashboard
               </p>
             </div>
           </div>

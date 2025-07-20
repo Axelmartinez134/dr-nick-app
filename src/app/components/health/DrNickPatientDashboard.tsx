@@ -16,6 +16,7 @@ interface PatientSummary {
   user_id: string
   email: string
   full_name: string | null
+  client_status: string
   total_checkins: number
   current_week: number
   latest_weight: number | null
@@ -66,7 +67,7 @@ export default function DrNickPatientDashboard() {
       // Get profile data for these users
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, email, full_name')
+        .select('id, email, full_name, client_status')
         .in('id', uniqueUserIds)
 
       if (profilesError) throw profilesError
@@ -91,6 +92,7 @@ export default function DrNickPatientDashboard() {
             user_id: userId,
             email: profile.email || 'Unknown',
             full_name: profile.full_name || null,
+            client_status: profile.client_status || 'Current',
             total_checkins: 0,
             current_week: 0,
             latest_weight: null,
@@ -186,8 +188,10 @@ export default function DrNickPatientDashboard() {
             </p>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold text-blue-600">{patients.length}</div>
-            <div className="text-sm text-blue-800">Total Patients</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {patients.filter(p => p.client_status === 'Current').length}
+            </div>
+            <div className="text-sm text-blue-800">Current Clients</div>
           </div>
         </div>
       </div>
@@ -289,65 +293,193 @@ export default function DrNickPatientDashboard() {
 
       {/* Content */}
       {activeTab === 'patients' && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">Patient Overview</h2>
-            <button
-              onClick={loadPatients}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              🔄 Refresh
-            </button>
+        <div className="space-y-6">
+          {/* Header with Refresh Button */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">Patient Overview</h2>
+              <button
+                onClick={loadPatients}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                🔄 Refresh
+              </button>
+            </div>
           </div>
 
           {patients.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <p>No patients found yet</p>
-              <p className="text-sm">Patients will appear here once they start submitting check-ins</p>
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <div className="text-center py-8 text-gray-500">
+                <p>No patients found yet</p>
+                <p className="text-sm">Patients will appear here once they start submitting check-ins</p>
+              </div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full table-auto">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Patient</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Current Week</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Last Check-in</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {patients.map((patient) => (
-                    <tr key={patient.user_id} className="border-t hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {patient.full_name || 'Unknown Name'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {patient.email}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        Week {patient.current_week}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <button
-                          onClick={() => {
-                            setSelectedPatientId(patient.user_id)
-                            setActiveTab('charts')
-                          }}
-                          className="text-blue-600 hover:text-blue-800 mr-3"
-                        >
-                          📊 View Charts
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Filter patients by status */}
+              {(() => {
+                const onboardingPatients = patients.filter(p => p.client_status === 'Onboarding')
+                const currentPatients = patients.filter(p => p.client_status === 'Current')
+                const pastPatients = patients.filter(p => p.client_status === 'Past')
+
+                return (
+                  <>
+                    {/* Currently Onboarding Section */}
+                    {onboardingPatients.length > 0 && (
+                      <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold text-blue-900 mb-4">
+                          📋 Currently Onboarding ({onboardingPatients.length} patients)
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full table-auto">
+                            <thead>
+                              <tr className="bg-blue-50">
+                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Email</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Current Week</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Last Check-in</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {onboardingPatients.map((patient) => (
+                                <tr key={patient.user_id} className="border-t hover:bg-blue-50">
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.full_name || 'Unknown Name'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.email}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    Week {patient.current_week}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPatientId(patient.user_id)
+                                        setActiveTab('charts')
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 mr-3"
+                                    >
+                                      📊 View Charts
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Current Clients Section */}
+                    {currentPatients.length > 0 && (
+                      <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold text-green-900 mb-4">
+                          ✅ Current Clients ({currentPatients.length} patients)
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full table-auto">
+                            <thead>
+                              <tr className="bg-green-50">
+                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Email</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Current Week</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Last Check-in</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentPatients.map((patient) => (
+                                <tr key={patient.user_id} className="border-t hover:bg-green-50">
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.full_name || 'Unknown Name'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.email}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    Week {patient.current_week}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPatientId(patient.user_id)
+                                        setActiveTab('charts')
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 mr-3"
+                                    >
+                                      📊 View Charts
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Past Clients Section */}
+                    {pastPatients.length > 0 && (
+                      <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                          📁 Past Clients ({pastPatients.length} patients)
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full table-auto">
+                            <thead>
+                              <tr className="bg-gray-50">
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Current Week</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Last Check-in</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {pastPatients.map((patient) => (
+                                <tr key={patient.user_id} className="border-t hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.full_name || 'Unknown Name'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.email}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    Week {patient.current_week}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPatientId(patient.user_id)
+                                        setActiveTab('charts')
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 mr-3"
+                                    >
+                                      📊 View Charts
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </>
           )}
         </div>
       )}

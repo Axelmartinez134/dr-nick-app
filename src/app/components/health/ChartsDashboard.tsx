@@ -13,6 +13,126 @@ import MorningFatBurnChart from './charts/MorningFatBurnChart'
 import ComplianceMetricsTable from './ComplianceMetricsTable'
 import StickyNotes from './StickyNotes'
 
+// Patient Status Management Component
+function PatientStatusManagement({ patientId }: { patientId?: string }) {
+  const [currentStatus, setCurrentStatus] = useState<string>('Current')
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string>('')
+  const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
+
+  // Load current patient status
+  useEffect(() => {
+    if (!patientId) return
+
+    const loadPatientStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('client_status')
+          .eq('id', patientId)
+          .single()
+
+        if (error) throw error
+        setCurrentStatus(data?.client_status || 'Current')
+      } catch (error) {
+        console.error('Error loading patient status:', error)
+        setCurrentStatus('Current')
+      }
+    }
+
+    loadPatientStatus()
+  }, [patientId])
+
+  // Handle status change
+  const handleStatusChange = async (newStatus: string) => {
+    if (!patientId || newStatus === currentStatus) return
+
+    // Optimistic update
+    setCurrentStatus(newStatus)
+    setSaving(true)
+    setMessage('')
+
+    try {
+      const response = await fetch('/api/admin/update-patient-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          patientId,
+          clientStatus: newStatus
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessage(`✅ Status updated to ${newStatus}`)
+        setMessageType('success')
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error) {
+      // Revert on error
+      setCurrentStatus(currentStatus)
+      setMessage(`❌ Failed to update status`)
+      setMessageType('error')
+      console.error('Status update error:', error)
+    }
+
+    setSaving(false)
+
+    // Clear message after 3 seconds
+    setTimeout(() => {
+      setMessage('')
+      setMessageType('')
+    }, 3000)
+  }
+
+  if (!patientId) return null
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        👤 Patient Status Management
+      </h3>
+      
+      <div className="flex items-center space-x-4">
+        <label className="text-sm font-medium text-gray-700">
+          Current Status:
+        </label>
+        <div className="relative">
+          <select
+            value={currentStatus}
+            onChange={(e) => handleStatusChange(e.target.value)}
+            disabled={saving}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 disabled:bg-gray-100"
+          >
+            <option value="Current">Current</option>
+            <option value="Past">Past</option>
+            <option value="Onboarding">Onboarding</option>
+          </select>
+          {saving && (
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {message && (
+        <div className={`mt-3 p-2 rounded text-sm ${
+          messageType === 'success' 
+            ? 'bg-green-100 text-green-800' 
+            : 'bg-red-100 text-red-800'
+        }`}>
+          {message}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Props interface
 interface ChartsDashboardProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
@@ -927,6 +1047,11 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Patient Status Management - Dr. Nick Only */}
+      {isDoctorView && (
+        <PatientStatusManagement patientId={patientId} />
       )}
 
       {/* Floating Sticky Notes - Dr. Nick Only */}
