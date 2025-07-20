@@ -34,23 +34,23 @@ const calculateCurrentWeek = async (userId: string): Promise<number> => {
 
     const lastWeek = submissions[0].week_number
     
-    // Get current time in Eastern Time
+    // Get current time in Anywhere on Earth (AoE) - UTC-12
     const now = new Date()
-    const etOffset = -5 * 60 // EST offset in minutes (UTC-5)
-    const etTime = new Date(now.getTime() + (etOffset * 60000))
+    const aoeOffset = -12 * 60 // AoE offset in minutes (UTC-12)
+    const aoeTime = new Date(now.getTime() + (aoeOffset * 60000))
     
     // Get current day of week (0 = Sunday, 1 = Monday, etc.)
-    const dayOfWeek = etTime.getDay()
+    const dayOfWeek = aoeTime.getDay()
     
     // Calculate days since last Monday
     const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6, Monday = 0
     
     // Get the Monday of this week
-    const thisMonday = new Date(etTime)
-    thisMonday.setDate(etTime.getDate() - daysSinceMonday)
+    const thisMonday = new Date(aoeTime)
+    thisMonday.setDate(aoeTime.getDate() - daysSinceMonday)
     thisMonday.setHours(0, 0, 0, 0)
     
-    // Week boundaries are every Monday at midnight ET
+    // Week boundaries are every Monday at midnight AoE
     // If current week number exists in DB, stay on that week
     // Otherwise, increment to next week
     const currentWeek = lastWeek + 1
@@ -88,12 +88,12 @@ const checkIfAlreadySubmitted = async (userId: string, weekNumber: number): Prom
 const isValidSubmissionDay = (devMode: boolean): boolean => {
   if (devMode) return true // Dev mode bypasses restrictions
   
-  // Get current time in Eastern Time
+  // Get current time in Anywhere on Earth (AoE) - UTC-12
   const now = new Date()
-  const etOffset = -5 * 60 // EST offset in minutes (UTC-5)
-  const etTime = new Date(now.getTime() + (etOffset * 60000))
+  const aoeOffset = -12 * 60 // AoE offset in minutes (UTC-12)
+  const aoeTime = new Date(now.getTime() + (aoeOffset * 60000))
   
-  const dayOfWeek = etTime.getDay() // 0 = Sunday, 1 = Monday, etc.
+  const dayOfWeek = aoeTime.getDay() // 0 = Sunday, 1 = Monday, etc.
   
   // Monday (1), Tuesday (2), Wednesday (3) are valid
   return dayOfWeek >= 1 && dayOfWeek <= 3
@@ -399,7 +399,7 @@ export default function HealthForm() {
 
       // Check if current day is within submission window (Monday-Wednesday)
       if (!isValidSubmissionDay(devMode)) {
-        setMessage('Submissions only allowed Monday')
+        setMessage('Submissions allowed Monday-Wednesday (Anywhere on Earth)')
         setIsSubmitting(false)
         return
       }
@@ -419,10 +419,14 @@ export default function HealthForm() {
         return
       }
 
-      // Update form data with correct week number
+      // Detect user's timezone and append to notes
+      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      
+      // Update form data with correct week number and timezone info
       const submissionData = {
         ...formData,
-        week_number: weekToSubmit.toString()
+        week_number: weekToSubmit.toString(),
+        notes: `${formData.notes || ''}\n[Timezone: ${userTimeZone}]`.trim()
       }
 
       const result = await saveWeeklyCheckin(submissionData)
@@ -879,7 +883,7 @@ export default function HealthForm() {
             Updates have been made to your dashboard - check out your progress!
           </p>
           <div className="text-sm text-gray-500 mb-6">
-            You cannot submit again until next Monday
+            You cannot submit again until the next Monday-Wednesday window (Anywhere on Earth)
           </div>
           <button
             onClick={() => setIsSubmissionSuccessful(false)}
@@ -952,10 +956,10 @@ export default function HealthForm() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Submissions only allowed Monday
+            Submissions allowed Monday-Wednesday (Anywhere on Earth)
           </h2>
           <p className="text-gray-600 mb-4">
-            Please return on Monday to submit your weekly check-in
+            Please return during the Monday-Wednesday submission window to submit your weekly check-in
           </p>
           <div className="text-sm text-gray-500">
             Current week: {devMode ? devWeek : activeWeek}

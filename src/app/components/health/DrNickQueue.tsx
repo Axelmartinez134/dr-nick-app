@@ -339,7 +339,11 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                         {submission.profiles.email}
                       </div>
                       <div className="text-sm text-gray-600 mt-1">
-                        Week {submission.week_number} • {new Date(submission.created_at).toLocaleDateString()} at {new Date(submission.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        {(() => {
+                          const timeZoneMatch = submission.notes?.match(/\[Timezone: (.+?)\]/)
+                          const userTimeZone = timeZoneMatch?.[1] || 'Unknown'
+                          return `Week ${submission.week_number} • ${new Date(submission.created_at).toLocaleDateString()} at ${new Date(submission.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} (${userTimeZone})`
+                        })()}
                         {submission.energetic_constraints_reduction_ok && (
                           <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             ⚡ Constraints OK
