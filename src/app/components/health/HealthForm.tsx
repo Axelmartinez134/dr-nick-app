@@ -853,7 +853,7 @@ export default function HealthForm() {
             <div>
               <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
               <p className="text-sm text-gray-600">
-                {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+                {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
               </p>
             </div>
             <button
@@ -909,7 +909,7 @@ export default function HealthForm() {
             You've already submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!
           </p>
           <div className="text-sm text-gray-500 mb-6">
-            You cannot submit again until the next Monday-Wednesday window (opens when Monday begins anywhere on Earth)
+            You cannot submit again until the next Monday.
           </div>
           <button
             onClick={() => window.location.reload()}
@@ -932,7 +932,7 @@ export default function HealthForm() {
             <div>
               <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
               <p className="text-sm text-gray-600">
-                {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+                {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
               </p>
             </div>
             <button
@@ -1011,7 +1011,7 @@ export default function HealthForm() {
             <div>
               <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
               <p className="text-sm text-gray-600">
-                {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+                {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
               </p>
             </div>
             <button
@@ -1066,9 +1066,7 @@ export default function HealthForm() {
           <p className="text-gray-600 mb-4">
             Please return during the Monday-Wednesday submission window to submit your weekly check-in
           </p>
-          <div className="text-sm text-gray-500">
-            Current week: {devMode ? devWeek : activeWeek}
-          </div>
+
         </div>
       </div>
     )
@@ -1083,7 +1081,7 @@ export default function HealthForm() {
           <div>
             <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
             <p className="text-sm text-gray-600">
-              {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+              {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
             </p>
           </div>
           <button
@@ -1121,18 +1119,7 @@ export default function HealthForm() {
             </p>
           </div>
         )}
-        
-        {/* Current Week Display */}
-        <div className="mt-4 p-3 bg-blue-50 rounded">
-          <p className="text-sm">
-            <strong>Current Week:</strong> {devMode ? devWeek : activeWeek}
-          </p>
-          {!devMode && (
-            <p className="text-xs text-gray-500 mt-1">
-              💡 Smart calculation based on your submission history with 3-day grace period
-            </p>
-          )}
-        </div>
+
       </div>
 
       {/* Form Header */}
