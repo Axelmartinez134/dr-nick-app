@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { saveWeeklyCheckin, getCheckinForWeek, type CheckinFormData } from './healthService'
+import { saveWeeklyCheckin, getCheckinForWeek, hasUserSubmittedThisWeek, type CheckinFormData } from './healthService'
 import { supabase } from '../auth/AuthContext'
 import { uploadSingleImage, deleteImageByUrl, getSignedImageUrl } from './imageService'
 
@@ -34,23 +34,23 @@ const calculateCurrentWeek = async (userId: string): Promise<number> => {
 
     const lastWeek = submissions[0].week_number
     
-    // Get current time in Anywhere on Earth (AoE) - UTC-12
+    // Get current time when first Monday occurs on Earth (UTC+14)
     const now = new Date()
-    const aoeOffset = -12 * 60 // AoE offset in minutes (UTC-12)
-    const aoeTime = new Date(now.getTime() + (aoeOffset * 60000))
+    const firstMondayOffset = 14 * 60 // UTC+14 offset in minutes (Line Islands, Kiribati)
+    const firstMondayTime = new Date(now.getTime() + (firstMondayOffset * 60000))
     
     // Get current day of week (0 = Sunday, 1 = Monday, etc.)
-    const dayOfWeek = aoeTime.getDay()
+    const dayOfWeek = firstMondayTime.getDay()
     
     // Calculate days since last Monday
     const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6, Monday = 0
     
     // Get the Monday of this week
-    const thisMonday = new Date(aoeTime)
-    thisMonday.setDate(aoeTime.getDate() - daysSinceMonday)
+    const thisMonday = new Date(firstMondayTime)
+    thisMonday.setDate(firstMondayTime.getDate() - daysSinceMonday)
     thisMonday.setHours(0, 0, 0, 0)
     
-    // Week boundaries are every Monday at midnight AoE
+    // Week boundaries are every Monday at midnight in first timezone (UTC+14)
     // If current week number exists in DB, stay on that week
     // Otherwise, increment to next week
     const currentWeek = lastWeek + 1
@@ -88,12 +88,12 @@ const checkIfAlreadySubmitted = async (userId: string, weekNumber: number): Prom
 const isValidSubmissionDay = (devMode: boolean): boolean => {
   if (devMode) return true // Dev mode bypasses restrictions
   
-  // Get current time in Anywhere on Earth (AoE) - UTC-12
+  // Get current time when first Monday occurs on Earth (UTC+14)
   const now = new Date()
-  const aoeOffset = -12 * 60 // AoE offset in minutes (UTC-12)
-  const aoeTime = new Date(now.getTime() + (aoeOffset * 60000))
+  const firstMondayOffset = 14 * 60 // UTC+14 offset in minutes (Line Islands, Kiribati)
+  const firstMondayTime = new Date(now.getTime() + (firstMondayOffset * 60000))
   
-  const dayOfWeek = aoeTime.getDay() // 0 = Sunday, 1 = Monday, etc.
+  const dayOfWeek = firstMondayTime.getDay() // 0 = Sunday, 1 = Monday, etc.
   
   // Monday (1), Tuesday (2), Wednesday (3) are valid
   return dayOfWeek >= 1 && dayOfWeek <= 3
@@ -149,6 +149,8 @@ export default function HealthForm() {
   // Submission state management
   const [hasSubmittedForCurrentWeek, setHasSubmittedForCurrentWeek] = useState(false)
   const [isSubmissionSuccessful, setIsSubmissionSuccessful] = useState(false)
+  const [alreadySubmittedThisWeek, setAlreadySubmittedThisWeek] = useState(false)
+  const [checkingSubmissionStatus, setCheckingSubmissionStatus] = useState(true)
   
   // Resistance training goal state
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState<number>(0)
@@ -157,6 +159,7 @@ export default function HealthForm() {
   useEffect(() => {
     if (devMode) {
       setIsSubmissionSuccessful(false)
+      setAlreadySubmittedThisWeek(false) // Reset date-based check in dev mode
       
       // Check if already submitted for the selected dev week
       const checkDevWeekSubmission = async () => {
@@ -168,6 +171,16 @@ export default function HealthForm() {
       }
       
       checkDevWeekSubmission()
+    } else {
+      // When exiting dev mode, re-check the date-based submission status
+      const recheckSubmissionStatus = async () => {
+        const weeklySubmissionCheck = await hasUserSubmittedThisWeek()
+        if (!weeklySubmissionCheck.error) {
+          setAlreadySubmittedThisWeek(weeklySubmissionCheck.hasSubmitted)
+        }
+      }
+      
+      recheckSubmissionStatus()
     }
   }, [devWeek, devMode])
 
@@ -222,9 +235,19 @@ export default function HealthForm() {
       setActiveWeek(calculatedWeek)
       setDevWeek(calculatedWeek)
       
-      // Check if user already submitted for current week
+      // Check if user already submitted for current week (week number based)
       const alreadySubmitted = await checkIfAlreadySubmitted(user.id, calculatedWeek)
       setHasSubmittedForCurrentWeek(alreadySubmitted)
+      
+      // Check if user already submitted this week (date-based using same UTC+14 boundaries)
+      setCheckingSubmissionStatus(true)
+      const weeklySubmissionCheck = await hasUserSubmittedThisWeek()
+      if (weeklySubmissionCheck.error) {
+        console.error('Error checking weekly submission status:', weeklySubmissionCheck.error)
+      } else {
+        setAlreadySubmittedThisWeek(weeklySubmissionCheck.hasSubmitted)
+      }
+      setCheckingSubmissionStatus(false)
       
       // Load resistance training goal
       await loadResistanceTrainingGoal()
@@ -399,7 +422,7 @@ export default function HealthForm() {
 
       // Check if current day is within submission window (Monday-Wednesday)
       if (!isValidSubmissionDay(devMode)) {
-        setMessage('Submissions allowed Monday-Wednesday (Anywhere on Earth)')
+        setMessage('Submissions allowed Monday-Wednesday (opens when Monday begins anywhere on Earth)')
         setIsSubmitting(false)
         return
       }
@@ -419,14 +442,15 @@ export default function HealthForm() {
         return
       }
 
-      // Detect user's timezone and append to notes
-      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      // FUTURE FEATURE: Detect user's timezone (currently disabled)
+      // const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
       
-      // Update form data with correct week number and timezone info
+      // Update form data with correct week number
       const submissionData = {
         ...formData,
-        week_number: weekToSubmit.toString(),
-        notes: `${formData.notes || ''}\n[Timezone: ${userTimeZone}]`.trim()
+        week_number: weekToSubmit.toString()
+        // FUTURE: Add timezone info when feature is perfected
+        // notes: `${formData.notes || ''}\n[Timezone: ${userTimeZone}]`.trim()
       }
 
       const result = await saveWeeklyCheckin(submissionData)
@@ -435,6 +459,7 @@ export default function HealthForm() {
         setMessage(`✅ Week ${weekToSubmit} check-in submitted successfully!`)
         setIsSubmissionSuccessful(true)
         setHasSubmittedForCurrentWeek(true)
+        setAlreadySubmittedThisWeek(true)
         
         // If not in dev mode, recalculate the current week
         if (!devMode) {
@@ -807,11 +832,91 @@ export default function HealthForm() {
     )
   }
 
-  if (loading || isLoading) {
+  if (loading || isLoading || checkingSubmissionStatus) {
     return (
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
           <div className="text-center py-8">
             <div className="text-gray-600">Loading form...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show success message if user already submitted this week (date-based check)
+  // Skip this check in dev mode to allow testing
+  if (alreadySubmittedThisWeek && !devMode) {
+    return (
+      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+        {/* Developer Mode Toggle (visible in all states) */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+              <p className="text-sm text-gray-600">
+                {devMode ? "Manual week selection enabled" : "Smart week calculation active"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDevMode(!devMode)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                devMode 
+                  ? 'bg-green-600 text-white hover:bg-green-700' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+            </button>
+          </div>
+          
+          {/* Week Selection in Dev Mode */}
+          {devMode && (
+            <div className="mt-4 p-3 bg-yellow-100 rounded">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Week for Testing:
+              </label>
+              <select
+                value={devWeek}
+                onChange={(e) => setDevWeek(Number(e.target.value))}
+                className="p-2 border border-gray-300 rounded text-gray-900"
+              >
+                {[...Array(40)].map((_, i) => (
+                  <option key={i + 1} value={i + 1}>
+                    Week {i + 1}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-yellow-700 mt-2">
+                ⚠️ Testing mode - You can submit forms for any week
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Success Message */}
+        <div className="text-center py-8">
+          <div className="mb-4">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            ✅ Your information has been submitted to Dr. Nick
+          </h2>
+          <p className="text-gray-600 mb-4">
+            You've already submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!
+          </p>
+          <div className="text-sm text-gray-500 mb-6">
+            You cannot submit again until the next Monday-Wednesday window (opens when Monday begins anywhere on Earth)
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Refresh Page
+          </button>
         </div>
       </div>
     )
@@ -883,7 +988,7 @@ export default function HealthForm() {
             Updates have been made to your dashboard - check out your progress!
           </p>
           <div className="text-sm text-gray-500 mb-6">
-            You cannot submit again until the next Monday-Wednesday window (Anywhere on Earth)
+            You cannot submit again until next Monday
           </div>
           <button
             onClick={() => setIsSubmissionSuccessful(false)}
@@ -956,7 +1061,7 @@ export default function HealthForm() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Submissions allowed Monday-Wednesday (Anywhere on Earth)
+            Submissions allowed Monday-Wednesday (opens when Monday begins anywhere on Earth)
           </h2>
           <p className="text-gray-600 mb-4">
             Please return during the Monday-Wednesday submission window to submit your weekly check-in

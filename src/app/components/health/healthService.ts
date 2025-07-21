@@ -333,6 +333,71 @@ export async function getCheckinForWeek(weekNumber: number) {
   }
 }
 
+// Function to check if user has already submitted this week (based on current Monday boundaries)
+export async function hasUserSubmittedThisWeek() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { hasSubmitted: false, error: { message: 'User not authenticated' } }
+    }
+
+    // Get user's latest submission
+    const { data: latestSubmission, error } = await supabase
+      .from('health_data')
+      .select('created_at')
+      .eq('user_id', user.id)
+      .eq('data_entered_by', 'patient')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found, which is ok
+      console.error('Error fetching latest submission:', error)
+      return { hasSubmitted: false, error }
+    }
+
+    // If no submissions found, user hasn't submitted this week
+    if (!latestSubmission) {
+      return { hasSubmitted: false, error: null }
+    }
+
+    // Calculate current week boundaries using same UTC+14 logic as submission window
+    const now = new Date()
+    const firstMondayOffset = 14 * 60 // UTC+14 offset in minutes (Line Islands, Kiribati)
+    const firstMondayTime = new Date(now.getTime() + (firstMondayOffset * 60000))
+    
+    // Get current day of week (0 = Sunday, 1 = Monday, etc.)
+    const dayOfWeek = firstMondayTime.getDay()
+    
+    // Calculate days since last Monday
+    const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6, Monday = 0
+    
+    // Get the Monday of this week (in UTC+14 timezone)
+    const thisMonday = new Date(firstMondayTime)
+    thisMonday.setDate(firstMondayTime.getDate() - daysSinceMonday)
+    thisMonday.setHours(0, 0, 0, 0)
+    
+    // Get Thursday of this week (when week ends)
+    const thisThursday = new Date(thisMonday)
+    thisThursday.setDate(thisMonday.getDate() + 3) // Thursday is 3 days after Monday
+    thisThursday.setHours(0, 0, 0, 0)
+    
+    // Convert boundaries back to UTC for comparison with database timestamps
+    const mondayUTC = new Date(thisMonday.getTime() - (firstMondayOffset * 60000))
+    const thursdayUTC = new Date(thisThursday.getTime() - (firstMondayOffset * 60000))
+    
+    // Check if latest submission falls within current week boundaries
+    const submissionDate = new Date(latestSubmission.created_at)
+    const hasSubmitted = submissionDate >= mondayUTC && submissionDate < thursdayUTC
+    
+    return { hasSubmitted, error: null, submissionDate: latestSubmission.created_at }
+  } catch (error) {
+    console.error('Error checking if user submitted this week:', error)
+    return { hasSubmitted: false, error }
+  }
+}
+
 // Helper function to calculate loss percentage rate
 export function calculateLossPercentageRate(currentWeight: number, previousWeight: number): number {
   if (!previousWeight || previousWeight === 0) return 0
