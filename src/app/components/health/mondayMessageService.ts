@@ -173,11 +173,34 @@ export async function calculateMessageVariables(
       week_average_loss_rate = sum / week_count
     }
 
-    // Calculate overall loss rate percentage
+    // Calculate overall loss rate percentage using individual week-over-week method
     let overall_loss_rate_percent = 0
-    if (weekZero?.weight && currentWeek.weight && weekNumber > 0) {
-      const totalLossPercent = ((weekZero.weight - currentWeek.weight) / weekZero.weight) * 100
-      overall_loss_rate_percent = totalLossPercent / weekNumber
+    if (weekNumber > 0) {
+      // Get all weeks with valid weight data, sorted by week number
+      const allWeeksForOverall = sortedData
+        .filter(entry => entry.weight !== null && entry.weight !== undefined)
+        .sort((a, b) => a.week_number - b.week_number)
+      
+      // Calculate individual week-over-week percentages for ALL consecutive pairs
+      const allIndividualLosses: number[] = []
+      
+      for (let i = 1; i < allWeeksForOverall.length; i++) {
+        const currentWeekData = allWeeksForOverall[i]
+        const previousWeekData = allWeeksForOverall[i - 1]
+        
+        // Check if weeks are consecutive (no gaps)
+        if (currentWeekData.week_number === previousWeekData.week_number + 1) {
+          // Individual week loss = ((previousWeight - currentWeight) / previousWeight) × 100
+          const individualLoss = ((previousWeekData.weight - currentWeekData.weight) / previousWeekData.weight) * 100
+          allIndividualLosses.push(individualLoss)
+        }
+      }
+      
+      // Sum all individual week-over-week percentages and divide by current week number
+      if (allIndividualLosses.length > 0) {
+        const sum = allIndividualLosses.reduce((acc, loss) => acc + loss, 0)
+        overall_loss_rate_percent = sum / weekNumber
+      }
     }
 
     // Get goal loss rate from profile
@@ -196,7 +219,7 @@ export async function calculateMessageVariables(
     const protein_goal_upper_bound = protein_goal_grams + 3
 
     // Calculate weekly compliance percentage
-    const weekly_compliance_percent = Math.round((nutritionComplianceDays / 7) * 100 * 10) / 10
+    const weekly_compliance_percent = Math.round((nutritionComplianceDays / 7) * 100 * 100) / 100
 
     // Generate plateau prevention status text
     let plateau_prevention_status: string
@@ -220,7 +243,7 @@ export async function calculateMessageVariables(
       week_count,
       week_average_loss_rate: Math.round(week_average_loss_rate * 100) / 100, // Round to 2 decimal places
       overall_loss_rate_percent: Math.round(overall_loss_rate_percent * 100) / 100,
-      goal_loss_rate_percent,
+      goal_loss_rate_percent: Math.round(goal_loss_rate_percent * 100) / 100,
       total_waist_loss_inches,
       protein_goal_grams,
       protein_goal_lower_bound,
