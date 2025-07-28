@@ -11,7 +11,8 @@ export interface MondayMessageVariables {
   trend_direction: 'trending up' | 'trending down' | 'stable'
   trend_description: 'actually speeding up' | 'slowing down' | 'maintaining pace'
   current_week_number: number
-  four_week_average_loss_rate: number
+  week_count: number
+  week_average_loss_rate: number
   overall_loss_rate_percent: number
   goal_loss_rate_percent: number
   total_waist_loss_inches: string
@@ -30,7 +31,7 @@ I hope your week went well!
 
 As it relates to your macronutrient targets (energy intake), I continue to input them in for the coming day the night prior and will also continue to adjust them downwards as you lose weight (because if I do not adjust them downwards throughout your plan, your weight loss will eventually stall and plateau) but before I do that, I *always* look for very specific checkpoints to occur: no hunger reported from you for a few weeks, you consistently hitting the macronutrient goals, consistent sleep cycle times (I don't care so much about recovery scores as that is not within your direct control…but your sleep times are within your direct control), and a consistent low intensity exercise regimen.
 
-Looking at your updated and current "plateau prevention" data, you are currently at a {{plateau_prevention_rate}}% rate of loss over time {{plateau_prevention_status}} and you are {{trend_direction}} relative to last week, meaning that your rate of progress (for weight loss, but we can change this graph to waist circumference loss if you would like) is {{trend_description}} when considering the {{current_week_number}} week average of your weekly progress. Most currently, your {{current_week_number}} week average rate of loss is {{four_week_average_loss_rate}}% loss of your body weight per week. The four pillars of metabolic health all influence this number: nutrition, exercise, recovery, and stress management.
+Looking at your updated and current "plateau prevention" data, you are currently at a {{plateau_prevention_rate}}% rate of loss over time {{plateau_prevention_status}} and you are {{trend_direction}} relative to last week, meaning that your rate of progress (for weight loss, but we can change this graph to waist circumference loss if you would like) is {{trend_description}} when considering the {{current_week_number}} week average of your weekly progress. Most currently, your {{week_count}} week average rate of loss is {{week_average_loss_rate}}% loss of your body weight per week. The four pillars of metabolic health all influence this number: nutrition, exercise, recovery, and stress management.
 
 This changes weekly, please read thoroughly and respond to any questions I ask you within this:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -128,28 +129,48 @@ export async function calculateMessageVariables(
       }
     }
 
-    // Calculate 4-week average (or available weeks average)
-    const weeksToAverage = Math.min(weekNumber, 4)
-    const validWeightEntries = sortedData
-      .filter(d => d.week_number > weekNumber - weeksToAverage && d.week_number <= weekNumber)
-      .filter(d => d.weight !== null && d.weight !== undefined)
+    // Calculate week count and average loss rate using plateau prevention chart method
+    // Get all weeks with valid weight data
+    const allWeeks = sortedData
+      .filter(entry => entry.weight !== null && entry.weight !== undefined)
       .sort((a, b) => a.week_number - b.week_number)
-
-    let four_week_average_loss_rate = 0
-    if (validWeightEntries.length > 1) {
-      const lossRates = []
-      for (let i = 1; i < validWeightEntries.length; i++) {
-        const current = validWeightEntries[i]
-        const previous = validWeightEntries[i - 1]
-        const lossRate = calculateLossPercentageRate(current.weight, previous.weight)
-        // Only include reasonable loss rates
-        if (Math.abs(lossRate) <= 5) {
-          lossRates.push(lossRate)
-        }
+    
+    // Calculate individual week losses for all weeks (same as plateau prevention chart)
+    const individualLosses: { week: number; individualLoss: number }[] = []
+    
+    for (let i = 1; i < allWeeks.length; i++) {
+      const currentWeekData = allWeeks[i]
+      const previousWeekData = allWeeks[i - 1]
+      
+      if (currentWeekData.weight && previousWeekData.weight && currentWeekData.week_number > 0) {
+        // Individual week loss = ((previousWeight - currentWeight) / previousWeight) × 100
+        // This matches the plateau prevention chart calculation exactly
+        const individualLoss = ((previousWeekData.weight - currentWeekData.weight) / previousWeekData.weight) * 100
+        
+        individualLosses.push({
+          week: currentWeekData.week_number,
+          individualLoss: individualLoss
+        })
       }
-      if (lossRates.length > 0) {
-        four_week_average_loss_rate = lossRates.reduce((sum, rate) => sum + rate, 0) / lossRates.length
-      }
+    }
+    
+    // Get the most recent weeks up to 4 weeks (current week + previous 3 weeks = 4 total)
+    const currentWeekIndex = individualLosses.findIndex(loss => loss.week === weekNumber)
+    let availableWeeks: typeof individualLosses = []
+    
+    if (currentWeekIndex >= 0) {
+      // Take current week + up to 3 previous weeks
+      const startIndex = Math.max(0, currentWeekIndex - 3)
+      availableWeeks = individualLosses.slice(startIndex, currentWeekIndex + 1)
+    }
+    
+    // Calculate dynamic week count and average
+    const week_count = availableWeeks.length
+    let week_average_loss_rate = 0
+    
+    if (week_count > 0) {
+      const sum = availableWeeks.reduce((acc, loss) => acc + loss.individualLoss, 0)
+      week_average_loss_rate = sum / week_count
     }
 
     // Calculate overall loss rate percentage
@@ -196,7 +217,8 @@ export async function calculateMessageVariables(
       trend_direction,
       trend_description,
       current_week_number: weekNumber,
-      four_week_average_loss_rate: Math.round(four_week_average_loss_rate * 100) / 100,
+      week_count,
+      week_average_loss_rate: Math.round(week_average_loss_rate * 100) / 100, // Round to 2 decimal places
       overall_loss_rate_percent: Math.round(overall_loss_rate_percent * 100) / 100,
       goal_loss_rate_percent,
       total_waist_loss_inches,
