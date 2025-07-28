@@ -206,8 +206,8 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
 
   // Handle cell editing for Dr. Nick and viewing for patients
   const handleCellClick = (recordId: string, field: string, currentValue: any) => {
-    // Allow patients to view notes, but prevent editing other fields
-    if (!isDoctorView && field !== 'notes') return
+    // Allow patients to view notes and detailed symptom notes, but prevent editing other fields
+    if (!isDoctorView && field !== 'notes' && field !== 'detailed_symptom_notes') return
     
     setEditingCell({ recordId, field })
     setEditValue(currentValue?.toString() || '')
@@ -240,7 +240,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
     
     if (isEditing) {
       // For patients viewing notes - read-only expanded view
-      if (!isDoctorView && field === 'notes') {
+      if (!isDoctorView && (field === 'notes' || field === 'detailed_symptom_notes')) {
         return (
           <div className="flex items-start gap-1">
             <textarea
@@ -275,7 +275,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                 if (e.key === 'Enter' && e.ctrlKey) handleSaveEdit()
                 if (e.key === 'Escape') handleCancelEdit()
               }}
-              placeholder="Enter self-reflection notes..."
+              placeholder={field === 'detailed_symptom_notes' ? "Enter detailed symptom notes..." : "Enter self-reflection notes..."}
             />
           ) : (
             <input
@@ -345,6 +345,43 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
       )
     }
 
+    // Special handling for detailed_symptom_notes field
+    if (field === 'detailed_symptom_notes') {
+      if (!value) {
+        const placeholder = (
+          <span className="text-gray-400 italic">No symptoms noted</span>
+        )
+        
+        return isDoctorView ? (
+          <span
+            className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block"
+            onClick={() => handleCellClick(record.id!, field, value)}
+            title="Click to edit"
+          >
+            {placeholder}
+          </span>
+        ) : placeholder
+      }
+
+      const truncatedText = value.length > 30 ? value.substring(0, 30) + "..." : value
+      const displayElement = (
+        <span className="block">
+          {truncatedText}
+        </span>
+      )
+
+      // Both patients and Dr. Nick can click to view
+      return (
+        <span
+          className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded block"
+          onClick={() => handleCellClick(record.id!, field, value)}
+          title={isDoctorView ? "Click to edit" : "Click to view"}
+        >
+          {displayElement}
+        </span>
+      )
+    }
+
     // Regular field handling
     const displayValue = value !== null && value !== undefined ? value.toString() : '—'
     
@@ -378,8 +415,8 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Week</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Hunger</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resistance Training Days Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
@@ -387,6 +424,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
             </tr>
           </thead>
           <tbody>
@@ -411,7 +449,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                   {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'notes', record.notes, true)}
+                  {renderCell(record, 'detailed_symptom_notes', record.detailed_symptom_notes, true)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'purposeful_exercise_days', record.purposeful_exercise_days)}
@@ -437,6 +475,9 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
                   <TableTooltip content="Your body fat percentage from precise Fit 3-D body composition scans">
                     {renderCell(record, 'body_fat_percentage', record.body_fat_percentage)}
                   </TableTooltip>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'notes', record.notes, true)}
                 </td>
               </tr>
             ))}
