@@ -794,7 +794,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
             </div>
             <div className="text-3xl font-bold text-blue-800 mb-1">
               {metrics.totalWeightLossPercentage !== null 
-                ? `${metrics.totalWeightLossPercentage}%` 
+                ? `${metrics.totalWeightLossPercentage.toFixed(2)}%` 
                 : '--'
               }
             </div>
@@ -811,7 +811,7 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
             </div>
             <div className="text-3xl font-bold text-green-800 mb-1">
               {metrics.weeklyWeightLossPercentage !== null 
-                ? `${metrics.weeklyWeightLossPercentage}%` 
+                ? `${metrics.weeklyWeightLossPercentage.toFixed(2)}%` 
                 : '--'
               }
             </div>
