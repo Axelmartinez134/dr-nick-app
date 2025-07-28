@@ -720,13 +720,13 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
     currentWeek: chartData.length > 0 ? Math.max(...chartData.map(d => d.week_number)) : 0,
     hasWeek0: chartData.some(d => d.week_number === 0),
     initialWeight: (() => {
-      // First try to find Week 0 with initial_weight
-      const week0WithInitial = chartData.find(d => d.week_number === 0 && d.initial_weight);
-      if (week0WithInitial?.initial_weight) return week0WithInitial.initial_weight;
-      
-      // Then try Week 0 with weight
+      // First try to find Week 0 with weight
       const week0WithWeight = chartData.find(d => d.week_number === 0 && d.weight);
       if (week0WithWeight?.weight) return week0WithWeight.weight;
+      
+      // Then try Week 0 with initial_weight
+      const week0WithInitial = chartData.find(d => d.week_number === 0 && d.initial_weight);
+      if (week0WithInitial?.initial_weight) return week0WithInitial.initial_weight;
       
       // Finally, try the earliest week with weight data
       const earliestWithWeight = chartData
