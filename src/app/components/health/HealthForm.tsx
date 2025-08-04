@@ -372,6 +372,24 @@ export default function HealthForm() {
       errors.purposeful_exercise_days = 'Days purposeful exercise must be between 0 and 7'
     }
     
+    // Resistance training days validation - REQUIRED
+    if (!formData.resistance_training_days || !formData.resistance_training_days.trim()) {
+      errors.resistance_training_days = 'Resistance training days is required'
+    } else if (isNaN(Number(formData.resistance_training_days)) || 
+         Number(formData.resistance_training_days) < 0 || 
+         Number(formData.resistance_training_days) > 7) {
+      errors.resistance_training_days = 'Resistance training days must be between 0 and 7'
+    }
+    
+    // Symptom tracking days validation - REQUIRED
+    if (!formData.symptom_tracking_days || !formData.symptom_tracking_days.trim()) {
+      errors.symptom_tracking_days = 'Symptom tracking days is required'
+    } else if (isNaN(Number(formData.symptom_tracking_days)) ||
+      Number(formData.symptom_tracking_days) < 0 ||
+      Number(formData.symptom_tracking_days) > 7) {
+      errors.symptom_tracking_days = 'Symptom tracking days must be between 0 and 7'
+    }
+    
     // Poor recovery days validation - REQUIRED
     if (!formData.poor_recovery_days || !formData.poor_recovery_days.trim()) {
       errors.poor_recovery_days = 'Poor recovery days is required'
@@ -384,14 +402,6 @@ export default function HealthForm() {
     // Self reflection validation - REQUIRED
     if (!formData.notes || !formData.notes.trim()) {
       errors.notes = 'Self reflection is required'
-    }
-    
-    // Symptom tracking days validation - OPTIONAL (only validate format if provided)
-    if (formData.symptom_tracking_days &&
-      (isNaN(Number(formData.symptom_tracking_days)) ||
-      Number(formData.symptom_tracking_days) < 0 ||
-      Number(formData.symptom_tracking_days) > 7)) {
-      errors.symptom_tracking_days = 'Symptom tracking days must be between 0 and 7'
     }
 
     setValidationErrors(errors)
@@ -1206,7 +1216,7 @@ export default function HealthForm() {
             <div className="space-y-3">
               <div>
                 <label htmlFor="resistance_training_days" className="block text-sm font-medium text-gray-700 mb-1">
-                  Resistance Training Days (0-7) - Numbers Only
+                  Resistance Training Days (0-7) - Numbers Only <span className="text-red-500">*Required</span>
                 </label>
                 <input
                   type="number"
@@ -1215,12 +1225,18 @@ export default function HealthForm() {
                   max="7"
                   value={formData.resistance_training_days}
                   onChange={(e) => handleInputChange('resistance_training_days', e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                    validationErrors.resistance_training_days ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   placeholder="3"
+                  required
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Goal: {resistanceTrainingGoal} days
                 </p>
+                {validationErrors.resistance_training_days && (
+                  <p className="text-sm text-red-600 mt-1">{validationErrors.resistance_training_days}</p>
+                )}
               </div>
             </div>
 
@@ -1261,7 +1277,7 @@ export default function HealthForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
               <label htmlFor="symptom_tracking_days" className="block text-sm font-medium text-gray-700 mb-1">
-                Days of hunger/newfound mood disturbances, impaired focus, constipation, prolonged muscle soreness, menstrual irregularity, fatigue over the week (0-7) - Numbers Only
+                Days of hunger/newfound mood disturbances, impaired focus, constipation, prolonged muscle soreness, menstrual irregularity, fatigue over the week (0-7) - Numbers Only <span className="text-red-500">*Required</span>
                 </label>
               <input
                 type="number"
@@ -1274,6 +1290,7 @@ export default function HealthForm() {
                   validationErrors.symptom_tracking_days ? 'border-red-500' : 'border-gray-300'
                 }`}
                 placeholder="2"
+                required
               />
               {validationErrors.symptom_tracking_days && (
                 <p className="text-sm text-red-600 mt-1">{validationErrors.symptom_tracking_days}</p>

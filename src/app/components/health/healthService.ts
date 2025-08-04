@@ -104,6 +104,7 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       week_number: parseInt(data.week_number),
       weight: data.weight ? parseFloat(data.weight) : null,
       waist: data.waist ? parseFloat(data.waist) : null,
+      resistance_training_days: data.resistance_training_days ? parseInt(data.resistance_training_days) : null,
       symptom_tracking_days: data.symptom_tracking_days ? parseInt(data.symptom_tracking_days) : null,
       detailed_symptom_notes: data.detailed_symptom_notes || null,
       purposeful_exercise_days: data.purposeful_exercise_days ? parseInt(data.purposeful_exercise_days) : null,
