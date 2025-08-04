@@ -351,7 +351,7 @@ Submission ID: ${submissionId}
 User ID: ${userId}
 Model: ${process.env.GROK_MODEL || 'grok-3-latest'}
 Temperature: ${temperature || 0.3}
-Max Tokens: 4000
+Max Tokens: 40000
 
 === CUSTOM PROMPT ===
 ${prompt}
@@ -381,7 +381,7 @@ ${JSON.stringify(dataPackage, null, 2)}
         model: process.env.GROK_MODEL || 'grok-3-latest',
         stream: false,
         temperature: temperature || 0.3, // Use custom temperature or default to 0.3
-        max_tokens: 4000 // Ensure we get comprehensive responses
+        max_tokens: 40000 // High ceiling ensures analysis never gets cut off for complex cases
       })
     })
     
