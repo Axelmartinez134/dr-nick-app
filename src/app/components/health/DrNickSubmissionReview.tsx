@@ -1068,15 +1068,15 @@ export default function DrNickSubmissionReview({
           </div>
           <div className="bg-teal-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-teal-700">Resistance Training Days</label>
-            <div className="text-2xl font-bold text-teal-900">{submission.resistance_training_days ?? 'N/A'}</div>
+            <div className="text-2xl font-bold text-teal-900">{submission.resistance_training_days ?? '0'}</div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-red-700">Days of Hunger</label>
-            <div className="text-2xl font-bold text-red-900">{submission.symptom_tracking_days ?? 'N/A'}</div>
+            <div className="text-2xl font-bold text-red-900">{submission.symptom_tracking_days ?? '0'}</div>
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-yellow-700">Poor Recovery Days</label>
-            <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days ?? 'N/A'}</div>
+            <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days ?? '0'}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-indigo-700">Sleep Consistency Score</label>

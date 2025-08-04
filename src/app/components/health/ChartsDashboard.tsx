@@ -252,7 +252,8 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
         return
       }
       
-      // Transform the data to match QueueSubmission interface (with robust fallbacks for imported data)
+      // Data is already transformed correctly by getHistoricalSubmissionDetails
+      // It follows the exact same pattern as current review queue
       const submissionData: QueueSubmission = {
         id: historicalData.id || '',
         user_id: historicalData.user_id || '',
@@ -298,13 +299,8 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
         grok_analysis_response: historicalData.grok_analysis_response || null,
         // Monday message field (preserve if exists)
         monday_message_content: historicalData.monday_message_content || null,
-        // User info with robust fallbacks
-        profiles: {
-          id: historicalData.users?.id || patientId,
-          email: historicalData.users?.email || 'unknown@email.com',
-          first_name: historicalData.users?.first_name || 'Patient',
-          last_name: historicalData.users?.last_name || ''
-        }
+        // Profiles data is already correctly formatted
+        profiles: historicalData.profiles
       }
       
       // Call the submission handler (same as current review queue)

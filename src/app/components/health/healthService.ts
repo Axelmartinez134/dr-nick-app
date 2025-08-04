@@ -640,41 +640,38 @@ export async function getSubmissionDetails(submissionId: string) {
 // Get historical submission data for a specific patient and week (for historical review)
 export async function getHistoricalSubmissionDetails(patientId: string, weekNumber: number) {
   try {
-    // First, get the health data directly (no foreign key joins)
-    const { data: healthData, error: healthError } = await supabase
+    // Use the exact same pattern as getSubmissionsNeedingReview for consistency
+    const result = await supabase
       .from('health_data')
-      .select('*')
+      .select(`
+        *,
+        profiles!user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
       .eq('user_id', patientId)
       .eq('week_number', weekNumber)
       .single()
 
-    if (healthError || !healthData) {
-      console.error('Error fetching health data:', healthError)
-      return { data: null, error: healthError }
+    if (result.error || !result.data) {
+      console.error('Error fetching historical submission:', result.error)
+      return { data: null, error: result.error }
     }
 
-    // Then, get the profile data separately (robust pattern used throughout codebase)
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, first_name, last_name')
-      .eq('id', patientId)
-      .single()
-
-    // Create user info object (with fallbacks for missing data)
-    const userInfo = {
-      id: patientId,
-      email: profileData?.email || profileData?.full_name || 'unknown@email.com',
-      first_name: profileData?.first_name || profileData?.full_name?.split(' ')[0] || 'Patient',
-      last_name: profileData?.last_name || profileData?.full_name?.split(' ').slice(1).join(' ') || ''
+    // Transform the data to match the expected format (same as current review queue)
+    const transformedData = {
+      ...result.data,
+      profiles: {
+        id: result.data.profiles?.id || patientId,
+        email: result.data.profiles?.email || 'unknown@email.com',
+        first_name: result.data.profiles?.full_name?.split(' ')[0] || 'Patient',
+        last_name: result.data.profiles?.full_name?.split(' ').slice(1).join(' ') || ''
+      }
     }
 
-    // Attach user info to health data (matching expected format)
-    const result = {
-      ...healthData,
-      users: userInfo
-    }
-
-    return { data: result, error: null }
+    return { data: transformedData, error: null }
   } catch (error) {
     console.error('Error fetching historical submission details:', error)
     return { data: null, error }
