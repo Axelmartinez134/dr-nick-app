@@ -1056,27 +1056,27 @@ export default function DrNickSubmissionReview({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-blue-700">Weight</label>
-            <div className="text-2xl font-bold text-blue-900">{submission.weight || 'N/A'} lbs</div>
+            <div className="text-2xl font-bold text-blue-900">{submission.weight ?? 'N/A'} lbs</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-green-700">Waist</label>
-            <div className="text-2xl font-bold text-green-900">{submission.waist || 'N/A'} inches</div>
+            <div className="text-2xl font-bold text-green-900">{submission.waist ?? 'N/A'} inches</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-purple-700">Days Purposeful Exercise</label>
-            <div className="text-2xl font-bold text-purple-900">{submission.purposeful_exercise_days || 'N/A'}</div>
+            <div className="text-2xl font-bold text-purple-900">{submission.purposeful_exercise_days ?? 'N/A'}</div>
           </div>
           <div className="bg-teal-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-teal-700">Resistance Training Days</label>
-            <div className="text-2xl font-bold text-teal-900">{submission.resistance_training_days || 'N/A'}</div>
+            <div className="text-2xl font-bold text-teal-900">{submission.resistance_training_days ?? 'N/A'}</div>
           </div>
           <div className="bg-red-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-red-700">Days of Hunger</label>
-            <div className="text-2xl font-bold text-red-900">{submission.symptom_tracking_days || 'N/A'}</div>
+            <div className="text-2xl font-bold text-red-900">{submission.symptom_tracking_days ?? 'N/A'}</div>
           </div>
           <div className="bg-yellow-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-yellow-700">Poor Recovery Days</label>
-            <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days || 'N/A'}</div>
+            <div className="text-2xl font-bold text-yellow-900">{submission.poor_recovery_days ?? 'N/A'}</div>
           </div>
           <div className="bg-indigo-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-indigo-700">Sleep Consistency Score</label>
