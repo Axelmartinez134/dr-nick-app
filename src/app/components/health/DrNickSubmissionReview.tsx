@@ -12,9 +12,10 @@ import ChartsDashboard from './ChartsDashboard'
 import { QueueSubmission } from './DrNickQueue'
 import StickyNotes from './StickyNotes'
 import StickySummary from './StickySummary'
-import { generateMondayMessage, loadMondayMessage, saveMondayMessage } from './mondayMessageService'
+import { generateMondayMessage, generateMondayMessageFromTemplate, loadMondayMessage, saveMondayMessage } from './mondayMessageService'
 import { useMondayMessageAutoSave } from './hooks/useMondayMessageAutoSave'
 import { getActiveGrokPrompt, updateGlobalGrokPrompt } from './grokService'
+import { getActiveMondayTemplate, updateGlobalMondayTemplate } from './mondayTemplateService'
 import { useGrokAutoSave } from './hooks/useGrokAutoSave'
 import { useWhoopAnalysisAutoSave } from './hooks/useWhoopAnalysisAutoSave'
 
@@ -95,6 +96,12 @@ export default function DrNickSubmissionReview({
   const [grokResponse, setGrokResponse] = useState(submission.grok_analysis_response || '')
   const [grokAnalyzing, setGrokAnalyzing] = useState(false)
   const [grokError, setGrokError] = useState<string | null>(null)
+
+  // Monday Template state
+  const [mondayTemplate, setMondayTemplate] = useState('')
+  const [templateSaveStatus, setTemplateSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [templateCollapsed, setTemplateCollapsed] = useState(true)
+  const [placeholdersCollapsed, setPlaceholdersCollapsed] = useState(true)
   
   // Ensure state is synchronized with submission data changes
   useEffect(() => {
@@ -474,19 +481,24 @@ export default function DrNickSubmissionReview({
     }
   }
 
-  // Generate Monday message (always fresh - clears cache first)
+  // Generate Monday message using global template (always fresh - clears cache first)
   const handleGenerateMondayMessage = async () => {
     setGeneratingMessage(true)
     setMessageError(null)
     
     try {
+      // Check if template exists
+      if (!mondayTemplate || mondayTemplate.trim() === '') {
+        throw new Error('No global template available. Please set up a global template first.')
+      }
+      
       // Step 1: Clear any existing cached message first
       console.log('Clearing existing Monday message cache...')
       await saveMondayMessage(submission.id, '') // Clear the cache
       
-      // Step 2: Generate completely fresh message with latest calculations
-      console.log('Generating fresh Monday message with latest data...')
-      const message = await generateMondayMessage(
+      // Step 2: Generate completely fresh message with latest calculations using global template
+      console.log('Generating fresh Monday message from global template with latest data...')
+      const message = await generateMondayMessageFromTemplate(
         submission.user_id,
         submission.week_number,
         nutritionComplianceDays ? parseInt(nutritionComplianceDays) : 0
@@ -494,10 +506,10 @@ export default function DrNickSubmissionReview({
       
       // Step 3: Set the new message (this will trigger auto-save)
       setMondayMessage(message)
-      console.log('Fresh Monday message generated successfully')
+      console.log('Fresh Monday message generated successfully from global template')
     } catch (error) {
       console.error('Error generating Monday message:', error)
-      setMessageError('Failed to generate message. Please check that all required data is available.')
+      setMessageError('Failed to generate message. Please check that all required data is available and a global template exists.')
     } finally {
       setGeneratingMessage(false)
     }
@@ -576,6 +588,36 @@ export default function DrNickSubmissionReview({
       setGrokError(error instanceof Error ? error.message : 'Failed to analyze with Grok')
     } finally {
       setGrokAnalyzing(false)
+    }
+  }
+
+  // Load Monday template
+  const loadMondayTemplate = async () => {
+    try {
+      // Add a small delay to ensure Supabase client is fully initialized
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      const template = await getActiveMondayTemplate()
+      setMondayTemplate(template)
+    } catch (error) {
+      console.error('Error loading Monday template:', error)
+      setMondayTemplate('Good evening, {{patient_first_name}}.\n\nI hope your week went well!\n\n[Default template placeholder - please update global template]')
+    }
+  }
+
+  // Handle Monday template update (saves globally)
+  const handleMondayTemplateUpdate = async () => {
+    setTemplateSaveStatus('saving')
+    try {
+      await updateGlobalMondayTemplate(mondayTemplate)
+      setTemplateSaveStatus('saved')
+      setTimeout(() => setTemplateSaveStatus('idle'), 2000)
+      alert('Global Monday template updated successfully!')
+    } catch (error) {
+      console.error('Error updating Monday template:', error)
+      setTemplateSaveStatus('error')
+      setTimeout(() => setTemplateSaveStatus('idle'), 3000)
+      alert('Failed to update Monday template')
     }
   }
 
@@ -945,6 +987,9 @@ export default function DrNickSubmissionReview({
       // Load Grok prompt
       await loadGrokPrompt()
       
+      // Load Monday template
+      await loadMondayTemplate()
+      
       setLoading(false)
     }
     
@@ -1287,7 +1332,123 @@ export default function DrNickSubmissionReview({
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-xl font-semibold text-gray-900 mb-6">📞 Monday Morning Start Message</h4>
         
-        <div className="space-y-4">
+        <div className="space-y-6">
+
+          {/* Template Editor Section - Collapsible */}
+          <div className="border border-gray-200 rounded-lg">
+            <button
+              onClick={() => setTemplateCollapsed(!templateCollapsed)}
+              className="w-full px-4 py-3 text-left font-medium text-gray-900 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between rounded-t-lg"
+            >
+              <span className="flex items-center gap-2">
+                <span>{templateCollapsed ? '🔽' : '🔼'}</span>
+                <span>Edit Global Template</span>
+              </span>
+              <span className="text-sm text-gray-500">
+                {templateCollapsed ? 'Click to expand' : 'Click to collapse'}
+              </span>
+            </button>
+            
+            {!templateCollapsed && (
+              <div className="p-4 border-t border-gray-200 space-y-4">
+                <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+                  <p>This template applies to all patients. Changes are saved globally and will affect all future Monday message generation.</p>
+                </div>
+
+                {/* Available Placeholders - Nested Collapsible */}
+                <div className="border border-gray-100 rounded-lg">
+                  <button
+                    onClick={() => setPlaceholdersCollapsed(!placeholdersCollapsed)}
+                    className="w-full px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500 flex items-center justify-between rounded-t-lg"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>{placeholdersCollapsed ? '📋' : '📂'}</span>
+                      <span>Available Placeholders</span>
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {placeholdersCollapsed ? 'Show placeholders' : 'Hide placeholders'}
+                    </span>
+                  </button>
+                  
+                  {!placeholdersCollapsed && (
+                    <div className="p-3 border-t border-gray-100 bg-gray-50">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-black">
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{patient_first_name}}'}</code> - Patient's first name</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{plateau_prevention_rate}}'}</code> - Current plateau prevention %</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{plateau_prevention_status}}'}</code> - Progress status text</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{trend_direction}}'}</code> - "trending up/down/stable"</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{trend_description}}'}</code> - Progress description</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{current_week_number}}'}</code> - Current week number</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{week_count}}'}</code> - Number of weeks in average</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{week_average_loss_rate}}'}</code> - Week average loss %</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{overall_loss_rate_percent}}'}</code> - Overall loss rate %</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{goal_loss_rate_percent}}'}</code> - Target loss rate %</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{total_waist_loss_inches}}'}</code> - Total waist loss</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{protein_goal_grams}}'}</code> - Daily protein target</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{protein_goal_lower_bound}}'}</code> - Protein goal -3g</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{protein_goal_upper_bound}}'}</code> - Protein goal +3g</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{weekly_compliance_percent}}'}</code> - Weekly compliance %</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Template Editor */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Global Template Content
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      {/* Template save status indicator */}
+                      {templateSaveStatus === 'saving' && (
+                        <div className="flex items-center gap-1 text-blue-600">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                          <span className="text-xs">Saving...</span>
+                        </div>
+                      )}
+                      {templateSaveStatus === 'saved' && (
+                        <div className="flex items-center gap-1 text-green-600">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-xs">Saved ✓</span>
+                        </div>
+                      )}
+                      {templateSaveStatus === 'error' && (
+                        <div className="flex items-center gap-1 text-red-600">
+                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                          <span className="text-xs">Error ⚠</span>
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={handleMondayTemplateUpdate}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium"
+                      >
+                        💾 Update Global Template
+                      </button>
+                    </div>
+                  </div>
+                  <textarea
+                    value={mondayTemplate}
+                    onChange={(e) => setMondayTemplate(e.target.value)}
+                    rows={8}
+                    className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-mono text-sm"
+                    placeholder="Loading global template..."
+                    onKeyDown={(e) => {
+                      // Ctrl+S to manually save
+                      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault()
+                        handleMondayTemplateUpdate()
+                      }
+                    }}
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    Use placeholders above in your template. Changes affect all patients. Press Ctrl+S to force save.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
 
           <div className="flex items-center justify-between mb-4">
@@ -1323,15 +1484,21 @@ export default function DrNickSubmissionReview({
               
               <button
                 onClick={handleGenerateMondayMessage}
-                disabled={generatingMessage || !nutritionComplianceDays}
+                disabled={generatingMessage || !nutritionComplianceDays || !mondayTemplate || mondayTemplate.trim() === ''}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  generatingMessage || !nutritionComplianceDays
+                  generatingMessage || !nutritionComplianceDays || !mondayTemplate || mondayTemplate.trim() === ''
                     ? 'bg-gray-400 text-gray-700 cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}
-                title={!nutritionComplianceDays ? "Please enter nutrition compliance days first" : "Generate personalized Monday message"}
+                title={
+                  !mondayTemplate || mondayTemplate.trim() === '' 
+                    ? "Please set up a global template first" 
+                    : !nutritionComplianceDays 
+                      ? "Please enter nutrition compliance days first" 
+                      : "Generate personalized Monday message from global template"
+                }
               >
-                {generatingMessage ? 'Generating...' : '🔄 Generate Fresh Message'}
+                {generatingMessage ? 'Generating...' : '🔄 Generate Monday Morning Message'}
               </button>
             </div>
           </div>

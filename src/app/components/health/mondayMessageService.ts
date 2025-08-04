@@ -3,6 +3,7 @@
 
 import { supabase } from '../auth/AuthContext'
 import { getWeeklyDataForCharts, calculateLossPercentageRate } from './healthService'
+import { getActiveMondayTemplate } from './mondayTemplateService'
 
 export interface MondayMessageVariables {
   patient_first_name: string
@@ -257,7 +258,7 @@ export async function calculateMessageVariables(
   }
 }
 
-// Generate the complete Monday message
+// Generate the complete Monday message (ORIGINAL - hardcoded template)
 export async function generateMondayMessage(
   userId: string, 
   weekNumber: number,
@@ -276,6 +277,34 @@ export async function generateMondayMessage(
     return message
   } catch (error) {
     console.error('Error generating Monday message:', error)
+    throw error
+  }
+}
+
+// Generate Monday message using global template (NEW - template-based)
+export async function generateMondayMessageFromTemplate(
+  userId: string, 
+  weekNumber: number,
+  nutritionComplianceDays: number
+): Promise<string> {
+  try {
+    const variables = await calculateMessageVariables(userId, weekNumber, nutritionComplianceDays)
+    
+    // Get global template from database
+    const template = await getActiveMondayTemplate()
+    
+    // Replace all template variables
+    let message = template
+    Object.entries(variables).forEach(([key, value]) => {
+      const placeholder = `{{${key}}}`
+      // Use empty string if value is null/undefined (for invalid placeholders)
+      const replacement = value?.toString() || ''
+      message = message.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement)
+    })
+    
+    return message
+  } catch (error) {
+    console.error('Error generating Monday message from template:', error)
     throw error
   }
 }
