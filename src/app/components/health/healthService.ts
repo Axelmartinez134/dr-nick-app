@@ -637,6 +637,50 @@ export async function getSubmissionDetails(submissionId: string) {
   }
 }
 
+// Get historical submission data for a specific patient and week (for historical review)
+export async function getHistoricalSubmissionDetails(patientId: string, weekNumber: number) {
+  try {
+    // First, get the health data directly (no foreign key joins)
+    const { data: healthData, error: healthError } = await supabase
+      .from('health_data')
+      .select('*')
+      .eq('user_id', patientId)
+      .eq('week_number', weekNumber)
+      .single()
+
+    if (healthError || !healthData) {
+      console.error('Error fetching health data:', healthError)
+      return { data: null, error: healthError }
+    }
+
+    // Then, get the profile data separately (robust pattern used throughout codebase)
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, first_name, last_name')
+      .eq('id', patientId)
+      .single()
+
+    // Create user info object (with fallbacks for missing data)
+    const userInfo = {
+      id: patientId,
+      email: profileData?.email || profileData?.full_name || 'unknown@email.com',
+      first_name: profileData?.first_name || profileData?.full_name?.split(' ')[0] || 'Patient',
+      last_name: profileData?.last_name || profileData?.full_name?.split(' ').slice(1).join(' ') || ''
+    }
+
+    // Attach user info to health data (matching expected format)
+    const result = {
+      ...healthData,
+      users: userInfo
+    }
+
+    return { data: result, error: null }
+  } catch (error) {
+    console.error('Error fetching historical submission details:', error)
+    return { data: null, error }
+  }
+}
+
 // =============================================================================
 // COACHING NOTES FUNCTIONS
 // =============================================================================

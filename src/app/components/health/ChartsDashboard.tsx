@@ -5,7 +5,8 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { getWeeklyDataForCharts, updateHealthRecord, type WeeklyCheckin } from './healthService'
+import { getWeeklyDataForCharts, updateHealthRecord, getHistoricalSubmissionDetails, type WeeklyCheckin } from './healthService'
+import { type QueueSubmission } from './DrNickQueue'
 import { getPatientMetrics, type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
@@ -136,6 +137,7 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
 // Props interface
 interface ChartsDashboardProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
+  onSubmissionSelect?: (submission: QueueSubmission) => void // Optional handler for historical review
 }
 
 // Table Tooltip Component (adapted from ChartTooltip pattern)
@@ -173,10 +175,12 @@ const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionC
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
 
 // Data Table Component - Different versions for Patient vs Dr. Nick
-function DataTable({ data, isDoctorView, onDataUpdate }: { 
+function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
-  onDataUpdate?: () => void 
+  onDataUpdate?: () => void,
+  patientId?: string,
+  onSubmissionSelect?: (submission: QueueSubmission) => void
 }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -233,6 +237,83 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
   const handleCancelEdit = () => {
     setEditingCell(null)
     setEditValue('')
+  }
+
+  // Handle historical submission review (for Dr. Nick only)
+  const handleHistoricalReview = async (weekNumber: number) => {
+    if (!isDoctorView || !patientId || !onSubmissionSelect) return
+    
+    try {
+      const { data: historicalData, error } = await getHistoricalSubmissionDetails(patientId, weekNumber)
+      
+      if (error || !historicalData) {
+        console.error('Error fetching historical submission:', error)
+        alert('Could not load historical submission data')
+        return
+      }
+      
+      // Transform the data to match QueueSubmission interface (with robust fallbacks for imported data)
+      const submissionData: QueueSubmission = {
+        id: historicalData.id || '',
+        user_id: historicalData.user_id || '',
+        date: historicalData.date || '',
+        week_number: historicalData.week_number || 0,
+        weight: historicalData.weight || null,
+        waist: historicalData.waist || null,
+        resistance_training_days: historicalData.resistance_training_days || null,
+        symptom_tracking_days: historicalData.symptom_tracking_days || null,
+        detailed_symptom_notes: historicalData.detailed_symptom_notes || null,
+        purposeful_exercise_days: historicalData.purposeful_exercise_days || null,
+        poor_recovery_days: historicalData.poor_recovery_days || null,
+        sleep_consistency_score: historicalData.sleep_consistency_score || null,
+        energetic_constraints_reduction_ok: historicalData.energetic_constraints_reduction_ok || null,
+        nutrition_compliance_days: historicalData.nutrition_compliance_days || null,
+        notes: historicalData.notes || null,
+        created_at: historicalData.created_at || '',
+        // Image fields (may not exist for imported data)
+        lumen_day1_image: historicalData.lumen_day1_image || null,
+        lumen_day2_image: historicalData.lumen_day2_image || null,
+        lumen_day3_image: historicalData.lumen_day3_image || null,
+        lumen_day4_image: historicalData.lumen_day4_image || null,
+        lumen_day5_image: historicalData.lumen_day5_image || null,
+        lumen_day6_image: historicalData.lumen_day6_image || null,
+        lumen_day7_image: historicalData.lumen_day7_image || null,
+        food_log_day1_image: historicalData.food_log_day1_image || null,
+        food_log_day2_image: historicalData.food_log_day2_image || null,
+        food_log_day3_image: historicalData.food_log_day3_image || null,
+        food_log_day4_image: historicalData.food_log_day4_image || null,
+        food_log_day5_image: historicalData.food_log_day5_image || null,
+        food_log_day6_image: historicalData.food_log_day6_image || null,
+        food_log_day7_image: historicalData.food_log_day7_image || null,
+        // Analysis fields (important to preserve if they exist)
+        weekly_whoop_pdf_url: historicalData.weekly_whoop_pdf_url || null,
+        weekly_whoop_analysis: historicalData.weekly_whoop_analysis || null,
+        weekly_ai_analysis: historicalData.weekly_ai_analysis || null,
+        weekly_whoop_pdf: historicalData.weekly_whoop_pdf || null,
+        monthly_whoop_pdf_url: historicalData.monthly_whoop_pdf_url || null,
+        monthly_whoop_analysis: historicalData.monthly_whoop_analysis || null,
+        monthly_ai_analysis: historicalData.monthly_ai_analysis || null,
+        monthly_whoop_pdf: historicalData.monthly_whoop_pdf || null,
+        // Grok analysis field (preserve if exists)
+        grok_analysis_response: historicalData.grok_analysis_response || null,
+        // Monday message field (preserve if exists)
+        monday_message_content: historicalData.monday_message_content || null,
+        // User info with robust fallbacks
+        profiles: {
+          id: historicalData.users?.id || patientId,
+          email: historicalData.users?.email || 'unknown@email.com',
+          first_name: historicalData.users?.first_name || 'Patient',
+          last_name: historicalData.users?.last_name || ''
+        }
+      }
+      
+      // Call the submission handler (same as current review queue)
+      onSubmissionSelect(submissionData)
+      
+    } catch (error) {
+      console.error('Failed to load historical submission:', error)
+      alert('Failed to load historical submission data')
+    }
   }
 
   const renderCell = (record: WeeklyCheckin, field: string, value: any, isLongText = false) => {
@@ -431,13 +512,27 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
             {sortedData.map((record, index) => (
               <tr key={record.id || index} className="border-t hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm">
-                  <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                    record.week_number === 0 
-                      ? 'bg-purple-100 text-purple-800' 
-                      : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {record.week_number === 0 ? 'Week 0' : `Week ${record.week_number}`}
-                  </span>
+                  {isDoctorView && patientId && onSubmissionSelect ? (
+                    <button
+                      onClick={() => handleHistoricalReview(record.week_number)}
+                      className={`inline-flex px-2 py-1 text-xs font-medium rounded-full transition-all hover:scale-105 hover:shadow-sm cursor-pointer ${
+                        record.week_number === 0 
+                          ? 'bg-purple-100 text-purple-800 hover:bg-purple-200' 
+                          : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                      }`}
+                      title="Click to review this week's submission"
+                    >
+                      {record.week_number === 0 ? 'Week 0' : `Week ${record.week_number}`}
+                    </button>
+                  ) : (
+                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                      record.week_number === 0 
+                        ? 'bg-purple-100 text-purple-800' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {record.week_number === 0 ? 'Week 0' : `Week ${record.week_number}`}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'weight', record.weight)}
@@ -502,7 +597,7 @@ function DataTable({ data, isDoctorView, onDataUpdate }: {
   )
 }
 
-export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
+export default function ChartsDashboard({ patientId, onSubmissionSelect }: ChartsDashboardProps) {
   const [chartData, setChartData] = useState<WeeklyCheckin[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1046,6 +1141,8 @@ export default function ChartsDashboard({ patientId }: ChartsDashboardProps) {
           data={chartData} 
           isDoctorView={isDoctorView}
           onDataUpdate={loadChartData}
+          patientId={patientId}
+          onSubmissionSelect={onSubmissionSelect}
         />
 
         {/* Chart Refresh Button */}

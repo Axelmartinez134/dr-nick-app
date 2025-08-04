@@ -495,7 +495,7 @@ export default function DrNickPatientDashboard() {
               Patient ID: {selectedPatientId.slice(0, 8)}... | Current Week: {selectedPatient?.current_week}
             </p>
           </div>
-          <ChartsDashboard patientId={selectedPatientId} />
+          <ChartsDashboard patientId={selectedPatientId} onSubmissionSelect={handleSubmissionSelect} />
         </div>
       )}
 

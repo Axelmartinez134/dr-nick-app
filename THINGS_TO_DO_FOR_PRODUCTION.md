@@ -1,5 +1,3 @@
-# Things To Do for Production - Dr. Nick's Health Tracker
-
 ## **What You Built (Summary)**
 - A digital health tracking app for Dr. Nick's 20 patients
 - Patients log in every Monday to submit health forms + 14 photos
