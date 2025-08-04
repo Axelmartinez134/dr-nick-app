@@ -9,6 +9,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+export interface GrokSettings {
+  prompt: string
+  temperature: number
+}
+
 export interface GrokDataPackage {
   patient_profile: {
     full_name: string
@@ -124,6 +129,81 @@ export async function updateGlobalGrokPrompt(content: string): Promise<void> {
     if (error) throw error
   } catch (err) {
     console.error('Failed to update global Grok prompt:', err)
+    throw err
+  }
+}
+
+// Get active global Grok settings (prompt + temperature)
+export async function getActiveGrokSettings(): Promise<GrokSettings> {
+  try {
+    const { data, error } = await supabase
+      .from('ai')
+      .select('prompt_content, temperature')
+      .eq('prompt_type', 'grok_analysis')
+      .eq('is_active', true)
+      .single()
+    
+    if (error) {
+      console.error('Error loading Grok settings:', error)
+      return {
+        prompt: 'Please analyze this patient\'s health data and provide actionable recommendations.',
+        temperature: 0.3
+      }
+    }
+    
+    return {
+      prompt: data?.prompt_content || 'Please analyze this patient\'s health data and provide actionable recommendations.',
+      temperature: data?.temperature || 0.3
+    }
+  } catch (err) {
+    console.error('Failed to load Grok settings:', err)
+    return {
+      prompt: 'Please analyze this patient\'s health data and provide actionable recommendations.',
+      temperature: 0.3
+    }
+  }
+}
+
+// Update global Grok settings (prompt + temperature)
+export async function updateGlobalGrokSettings(content: string, temperature: number): Promise<void> {
+  try {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('User not authenticated')
+    
+    // Deactivate current settings
+    await supabase
+      .from('ai')
+      .update({ is_active: false })
+      .eq('prompt_type', 'grok_analysis')
+      .eq('is_active', true)
+    
+    // Get next version number
+    const { data: versionData } = await supabase
+      .from('ai')
+      .select('version_number')
+      .eq('prompt_type', 'grok_analysis')
+      .order('version_number', { ascending: false })
+      .limit(1)
+    
+    const nextVersion = (versionData?.[0]?.version_number || 0) + 1
+    
+    // Create new active settings record
+    const { error } = await supabase
+      .from('ai')
+      .insert({
+        prompt_type: 'grok_analysis',
+        prompt_title: 'Grok Health Analysis',
+        prompt_content: content,
+        temperature: temperature,
+        is_active: true,
+        version_number: nextVersion,
+        created_by: user.id
+      })
+    
+    if (error) throw error
+  } catch (err) {
+    console.error('Failed to update global Grok settings:', err)
     throw err
   }
 }

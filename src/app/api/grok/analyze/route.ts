@@ -309,7 +309,7 @@ export async function POST(request: NextRequest) {
     )
     
     // Parse request body
-    const { submissionId, userId, customPrompt } = await request.json()
+    const { submissionId, userId, customPrompt, temperature } = await request.json()
     
     if (!submissionId || !userId) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
@@ -350,7 +350,7 @@ Timestamp: ${new Date().toISOString()}
 Submission ID: ${submissionId}
 User ID: ${userId}
 Model: ${process.env.GROK_MODEL || 'grok-3-latest'}
-Temperature: 0.3
+Temperature: ${temperature || 0.3}
 Max Tokens: 4000
 
 === CUSTOM PROMPT ===
@@ -380,7 +380,7 @@ ${JSON.stringify(dataPackage, null, 2)}
         ],
         model: process.env.GROK_MODEL || 'grok-3-latest',
         stream: false,
-        temperature: 0.3, // Lower temperature for more consistent medical analysis
+        temperature: temperature || 0.3, // Use custom temperature or default to 0.3
         max_tokens: 4000 // Ensure we get comprehensive responses
       })
     })

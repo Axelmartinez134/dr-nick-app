@@ -14,7 +14,7 @@ import StickyNotes from './StickyNotes'
 import StickySummary from './StickySummary'
 import { generateMondayMessage, generateMondayMessageFromTemplate, loadMondayMessage, saveMondayMessage } from './mondayMessageService'
 import { useMondayMessageAutoSave } from './hooks/useMondayMessageAutoSave'
-import { getActiveGrokPrompt, updateGlobalGrokPrompt } from './grokService'
+import { getActiveGrokPrompt, updateGlobalGrokPrompt, getActiveGrokSettings, updateGlobalGrokSettings } from './grokService'
 import { getActiveMondayTemplate, updateGlobalMondayTemplate } from './mondayTemplateService'
 import { useGrokAutoSave } from './hooks/useGrokAutoSave'
 import { useWhoopAnalysisAutoSave } from './hooks/useWhoopAnalysisAutoSave'
@@ -96,6 +96,7 @@ export default function DrNickSubmissionReview({
   const [grokResponse, setGrokResponse] = useState(submission.grok_analysis_response || '')
   const [grokAnalyzing, setGrokAnalyzing] = useState(false)
   const [grokError, setGrokError] = useState<string | null>(null)
+  const [grokTemperature, setGrokTemperature] = useState<number>(0.3)
 
   // Monday Template state
   const [mondayTemplate, setMondayTemplate] = useState('')
@@ -525,28 +526,30 @@ export default function DrNickSubmissionReview({
     }
   }
 
-  // Load Grok prompt
-  const loadGrokPrompt = async () => {
+  // Load Grok settings (prompt + temperature)
+  const loadGrokSettings = async () => {
     try {
       // Add a small delay to ensure Supabase client is fully initialized
       await new Promise(resolve => setTimeout(resolve, 100))
       
-      const prompt = await getActiveGrokPrompt()
-      setGrokPrompt(prompt)
+      const settings = await getActiveGrokSettings()
+      setGrokPrompt(settings.prompt)
+      setGrokTemperature(settings.temperature)
     } catch (error) {
-      console.error('Error loading Grok prompt:', error)
+      console.error('Error loading Grok settings:', error)
       setGrokPrompt('Please analyze this patient\'s health data and provide actionable recommendations.')
+      setGrokTemperature(0.3)
     }
   }
 
-  // Handle Grok prompt update (saves globally)
+  // Handle Grok settings update (saves prompt + temperature globally)
   const handleGrokPromptUpdate = async () => {
     try {
-      await updateGlobalGrokPrompt(grokPrompt)
-      alert('Global Grok prompt updated successfully!')
+      await updateGlobalGrokSettings(grokPrompt, grokTemperature)
+      alert('Global Grok settings updated successfully!')
     } catch (error) {
-      console.error('Error updating Grok prompt:', error)
-      alert('Failed to update Grok prompt')
+      console.error('Error updating Grok settings:', error)
+      alert('Failed to update Grok settings')
     }
   }
 
@@ -571,7 +574,8 @@ export default function DrNickSubmissionReview({
         body: JSON.stringify({
           submissionId: submission.id,
           userId: submission.user_id,
-          customPrompt: grokPrompt
+          customPrompt: grokPrompt,
+          temperature: grokTemperature
         })
       })
 
@@ -984,8 +988,8 @@ export default function DrNickSubmissionReview({
       // Load existing Monday message
       await loadExistingMondayMessage()
       
-      // Load Grok prompt
-      await loadGrokPrompt()
+      // Load Grok settings (prompt + temperature)
+      await loadGrokSettings()
       
       // Load Monday template
       await loadMondayTemplate()
@@ -1968,7 +1972,7 @@ export default function DrNickSubmissionReview({
                 onClick={handleGrokPromptUpdate}
                 className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 font-medium"
               >
-                💾 Update Global Prompt
+                💾 Save Grok Settings
               </button>
             </div>
             <textarea
@@ -1990,8 +1994,59 @@ export default function DrNickSubmissionReview({
             </div>
           </div>
 
+          {/* Temperature Information Section */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h5 className="text-sm font-semibold text-blue-900 mb-2">🌡️ Temperature Setting Guide</h5>
+            <div className="text-sm text-blue-800 space-y-2">
+              <p><strong>What it does:</strong> Temperature controls how creative vs. consistent Grok's analysis will be.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                <div>
+                  <p className="font-medium text-blue-900">Lower Values (0.0 - 0.5):</p>
+                  <ul className="text-xs space-y-1 mt-1">
+                    <li>• More focused and consistent responses</li>
+                    <li>• Better for medical analysis</li>
+                    <li>• Recommended: <strong>0.3</strong> (default)</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900">Higher Values (0.8 - 2.0):</p>
+                  <ul className="text-xs space-y-1 mt-1">
+                    <li>• More creative and varied responses</li>
+                    <li>• Less predictable analysis</li>
+                    <li>• Use for brainstorming ideas</li>
+                  </ul>
+                </div>
+              </div>
+              <p className="text-xs mt-3"><strong>💡 Tip:</strong> Start with 0.3 for reliable medical insights. Try 0.7-1.0 for alternative perspectives on complex cases.</p>
+            </div>
+          </div>
+
           {/* Send Button and Status */}
           <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {/* Temperature Control */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Temperature:
+                </label>
+                <input
+                  type="number"
+                  value={grokTemperature}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value)
+                    if (!isNaN(value) && value >= 0 && value <= 2) {
+                      setGrokTemperature(value)
+                    }
+                  }}
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  className="w-16 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="0.3"
+                />
+                <span className="force-black-text" style={{fontSize: '12px', fontWeight: 'bold'}}>(0-2)</span>
+              </div>
+              
             <button
               onClick={handleSendToGrok}
               disabled={grokAnalyzing}
@@ -2003,6 +2058,7 @@ export default function DrNickSubmissionReview({
             >
               {grokAnalyzing ? 'Analyzing...' : '🤖 Send to Grok for Analysis'}
             </button>
+            </div>
             
             {grokError && (
               <div className="text-red-600 text-sm font-medium">
