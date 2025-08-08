@@ -537,7 +537,7 @@ export default function DrNickSubmissionReview({
       setGrokTemperature(settings.temperature)
     } catch (error) {
       console.error('Error loading Grok settings:', error)
-      setGrokPrompt('Please analyze this patient\'s health data and provide actionable recommendations.')
+      setGrokPrompt('Please analyze this client\'s health data and provide actionable recommendations.')
       setGrokTemperature(0.3)
     }
   }
@@ -973,7 +973,7 @@ export default function DrNickSubmissionReview({
     const initializeReview = async () => {
       setLoading(true)
       
-      // Load chart data for the patient
+  // Load chart data for the client
       await loadSubmissionChartData(submission.user_id)
       
       // Generate signed URLs for images and PDFs
@@ -1098,12 +1098,12 @@ export default function DrNickSubmissionReview({
         </div>
       ) : null}
       
-      {/* 1. Patient Submission Overview - Full Width */}
+      {/* 1. Client Submission Overview - Full Width */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
-        {/* Patient Weekly Submission Data */}
+        {/* Client Weekly Submission Data */}
         <div className="mb-8">
           <div className="text-center mb-4">
-            <h4 className="text-lg font-semibold text-gray-800 mb-1">📝 Patient Weekly Check-In Submissions</h4>
+            <h4 className="text-lg font-semibold text-gray-800 mb-1">📝 Client Weekly Check-In Submissions</h4>
             <p className="text-sm text-gray-600">Data submitted by {submission.profiles.first_name} {submission.profiles.last_name} for Week {submission.week_number}</p>
           </div>
           
@@ -1178,10 +1178,10 @@ export default function DrNickSubmissionReview({
         </div>
         </div>
 
-        {/* Patient Profile Goals Section */}
+        {/* Client Profile Goals Section */}
         <div className="mt-8 mb-6">
           <div className="text-center mb-4">
-            <h4 className="text-lg font-semibold text-gray-800 mb-1">🎯 Patient Profile Goals</h4>
+            <h4 className="text-lg font-semibold text-gray-800 mb-1">🎯 Client Profile Goals</h4>
             <p className="text-sm text-gray-600">These goals persist throughout the entire program and apply to all weekly submissions</p>
           </div>
           
@@ -1361,7 +1361,7 @@ export default function DrNickSubmissionReview({
             {!templateCollapsed && (
               <div className="p-4 border-t border-gray-200 space-y-4">
                 <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-                  <p>This template applies to all patients. Changes are saved globally and will affect all future Monday message generation.</p>
+                  <p>This template applies to all Clients. Changes are saved globally and will affect all future Monday message generation.</p>
                 </div>
 
                 {/* Available Placeholders - Nested Collapsible */}
@@ -1382,7 +1382,7 @@ export default function DrNickSubmissionReview({
                   {!placeholdersCollapsed && (
                     <div className="p-3 border-t border-gray-100 bg-gray-50">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-black">
-                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{patient_first_name}}'}</code> - Patient's first name</div>
+                        <div><code className="bg-white px-1 rounded text-black font-medium">{'{{patient_first_name}}'}</code> - Client's first name</div>
                         <div><code className="bg-white px-1 rounded text-black font-medium">{'{{plateau_prevention_rate}}'}</code> - Current plateau prevention %</div>
                         <div><code className="bg-white px-1 rounded text-black font-medium">{'{{plateau_prevention_status}}'}</code> - Progress status text</div>
                         <div><code className="bg-white px-1 rounded text-black font-medium">{'{{trend_direction}}'}</code> - "trending up/down/stable"</div>
@@ -1452,7 +1452,7 @@ export default function DrNickSubmissionReview({
                     }}
                   />
                   <div className="text-xs text-gray-500 mt-1">
-                    Use placeholders above in your template. Changes affect all patients. Press Ctrl+S to force save.
+                    Use placeholders above in your template. Changes affect all Clients. Press Ctrl+S to force save.
                   </div>
                 </div>
               </div>
@@ -1524,7 +1524,7 @@ export default function DrNickSubmissionReview({
               onChange={(e) => setMondayMessage(e.target.value)}
               rows={16}
               className="w-full border border-gray-300 rounded-lg p-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm text-gray-900 leading-relaxed"
-              placeholder="Click '🔄 Generate Fresh Message' above to create a personalized Monday morning message using this patient's latest data and progress metrics. The button always clears any cached content and generates fresh calculations. You can edit the generated message before sending."
+              placeholder="Click '🔄 Generate Fresh Message' above to create a personalized Monday morning message using this client's latest data and progress metrics. The button always clears any cached content and generates fresh calculations. You can edit the generated message before sending."
               onKeyDown={(e) => {
                 // Ctrl+S to force save
                 if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -1995,7 +1995,7 @@ export default function DrNickSubmissionReview({
               }}
             />
             <div className="text-xs text-gray-500 mt-1">
-              This prompt applies to all patients. Changes are saved globally and automatically (2s delay). Press Ctrl+S to force save.
+              This prompt applies to all Clients. Changes are saved globally and automatically (2s delay). Press Ctrl+S to force save.
             </div>
           </div>
 

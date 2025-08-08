@@ -1,5 +1,5 @@
 // src/app/components/health/DrNickPatientDashboard.tsx
-// Dr. Nick's patient management dashboard with patient list and individual charts
+// Dr. Nick's client management dashboard with client list and individual charts
 
 'use client'
 
@@ -167,8 +167,8 @@ export default function DrNickPatientDashboard() {
     return (
       <div className="max-w-7xl mx-auto p-6">
         <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="text-center py-8">
-            <div className="text-gray-600">Loading patient data...</div>
+            <div className="text-center py-8">
+              <div className="text-gray-600">Loading client data...</div>
           </div>
         </div>
       </div>
@@ -183,10 +183,10 @@ export default function DrNickPatientDashboard() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              👨‍⚕️ Dr. Nick&apos;s Patient Dashboard
+              👨‍⚕️ Dr. Nick&apos;s Client Dashboard
             </h1>
             <p className="text-gray-600">
-              Manage all your patients and track their progress
+              Manage all your clients and track their progress
             </p>
           </div>
           <div className="text-right">
@@ -214,7 +214,7 @@ export default function DrNickPatientDashboard() {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              👥 Patient List
+              👥 Client List
             </button>
 
             {selectedPatientId && (
@@ -299,7 +299,7 @@ export default function DrNickPatientDashboard() {
           {/* Header with Refresh Button */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-semibold text-gray-900">Patient Overview</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Client Overview</h2>
               <button
                 onClick={loadPatients}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -312,8 +312,8 @@ export default function DrNickPatientDashboard() {
           {patients.length === 0 ? (
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="text-center py-8 text-gray-500">
-                <p>No patients found yet</p>
-                <p className="text-sm">Patients will appear here once they start submitting check-ins</p>
+                <p>No Clients found yet</p>
+                <p className="text-sm">Clients will appear here once they start submitting check-ins</p>
               </div>
             </div>
           ) : (
@@ -331,13 +331,13 @@ export default function DrNickPatientDashboard() {
                     {onboardingPatients.length > 0 && (
                       <div className="bg-white rounded-lg shadow-md p-6">
                         <h3 className="text-lg font-semibold text-blue-900 mb-4">
-                          📋 Currently Onboarding ({onboardingPatients.length} patients)
+                          📋 Currently Onboarding ({onboardingPatients.length} Clients)
                         </h3>
                         <div className="overflow-x-auto">
                           <table className="min-w-full table-auto">
                             <thead>
                               <tr className="bg-blue-50">
-                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Client</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Email</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Current Week</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-blue-700">Last Check-in</th>
@@ -382,13 +382,13 @@ export default function DrNickPatientDashboard() {
                     {currentPatients.length > 0 && (
                       <div className="bg-white rounded-lg shadow-md p-6">
                         <h3 className="text-lg font-semibold text-green-900 mb-4">
-                          ✅ Current Clients ({currentPatients.length} patients)
+                           ✅ Current Clients ({currentPatients.length} Clients)
                         </h3>
                         <div className="overflow-x-auto">
                           <table className="min-w-full table-auto">
                             <thead>
                               <tr className="bg-green-50">
-                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Client</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Email</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Current Week</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-green-700">Last Check-in</th>
@@ -433,13 +433,13 @@ export default function DrNickPatientDashboard() {
                     {pastPatients.length > 0 && (
                       <div className="bg-white rounded-lg shadow-md p-6">
                         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                          📁 Past Clients ({pastPatients.length} patients)
+                           📁 Past Clients ({pastPatients.length} Clients)
                         </h3>
                         <div className="overflow-x-auto">
                           <table className="min-w-full table-auto">
                             <thead>
                               <tr className="bg-gray-50">
-                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Client</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Email</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Current Week</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Last Check-in</th>
@@ -484,13 +484,13 @@ export default function DrNickPatientDashboard() {
                     {testPatients.length > 0 && (
                       <div className="bg-white rounded-lg shadow-md p-6">
                         <h3 className="text-lg font-semibold text-purple-900 mb-4">
-                          🧪 Test ({testPatients.length} patients)
+                           🧪 Test ({testPatients.length} Clients)
                         </h3>
                         <div className="overflow-x-auto">
                           <table className="min-w-full table-auto">
                             <thead>
                               <tr className="bg-purple-50">
-                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Client</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Email</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Current Week</th>
                                 <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Last Check-in</th>
@@ -538,7 +538,7 @@ export default function DrNickPatientDashboard() {
         </div>
       )}
 
-      {/* Individual Patient Charts */}
+      {/* Individual Client Charts */}
       {activeTab === 'charts' && selectedPatientId && (
         <div>
           <div className="bg-blue-50 rounded-lg p-4 mb-6">
@@ -546,7 +546,7 @@ export default function DrNickPatientDashboard() {
               Viewing charts for: {selectedPatient?.full_name || selectedPatient?.email}
             </h3>
             <p className="text-sm text-blue-700">
-              Patient ID: {selectedPatientId.slice(0, 8)}... | Current Week: {selectedPatient?.current_week}
+              Client ID: {selectedPatientId.slice(0, 8)}... | Current Week: {selectedPatient?.current_week}
             </p>
           </div>
           <ChartsDashboard patientId={selectedPatientId} onSubmissionSelect={handleSubmissionSelect} />

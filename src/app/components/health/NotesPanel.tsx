@@ -135,7 +135,7 @@ export default function NotesPanel({
             ref={textareaRef}
             value={notes}
             onChange={(e) => onNotesChange(e.target.value)}
-            placeholder={`Start typing coaching notes for ${patientName || 'this patient'}...`}
+            placeholder={`Start typing coaching notes for ${patientName || 'this client'}...`}
             className="w-full h-full resize-none border border-gray-200 rounded p-2 text-sm font-mono leading-relaxed text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             style={{ minHeight: '200px' }}
             onKeyDown={(e) => {

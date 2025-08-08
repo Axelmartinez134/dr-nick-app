@@ -103,7 +103,7 @@ export default function DrNickAdmin() {
 
     // Validation
     if (!selectedPatientId) {
-      setSetupMessage('Please select a patient')
+      setSetupMessage('Please select a client')
       setSetupLoading(false)
       return
     }
@@ -147,7 +147,7 @@ export default function DrNickAdmin() {
 
     // Validation
     if (!selectedPatientId) {
-      setSleepMessage('Please select a patient')
+      setSleepMessage('Please select a client')
       setSleepLoading(false)
       return
     }
@@ -213,7 +213,7 @@ export default function DrNickAdmin() {
               ⚙️ Admin Tools
             </h2>
             <p className="text-gray-600">
-              Manage patient accounts and setup data
+              Manage Client accounts and setup data
             </p>
           </div>
           
@@ -221,16 +221,16 @@ export default function DrNickAdmin() {
             onClick={() => setShowCreateModal(true)}
             className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
           >
-            ➕ Create New Patient
+            ➕ Create New Client
           </button>
         </div>
       </div>
 
-      {/* Patient List for Selection */}
+        {/* Client List for Selection */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900">
-            👥 Patient Passwords ({patients.length} patients)
+            👥 Client Passwords ({patients.length} Clients)
           </h3>
           
           <button
@@ -249,21 +249,21 @@ export default function DrNickAdmin() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-            placeholder="🔍 Search patients by name or email..."
+            placeholder="🔍 Search Clients by name or email..."
           />
         </div>
 
         {/* Patients Display */}
         {patientsLoading && (
-          <div className="text-center py-4">
+            <div className="text-center py-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-2 text-gray-600">Loading patients...</p>
+              <p className="mt-2 text-gray-600">Loading Clients...</p>
           </div>
         )}
 
         {patientsError && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            Error loading patients: {patientsError}
+            Error loading Clients: {patientsError}
           </div>
         )}
 
@@ -271,11 +271,11 @@ export default function DrNickAdmin() {
           <div className="text-center py-8 text-gray-500">
             {patients.length === 0 ? (
               <div>
-                <p className="text-lg mb-2">No patients found</p>
-                <p>Create your first patient account to get started!</p>
+                <p className="text-lg mb-2">No Clients found</p>
+                <p>Create your first Client account to get started!</p>
               </div>
             ) : (
-              <p>No patients match your search criteria</p>
+              <p>No Clients match your search criteria</p>
             )}
           </div>
         )}
@@ -291,7 +291,7 @@ export default function DrNickAdmin() {
             return (
               <div className="mb-6">
                 <h3 className={`text-lg font-semibold mb-4 ${colorClasses.headerText}`}>
-                  {title} ({group.length} {group.length === 1 ? 'patient' : 'patients'})
+                  {title} ({group.length} {group.length === 1 ? 'Client' : 'Clients'})
                 </h3>
                 <div className="space-y-3">
                   {group.map((patient) => (
@@ -319,7 +319,7 @@ export default function DrNickAdmin() {
                         <div className="ml-4 text-right">
                           <div>
                             <label className="text-xs text-gray-500 block mb-1">
-                              Patient Password:
+                              Client Password:
                             </label>
                             <div className="flex items-center gap-2">
                               <span className="bg-gray-800 text-white px-3 py-2 rounded font-mono text-lg font-bold">

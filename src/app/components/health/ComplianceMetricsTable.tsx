@@ -174,11 +174,11 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        {isDoctorView ? "📊 Patient Compliance Metrics" : "📊 Your Compliance Metrics"}
+        {isDoctorView ? "📊 Client Compliance Metrics" : "📊 Your Compliance Metrics"}
       </h3>
       <p className="text-gray-600 mb-6">
         {isDoctorView 
-          ? "Key performance indicators for this patient's program compliance and progress"
+          ? "Key performance indicators for this Client's program compliance and progress"
           : "Key performance indicators tracking your program compliance and health goals"
         }
         <span className="text-sm text-blue-600 ml-2">💡 Hover over each metric for detailed explanations</span>
@@ -197,7 +197,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
           <div className="text-gray-500">Not enough data for compliance calculations</div>
           <div className="text-sm text-gray-400 mt-1">
             {isDoctorView 
-              ? "Patient needs to complete more weekly check-ins for meaningful metrics"
+              ? "Client needs to complete more weekly check-ins for meaningful metrics"
               : "Complete more weekly check-ins to see your compliance metrics"
             }
           </div>

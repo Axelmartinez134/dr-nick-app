@@ -33,7 +33,7 @@ export default function MarketingTab() {
               🎬 Content Creation Studio
             </h2>
             <p className="text-gray-600">
-              Create engaging social media content showcasing patient progress
+              Create engaging social media content showcasing client progress
             </p>
           </div>
           <div className="text-right">

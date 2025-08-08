@@ -69,11 +69,11 @@ export default function UserCreationModal({
     }
   }
 
-  // Get patient's first name
+  // Get patient's first name (UI label will say Client)
   const getFirstName = () => {
-    if (!createdCredentials?.fullName) return 'Patient'
+    if (!createdCredentials?.fullName) return 'Client'
     const trimmedName = createdCredentials.fullName.trim()
-    if (!trimmedName) return 'Patient'
+    if (!trimmedName) return 'Client'
     return trimmedName.split(' ')[0]
   }
 
@@ -127,7 +127,7 @@ You can now log in and start your weekly check-ins with Dr. Nick!`
                 </svg>
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                🎉 Patient Account Created Successfully!
+                🎉 Client Account Created Successfully!
               </h2>
               <p className="text-gray-600">
                 {getFirstName()}'s account has been set up with Week 0 baseline data.
@@ -214,7 +214,7 @@ You can now log in and start your weekly check-ins with Dr. Nick!`
                 <p>1. Send the message above to {getFirstName()}</p>
                 <p>2. {getFirstName()} can log in immediately and start weekly check-ins</p>
                 <p>3. Week 0 data will serve as baseline for all progress charts</p>
-                <p>4. You can view {getFirstName()}'s password anytime in the patient list</p>
+                <p>4. You can view {getFirstName()}'s password anytime in the Client list</p>
               </div>
             </div>
 
@@ -247,7 +247,7 @@ You can now log in and start your weekly check-ins with Dr. Nick!`
                 }}
                 className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
               >
-                Create Another Patient
+                Create Another Client
               </button>
             </div>
           </div>

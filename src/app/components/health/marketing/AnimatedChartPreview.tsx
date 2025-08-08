@@ -78,7 +78,7 @@ export default function AnimatedChartPreview({
           Ready to Create Content
         </h3>
         <p className="text-gray-600">
-          Select a patient from the left to preview their progress charts
+          Select a Client from the left to preview their progress charts
         </p>
       </div>
     )
@@ -88,7 +88,7 @@ export default function AnimatedChartPreview({
     return (
       <div className="text-center py-12">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="text-gray-600 mt-2">Loading patient data...</p>
+        <p className="text-gray-600 mt-2">Loading Client data...</p>
       </div>
     )
   }
@@ -110,7 +110,7 @@ export default function AnimatedChartPreview({
           No Data Available
         </h3>
         <p className="text-gray-600">
-          This patient doesn't have enough data for chart preview
+          This Client doesn't have enough data for chart preview
         </p>
       </div>
     )

@@ -88,7 +88,7 @@ export default function Dashboard() {
       <footer className="bg-white border-t mt-12">
         <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
           <div className="text-center text-sm text-gray-500">
-            The Fittest You Health Tracker - {isDoctor ? 'Patient Management System' : 'Stay on track with your weekly check-ins!'} 📋
+            The Fittest You Health Tracker - {isDoctor ? 'Client Management System' : 'Stay on track with your weekly check-ins!'} 📋
           </div>
         </div>
       </footer>

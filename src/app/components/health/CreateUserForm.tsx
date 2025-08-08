@@ -1,5 +1,5 @@
 // src/app/components/health/CreateUserForm.tsx
-// Form for Dr. Nick to create new patient accounts with Week 0 baseline
+// Form for Dr. Nick to create new Client accounts with Week 0 baseline (UI-only labels)
 
 'use client'
 
@@ -40,7 +40,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
 
   const validateForm = () => {
     if (!formData.fullName.trim()) {
-      setError('Patient name is required')
+      setError('Client name is required')
       return false
     }
 
@@ -134,7 +134,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     if (result.success && result.credentials) {
       onSuccess(result.credentials, formData.fullName.trim())
     } else {
-      setError(result.error || 'Failed to create patient account')
+      setError(result.error || 'Failed to create client account')
     }
 
     setLoading(false)
@@ -146,10 +146,10 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     <div className="bg-white rounded-lg p-6 max-w-2xl mx-auto">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          ➕ Create New Patient Account
+          ➕ Create New Client Account
         </h2>
         <p className="text-gray-600">
-          Add a new patient with their Week 0 baseline measurements. The system will automatically calculate their weekly check-ins based on submission history.
+          Add a new client with their Week 0 baseline measurements. The system will automatically calculate their weekly check-ins based on submission history.
         </p>
       </div>
 
@@ -160,14 +160,14 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       )}
 
       <div className="space-y-4">
-        {/* Patient Information */}
+        {/* Client Information */}
         <div className="bg-gray-50 p-4 rounded-lg">
-          <h3 className="font-semibold text-gray-900 mb-3">Patient Information</h3>
+          <h3 className="font-semibold text-gray-900 mb-3">Client Information</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Patient's Full Name *
+                Client's Full Name *
               </label>
               <input
                 type="text"
@@ -193,7 +193,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 placeholder="john@example.com"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Account will be automatically approved - patient can login immediately after creation.
+                Account will be automatically approved - client can login immediately after creation.
               </p>
             </div>
           </div>
@@ -201,17 +201,17 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Patient Password *
+                Client Password *
               </label>
               <input
                 type="text"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                placeholder="Enter password for patient"
+                placeholder="Enter password for client"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Patient will use this password to login. You can view it later in the patient list.
+                Client will use this password to login. You can view it later in the client list.
               </p>
             </div>
 
@@ -270,7 +270,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 placeholder="0"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Target resistance training days per week (0-7) - patient will see this as their goal
+                Target resistance training days per week (0-7) - client will see this as their goal
               </p>
             </div>
 
@@ -289,7 +289,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 <option value="Test">Test</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Initial status for patient categorization on dashboard
+                Initial status for client categorization on dashboard
               </p>
             </div>
           </div>
@@ -352,7 +352,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               onChange={(e) => handleInputChange('initialNotes', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
               rows={3}
-              placeholder="Enter any initial notes about this patient's goals, health conditions, or special considerations..."
+              placeholder="Enter any initial notes about this client's goals, health conditions, or special considerations..."
             />
             <p className="text-xs text-gray-500 mt-1">
               These notes will appear in all future check-ins with this client. Any changes made here will be reflected in those sections as well.
@@ -364,7 +364,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
         <div className="bg-green-50 p-4 rounded-lg">
           <h3 className="font-semibold text-gray-900 mb-2">📊 Smart Week Tracking</h3>
           <p className="text-sm text-gray-700">
-            The system will automatically calculate which week the patient should submit based on their submission history:
+            The system will automatically calculate which week the client should submit based on their submission history:
           </p>
           <ul className="text-sm text-gray-600 mt-2 space-y-1">
             <li>• First submission = Week 1</li>
@@ -390,7 +390,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
           disabled={loading}
           className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Creating Account...' : 'Create Patient Account'}
+          {loading ? 'Creating Account...' : 'Create Client Account'}
         </button>
       </div>
     </div>

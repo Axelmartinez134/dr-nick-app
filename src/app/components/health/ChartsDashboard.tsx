@@ -21,7 +21,7 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
   const [message, setMessage] = useState<string>('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
 
-  // Load current patient status
+  // Load current Client status
   useEffect(() => {
     if (!patientId) return
 
@@ -95,7 +95,7 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        👤 Patient Status Management
+        👤 Client Status Management
       </h3>
       
       <div className="flex items-center space-x-4">
@@ -175,7 +175,7 @@ const WeightProjectionChart = dynamic(() => import('./charts/WeightProjectionCha
 const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionChart'), { ssr: false })
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
 
-// Data Table Component - Different versions for Patient vs Dr. Nick
+  // Data Table Component - Different versions for Client vs Dr. Nick
 function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
@@ -204,13 +204,13 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          {isDoctorView ? "📋 Patient Check-in Data (Editable)" : "📋 Your Check-in Data"}
+          {isDoctorView ? "📋 Client Check-in Data (Editable)" : "📋 Your Check-in Data"}
         </h3>
         <div className="text-center py-8 text-gray-500">
           <p>No check-in data available yet</p>
           <p className="text-sm">
             {isDoctorView 
-              ? "Patient data will appear here after weekly check-ins are completed"
+              ? "Client data will appear here after weekly check-ins are completed"
               : "Your data will appear here after completing weekly check-ins"
             }
           </p>
@@ -495,11 +495,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-        {isDoctorView ? "📋 Patient Check-in Data (Editable)" : "📋 Your Check-in Data"}
+        {isDoctorView ? "📋 Client Check-in Data (Editable)" : "📋 Your Check-in Data"}
       </h3>
       <p className="text-gray-600 mb-4">
         {isDoctorView 
-          ? "Click any cell to edit patient data. This table shows the raw data used to generate the progress charts above."
+          ? "Click any cell to edit Client data. This table shows the raw data used to generate the progress charts above."
           : "This table shows the raw data used to generate your progress charts above"
         }
       </p>
@@ -643,7 +643,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState(0)
   const [resistanceGoalLoading, setResistanceGoalLoading] = useState(false)
   
-  // Patient name for display
+  // Client name for display
   const [patientName, setPatientName] = useState<string>('')
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
@@ -658,7 +658,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
   useEffect(() => {
     if (mounted) {
       loadChartData()
-      loadMetrics() // Load metrics for both patient and doctor views
+       loadMetrics() // Load metrics for both Client and doctor views
       if (isDoctorView) {
         loadSubmissionData()
         loadPatientName()
@@ -682,12 +682,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
     setLoading(false)
   }
 
-  // Function to load metrics data (both patient and doctor views)
+  // Function to load metrics data (both Client and doctor views)
   const loadMetrics = async () => {
     setMetricsLoading(true)
     try {
-      // For patient view, patientId is undefined, so getPatientMetrics will use current user from auth context
-      // For doctor view, patientId is passed to get metrics for the specific patient
+      // For Client view, patientId is undefined, so getPatientMetrics will use current user from auth context
+      // For doctor view, patientId is passed to get metrics for the specific Client
       const metricsData = await getPatientMetrics(patientId)
       setMetrics(metricsData)
     } catch (error) {
@@ -731,7 +731,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
     }
   }
 
-  // Load patient name separately  
+  // Load Client name separately  
   const loadPatientName = async () => {
     if (!isDoctorView || !patientId) return
     
@@ -747,15 +747,15 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
         return
       }
       
-      // Set patient name (try full_name first, then first_name + last_name, fallback to "this patient")
+      // Set Client name (try full_name first, then first_name + last_name, fallback to "this client")
       const name = profileData?.full_name || 
                    (profileData?.first_name && profileData?.last_name 
                      ? `${profileData.first_name} ${profileData.last_name}` 
-                     : profileData?.first_name || 'this patient')
+                     : profileData?.first_name || 'this client')
       setPatientName(name)
       
     } catch (err) {
-      console.error('Failed to load patient name:', err)
+       console.error('Failed to load patient name:', err)
     }
   }
 
@@ -910,7 +910,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
-      {/* Metrics Hero Cards - Both Patient and Doctor Views */}
+      {/* Metrics Hero Cards - Both Client and Doctor Views */}
       {metrics && metrics.hasEnoughData && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           
@@ -976,7 +976,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
           </h2>
           <p className="text-gray-600">
             {isDoctorView 
-              ? "Comprehensive visual analysis of patient progress over time"
+              ? "Comprehensive visual analysis of Client progress over time"
               : "Track your journey and see your progress over time"
             }
           </p>
@@ -1017,7 +1017,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
             </div>
           </div>
         ) : (
-          // Patient View - Remove Total Data Points and Week 0 Setup
+          // Client View - Remove Total Data Points and Week 0 Setup
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-blue-600">{stats.currentWeek}</div>
@@ -1047,7 +1047,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
 
       </div>
 
-      {/* Move Missed Check-ins Indicator down to the data table area (patient view only) */}
+      {/* Move Missed Check-ins Indicator down to the data table area (client view only) */}
 
       {/* Goals Editing - Doctor View Only */}
       {isDoctorView && (
@@ -1057,11 +1057,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  🎯 Patient Weight Change Goal
+                  🎯 Client Weight Change Goal
                 </h3>
                 <p className="text-gray-600">
                   Set the target week-over-week weight loss<br />
-                  percentage for {patientName || 'this patient'}
+                   percentage for {patientName || 'this client'}
                 </p>
               </div>
               
@@ -1101,11 +1101,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  🏋️ Patient Strength Days Target Goal
+                  🏋️ Client Strength Days Target Goal
                 </h3>
                 <p className="text-gray-600">
                   Set the target resistance training days per week<br />
-                  for {patientName || 'this patient'}
+                   for {patientName || 'this client'}
                 </p>
               </div>
               
@@ -1171,7 +1171,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
           <ComplianceMetricsTable patientId={patientId} />
         </div>
 
-        {/* Data Table - Different for Patient vs Dr. Nick */}
+        {/* Data Table - Different for Client vs Dr. Nick */}
         <DataTable 
           data={chartData} 
           isDoctorView={isDoctorView}
@@ -1215,7 +1215,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
               <h4 className="font-medium text-blue-900 mb-2">To Get Started:</h4>
               <ul className="text-sm text-blue-800 space-y-1 text-left">
                 <li>1. Dr. Nick sets up Week 0 with initial weight</li>
-                <li>2. Patient completes weekly check-ins (Weeks 1+)</li>
+                <li>2. Client completes weekly check-ins (Weeks 1+)</li>
                 <li>3. Dr. Nick adds sleep and recovery data</li>
                 <li>4. Charts automatically populate with data</li>
               </ul>
@@ -1224,7 +1224,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
         </div>
       )}
 
-      {/* Patient Status Management - Dr. Nick Only */}
+      {/* Client Status Management - Dr. Nick Only */}
       {isDoctorView && (
         <PatientStatusManagement patientId={patientId} />
       )}

@@ -1,5 +1,5 @@
 // src/app/components/health/marketing/PatientSelector.tsx
-// Patient selection component with anonymized data
+// Client selection component with anonymized data (UI-only label change)
 
 'use client'
 
@@ -65,14 +65,14 @@ export default function PatientSelector({ selectedPatientId, onPatientSelect }: 
 
       if (profilesError) throw profilesError
 
-      // Create patient options with real names
+      // Create Client options with real names
       const patientOptions: PatientOption[] = uniqueUserIds.map(userId => {
         const stats = userStats.get(userId)!
         const profile = profilesData?.find(p => p.id === userId)
         
         return {
           id: userId,
-          displayName: profile?.full_name || profile?.email || `Patient ${userId.slice(0, 8)}`,
+          displayName: profile?.full_name || profile?.email || `Client ${userId.slice(0, 8)}`,
           current_week: stats.maxWeek,
           total_checkins: stats.totalCheckins
         }
@@ -83,7 +83,7 @@ export default function PatientSelector({ selectedPatientId, onPatientSelect }: 
 
       setPatients(patientOptions)
     } catch (err) {
-      setError((err as Error).message || 'Failed to load patients')
+      setError((err as Error).message || 'Failed to load clients')
     }
 
     setLoading(false)
@@ -93,7 +93,7 @@ export default function PatientSelector({ selectedPatientId, onPatientSelect }: 
     return (
       <div className="text-center py-4">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="text-sm text-gray-600 mt-2">Loading patients...</p>
+        <p className="text-sm text-gray-600 mt-2">Loading clients...</p>
       </div>
     )
   }
@@ -109,7 +109,7 @@ export default function PatientSelector({ selectedPatientId, onPatientSelect }: 
   return (
     <div className="space-y-3">
       <p className="text-sm text-gray-600">
-        Select a patient to preview their progress charts
+        Select a Client to preview their progress charts
       </p>
       
       <select
@@ -117,7 +117,7 @@ export default function PatientSelector({ selectedPatientId, onPatientSelect }: 
         onChange={(e) => onPatientSelect(e.target.value)}
         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
       >
-        <option value="">Select a patient...</option>
+        <option value="">Select a Client...</option>
         {patients.map(patient => (
           <option key={patient.id} value={patient.id}>
             {patient.displayName} (Week {patient.current_week}, {patient.total_checkins} check-ins)
