@@ -49,6 +49,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const gapFillTriggeredRef = useRef(false)
+  const pastRedirectTriggeredRef = useRef(false)
 
   // Role detection based on email
   const isDoctor = !!(user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAIL && user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
@@ -64,6 +65,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
         gapFillTriggeredRef.current = true
         void gapFillMissedWeeks(session.user)
       }
+
+      // Redirect Past patients to /inactive (admins exempt)
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
+      const isDoctorEmail = !!(session?.user?.email && adminEmail && session.user.email === adminEmail)
+      if (session?.user && !isDoctorEmail && !pastRedirectTriggeredRef.current) {
+        ;(async () => {
+          try {
+            const { data: profile, error } = await supabase
+              .from('profiles')
+              .select('client_status')
+              .eq('id', session.user!.id)
+              .single()
+            if (!error && profile?.client_status === 'Past') {
+              pastRedirectTriggeredRef.current = true
+              if (window.location.pathname !== '/inactive') {
+                window.location.href = '/inactive'
+              }
+            }
+          } catch {
+            // no-op
+          }
+        })()
+      }
     })
 
     // Listen for auth changes
@@ -76,6 +100,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (session?.user && !gapFillTriggeredRef.current) {
         gapFillTriggeredRef.current = true
         void gapFillMissedWeeks(session.user)
+      }
+
+      // Redirect Past patients to /inactive (admins exempt)
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
+      const isDoctorEmail = !!(session?.user?.email && adminEmail && session.user.email === adminEmail)
+      if (session?.user && !isDoctorEmail && !pastRedirectTriggeredRef.current) {
+        ;(async () => {
+          try {
+            const { data: profile, error } = await supabase
+              .from('profiles')
+              .select('client_status')
+              .eq('id', session.user!.id)
+              .single()
+            if (!error && profile?.client_status === 'Past') {
+              pastRedirectTriggeredRef.current = true
+              if (window.location.pathname !== '/inactive') {
+                window.location.href = '/inactive'
+              }
+            }
+          } catch {
+            // no-op
+          }
+        })()
       }
     })
 
@@ -242,12 +289,12 @@ function calculateAoECurrentWeek(week1AoEMonday: Date): number {
 }
 
 /**
- * Background routine to auto-create missed weeks as null rows for Current clients
- * who have at least one Week 1 submission entered by the patient.
+  * Background routine to auto-create missed weeks as null rows for Current or Test clients
+  * who have at least one Week 1 submission entered by the patient.
  */
 async function gapFillMissedWeeks(user: User): Promise<void> {
   try {
-    // 1) Ensure profile is Current
+    // 1) Ensure profile is Current or Test
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('client_status')
@@ -258,8 +305,8 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
       console.warn('gapFillMissedWeeks: failed to load profile', profileError)
       return
     }
-    if (!profile || profile.client_status !== 'Current') {
-      return // Only run for Current clients
+    if (!profile || (profile.client_status !== 'Current' && profile.client_status !== 'Test')) {
+      return // Only run for Current or Test clients
     }
 
     // 2) Find the first Week 1 patient-submitted record

@@ -286,6 +286,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 <option value="Current">Current</option>
                 <option value="Onboarding">Onboarding</option>
                 <option value="Past">Past</option>
+                <option value="Test">Test</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
                 Initial status for patient categorization on dashboard

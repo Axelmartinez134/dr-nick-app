@@ -113,6 +113,7 @@ export async function getAllPatients() {
         id,
         email,
         full_name,
+        client_status,
         height,
         weight_change_goal_percent,
         created_at,

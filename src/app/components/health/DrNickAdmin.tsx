@@ -16,6 +16,7 @@ interface Patient {
   full_name: string
   created_at: string
   patient_password: string
+  client_status?: string
 }
 
 export default function DrNickAdmin() {
@@ -279,61 +280,80 @@ export default function DrNickAdmin() {
           </div>
         )}
 
-        {!patientsLoading && !patientsError && filteredPatients.length > 0 && (
-          <div className="space-y-3">
-            {filteredPatients.map((patient) => (
-              <div
-                key={patient.id}
-                className="border border-gray-200 rounded-lg p-4"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h4 className="font-medium text-gray-900">
-                        {patient.full_name || 'No name'}
-                      </h4>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 mb-1">
-                      📧 {patient.email}
-                    </p>
-                    
-                    <p className="text-xs text-gray-500">
-                      Created: {new Date(patient.created_at).toLocaleDateString()}
-                    </p>
-                    
-                    <p className="text-xs text-gray-400 mt-1">
-                      ID: {patient.id}
-                    </p>
-                  </div>
+        {!patientsLoading && !patientsError && filteredPatients.length > 0 && (() => {
+          const onboarding = filteredPatients.filter(p => p.client_status === 'Onboarding')
+          const current = filteredPatients.filter(p => p.client_status === 'Current')
+          const past = filteredPatients.filter(p => p.client_status === 'Past')
+          const test = filteredPatients.filter(p => p.client_status === 'Test')
 
-                  {/* Password Section */}
-                  <div className="ml-4 text-right">
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">
-                        Patient Password:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <span className="bg-gray-800 text-white px-3 py-2 rounded font-mono text-lg font-bold">
-                          {patient.patient_password || 'N/A'}
-                        </span>
-                        {patient.patient_password && (
-                          <button
-                            onClick={() => copyPassword(patient.patient_password)}
-                            className="text-blue-600 hover:text-blue-800 text-lg"
-                            title="Copy password"
-                          >
-                            📋
-                          </button>
-                        )}
+          const renderSection = (title: string, colorClasses: { headerText: string, rowHover: string, badgeBg?: string }, group: Patient[]) => {
+            if (group.length === 0) return null
+            return (
+              <div className="mb-6">
+                <h3 className={`text-lg font-semibold mb-4 ${colorClasses.headerText}`}>
+                  {title} ({group.length} {group.length === 1 ? 'patient' : 'patients'})
+                </h3>
+                <div className="space-y-3">
+                  {group.map((patient) => (
+                    <div
+                      key={patient.id}
+                      className={`border border-gray-200 rounded-lg p-4 ${colorClasses.rowHover}`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-medium text-gray-900">
+                              {patient.full_name || 'No name'}
+                            </h4>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-1">
+                            📧 {patient.email}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Created: {new Date(patient.created_at).toLocaleDateString()}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            ID: {patient.id}
+                          </p>
+                        </div>
+                        <div className="ml-4 text-right">
+                          <div>
+                            <label className="text-xs text-gray-500 block mb-1">
+                              Patient Password:
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <span className="bg-gray-800 text-white px-3 py-2 rounded font-mono text-lg font-bold">
+                                {patient.patient_password || 'N/A'}
+                              </span>
+                              {patient.patient_password && (
+                                <button
+                                  onClick={() => copyPassword(patient.patient_password!)}
+                                  className="text-blue-600 hover:text-blue-800 text-lg"
+                                  title="Copy password"
+                                >
+                                  📋
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            )
+          }
+
+          return (
+            <div>
+              {renderSection('📋 Currently Onboarding', { headerText: 'text-blue-900', rowHover: 'hover:bg-blue-50' }, onboarding)}
+              {renderSection('✅ Current Clients', { headerText: 'text-green-900', rowHover: 'hover:bg-green-50' }, current)}
+              {renderSection('📁 Past Clients', { headerText: 'text-gray-900', rowHover: 'hover:bg-gray-50' }, past)}
+              {renderSection('🧪 Test', { headerText: 'text-purple-900', rowHover: 'hover:bg-purple-50' }, test)}
+            </div>
+          )
+        })()}
       </div>
 
 

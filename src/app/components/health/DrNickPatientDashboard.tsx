@@ -323,6 +323,7 @@ export default function DrNickPatientDashboard() {
                 const onboardingPatients = patients.filter(p => p.client_status === 'Onboarding')
                 const currentPatients = patients.filter(p => p.client_status === 'Current')
                 const pastPatients = patients.filter(p => p.client_status === 'Past')
+                const testPatients = patients.filter(p => p.client_status === 'Test')
 
                 return (
                   <>
@@ -448,6 +449,57 @@ export default function DrNickPatientDashboard() {
                             <tbody>
                               {pastPatients.map((patient) => (
                                 <tr key={patient.user_id} className="border-t hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.full_name || 'Unknown Name'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.email}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    Week {patient.current_week}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPatientId(patient.user_id)
+                                        setActiveTab('charts')
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 mr-3"
+                                    >
+                                      📊 View Charts
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Test Clients Section (always at the bottom) */}
+                    {testPatients.length > 0 && (
+                      <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold text-purple-900 mb-4">
+                          🧪 Test ({testPatients.length} patients)
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full table-auto">
+                            <thead>
+                              <tr className="bg-purple-50">
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Patient</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Email</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Current Week</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Last Check-in</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {testPatients.map((patient) => (
+                                <tr key={patient.user_id} className="border-t hover:bg-purple-50">
                                   <td className="px-4 py-3 text-sm text-gray-900">
                                     {patient.full_name || 'Unknown Name'}
                                   </td>

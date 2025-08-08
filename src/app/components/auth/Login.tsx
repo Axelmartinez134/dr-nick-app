@@ -4,7 +4,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth } from './AuthContext'
+import { useAuth, supabase } from './AuthContext'
 
 export default function Login() {
   // Form state
@@ -22,11 +22,32 @@ export default function Login() {
     setLoading(true)
     setMessage('')
 
-    const { error } = await signIn(email, password)
+    const { data, error } = await signIn(email, password)
 
     if (error) {
       setMessage(error.message)
     } else {
+      try {
+        const userId = data?.user?.id
+        if (userId) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('client_status')
+            .eq('id', userId)
+            .single()
+          const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
+          const isAdmin = !!(data?.user?.email && adminEmail && data.user.email === adminEmail)
+          if (!isAdmin && profile?.client_status === 'Past') {
+            if (window.location.pathname !== '/inactive') {
+              window.location.href = '/inactive'
+            }
+            setLoading(false)
+            return
+          }
+        }
+      } catch {
+        // ignore and continue
+      }
       setMessage('Login successful! Redirecting...')
     }
     

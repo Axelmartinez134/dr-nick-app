@@ -112,6 +112,7 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
             <option value="Current">Current</option>
             <option value="Past">Past</option>
             <option value="Onboarding">Onboarding</option>
+            <option value="Test">Test</option>
           </select>
           {saving && (
             <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
