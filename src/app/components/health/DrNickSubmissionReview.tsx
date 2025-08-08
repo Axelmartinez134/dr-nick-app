@@ -1092,6 +1092,11 @@ export default function DrNickSubmissionReview({
 
   return (
     <div className="space-y-8">
+      {(submission as any).data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED') ? (
+        <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-md p-3">
+          <span className="font-semibold">MISSED CHECK-IN (SYSTEM) — Week {submission.week_number}.</span> This week was auto-created to keep the timeline continuous. Review like a normal check-in and click "Complete Review & Remove from Queue" when done.
+        </div>
+      ) : null}
       
       {/* 1. Patient Submission Overview - Full Width */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">

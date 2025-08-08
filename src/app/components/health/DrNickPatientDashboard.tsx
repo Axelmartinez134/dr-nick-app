@@ -50,7 +50,7 @@ export default function DrNickPatientDashboard() {
       // First, get all unique user_ids from health_data
       const { data: healthData, error: healthError } = await supabase
         .from('health_data')
-        .select('user_id, week_number, weight, initial_weight, date, energetic_constraints_reduction_ok')
+        .select('user_id, week_number, weight, initial_weight, date, energetic_constraints_reduction_ok, data_entered_by')
         .order('date', { ascending: false })
 
       if (healthError) throw healthError
@@ -78,7 +78,7 @@ export default function DrNickPatientDashboard() {
       // Process patient data to create summaries
       const patientMap = new Map<string, PatientSummary>()
       
-      healthData?.forEach((record: { user_id: string; week_number: number; weight: number; initial_weight: number; date: string; energetic_constraints_reduction_ok: boolean }) => {
+      healthData?.forEach((record: { user_id: string; week_number: number; weight: number; initial_weight: number; date: string; energetic_constraints_reduction_ok: boolean; data_entered_by: string }) => {
         const userId = record.user_id
         const profile = profilesMap.get(userId)
         
@@ -104,7 +104,9 @@ export default function DrNickPatientDashboard() {
         }
 
         const patient = patientMap.get(userId)!
-        patient.total_checkins++
+        if (record.data_entered_by === 'patient') {
+          patient.total_checkins++
+        }
         
         if (record.week_number > patient.current_week) {
           patient.current_week = record.week_number

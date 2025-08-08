@@ -208,6 +208,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   // Sort data by week number for display (ascending order - Week 0 at top, new weeks added to bottom)
   const sortedData = [...data].sort((a, b) => a.week_number - b.week_number)
 
+  // Missed check-ins count (patient view only)
+  const missedCount = !isDoctorView
+    ? sortedData.filter(d => d.week_number > 0 && (d as any).data_entered_by === 'system').length
+    : 0
+
   // Handle cell editing for Dr. Nick and viewing for patients
   const handleCellClick = (recordId: string, field: string, currentValue: any) => {
     // Allow patients to view notes and detailed symptom notes, but prevent editing other fields
@@ -484,6 +489,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
           : "This table shows the raw data used to generate your progress charts above"
         }
       </p>
+      {!isDoctorView && missedCount > 0 && (
+        <p className="text-xs text-gray-500 mt-1">
+          {`Note: Your dashboard includes ${missedCount} week${missedCount === 1 ? '' : 's'} marked 'no data' to reflect missed check-ins. This keeps your charts aligned week-to-week.`}
+        </p>
+      )}
       
       <div className="overflow-x-auto">
         <table className="min-w-full table-auto">
@@ -836,6 +846,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
 
   }
 
+  // Missed check-ins (auto-created by system) - patient view only indicator
+  const missedCheckins = !isDoctorView
+    ? chartData.filter(d => d.week_number > 0 && (d as any).data_entered_by === 'system').length
+    : 0
+
   // Calculate total weight loss
   if (stats.initialWeight && stats.currentWeight) {
     stats.totalWeightLoss = Math.round((stats.initialWeight - stats.currentWeight) * 10) / 10
@@ -1010,6 +1025,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
 
       </div>
 
+      {/* Move Missed Check-ins Indicator down to the data table area (patient view only) */}
+
       {/* Goals Editing - Doctor View Only */}
       {isDoctorView && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1140,6 +1157,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
           patientId={patientId}
           onSubmissionSelect={onSubmissionSelect}
         />
+
+        {/* Removed duplicate bottom missed-checkins note: now rendered inside DataTable header */}
 
         {/* Chart Refresh Button */}
         <div className="bg-white rounded-lg shadow-md p-6">

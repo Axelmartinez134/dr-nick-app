@@ -13,49 +13,52 @@ interface ExtendedCheckinFormData extends CheckinFormData {
   notes?: string
 }
 
-// Calendar-based week calculation with Monday start boundaries (Eastern Time)
+// AoE helpers (match logic used in AuthContext gap-fill)
+function toAoE(date: Date): Date {
+  const offset = 14 * 60
+  return new Date(date.getTime() + offset * 60000)
+}
+function getAoEMonday(date: Date): Date {
+  const aoe = toAoE(date)
+  const dayOfWeek = aoe.getDay()
+  const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+  const monday = new Date(aoe)
+  monday.setDate(aoe.getDate() - daysSinceMonday)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+function calculateAoECurrentWeekFromWeek1(week1AoEMonday: Date): number {
+  const nowAoEMonday = getAoEMonday(new Date())
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000
+  const diffMs = nowAoEMonday.getTime() - week1AoEMonday.getTime()
+  const weeksElapsed = Math.floor(diffMs / msPerWeek)
+  return weeksElapsed + 1
+}
+
+// Calendar-based week calculation: AoE weeks since the AoE Monday of Week 1 submission week
 const calculateCurrentWeek = async (userId: string): Promise<number> => {
   try {
-    const { data: submissions, error } = await supabase
+    // Find first Week 1 submitted by patient
+    const { data: week1Rows, error: week1Error } = await supabase
       .from('health_data')
-      .select('week_number')
+      .select('date')
       .eq('user_id', userId)
-      .order('week_number', { ascending: false })
+      .eq('week_number', 1)
+      .eq('data_entered_by', 'patient')
+      .order('created_at', { ascending: true })
       .limit(1)
 
-    if (error) {
-      console.error('Error fetching submissions:', error)
+    if (week1Error) {
+      console.error('Error fetching Week 1 baseline:', week1Error)
       return 1
     }
-
-    if (!submissions || submissions.length === 0) {
-      return 1 // First submission after Week 0
+    if (!week1Rows || week1Rows.length === 0) {
+      return 1 // No Week 1 yet → first submission after Week 0
     }
 
-    const lastWeek = submissions[0].week_number
-    
-    // Get current time when first Monday occurs on Earth (UTC+14)
-    const now = new Date()
-    const firstMondayOffset = 14 * 60 // UTC+14 offset in minutes (Line Islands, Kiribati)
-    const firstMondayTime = new Date(now.getTime() + (firstMondayOffset * 60000))
-    
-    // Get current day of week (0 = Sunday, 1 = Monday, etc.)
-    const dayOfWeek = firstMondayTime.getDay()
-    
-    // Calculate days since last Monday
-    const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Sunday = 6, Monday = 0
-    
-    // Get the Monday of this week
-    const thisMonday = new Date(firstMondayTime)
-    thisMonday.setDate(firstMondayTime.getDate() - daysSinceMonday)
-    thisMonday.setHours(0, 0, 0, 0)
-    
-    // Week boundaries are every Monday at midnight in first timezone (UTC+14)
-    // If current week number exists in DB, stay on that week
-    // Otherwise, increment to next week
-    const currentWeek = lastWeek + 1
-    
-    return currentWeek
+    const week1Date = new Date(week1Rows[0].date)
+    const week1AoEMonday = getAoEMonday(week1Date)
+    return calculateAoECurrentWeekFromWeek1(week1AoEMonday)
   } catch (error) {
     console.error('Error calculating current week:', error)
     return 1

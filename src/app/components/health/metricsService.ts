@@ -111,11 +111,14 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
       console.log(`✅ METRICS PERFORMANCE SWEET SPOT: ${performanceMs}ms`)
     }
 
+    // Tighten hasEnoughData: Week 0 present AND at least one week >0 with a valid weight
+    const hasAtLeastOneWeightedWeek = sortedData.some(d => d.week_number > 0 && !!d.weight)
+
     return {
       totalWeightLossPercentage,
       weeklyWeightLossPercentage,
       weightChangeGoalPercent,
-      hasEnoughData: sortedData.length >= 2 && !!weekZero, // Need baseline + at least 1 week
+      hasEnoughData: !!weekZero && hasAtLeastOneWeightedWeek,
       dataPoints: sortedData.length,
       performanceMs,
       error: null

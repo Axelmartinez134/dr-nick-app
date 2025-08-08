@@ -64,6 +64,8 @@ export interface QueueSubmission {
     first_name: string | null
     last_name: string | null
   }
+  // System metadata
+  data_entered_by?: string | null
 }
 
 // NEW: Props interface for DrNickQueue
@@ -327,7 +329,7 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                     selectedSubmission?.id === submission.id 
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                  } ${ (submission.data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED')) ? 'border-l-4 border-l-indigo-500' : ''}`}
                   onClick={() => selectSubmission(submission)}
                 >
                   <div className="flex items-center justify-between">
@@ -340,6 +342,11 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                       </div>
                       <div className="text-sm text-gray-600 mt-1">
                         Week {submission.week_number} • {new Date(submission.created_at).toLocaleDateString()} at {new Date(submission.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        {(submission.data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED')) && (
+                          <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-300">
+                            MISSED CHECK-IN (SYSTEM) — Week {submission.week_number}
+                          </span>
+                        )}
                         {submission.energetic_constraints_reduction_ok && (
                           <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                             ⚡ Constraints OK
