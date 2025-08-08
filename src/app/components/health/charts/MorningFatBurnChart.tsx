@@ -6,6 +6,7 @@
 import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
+import { calculateLinearRegression } from '../regressionUtils'
 
 interface MorningFatBurnChartProps {
   data: WeeklyCheckin[]
@@ -49,6 +50,32 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
         date: new Date(entry.date).toLocaleDateString()
       }))
   }, [data])
+
+  // Calculate regression for trend line (Week 0 to latest week)
+  const regressionResult = useMemo(() => {
+    if (chartData.length < 2) {
+      return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: '', weeklyChange: 0, totalChange: 0, correlation: 'None' }
+    }
+
+    const regressionData = chartData.map(d => ({ week: d.week, value: d.fatBurn! }))
+    const minWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+
+    return calculateLinearRegression(regressionData, minWeek, maxWeek)
+  }, [chartData])
+
+  // Merge trend line data with chart data
+  const enhancedChartData = useMemo(() => {
+    if (!regressionResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
+
+    return chartData.map(point => {
+      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
+      return {
+        ...point,
+        trendLine: trendPoint ? trendPoint.value : null
+      }
+    })
+  }, [chartData, regressionResult])
 
   // Calculate Y-axis domain starting from first data point
   const calculateYAxisDomain = useMemo(() => {
@@ -123,7 +150,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
@@ -146,6 +173,20 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
             name="Fat Burn %"
             connectNulls={true}
           />
+
+          {/* Regression trend line - Dark black */}
+          {regressionResult.isValid && (
+            <Line 
+              type="monotone" 
+              dataKey="trendLine" 
+              stroke="#000000" 
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+              name="Trend Line"
+              connectNulls={true}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
 

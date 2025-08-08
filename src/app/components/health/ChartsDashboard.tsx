@@ -187,6 +187,19 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Helper to format created_at date as M/D/YYYY without timezone conversion
+  const formatCreatedAtDate = (createdAt?: string): string => {
+    if (!createdAt) return '—'
+    const datePart = String(createdAt).split('T')[0]
+    const parts = datePart.split('-')
+    if (parts.length !== 3) return '—'
+    const year = Number(parts[0])
+    const month = Number(parts[1])
+    const day = Number(parts[2])
+    if (!year || !month || !day) return '—'
+    return `${month}/${day}/${year}`
+  }
+
   if (data.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -501,6 +514,9 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
           <thead className="bg-gray-100">
             <tr>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Week</th>
+              {isDoctorView && (
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
+              )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
@@ -541,6 +557,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                     </span>
                   )}
                 </td>
+                {isDoctorView && (
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {formatCreatedAtDate(record.created_at)}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'weight', record.weight)}
                 </td>
