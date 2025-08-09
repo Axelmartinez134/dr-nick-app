@@ -157,6 +157,7 @@ export default function HealthForm() {
   
   // Resistance training goal state
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState<number>(0)
+  const [isTestAccount, setIsTestAccount] = useState<boolean>(false)
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -209,7 +210,7 @@ export default function HealthForm() {
 
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('resistance_training_days_goal')
+        .select('resistance_training_days_goal, client_status')
         .eq('id', user.id)
         .single()
 
@@ -219,6 +220,7 @@ export default function HealthForm() {
       }
 
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
+      setIsTestAccount((profileData as any)?.client_status === 'Test')
     } catch (error) {
       console.error('Error loading resistance training goal:', error)
     }
@@ -435,7 +437,7 @@ export default function HealthForm() {
 
       // Check if current day is within submission window (Monday-Wednesday)
       if (!isValidSubmissionDay(devMode)) {
-        setMessage('Submissions allowed Monday-Wednesday (opens when Monday begins anywhere on Earth)')
+        setMessage('Submissions only allowed Monday')
         setIsSubmitting(false)
         return
       }
@@ -860,51 +862,53 @@ export default function HealthForm() {
   if (alreadySubmittedThisWeek && !devMode) {
     return (
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
-        {/* Developer Mode Toggle (visible in all states) */}
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
-              <p className="text-sm text-gray-600">
-                {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDevMode(!devMode)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                devMode 
-                  ? 'bg-green-600 text-white hover:bg-green-700' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
-            </button>
-          </div>
-          
-          {/* Week Selection in Dev Mode */}
-          {devMode && (
-            <div className="mt-4 p-3 bg-yellow-100 rounded">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Week for Testing:
-              </label>
-              <select
-                value={devWeek}
-                onChange={(e) => setDevWeek(Number(e.target.value))}
-                className="p-2 border border-gray-300 rounded text-gray-900"
+        {/* Developer Mode Toggle (visible only for Test accounts) */}
+        {isTestAccount && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+                <p className="text-sm text-gray-600">
+                  {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDevMode(!devMode)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  devMode 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
               >
-                {[...Array(40)].map((_, i) => (
-                  <option key={i + 1} value={i + 1}>
-                    Week {i + 1}
-                  </option>
-                ))}
-              </select>
-              <p className="text-sm text-yellow-700 mt-2">
-                ⚠️ Testing mode - You can submit forms for any week
-              </p>
+                {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+              </button>
             </div>
-          )}
-        </div>
+            
+            {/* Week Selection in Dev Mode */}
+            {devMode && (
+              <div className="mt-4 p-3 bg-yellow-100 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Week for Testing:
+                </label>
+                <select
+                  value={devWeek}
+                  onChange={(e) => setDevWeek(Number(e.target.value))}
+                  className="p-2 border border-gray-300 rounded text-gray-900"
+                >
+                  {[...Array(40)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      Week {i + 1}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-yellow-700 mt-2">
+                  ⚠️ Testing mode - You can submit forms for any week
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Success Message */}
         <div className="text-center py-8">
@@ -939,51 +943,53 @@ export default function HealthForm() {
   if (isSubmissionSuccessful) {
     return (
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
-        {/* Developer Mode Toggle (visible in all states) */}
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
-              <p className="text-sm text-gray-600">
-                {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDevMode(!devMode)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                devMode 
-                  ? 'bg-green-600 text-white hover:bg-green-700' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
-            </button>
-          </div>
-          
-          {/* Week Selection in Dev Mode */}
-          {devMode && (
-            <div className="mt-4 p-3 bg-yellow-100 rounded">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Week for Testing:
-              </label>
-              <select
-                value={devWeek}
-                onChange={(e) => setDevWeek(Number(e.target.value))}
-                className="p-2 border border-gray-300 rounded text-gray-900"
+        {/* Developer Mode Toggle (visible only for Test accounts) */}
+        {isTestAccount && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+                <p className="text-sm text-gray-600">
+                  {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDevMode(!devMode)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  devMode 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
               >
-                {[...Array(40)].map((_, i) => (
-                  <option key={i + 1} value={i + 1}>
-                    Week {i + 1}
-                  </option>
-                ))}
-              </select>
-              <p className="text-sm text-yellow-700 mt-2">
-                ⚠️ Testing mode - You can submit forms for any week
-              </p>
+                {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+              </button>
             </div>
-          )}
-        </div>
+            
+            {/* Week Selection in Dev Mode */}
+            {devMode && (
+              <div className="mt-4 p-3 bg-yellow-100 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Week for Testing:
+                </label>
+                <select
+                  value={devWeek}
+                  onChange={(e) => setDevWeek(Number(e.target.value))}
+                  className="p-2 border border-gray-300 rounded text-gray-900"
+                >
+                  {[...Array(40)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      Week {i + 1}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-yellow-700 mt-2">
+                  ⚠️ Testing mode - You can submit forms for any week
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Success Message */}
         <div className="text-center py-8">
@@ -1018,7 +1024,80 @@ export default function HealthForm() {
   if (!isValidSubmissionDay(devMode)) {
     return (
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
-        {/* Developer Mode Toggle (visible in all states) */}
+        {/* Developer Mode Toggle (visible only for Test accounts) */}
+        {isTestAccount && (
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+                <p className="text-sm text-gray-600">
+                  {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDevMode(!devMode)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  devMode 
+                    ? 'bg-green-600 text-white hover:bg-green-700' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+              </button>
+            </div>
+            
+            {/* Week Selection in Dev Mode */}
+            {devMode && (
+              <div className="mt-4 p-3 bg-yellow-100 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Week for Testing:
+                </label>
+                <select
+                  value={devWeek}
+                  onChange={(e) => setDevWeek(Number(e.target.value))}
+                  className="p-2 border border-gray-300 rounded text-gray-900"
+                >
+                  {[...Array(40)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      Week {i + 1}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-sm text-yellow-700 mt-2">
+                  ⚠️ Testing mode - You can submit forms for any week
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Restriction Message */}
+        <div className="text-center py-8">
+          <div className="mb-4">
+            <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Submissions only allowed Monday
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Please return during your monday check in window to submit your weekly check-in
+          </p>
+
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+      
+      {/* Developer Mode Toggle (visible only for Test accounts) */}
+      {isTestAccount && (
         <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
           <div className="flex items-center justify-between">
             <div>
@@ -1030,10 +1109,10 @@ export default function HealthForm() {
             <button
               type="button"
               onClick={() => setDevMode(!devMode)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded font-medium transition-colors ${
                 devMode 
-                  ? 'bg-green-600 text-white hover:bg-green-700' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
+                  : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
               }`}
             >
               {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
@@ -1062,78 +1141,9 @@ export default function HealthForm() {
               </p>
             </div>
           )}
-        </div>
-
-        {/* Restriction Message */}
-        <div className="text-center py-8">
-          <div className="mb-4">
-            <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-              </svg>
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Submissions allowed Monday-Wednesday (opens when Monday begins anywhere on Earth)
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Please return during the Monday-Wednesday submission window to submit your weekly check-in
-          </p>
 
         </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
-      
-      {/* Developer Mode Toggle */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
-            <p className="text-sm text-gray-600">
-              {devMode ? "Manual week selection enabled" : "Enable this mode only if you cannot submit your Monday check-in due to system issues. This is a temporary feature to ensure access during any technical difficulties."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setDevMode(!devMode)}
-            className={`px-4 py-2 rounded font-medium transition-colors ${
-              devMode 
-                ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
-                : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
-            }`}
-          >
-            {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
-          </button>
-        </div>
-        
-        {/* Week Selection in Dev Mode */}
-        {devMode && (
-          <div className="mt-4 p-3 bg-yellow-100 rounded">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Week for Testing:
-            </label>
-            <select
-              value={devWeek}
-              onChange={(e) => setDevWeek(Number(e.target.value))}
-              className="p-2 border border-gray-300 rounded text-gray-900"
-            >
-              {[...Array(40)].map((_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  Week {i + 1}
-                </option>
-              ))}
-            </select>
-            <p className="text-sm text-yellow-700 mt-2">
-              ⚠️ Testing mode - You can submit forms for any week
-            </p>
-          </div>
-        )}
-
-      </div>
+      )}
 
       {/* Form Header */}
         <div className="mb-6">
