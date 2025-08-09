@@ -2,6 +2,7 @@
 // Grok AI analysis service for Dr. Nick's health tracker
 
 import { createClient } from '@supabase/supabase-js'
+import { fetchUnitSystem, poundsToKilograms, inchesToCentimeters } from './unitUtils'
 
 // Create supabase client directly (same pattern as API routes)
 const supabase = createClient(
@@ -449,8 +450,25 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
 }
 
 // Format data for Grok (human-readable format)
-export function formatDataForGrok(data: GrokDataPackage, prompt: string): string {
-  const formatNumber = (num: number | null) => num !== null ? num.toString() : 'N/A'
+export function formatDataForGrok(data: GrokDataPackage, prompt: string, unitSystem: 'imperial' | 'metric' = 'imperial'): string {
+  const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
+  const formatWeightVal = (lbs: number | null) => {
+    if (lbs === null) return 'N/A'
+    if (unitSystem === 'metric') {
+      const kg = toTwo(poundsToKilograms(lbs))
+      return kg !== null ? `${kg.toFixed(2)} kg` : 'N/A'
+    }
+    return `${toTwo(lbs)!.toFixed(2)} lbs`
+  }
+  const formatLengthVal = (inches: number | null) => {
+    if (inches === null) return 'N/A'
+    if (unitSystem === 'metric') {
+      const cm = toTwo(inchesToCentimeters(inches))
+      return cm !== null ? `${cm.toFixed(2)} cm` : 'N/A'
+    }
+    return `${toTwo(inches)!.toFixed(2)} inches`
+  }
+  const formatNumber = (num: number | null) => num !== null ? (Math.round(num * 100) / 100).toString() : 'N/A'
   const formatDate = (date: string | null) => date ? new Date(date).toLocaleDateString() : 'N/A'
   
   return `PATIENT HEALTH ANALYSIS REQUEST
@@ -460,15 +478,15 @@ ${prompt}
 === PATIENT PROFILE ===
 Name: ${data.patient_profile.full_name}
 Email: ${data.patient_profile.email}
-Height: ${formatNumber(data.patient_profile.height)} inches
+Height: ${formatLengthVal(data.patient_profile.height)}
 Protein Goal: ${formatNumber(data.patient_profile.protein_goal_grams)} grams
 Weight Change Goal: ${formatNumber(data.patient_profile.weight_change_goal_percent)}% weekly
 Program Start Date: ${formatDate(data.patient_profile.created_date)}
 
 === CURRENT WEEK DATA (Week ${data.current_week.week_number}) ===
 Submission Date: ${formatDate(data.current_week.submission_date)}
-Weight: ${formatNumber(data.current_week.weight)} lbs
-Waist: ${formatNumber(data.current_week.waist)} inches
+Weight: ${formatWeightVal(data.current_week.weight)}
+Waist: ${formatLengthVal(data.current_week.waist)}
 Purposeful Exercise Days: ${formatNumber(data.current_week.purposeful_exercise_days)}/7
 Symptom Tracking Days: ${formatNumber(data.current_week.symptom_tracking_days)}/7
 Poor Recovery Days: ${formatNumber(data.current_week.poor_recovery_days)}/7
@@ -482,7 +500,7 @@ Detailed Symptom Notes: ${data.current_week.detailed_symptom_notes || 'None'}
 ${data.historical_data
   .sort((a, b) => a.week_number - b.week_number)
   .map(entry => 
-    `Week ${entry.week_number}: Weight ${formatNumber(entry.weight)} lbs, Waist ${formatNumber(entry.waist)} inches, Exercise ${formatNumber(entry.purposeful_exercise_days)}/7, Symptoms ${formatNumber(entry.symptom_tracking_days)}/7, Sleep Score ${formatNumber(entry.sleep_consistency_score)}, Nutrition ${formatNumber(entry.nutrition_compliance_days)}/7`
+    `Week ${entry.week_number}: Weight ${formatWeightVal(entry.weight)}, Waist ${formatLengthVal(entry.waist)}, Exercise ${formatNumber(entry.purposeful_exercise_days)}/7, Symptoms ${formatNumber(entry.symptom_tracking_days)}/7, Sleep Score ${formatNumber(entry.sleep_consistency_score)}, Nutrition ${formatNumber(entry.nutrition_compliance_days)}/7`
   ).join('\n')}
 
 === DR. NICK'S CURRENT ANALYSIS ===
@@ -497,7 +515,7 @@ Total Weight Loss: ${formatNumber(data.calculated_metrics.total_weight_loss_perc
 Weekly Loss Rate: ${formatNumber(data.calculated_metrics.weekly_weight_loss_percentage)}%
 Plateau Prevention Rate: ${formatNumber(data.calculated_metrics.plateau_prevention_rate)}%
 Weeks of Data: ${data.calculated_metrics.weeks_of_data}
-Baseline Weight: ${formatNumber(data.calculated_metrics.baseline_weight)} lbs
+Baseline Weight: ${formatWeightVal(data.calculated_metrics.baseline_weight)}
 Current Trend: ${data.calculated_metrics.current_trend}
 
 PLEASE ANALYZE AND PROVIDE RECOMMENDATIONS FOLLOWING THE EXACT FORMAT PROVIDED IN THE PROMPT.`

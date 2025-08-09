@@ -7,9 +7,11 @@ import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
+import { getLengthUnitLabel } from '../unitCore'
 
 interface WaistTrendChartProps {
   data: WeeklyCheckin[]
+  unitSystem?: 'imperial' | 'metric'
 }
 
 // Chart Tooltip Component
@@ -38,9 +40,11 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function WaistTrendChart({ data }: WaistTrendChartProps) {
+import { inchesToCentimeters } from '../unitCore'
+
+export default function WaistTrendChart({ data, unitSystem = 'imperial' }: WaistTrendChartProps) {
   // Process waist data only
-  const chartData = data
+  const chartDataImperial = data
     .filter(entry => entry.waist !== null)
     .sort((a, b) => a.week_number - b.week_number)
     .map(entry => ({
@@ -48,6 +52,10 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
       waist: entry.waist,
       date: new Date(entry.date).toLocaleDateString()
     }))
+
+  const chartData = unitSystem === 'metric'
+    ? chartDataImperial.map(d => ({ ...d, waist: inchesToCentimeters(d.waist as number) }))
+    : chartDataImperial
 
   // Calculate regression for trend line (Week 0 to latest week)
   const regressionResult = useMemo(() => {
@@ -71,10 +79,11 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
       
       return {
         ...point,
+        // trendPoint.value is already in the same units as chartData (we ran the regression on chartData)
         trendLine: (hasActualData && trendPoint) ? trendPoint.value : null
       }
     })
-  }, [chartData, regressionResult])
+  }, [chartData, regressionResult, unitSystem])
 
   // Calculate Y-axis domain excluding trend line values to prevent skewing
   const calculateYAxisDomain = () => {
@@ -103,7 +112,7 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
         <div className="bg-white p-3 border rounded shadow-lg">
           <p className="font-medium text-gray-800">{`Week ${label}`}</p>
           <p className="text-orange-600">
-            {`Waist: ${payload[0].value} inches`}
+            {`Waist: ${payload[0].value} ${getLengthUnitLabel(unitSystem)}`}
           </p>
           {payload[0].payload.date && (
             <p className="text-gray-600 text-sm">
@@ -159,7 +168,7 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Waist (inches)', angle: -90, position: 'insideLeft' }}
+            label={{ value: unitSystem === 'metric' ? 'Waist (cm)' : 'Waist (inches)', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
           />
@@ -173,7 +182,7 @@ export default function WaistTrendChart({ data }: WaistTrendChartProps) {
             strokeWidth={3}
             dot={{ fill: '#f97316', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
-            name="Waist"
+            name={unitSystem === 'metric' ? 'Waist (cm)' : 'Waist (inches)'}
             connectNulls={true}
           />
           

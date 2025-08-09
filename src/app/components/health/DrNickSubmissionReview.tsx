@@ -100,6 +100,23 @@ export default function DrNickSubmissionReview({
 
   // Monday Template state
   const [mondayTemplate, setMondayTemplate] = useState('')
+  const [unitSystem, setUnitSystem] = useState<'imperial' | 'metric'>('imperial')
+  useEffect(() => {
+    if (!submission?.user_id) return
+    const fetchUnits = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('unit_system')
+          .eq('id', submission.user_id)
+          .single()
+        setUnitSystem((data?.unit_system as 'imperial' | 'metric') || 'imperial')
+      } catch {
+        setUnitSystem('imperial')
+      }
+    }
+    fetchUnits()
+  }, [submission?.user_id])
   const [templateSaveStatus, setTemplateSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [templateCollapsed, setTemplateCollapsed] = useState(true)
   const [placeholdersCollapsed, setPlaceholdersCollapsed] = useState(true)
@@ -1110,11 +1127,11 @@ export default function DrNickSubmissionReview({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-blue-700">Weight</label>
-            <div className="text-2xl font-bold text-blue-900">{submission.weight ?? 'N/A'} lbs</div>
+            <div className="text-2xl font-bold text-blue-900">{unitSystem === 'metric' ? (submission.weight !== null && submission.weight !== undefined ? `${(Math.round((submission.weight * 0.45359237) * 100) / 100).toFixed(2)} kg` : 'N/A') : (submission.weight !== null && submission.weight !== undefined ? `${submission.weight.toFixed(2)} lbs` : 'N/A')}</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-green-700">Waist</label>
-            <div className="text-2xl font-bold text-green-900">{submission.waist ?? 'N/A'} inches</div>
+            <div className="text-2xl font-bold text-green-900">{unitSystem === 'metric' ? (submission.waist !== null && submission.waist !== undefined ? `${(Math.round((submission.waist * 2.54) * 100) / 100).toFixed(2)} cm` : 'N/A') : (submission.waist !== null && submission.waist !== undefined ? `${submission.waist.toFixed(2)} inches` : 'N/A')}</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-purple-700">Days Purposeful Exercise</label>

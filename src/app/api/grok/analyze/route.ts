@@ -342,7 +342,14 @@ export async function POST(request: NextRequest) {
     
     // Format data for Grok
     const prompt = customPrompt || 'Please analyze this patient\'s health data and provide actionable recommendations.'
-    const formattedData = formatDataForGrok(dataPackage, prompt)
+    // Get unit system for this user to format numbers appropriately
+    const { data: unitRow } = await supabase
+      .from('profiles')
+      .select('unit_system')
+      .eq('id', userId)
+      .single()
+    const unitSystem = unitRow?.unit_system === 'metric' ? 'metric' : 'imperial'
+    const formattedData = formatDataForGrok(dataPackage, prompt, unitSystem)
     
     // Create audit payload for debugging (prompt + data package)
     const auditPayload = `=== GROK ANALYSIS AUDIT TRAIL ===

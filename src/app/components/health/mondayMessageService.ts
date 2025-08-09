@@ -2,6 +2,7 @@
 // Monday Morning Message generation service
 
 import { supabase } from '../auth/AuthContext'
+import { fetchUnitSystem } from './unitUtils'
 import { getWeeklyDataForCharts, calculateLossPercentageRate } from './healthService'
 import { getActiveMondayTemplate } from './mondayTemplateService'
 
@@ -207,11 +208,17 @@ export async function calculateMessageVariables(
     // Get goal loss rate from profile
     const goal_loss_rate_percent = profileData.weight_change_goal_percent || 1.0
 
-    // Calculate total waist loss
-    let total_waist_loss_inches = 'down 0'
+    // Calculate total waist loss (unit-aware)
+    const unitSystem = await fetchUnitSystem(userId)
+    let total_waist_loss_inches = 'down 0.00'
     if (weekZero?.waist && currentWeek.waist) {
-      const waistLoss = weekZero.waist - currentWeek.waist
-      total_waist_loss_inches = waistLoss > 0 ? `down ${waistLoss.toFixed(1)}` : `up ${Math.abs(waistLoss).toFixed(1)}`
+      const waistLossInches = weekZero.waist - currentWeek.waist
+      if (unitSystem === 'metric') {
+        const waistLossCm = waistLossInches * 2.54
+        total_waist_loss_inches = waistLossCm > 0 ? `down ${waistLossCm.toFixed(2)}` : `up ${Math.abs(waistLossCm).toFixed(2)}`
+      } else {
+        total_waist_loss_inches = waistLossInches > 0 ? `down ${waistLossInches.toFixed(2)}` : `up ${Math.abs(waistLossInches).toFixed(2)}`
+      }
     }
 
     // Get protein goal and calculate bounds
@@ -265,16 +272,22 @@ export async function generateMondayMessage(
   nutritionComplianceDays: number
 ): Promise<string> {
   try {
-    const variables = await calculateMessageVariables(userId, weekNumber, nutritionComplianceDays)
+  const variables = await calculateMessageVariables(userId, weekNumber, nutritionComplianceDays)
+  const unitSystem = await fetchUnitSystem(userId)
     
     // Replace all template variables
-    let message = MESSAGE_TEMPLATE
+  let message = MESSAGE_TEMPLATE
     Object.entries(variables).forEach(([key, value]) => {
       const placeholder = `{{${key}}}`
       message = message.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value.toString())
     })
     
-    return message
+  // Unit-aware adjustments for waist wording
+  if (unitSystem === 'metric') {
+    // Replace inches references and convert the numeric value inside the phrase if present
+    message = message.replace(/inches/g, 'cm')
+  }
+  return message
   } catch (error) {
     console.error('Error generating Monday message:', error)
     throw error

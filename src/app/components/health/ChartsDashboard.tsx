@@ -9,6 +9,7 @@ import { getWeeklyDataForCharts, updateHealthRecord, getHistoricalSubmissionDeta
 import { type QueueSubmission } from './DrNickQueue'
 import { getPatientMetrics, type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
+import { fetchUnitSystem, formatLength, formatWeight, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
 import MorningFatBurnChart from './charts/MorningFatBurnChart'
 import ComplianceMetricsTable from './ComplianceMetricsTable'
@@ -17,6 +18,7 @@ import StickyNotes from './StickyNotes'
 // Patient Status Management Component
 function PatientStatusManagement({ patientId }: { patientId?: string }) {
   const [currentStatus, setCurrentStatus] = useState<string>('Current')
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
@@ -29,12 +31,13 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('client_status')
+          .select('client_status, unit_system')
           .eq('id', patientId)
           .single()
 
         if (error) throw error
         setCurrentStatus(data?.client_status || 'Current')
+        setUnitSystem((data?.unit_system as UnitSystem) || 'imperial')
       } catch (error) {
         console.error('Error loading patient status:', error)
         setCurrentStatus('Current')
@@ -90,6 +93,34 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
     }, 3000)
   }
 
+  const handleUnitChange = async (newUnit: UnitSystem) => {
+    if (!patientId || newUnit === unitSystem) return
+    setUnitSystem(newUnit)
+    setSaving(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/admin/update-patient-units', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId, unitSystem: newUnit })
+      })
+      const result = await response.json()
+      if (!result.success) throw new Error(result.error)
+      setMessage(`✅ Units updated to ${newUnit === 'metric' ? 'Metric (kg, cm)' : 'Imperial (lbs, inches)'}`)
+      setMessageType('success')
+    } catch (error) {
+      setUnitSystem(unitSystem)
+      setMessage('❌ Failed to update units')
+      setMessageType('error')
+      console.error('Unit update error:', error)
+    }
+    setSaving(false)
+    setTimeout(() => {
+      setMessage('')
+      setMessageType('')
+    }, 3000)
+  }
+
   if (!patientId) return null
 
   return (
@@ -98,27 +129,53 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
         👤 Client Status Management
       </h3>
       
-      <div className="flex items-center space-x-4">
-        <label className="text-sm font-medium text-gray-700">
-          Current Status:
-        </label>
-        <div className="relative">
-          <select
-            value={currentStatus}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            disabled={saving}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 disabled:bg-gray-100"
-          >
-            <option value="Current">Current</option>
-            <option value="Past">Past</option>
-            <option value="Onboarding">Onboarding</option>
-            <option value="Test">Test</option>
-          </select>
-          {saving && (
-            <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-            </div>
-          )}
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700">
+            Current Status:
+          </label>
+          <div className="relative">
+            <select
+              value={currentStatus}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              disabled={saving}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 disabled:bg-gray-100"
+            >
+              <option value="Current">Current</option>
+              <option value="Past">Past</option>
+              <option value="Onboarding">Onboarding</option>
+              <option value="Test">Test</option>
+            </select>
+            {saving && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700">
+            Measurement System:
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleUnitChange('imperial')}
+              disabled={saving}
+              className={`px-3 py-2 rounded border ${unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            >
+              Imperial (lbs, inches)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleUnitChange('metric')}
+              disabled={saving}
+              className={`px-3 py-2 rounded border ${unitSystem === 'metric' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            >
+              Metric (kg, cm)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -176,12 +233,13 @@ const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionC
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
 
   // Data Table Component - Different versions for Client vs Dr. Nick
-function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect }: { 
+function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
   onDataUpdate?: () => void,
   patientId?: string,
-  onSubmissionSelect?: (submission: QueueSubmission) => void
+  onSubmissionSelect?: (submission: QueueSubmission) => void,
+  unitSystem: UnitSystem
 }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -478,6 +536,32 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       )
     }
 
+    // Unit-aware formatting for weight/waist
+    if (field === 'weight') {
+      const num = typeof value === 'number' ? value : (value ? parseFloat(String(value)) : null)
+      return (
+        <span
+          className={isDoctorView ? "cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded" : ""}
+          onClick={() => handleCellClick(record.id!, field, value)}
+          title={isDoctorView ? "Click to edit" : ""}
+        >
+          {formatWeight(num, unitSystem)}
+        </span>
+      )
+    }
+    if (field === 'waist') {
+      const num = typeof value === 'number' ? value : (value ? parseFloat(String(value)) : null)
+      return (
+        <span
+          className={isDoctorView ? "cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded" : ""}
+          onClick={() => handleCellClick(record.id!, field, value)}
+          title={isDoctorView ? "Click to edit" : ""}
+        >
+          {formatLength(num, unitSystem)}
+        </span>
+      )
+    }
+
     // Regular field handling
     const displayValue = value !== null && value !== undefined ? value.toString() : '—'
     
@@ -517,8 +601,8 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               {isDoctorView && (
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
               )}
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Weight</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Waist</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Weight (${getWeightUnitLabel(unitSystem)})`}</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Waist (${getLengthUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
@@ -645,6 +729,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
   
   // Client name for display
   const [patientName, setPatientName] = useState<string>('')
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
@@ -663,6 +748,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
         loadSubmissionData()
         loadPatientName()
       }
+      // Load unit system
+      ;(async () => {
+        const u = await fetchUnitSystem(patientId)
+        setUnitSystem(u)
+      })()
     }
   }, [mounted, patientId, isDoctorView])
 
@@ -999,19 +1089,19 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
             </div>
             <div className="bg-purple-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-purple-600">
-                {stats.initialWeight ? `${stats.initialWeight} lbs` : 'N/A'}
+                {stats.initialWeight ? (unitSystem === 'metric' ? `${(Math.round((stats.initialWeight * 0.45359237) * 100) / 100).toFixed(2)} kg` : `${stats.initialWeight.toFixed(2)} lbs`) : 'N/A'}
               </div>
               <div className="text-sm text-purple-800">Starting Weight</div>
             </div>
             <div className="bg-indigo-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-indigo-600">
-                {stats.currentWeight ? `${stats.currentWeight} lbs` : 'N/A'}
+                {stats.currentWeight ? (unitSystem === 'metric' ? `${(Math.round((stats.currentWeight * 0.45359237) * 100) / 100).toFixed(2)} kg` : `${stats.currentWeight.toFixed(2)} lbs`) : 'N/A'}
               </div>
               <div className="text-sm text-indigo-800">Current Weight</div>
             </div>
             <div className="bg-orange-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-orange-600">
-                {stats.totalWeightLoss > 0 ? `-${stats.totalWeightLoss} lbs` : 'N/A'}
+                {stats.totalWeightLoss > 0 ? (unitSystem === 'metric' ? `-${(Math.round((stats.totalWeightLoss * 0.45359237) * 100) / 100).toFixed(2)} kg` : `-${stats.totalWeightLoss.toFixed(2)} lbs`) : 'N/A'}
               </div>
               <div className="text-sm text-orange-800">Total Loss</div>
             </div>
@@ -1025,19 +1115,31 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
             </div>
             <div className="bg-purple-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-purple-600">
-                {stats.initialWeight ? `${stats.initialWeight} lbs` : 'N/A'}
+                {stats.initialWeight
+                  ? (unitSystem === 'metric'
+                      ? `${(Math.round((stats.initialWeight * 0.45359237) * 100) / 100).toFixed(2)} kg`
+                      : `${stats.initialWeight.toFixed(2)} lbs`)
+                  : 'N/A'}
               </div>
               <div className="text-sm text-purple-800">Starting Weight</div>
             </div>
             <div className="bg-indigo-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-indigo-600">
-                {stats.currentWeight ? `${stats.currentWeight} lbs` : 'N/A'}
+                {stats.currentWeight
+                  ? (unitSystem === 'metric'
+                      ? `${(Math.round((stats.currentWeight * 0.45359237) * 100) / 100).toFixed(2)} kg`
+                      : `${stats.currentWeight.toFixed(2)} lbs`)
+                  : 'N/A'}
               </div>
               <div className="text-sm text-indigo-800">Current Weight</div>
             </div>
             <div className="bg-orange-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-orange-600">
-                {stats.totalWeightLoss > 0 ? `-${stats.totalWeightLoss} lbs` : 'N/A'}
+                {stats.totalWeightLoss > 0
+                  ? (unitSystem === 'metric'
+                      ? `-${(Math.round((stats.totalWeightLoss * 0.45359237) * 100) / 100).toFixed(2)} kg`
+                      : `-${stats.totalWeightLoss.toFixed(2)} lbs`)
+                  : 'N/A'}
               </div>
               <div className="text-sm text-orange-800">Total Loss</div>
             </div>
@@ -1145,14 +1247,14 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
         
         {/* Row 1: Weight-Related Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          <WeightProjectionChart data={chartData} />
+          <WeightProjectionChart data={chartData} unitSystem={unitSystem} />
           <PlateauPreventionChart data={chartData} />
         </div>
 
         {/* Row 2: Basic Trend Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          <WeightTrendChart data={chartData} />
-          <WaistTrendChart data={chartData} />
+          <WeightTrendChart data={chartData} unitSystem={unitSystem} />
+          <WaistTrendChart data={chartData} unitSystem={unitSystem} />
         </div>
 
         {/* Row 3: Sleep Chart (Full Width) */}
@@ -1178,6 +1280,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
           onDataUpdate={loadChartData}
           patientId={patientId}
           onSubmissionSelect={onSubmissionSelect}
+          unitSystem={unitSystem}
         />
 
         {/* Removed duplicate bottom missed-checkins note: now rendered inside DataTable header */}

@@ -10,6 +10,7 @@ import {
 } from './healthService'
 import { uploadSingleImage, getSignedImageUrl } from './imageService'
 import { supabase } from '../auth/AuthContext'
+import { formatLength, formatWeight, fetchUnitSystem, UnitSystem } from './unitUtils'
 import ChartsDashboard from './ChartsDashboard'
 
 export interface QueueSubmission {
@@ -76,6 +77,7 @@ interface DrNickQueueProps {
 export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
   const [queueSubmissions, setQueueSubmissions] = useState<QueueSubmission[]>([])
   const [selectedSubmission, setSelectedSubmission] = useState<QueueSubmission | null>(null)
+  const [selectedUnitSystem, setSelectedUnitSystem] = useState<UnitSystem>('imperial')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [submissionChartData, setSubmissionChartData] = useState<any[]>([])
@@ -164,6 +166,10 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
 
     // Original behavior: side-by-side mode
     setSelectedSubmission(submission)
+    try {
+      const u = await fetchUnitSystem(submission.user_id)
+      setSelectedUnitSystem(u)
+    } catch {}
     setWeeklyAnalysis(submission.weekly_whoop_analysis || '')
     setMonthlyAnalysis(submission.monthly_whoop_analysis || '')
     setWeeklyPdfUrl(submission.weekly_whoop_pdf_url || '')
@@ -377,11 +383,11 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                 <div className="grid grid-cols-2 gap-4 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Weight</label>
-                    <div className="text-lg font-semibold">{selectedSubmission.weight || 'N/A'} lbs</div>
+                    <div className="text-lg font-semibold">{formatWeight(selectedSubmission.weight as number | null, selectedUnitSystem)}</div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Waist</label>
-                    <div className="text-lg font-semibold">{selectedSubmission.waist || 'N/A'} inches</div>
+                    <div className="text-lg font-semibold">{formatLength(selectedSubmission.waist as number | null, selectedUnitSystem)}</div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Days Purposeful Exercise</label>

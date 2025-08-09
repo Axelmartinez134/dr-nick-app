@@ -2,6 +2,7 @@
 // Admin service for Dr. Nick to manage patient accounts
 
 import { supabase } from '../auth/AuthContext'
+import { UnitSystem, centimetersToInches, kilogramsToPounds } from './unitCore'
 
 export interface WeekZeroData {
   weight: string
@@ -19,6 +20,7 @@ export interface PatientCreationData {
   resistanceTrainingGoal?: number
   drNickCoachingNotes?: string
   clientStatus?: string
+  unitSystem?: UnitSystem
 }
 
 // Check if email is already taken

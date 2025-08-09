@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import { createPatientAccount, type PatientCreationData, type WeekZeroData } from './adminService'
+import { getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 
 interface CreateUserFormProps {
   onSuccess: (credentials: { email: string; password: string }, fullName: string) => void
@@ -23,7 +24,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     weightChangeGoalPercent: '1.00',
     proteinGoalGrams: '150',
     resistanceTrainingGoal: '0',
-    clientStatus: 'Current'
+    clientStatus: 'Current',
+    unitSystem: 'imperial' as UnitSystem
   })
 
   const [loading, setLoading] = useState(false)
@@ -111,11 +113,11 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     setLoading(true)
     setError('')
 
-    const weekZeroData: WeekZeroData = {
-      weight: formData.weight,
-      waist: formData.waist,
-      height: formData.height
-    }
+    const weekZeroData: WeekZeroData = { weight: '', waist: '', height: '' }
+    // Pass through as entered; server will convert to canonical Imperial
+    weekZeroData.weight = formData.weight
+    weekZeroData.waist = formData.waist
+    weekZeroData.height = formData.height
 
     const patientData: PatientCreationData = {
       email: formData.email.trim(),
@@ -126,7 +128,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       proteinGoalGrams: parseInt(formData.proteinGoalGrams) || 150,
       resistanceTrainingGoal: parseInt(formData.resistanceTrainingGoal) || 0,
       drNickCoachingNotes: formData.initialNotes.trim() || undefined,
-      clientStatus: formData.clientStatus
+      clientStatus: formData.clientStatus,
+      unitSystem: formData.unitSystem
     }
 
     const result = await createPatientAccount(patientData)
@@ -293,6 +296,30 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               </p>
             </div>
           </div>
+
+          {/* Measurement System - moved below Goals and Status */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Measurement System
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleInputChange('unitSystem', 'imperial')}
+                className={`px-3 py-2 rounded border ${formData.unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                Imperial (lbs, inches)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInputChange('unitSystem', 'metric')}
+                className={`px-3 py-2 rounded border ${formData.unitSystem === 'metric' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                Metric (kg, cm)
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Default is Imperial; you can switch to Metric.</p>
+          </div>
         </div>
 
         {/* Week 0 Baseline Data */}
@@ -302,7 +329,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Starting Weight (lbs) *
+                {`Starting Weight (${getWeightUnitLabel(formData.unitSystem)}) *`}
               </label>
               <input
                 type="number"
@@ -310,13 +337,13 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 value={formData.weight}
                 onChange={(e) => handleInputChange('weight', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                placeholder="185.5"
+                placeholder={formData.unitSystem === 'metric' ? '84.10' : '185.50'}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Starting Waist (inches) *
+                {`Starting Waist (${getLengthUnitLabel(formData.unitSystem)}) *`}
               </label>
               <input
                 type="number"
@@ -324,14 +351,14 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 value={formData.waist}
                 onChange={(e) => handleInputChange('waist', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                placeholder="34.0"
+                placeholder={formData.unitSystem === 'metric' ? '86.36' : '34.00'}
               />
             </div>
           </div>
 
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Height (inches) *
+              {`Height (${getLengthUnitLabel(formData.unitSystem)}) *`}
             </label>
             <input
               type="number"
@@ -339,7 +366,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               value={formData.height}
               onChange={(e) => handleInputChange('height', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-              placeholder="72.0"
+              placeholder={formData.unitSystem === 'metric' ? '182.88' : '72.00'}
             />
           </div>
 

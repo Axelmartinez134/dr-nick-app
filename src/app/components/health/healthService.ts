@@ -2,6 +2,7 @@
 // Enhanced service for week-based tracking with charts support
 
 import { supabase } from '../auth/AuthContext'
+import { centimetersToInches, kilogramsToPounds } from './unitCore'
 
 // TypeScript interface for weekly check-in data
 export interface WeeklyCheckin {
@@ -97,13 +98,28 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       return { data: null, error: { message: 'User not authenticated' } }
     }
 
+    // Determine user's unit system to convert inputs to canonical Imperial before saving
+    let unitSystem: 'imperial' | 'metric' = 'imperial'
+    try {
+      const { data: unitRow } = await supabase
+        .from('profiles')
+        .select('unit_system')
+        .eq('id', user.id)
+        .single()
+      if (unitRow?.unit_system === 'metric') unitSystem = 'metric'
+    } catch {}
+
+    const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
+    const weightLbs = data.weight ? (unitSystem === 'metric' ? kilogramsToPounds(parseFloat(data.weight)) : parseFloat(data.weight)) : null
+    const waistInches = data.waist ? (unitSystem === 'metric' ? centimetersToInches(parseFloat(data.waist)) : parseFloat(data.waist)) : null
+
     // Convert string inputs to appropriate types
     const checkinData: any = {
       user_id: user.id,
       date: data.date,
       week_number: parseInt(data.week_number),
-      weight: data.weight ? parseFloat(data.weight) : null,
-      waist: data.waist ? parseFloat(data.waist) : null,
+      weight: toTwo(weightLbs),
+      waist: toTwo(waistInches),
       resistance_training_days: data.resistance_training_days ? parseInt(data.resistance_training_days) : null,
       symptom_tracking_days: data.symptom_tracking_days ? parseInt(data.symptom_tracking_days) : null,
       detailed_symptom_notes: data.detailed_symptom_notes || null,
@@ -187,12 +203,26 @@ export async function saveInitialSetup(data: InitialSetupData, patientUserId: st
       return { data: null, error: { message: 'User not authenticated' } }
     }
 
+    // Fetch patient's unit system to convert to canonical Imperial
+    let unitSystem: 'imperial' | 'metric' = 'imperial'
+    try {
+      const { data: unitRow } = await supabase
+        .from('profiles')
+        .select('unit_system')
+        .eq('id', patientUserId)
+        .single()
+      if (unitRow?.unit_system === 'metric') unitSystem = 'metric'
+    } catch {}
+
+    const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
+    const initialWeightLbs = data.initial_weight ? (unitSystem === 'metric' ? kilogramsToPounds(parseFloat(data.initial_weight)) : parseFloat(data.initial_weight)) : null
+
     const setupData: Partial<WeeklyCheckin> = {
       user_id: patientUserId,
       date: data.date,
       week_number: 0,
-      initial_weight: parseFloat(data.initial_weight),
-      weight: parseFloat(data.initial_weight), // Starting weight
+      initial_weight: toTwo(initialWeightLbs)!,
+      weight: toTwo(initialWeightLbs)!,
       sleep_consistency_score: data.sleep_consistency_score ? parseInt(data.sleep_consistency_score) : null,
       data_entered_by: 'dr_nick',
       needs_review: false, // Dr. Nick's baseline entries don't need review

@@ -15,7 +15,7 @@ const adminClient = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams, resistanceTrainingGoal, drNickCoachingNotes, clientStatus } = await request.json()
+    const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams, resistanceTrainingGoal, drNickCoachingNotes, clientStatus, unitSystem } = await request.json()
 
     // DEBUG: Log the coaching notes being received
     console.log('DEBUG: Received drNickCoachingNotes:', drNickCoachingNotes)
@@ -56,18 +56,33 @@ export async function POST(request: NextRequest) {
 
     const userId = authData.user.id
 
+    // Convert incoming Week 0 measurements to canonical Imperial units if needed
+    const isMetric = unitSystem === 'metric'
+    const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
+    const kgToLbs = (kg: number | null) => (kg === null ? null : kg / 0.45359237)
+    const cmToIn = (cm: number | null) => (cm === null ? null : cm / 2.54)
+
+    const rawWeight = weekZeroData?.weight ? parseFloat(weekZeroData.weight) : null
+    const rawWaist = weekZeroData?.waist ? parseFloat(weekZeroData.waist) : null
+    const rawHeight = weekZeroData?.height ? parseFloat(weekZeroData.height) : null
+
+    const weightLbs = toTwo(isMetric ? kgToLbs(rawWeight) : rawWeight)
+    const waistInches = toTwo(isMetric ? cmToIn(rawWaist) : rawWaist)
+    const heightInches = toTwo(isMetric ? cmToIn(rawHeight) : rawHeight)
+
     // DEBUG: Log the profile data being inserted
-    const profileData = {
+    const profileData: any = {
       id: userId,
       email: email.toLowerCase(),
       full_name: fullName,
       patient_password: password,
       weight_change_goal_percent: weightChangeGoalPercent || 1.0,
-      height: parseFloat(weekZeroData.height) || null,
+      height: heightInches,
       protein_goal_grams: proteinGoalGrams || 150,
       resistance_training_days_goal: resistanceTrainingGoal || 0,
       dr_nick_coaching_notes: drNickCoachingNotes || null,
-      client_status: clientStatus || 'Current'
+      client_status: clientStatus || 'Current',
+      unit_system: unitSystem === 'metric' ? 'metric' : 'imperial'
     }
     console.log('DEBUG: Profile data to insert:', profileData)
 
@@ -91,11 +106,11 @@ export async function POST(request: NextRequest) {
         user_id: userId,
         date: today,
         week_number: 0,
-        weight: parseFloat(weekZeroData.weight) || null,
-        waist: parseFloat(weekZeroData.waist) || null,
+        weight: weightLbs,
+        waist: waistInches,
         data_entered_by: 'dr_nick',
         needs_review: false,
-        initial_weight: parseFloat(weekZeroData.weight) || null
+        initial_weight: weightLbs
       })
 
     if (healthError) {

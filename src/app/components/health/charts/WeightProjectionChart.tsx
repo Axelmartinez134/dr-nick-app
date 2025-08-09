@@ -10,6 +10,7 @@ import { calculateLinearRegression, mergeDataWithTrendLine } from '../regression
 
 interface WeightProjectionChartProps {
   data: WeeklyCheckin[]
+  unitSystem?: 'imperial' | 'metric'
 }
 
 // Chart Tooltip Component
@@ -38,7 +39,9 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function WeightProjectionChart({ data }: WeightProjectionChartProps) {
+import { poundsToKilograms } from '../unitCore'
+
+export default function WeightProjectionChart({ data, unitSystem = 'imperial' }: WeightProjectionChartProps) {
   // MOVE ALL HOOKS TO THE TOP - Fix React Rules of Hooks violation
   
   // Process actual weight data - using useMemo to fix dependency warning
@@ -191,11 +194,16 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
           <p className="font-medium text-gray-800">{`Week ${label}`}</p>
-          {filteredPayload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${entry.value ? Math.round(entry.value * 10) / 10 : 'N/A'} lbs`}
-            </p>
-          ))}
+          {filteredPayload.map((entry: any, index: number) => {
+            const raw = typeof entry.value === 'number' ? entry.value : null
+            const converted = unitSystem === 'metric' ? (raw !== null ? poundsToKilograms(raw) : null) : raw
+            const display = converted !== null ? Math.round((converted as number) * 10) / 10 : 'N/A'
+            return (
+              <p key={index} style={{ color: entry.color }}>
+                {`${entry.name}: ${display} ${unitSystem === 'metric' ? 'kg' : 'lbs'}`}
+              </p>
+            )
+          })}
         </div>
       )
     }
@@ -217,7 +225,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
           Compares actual weight loss (red line) against 4 different fat loss projection rates
         </p>
         <p className="text-sm text-gray-500">
-          Starting weight: {initialWeight} lbs
+          Starting weight: {initialWeight ? (unitSystem === 'metric' ? `${(((poundsToKilograms(initialWeight) || 0))).toFixed(2)} kg` : `${initialWeight.toFixed(2)} lbs`) : 'N/A'}
         </p>
       </div>
 
@@ -229,9 +237,9 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Weight (lbs)', angle: -90, position: 'insideLeft' }}
+            label={{ value: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)', angle: -90, position: 'insideLeft' }}
             domain={calculateYAxisDomain}
-            tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
+            tickFormatter={(value: number) => `${unitSystem === 'metric' ? (Math.round((poundsToKilograms(value) || 0) * 10) / 10) : (Math.round(value * 10) / 10)}`}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
@@ -243,7 +251,7 @@ export default function WeightProjectionChart({ data }: WeightProjectionChartPro
             stroke="#ef4444" 
             strokeWidth={4}
             dot={{ fill: '#ef4444', strokeWidth: 2, r: 6 }}
-            name="Actual Weight"
+            name={unitSystem === 'metric' ? 'Actual Weight (kg)' : 'Actual Weight (lbs)'}
             connectNulls={true}
           />
           

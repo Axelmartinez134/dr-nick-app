@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { saveWeeklyCheckin, getCheckinForWeek, hasUserSubmittedThisWeek, type CheckinFormData } from './healthService'
 import { supabase } from '../auth/AuthContext'
+import { fetchUnitSystem, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 import { uploadSingleImage, deleteImageByUrl, getSignedImageUrl } from './imageService'
 
 // Extended CheckinFormData interface to include notes
@@ -107,6 +108,13 @@ const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 
 export default function HealthForm() {
   // Form state
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
+  useEffect(() => {
+    (async () => {
+      const u = await fetchUnitSystem()
+      setUnitSystem(u)
+    })()
+  }, [])
   const [formData, setFormData] = useState<ExtendedCheckinFormData>({
     date: new Date().toISOString().split('T')[0],
     week_number: '1',
@@ -1176,7 +1184,7 @@ export default function HealthForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label htmlFor="weight" className="block text-sm font-medium text-gray-700 mb-1">
-                Weight (lbs) - Numbers Only <span className="text-red-500">*Required</span>
+                {`Weight (${getWeightUnitLabel(unitSystem)}) - Numbers Only `}<span className="text-red-500">*Required</span>
               </label>
               <input
                 type="number"
@@ -1198,7 +1206,7 @@ export default function HealthForm() {
 
             <div>
               <label htmlFor="waist" className="block text-sm font-medium text-gray-700 mb-1">
-                Waist Circumference (inches) - Numbers Only <span className="text-red-500">*Required</span>
+                {`Waist Circumference (${getLengthUnitLabel(unitSystem)}) - Numbers Only `}<span className="text-red-500">*Required</span>
               </label>
               <input
                   type="number"
