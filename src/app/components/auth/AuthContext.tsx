@@ -390,6 +390,7 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
           date: aoeMondayIso,
           data_entered_by: 'system',
           needs_review: true,
+          nutrition_compliance_days: null,
           notes: `AUTO-CREATED: Missed check-in for week ${w}`
         }
         const { error: insertError } = await supabase
@@ -463,6 +464,7 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
               date: aoeMondayIso,
               data_entered_by: 'system',
               needs_review: true,
+              nutrition_compliance_days: null,
               notes: `AUTO-CREATED: Missed check-in for week ${w}`
             }
             const { error: insErr } = await supabase
@@ -497,6 +499,7 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
                   date: aoeMondayIso,
                   data_entered_by: 'system',
                   needs_review: true,
+                  nutrition_compliance_days: null,
                   notes: `AUTO-CREATED: Missed check-in for week ${targetWeek}`
                 }
                 const { error: insErrOne } = await supabase
