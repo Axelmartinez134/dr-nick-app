@@ -265,7 +265,8 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
       height: null,
       protein_goal_grams: null,
       weight_change_goal_percent: null,
-      created_at: null
+      created_at: null,
+      track_blood_pressure: null as boolean | null
     }
 
     try {
@@ -280,6 +281,7 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         profileData.full_name = basicProfile.full_name || 'Patient'
         profileData.email = basicProfile.email || 'unknown@email.com'
         profileData.created_at = basicProfile.created_at
+        profileData.track_blood_pressure = Boolean(basicProfile.track_blood_pressure)
       }
 
       // Query 2: Weight change goal (mirrors ChartsDashboard.tsx pattern)
@@ -408,7 +410,7 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         protein_goal_grams: profileData.protein_goal_grams,
         weight_change_goal_percent: profileData.weight_change_goal_percent,
         created_date: profileData.created_at || '',
-        track_blood_pressure: Boolean((basicProfile as any)?.track_blood_pressure)
+        track_blood_pressure: Boolean(profileData.track_blood_pressure)
       },
       current_week: {
         week_number: currentSubmission.week_number,
