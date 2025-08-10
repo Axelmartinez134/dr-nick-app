@@ -16,9 +16,10 @@ import ComplianceMetricsTable from './ComplianceMetricsTable'
 import StickyNotes from './StickyNotes'
 
 // Patient Status Management Component
-function PatientStatusManagement({ patientId }: { patientId?: string }) {
+function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?: string; onBpTrackingChange?: (enabled: boolean) => void }) {
   const [currentStatus, setCurrentStatus] = useState<string>('Current')
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
+  const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
@@ -31,13 +32,14 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('client_status, unit_system')
+          .select('client_status, unit_system, track_blood_pressure')
           .eq('id', patientId)
           .single()
 
         if (error) throw error
         setCurrentStatus(data?.client_status || 'Current')
         setUnitSystem((data?.unit_system as UnitSystem) || 'imperial')
+        setTracksBP(Boolean(data?.track_blood_pressure))
       } catch (error) {
         console.error('Error loading patient status:', error)
         setCurrentStatus('Current')
@@ -121,6 +123,35 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
     }, 3000)
   }
 
+  const handleBpTrackingChange = async (enabled: boolean) => {
+    if (!patientId || enabled === tracksBP) return
+    setTracksBP(enabled)
+    setSaving(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/admin/update-patient-bp-tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId, trackBloodPressure: enabled })
+      })
+      const result = await response.json()
+      if (!result.success) throw new Error(result.error)
+      setMessage(`✅ Blood pressure tracking ${enabled ? 'enabled' : 'disabled'}`)
+      setMessageType('success')
+      if (onBpTrackingChange) onBpTrackingChange(enabled)
+    } catch (error) {
+      setTracksBP(!enabled)
+      setMessage('❌ Failed to update BP tracking')
+      setMessageType('error')
+      console.error('BP tracking update error:', error)
+    }
+    setSaving(false)
+    setTimeout(() => {
+      setMessage('')
+      setMessageType('')
+    }, 3000)
+  }
+
   if (!patientId) return null
 
   return (
@@ -179,6 +210,34 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
         </div>
       </div>
 
+      {/* Blood Pressure Tracking Toggle */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium text-gray-700">Track Blood Pressure</label>
+            <p className="text-xs text-gray-500">Show BP charts and enable weekly BP inputs in reviews. You can turn this off anytime; existing BP data stays saved.</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleBpTrackingChange(true)}
+              disabled={saving}
+              className={`px-3 py-2 rounded border ${tracksBP ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            >
+              On
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBpTrackingChange(false)}
+              disabled={saving}
+              className={`px-3 py-2 rounded border ${!tracksBP ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+      </div>
+
       {message && (
         <div className={`mt-3 p-2 rounded text-sm ${
           messageType === 'success' 
@@ -196,6 +255,7 @@ function PatientStatusManagement({ patientId }: { patientId?: string }) {
 interface ChartsDashboardProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
   onSubmissionSelect?: (submission: QueueSubmission) => void // Optional handler for historical review
+  selectedWeekNumber?: number // Optional week context when viewing from review queue
 }
 
 // Table Tooltip Component (adapted from ChartTooltip pattern)
@@ -231,15 +291,21 @@ const WaistTrendChart = dynamic(() => import('./charts/WaistTrendChart'), { ssr:
 const WeightProjectionChart = dynamic(() => import('./charts/WeightProjectionChart'), { ssr: false })
 const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionChart'), { ssr: false })
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
+// Use require to avoid TS type resolution issues with dynamic imports
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const SystolicBloodPressureChart = dynamic(() => Promise.resolve(require('./charts/SystolicBloodPressureChart').default), { ssr: false }) as any
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const DiastolicBloodPressureChart = dynamic(() => Promise.resolve(require('./charts/DiastolicBloodPressureChart').default), { ssr: false }) as any
 
   // Data Table Component - Different versions for Client vs Dr. Nick
-function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem }: { 
+function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
   onDataUpdate?: () => void,
   patientId?: string,
   onSubmissionSelect?: (submission: QueueSubmission) => void,
-  unitSystem: UnitSystem
+  unitSystem: UnitSystem,
+  tracksBP: boolean
 }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -603,6 +669,12 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Weight (${getWeightUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Waist (${getLengthUnitLabel(unitSystem)})`}</th>
+              {isDoctorView && tracksBP && (
+                <>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Systolic (mmHg)</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Diastolic (mmHg)</th>
+                </>
+              )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
@@ -652,6 +724,16 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'waist', record.waist)}
                 </td>
+                {isDoctorView && tracksBP && (
+                  <>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'systolic_bp', (record as any).systolic_bp)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'diastolic_bp', (record as any).diastolic_bp)}
+                    </td>
+                  </>
+                )}
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
                 </td>
@@ -709,7 +791,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   )
 }
 
-export default function ChartsDashboard({ patientId, onSubmissionSelect }: ChartsDashboardProps) {
+export default function ChartsDashboard({ patientId, onSubmissionSelect, selectedWeekNumber }: ChartsDashboardProps) {
   const [chartData, setChartData] = useState<WeeklyCheckin[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -730,6 +812,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
   // Client name for display
   const [patientName, setPatientName] = useState<string>('')
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
+  const [tracksBP, setTracksBP] = useState<boolean>(false)
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
@@ -752,6 +835,31 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
       ;(async () => {
         const u = await fetchUnitSystem(patientId)
         setUnitSystem(u)
+      })()
+      // Load BP tracking flag
+      ;(async () => {
+        try {
+          if (isDoctorView && patientId) {
+            const { data } = await supabase
+              .from('profiles')
+              .select('track_blood_pressure')
+              .eq('id', patientId)
+              .single()
+            setTracksBP(Boolean(data?.track_blood_pressure))
+          } else {
+            // current user
+            const { data: userData } = await supabase.auth.getUser()
+            const uid = userData?.user?.id
+            if (uid) {
+              const { data } = await supabase
+                .from('profiles')
+                .select('track_blood_pressure')
+                .eq('id', uid)
+                .single()
+              setTracksBP(Boolean(data?.track_blood_pressure))
+            }
+          }
+        } catch {}
       })()
     }
   }, [mounted, patientId, isDoctorView])
@@ -1153,7 +1261,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
 
       {/* Goals Editing - Doctor View Only */}
       {isDoctorView && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
           {/* Weight Change Goal - Left Side */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
@@ -1198,45 +1306,85 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
             </div>
           </div>
 
-          {/* Resistance Training Goal - Right Side */}
+          {/* Resistance Training Goal + Blood Pressure Inputs - Right Side */}
           <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  🏋️ Client Strength Days Target Goal
-                </h3>
-                <p className="text-gray-600">
-                  Set the target resistance training days per week<br />
-                   for {patientName || 'this client'}
-                </p>
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    🏋️ Client Strength Days Target Goal
+                  </h3>
+                  <p className="text-gray-600">
+                    Set the target resistance training days per week<br />
+                     for {patientName || 'this client'}
+                  </p>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="text-right">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Goal Days
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="7"
+                        value={resistanceTrainingGoal}
+                        onChange={(e) => setResistanceTrainingGoal(parseInt(e.target.value) || 0)}
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={resistanceGoalLoading}
+                      />
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={handleResistanceGoalUpdate}
+                    disabled={resistanceGoalLoading}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {resistanceGoalLoading ? 'Updating...' : 'Update Goal'}
+                  </button>
+                </div>
               </div>
-              
-              <div className="flex items-center space-x-3">
-                <div className="text-right">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Goal Days
-                  </label>
-                  <div className="flex items-center space-x-2">
+
+              {/* BP Inputs inline with goals when tracking enabled and we know which week */}
+              {tracksBP && (
+                <div className="flex items-end gap-4 border-t pt-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Systolic (mmHg)</label>
                     <input
                       type="number"
-                      min="0"
-                      max="7"
-                      value={resistanceTrainingGoal}
-                      onChange={(e) => setResistanceTrainingGoal(parseInt(e.target.value) || 0)}
-                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      disabled={resistanceGoalLoading}
+                      inputMode="numeric"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.systolic_bp ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { systolic_bp: e.target.value === '' ? null : parseInt(e.target.value) })
+                        await loadChartData()
+                      }}
+                      className="w-28 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 120"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Diastolic (mmHg)</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.diastolic_bp ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { diastolic_bp: e.target.value === '' ? null : parseInt(e.target.value) })
+                        await loadChartData()
+                      }}
+                      className="w-28 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 80"
                     />
                   </div>
                 </div>
-                
-                <button
-                  onClick={handleResistanceGoalUpdate}
-                  disabled={resistanceGoalLoading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  {resistanceGoalLoading ? 'Updating...' : 'Update Goal'}
-                </button>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -1256,6 +1404,14 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
           <WeightTrendChart data={chartData} unitSystem={unitSystem} />
           <WaistTrendChart data={chartData} unitSystem={unitSystem} />
         </div>
+
+        {/* Row 2.5: Blood Pressure Charts (conditional) */}
+        {tracksBP && (
+          <div className="grid lg:grid-cols-2 gap-6">
+            <SystolicBloodPressureChart data={chartData} />
+            <DiastolicBloodPressureChart data={chartData} />
+          </div>
+        )}
 
         {/* Row 3: Sleep Chart (Full Width) */}
         <div className="grid grid-cols-1">
@@ -1281,6 +1437,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
           patientId={patientId}
           onSubmissionSelect={onSubmissionSelect}
           unitSystem={unitSystem}
+          tracksBP={tracksBP}
         />
 
         {/* Removed duplicate bottom missed-checkins note: now rendered inside DataTable header */}
@@ -1329,7 +1486,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect }: Chart
 
       {/* Client Status Management - Dr. Nick Only */}
       {isDoctorView && (
-        <PatientStatusManagement patientId={patientId} />
+        <PatientStatusManagement patientId={patientId} onBpTrackingChange={(enabled) => setTracksBP(enabled)} />
       )}
 
       {/* Floating Sticky Notes - Dr. Nick Only */}

@@ -25,13 +25,14 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     proteinGoalGrams: '150',
     resistanceTrainingGoal: '0',
     clientStatus: 'Current',
-    unitSystem: 'imperial' as UnitSystem
+    unitSystem: 'imperial' as UnitSystem,
+    trackBloodPressure: false
   })
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -129,7 +130,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       resistanceTrainingGoal: parseInt(formData.resistanceTrainingGoal) || 0,
       drNickCoachingNotes: formData.initialNotes.trim() || undefined,
       clientStatus: formData.clientStatus,
-      unitSystem: formData.unitSystem
+      unitSystem: formData.unitSystem,
+      trackBloodPressure: formData.trackBloodPressure
     }
 
     const result = await createPatientAccount(patientData)
@@ -319,6 +321,32 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               </button>
             </div>
             <p className="text-xs text-gray-500 mt-1">Default is Imperial; you can switch to Metric.</p>
+          </div>
+
+          {/* Track Blood Pressure Toggle */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Track Blood Pressure?
+            </label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleInputChange('trackBloodPressure', true)}
+                className={`px-3 py-2 rounded border ${formData.trackBloodPressure ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInputChange('trackBloodPressure', false)}
+                className={`px-3 py-2 rounded border ${!formData.trackBloodPressure ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                No
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Enables two blood pressure charts (systolic and diastolic) on the client dashboard and lets you record weekly readings during review. This setting is only set at creation and cannot be changed later.
+            </p>
           </div>
         </div>
 

@@ -15,7 +15,7 @@ const adminClient = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams, resistanceTrainingGoal, drNickCoachingNotes, clientStatus, unitSystem } = await request.json()
+    const { email, password, fullName, weekZeroData, weightChangeGoalPercent, proteinGoalGrams, resistanceTrainingGoal, drNickCoachingNotes, clientStatus, unitSystem, trackBloodPressure } = await request.json()
 
     // DEBUG: Log the coaching notes being received
     console.log('DEBUG: Received drNickCoachingNotes:', drNickCoachingNotes)
@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
       resistance_training_days_goal: resistanceTrainingGoal || 0,
       dr_nick_coaching_notes: drNickCoachingNotes || null,
       client_status: clientStatus || 'Current',
-      unit_system: unitSystem === 'metric' ? 'metric' : 'imperial'
+      unit_system: unitSystem === 'metric' ? 'metric' : 'imperial',
+      track_blood_pressure: Boolean(trackBloodPressure)
     }
     console.log('DEBUG: Profile data to insert:', profileData)
 

@@ -21,6 +21,7 @@ export interface PatientCreationData {
   drNickCoachingNotes?: string
   clientStatus?: string
   unitSystem?: UnitSystem
+  trackBloodPressure?: boolean
 }
 
 // Check if email is already taken

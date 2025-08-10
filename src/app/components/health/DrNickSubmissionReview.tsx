@@ -8,6 +8,7 @@ import {
 } from './healthService'
 import { getSignedImageUrl } from './imageService'
 import { supabase } from '../auth/AuthContext'
+import { updateHealthRecord } from './healthService'
 import ChartsDashboard from './ChartsDashboard'
 import { QueueSubmission } from './DrNickQueue'
 import StickyNotes from './StickyNotes'
@@ -741,6 +742,110 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // Inline BP editor placed to the right of Client Profile Goals
+  function BPInlineEditor({ submission }: { submission: QueueSubmission }) {
+    const [tracksBP, setTracksBP] = useState(false)
+    const [systolic, setSystolic] = useState('')
+    const [diastolic, setDiastolic] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [saveState, setSaveState] = useState<'idle' | 'success' | 'error'>('idle')
+
+    useEffect(() => {
+      const load = async () => {
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('track_blood_pressure')
+            .eq('id', submission.user_id)
+            .single()
+          const enabled = Boolean(data?.track_blood_pressure)
+          setTracksBP(enabled)
+          setSystolic((submission as any)?.systolic_bp != null ? String((submission as any).systolic_bp) : '')
+          setDiastolic((submission as any)?.diastolic_bp != null ? String((submission as any).diastolic_bp) : '')
+        } catch {}
+      }
+      load()
+    }, [submission])
+
+    if (!tracksBP) return null
+
+    const save = async () => {
+      setSaving(true)
+      setSaveState('idle')
+      try {
+        const { error } = await updateHealthRecord(submission.id, {
+          systolic_bp: systolic === '' ? null : parseInt(systolic),
+          diastolic_bp: diastolic === '' ? null : parseInt(diastolic)
+        } as any)
+        if (error) throw error
+        setSaveState('success')
+        setTimeout(() => setSaveState('idle'), 1500)
+      } catch (e) {
+        console.error(e)
+        setSaveState('error')
+        setTimeout(() => setSaveState('idle'), 2000)
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    return (
+      <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg shadow-sm min-w-[220px]">
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium text-blue-700">🩺 Blood Pressure (mmHg)</label>
+          <span className="text-xs text-gray-500 cursor-help" title="Systolic = top number; Diastolic = bottom number">ℹ️</span>
+        </div>
+        <p className="text-xs text-gray-600 mb-3">Enter this week’s readings</p>
+
+        <div className="flex items-end gap-3">
+          {/* Systolic input with unit suffix */}
+          <div className="relative">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={systolic}
+              onChange={(e) => setSystolic(e.target.value)}
+              className="w-24 pr-10 px-2 py-1 border border-blue-200 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="120"
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-500">mmHg</span>
+            <div className="text-[10px] text-gray-500 mt-1 text-center">Systolic</div>
+          </div>
+
+          {/* Diastolic input with unit suffix */}
+          <div className="relative">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={diastolic}
+              onChange={(e) => setDiastolic(e.target.value)}
+              className="w-24 pr-10 px-2 py-1 border border-blue-200 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="80"
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-500">mmHg</span>
+            <div className="text-[10px] text-gray-500 mt-1 text-center">Diastolic</div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className={`flex-1 px-3 py-1 rounded text-sm text-white transition-colors ${saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {saving ? 'Saving…' : 'Update'}
+          </button>
+          {saveState === 'success' && (
+            <span className="text-green-600 text-xs">Saved ✓</span>
+          )}
+          {saveState === 'error' && (
+            <span className="text-red-600 text-xs">Failed</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // Load current nutrition compliance days and weight change goal
   const loadSubmissionData = async () => {
     try {
@@ -1202,7 +1307,7 @@ export default function DrNickSubmissionReview({
             <p className="text-sm text-gray-600">These goals persist throughout the entire program and apply to all weekly submissions</p>
           </div>
           
-          <div className="flex justify-center gap-6">
+          <div className="flex justify-center gap-6 items-start">
             <div className="bg-pink-50 p-4 rounded-lg">
               <label className="block text-sm font-medium text-pink-700">Week-over-Week Weight Loss %</label>
               <p className="text-xs text-pink-600 mb-2">Target percentage for weekly weight reduction</p>
@@ -1246,6 +1351,11 @@ export default function DrNickSubmissionReview({
                 </button>
               </div>
             </div>
+
+            {/* BP inputs to the right when tracking is enabled */}
+            {Boolean((submission as any)?.profiles?.id) && (
+              <BPInlineEditor submission={submission} />
+            )}
           </div>
         </div>
 

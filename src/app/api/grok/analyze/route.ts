@@ -24,6 +24,8 @@ interface HealthDataRecord {
   notes?: string
   weekly_whoop_analysis?: string
   monthly_whoop_analysis?: string
+  systolic_bp?: number | null
+  diastolic_bp?: number | null
   [key: string]: any
 }
 
@@ -222,7 +224,9 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
         sleep_consistency_score: submissionData.sleep_consistency_score || null,
         nutrition_compliance_days: submissionData.nutrition_compliance_days || null,
         energetic_constraints_reduction_ok: submissionData.energetic_constraints_reduction_ok || null,
-        patient_notes: submissionData.notes || null
+        patient_notes: submissionData.notes || null,
+        systolic_bp: submissionData.systolic_bp || null,
+        diastolic_bp: submissionData.diastolic_bp || null
       },
       historical_data: (historicalData || []).map((entry: HealthDataRecord) => ({
         week_number: entry.week_number,
@@ -235,7 +239,9 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
         poor_recovery_days: entry.poor_recovery_days || null,
         sleep_consistency_score: entry.sleep_consistency_score || null,
         nutrition_compliance_days: entry.nutrition_compliance_days || null,
-        patient_notes: entry.notes || null
+        patient_notes: entry.notes || null,
+        systolic_bp: entry.systolic_bp || null,
+        diastolic_bp: entry.diastolic_bp || null
       })),
       current_week_analysis: {
         weekly_whoop_analysis: submissionData.weekly_whoop_analysis || null,

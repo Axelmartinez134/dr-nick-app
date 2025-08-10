@@ -6,7 +6,8 @@ import {
   markSubmissionAsReviewed, 
   updateDrNickAnalysis,
   getSubmissionDetails,
-  getWeeklyDataForCharts 
+  getWeeklyDataForCharts,
+  updateHealthRecord
 } from './healthService'
 import { uploadSingleImage, getSignedImageUrl } from './imageService'
 import { supabase } from '../auth/AuthContext'
@@ -28,6 +29,8 @@ export interface QueueSubmission {
   sleep_consistency_score: number | null
   energetic_constraints_reduction_ok: boolean | null
   nutrition_compliance_days: number | null
+  systolic_bp?: number | null
+  diastolic_bp?: number | null
   notes: string | null
   created_at: string
   // Image fields
@@ -180,6 +183,7 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
       loadSubmissionChartData(submission.user_id),
       generateSignedUrls(submission)
     ])
+    // BP inputs rendered inside ChartsDashboard goals row
   }
 
   // Handle PDF upload
@@ -275,6 +279,8 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
       alert('Failed to complete review')
     }
   }
+
+  // BP inputs handled in ChartsDashboard
 
   useEffect(() => {
     loadQueueSubmissions()
@@ -588,6 +594,8 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                 </div>
               </div>
 
+              {/* Blood Pressure Inputs moved to ChartsDashboard goals row */}
+
               {/* Charts Dashboard */}
               {submissionChartData.length > 0 && (
                 <div className="bg-white border border-gray-200 rounded-lg p-6">
@@ -596,6 +604,7 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                   </h4>
                   <ChartsDashboard 
                     patientId={selectedSubmission.user_id}
+                    selectedWeekNumber={selectedSubmission.week_number}
                   />
                 </div>
               )}

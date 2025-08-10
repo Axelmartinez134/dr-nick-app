@@ -23,6 +23,7 @@ export interface GrokDataPackage {
     protein_goal_grams: number | null
     weight_change_goal_percent: number | null
     created_date: string
+    track_blood_pressure?: boolean
   }
   current_week: {
     week_number: number
@@ -37,6 +38,8 @@ export interface GrokDataPackage {
     nutrition_compliance_days: number | null
     energetic_constraints_reduction_ok: boolean | null
     patient_notes: string | null
+    systolic_bp?: number | null
+    diastolic_bp?: number | null
   }
   historical_data: Array<{
     week_number: number
@@ -50,6 +53,8 @@ export interface GrokDataPackage {
     sleep_consistency_score: number | null
     nutrition_compliance_days: number | null
     patient_notes: string | null
+    systolic_bp?: number | null
+    diastolic_bp?: number | null
   }>
   current_week_analysis: {
     weekly_whoop_analysis: string | null
@@ -267,7 +272,7 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
       // Query 1: Basic profile info (mirrors successful dashboard pattern)
       const { data: basicProfile } = await supabase
         .from('profiles')
-        .select('full_name, email, created_at')
+        .select('full_name, email, created_at, track_blood_pressure')
         .eq('id', userId)
         .single()
       
@@ -316,7 +321,7 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
     console.log(`Fetching historical data for user: ${userId}`)
     const { data: historicalData, error: historyError } = await supabase
       .from('health_data')
-      .select('*')
+        .select('*')
       .eq('user_id', userId)
       .order('week_number', { ascending: true })
     
@@ -402,7 +407,8 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         height: profileData.height,
         protein_goal_grams: profileData.protein_goal_grams,
         weight_change_goal_percent: profileData.weight_change_goal_percent,
-        created_date: profileData.created_at || ''
+        created_date: profileData.created_at || '',
+        track_blood_pressure: Boolean((basicProfile as any)?.track_blood_pressure)
       },
       current_week: {
         week_number: currentSubmission.week_number,
@@ -416,7 +422,9 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         sleep_consistency_score: currentSubmission.sleep_consistency_score,
         nutrition_compliance_days: currentSubmission.nutrition_compliance_days,
         energetic_constraints_reduction_ok: currentSubmission.energetic_constraints_reduction_ok,
-        patient_notes: currentSubmission.notes
+        patient_notes: currentSubmission.notes,
+        systolic_bp: currentSubmission.systolic_bp,
+        diastolic_bp: currentSubmission.diastolic_bp
       },
       historical_data: (historicalData || []).map(entry => ({
         week_number: entry.week_number,
@@ -429,7 +437,9 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         poor_recovery_days: entry.poor_recovery_days,
         sleep_consistency_score: entry.sleep_consistency_score,
         nutrition_compliance_days: entry.nutrition_compliance_days,
-        patient_notes: entry.notes
+        patient_notes: entry.notes,
+        systolic_bp: entry.systolic_bp,
+        diastolic_bp: entry.diastolic_bp
       })),
       current_week_analysis: {
         weekly_whoop_analysis: currentSubmission.weekly_whoop_analysis,
@@ -482,6 +492,7 @@ Height: ${formatLengthVal(data.patient_profile.height)}
 Protein Goal: ${formatNumber(data.patient_profile.protein_goal_grams)} grams
 Weight Change Goal: ${formatNumber(data.patient_profile.weight_change_goal_percent)}% weekly
 Program Start Date: ${formatDate(data.patient_profile.created_date)}
+Track Blood Pressure: ${data.patient_profile.track_blood_pressure ? 'Yes' : 'No'}
 
 === CURRENT WEEK DATA (Week ${data.current_week.week_number}) ===
 Submission Date: ${formatDate(data.current_week.submission_date)}
@@ -495,12 +506,14 @@ Nutrition Compliance Days: ${formatNumber(data.current_week.nutrition_compliance
 Energetic Constraints Reduction OK: ${data.current_week.energetic_constraints_reduction_ok ? 'Yes' : 'No'}
 Patient Notes: ${data.current_week.patient_notes || 'None'}
 Detailed Symptom Notes: ${data.current_week.detailed_symptom_notes || 'None'}
+Systolic BP: ${formatNumber(data.current_week.systolic_bp || null)} mmHg
+Diastolic BP: ${formatNumber(data.current_week.diastolic_bp || null)} mmHg
 
 === HISTORICAL PROGRESSION ===
 ${data.historical_data
   .sort((a, b) => a.week_number - b.week_number)
   .map(entry => 
-    `Week ${entry.week_number}: Weight ${formatWeightVal(entry.weight)}, Waist ${formatLengthVal(entry.waist)}, Exercise ${formatNumber(entry.purposeful_exercise_days)}/7, Symptoms ${formatNumber(entry.symptom_tracking_days)}/7, Sleep Score ${formatNumber(entry.sleep_consistency_score)}, Nutrition ${formatNumber(entry.nutrition_compliance_days)}/7`
+    `Week ${entry.week_number}: Weight ${formatWeightVal(entry.weight)}, Waist ${formatLengthVal(entry.waist)}, Exercise ${formatNumber(entry.purposeful_exercise_days)}/7, Symptoms ${formatNumber(entry.symptom_tracking_days)}/7, Sleep Score ${formatNumber(entry.sleep_consistency_score)}, Nutrition ${formatNumber(entry.nutrition_compliance_days)}/7, Systolic ${formatNumber(entry.systolic_bp || null)} mmHg, Diastolic ${formatNumber(entry.diastolic_bp || null)} mmHg`
   ).join('\n')}
 
 === DR. NICK'S CURRENT ANALYSIS ===
