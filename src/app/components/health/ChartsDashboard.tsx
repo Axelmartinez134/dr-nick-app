@@ -23,6 +23,10 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
+  // Delete patient confirmation modal state
+  const [showDeletePatientModal, setShowDeletePatientModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deletingPatient, setDeletingPatient] = useState(false)
 
   // Load current Client status
   useEffect(() => {
@@ -247,6 +251,89 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
           {message}
         </div>
       )}
+
+      {/* Danger zone: delete entire client */}
+      <div className="mt-6 border-t pt-4">
+        <h4 className="text-sm font-semibold text-red-800 mb-2">Danger zone</h4>
+        <p className="text-xs text-gray-600 mb-3">
+          Permanently delete this client, their profile, and all check-in data. This action cannot be undone.
+        </p>
+        <button
+          type="button"
+          onClick={() => { setShowDeletePatientModal(true); setDeleteConfirmText('') }}
+          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+        >
+          🗑️ Delete Entire Client
+        </button>
+      </div>
+
+      {/* Delete patient confirmation modal */}
+      {showDeletePatientModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Client</h3>
+            <p className="text-sm text-gray-700 mb-3">
+              This will permanently delete the client profile and all associated health_data. Type <span className="font-mono font-semibold">DELETE</span> to confirm.
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+              placeholder="Type DELETE to confirm"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeletePatientModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                disabled={deletingPatient}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!patientId) return
+                  if (deleteConfirmText !== 'DELETE') {
+                    setMessage('❌ Please type DELETE to confirm')
+                    setMessageType('error')
+                    setTimeout(() => { setMessage(''); setMessageType('') }, 3000)
+                    return
+                  }
+                  try {
+                    setDeletingPatient(true)
+                    const { data: { session } } = await supabase.auth.getSession()
+                    const token = session?.access_token
+                    if (!token) {
+                      throw new Error('Unauthorized')
+                    }
+                    const resp = await fetch('/api/admin/delete-patient', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                      body: JSON.stringify({ patientId, confirm: 'DELETE' })
+                    })
+                    const result = await resp.json()
+                    if (!resp.ok || !result.success) throw new Error(result.error || 'Failed to delete client')
+                    // Reload to reflect deletion and return to list
+                    window.location.reload()
+                  } catch (err) {
+                    console.error('Delete client failed:', err)
+                    setDeletingPatient(false)
+                    setMessage('❌ Failed to delete client')
+                    setMessageType('error')
+                    setTimeout(() => { setMessage(''); setMessageType('') }, 3000)
+                  }
+                }}
+                className={`px-4 py-2 rounded-md text-white ${deleteConfirmText === 'DELETE' && !deletingPatient ? 'bg-red-600 hover:bg-red-700' : 'bg-red-400 cursor-not-allowed'}`}
+                disabled={deleteConfirmText !== 'DELETE' || deletingPatient}
+              >
+                {deletingPatient ? 'Deleting...' : 'Delete Client'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -307,6 +394,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
+  // Delete row modal state
+  const [showDeleteRowModal, setShowDeleteRowModal] = useState(false)
+  const [rowToDelete, setRowToDelete] = useState<string | null>(null)
+  const [rowDeleteConfirm, setRowDeleteConfirm] = useState('')
+  const [deletingRow, setDeletingRow] = useState(false)
 
   // Helper to format created_at date as M/D/YYYY without timezone conversion
   const formatCreatedAtDate = (createdAt?: string): string => {
@@ -682,6 +774,9 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
+              {isDoctorView && (
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Actions</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -765,6 +860,17 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'notes', record.notes, true)}
                 </td>
+                {isDoctorView && (
+                  <td className="px-4 py-3 text-sm">
+                    <button
+                      onClick={() => { setRowToDelete(record.id!); setRowDeleteConfirm(''); setShowDeleteRowModal(true) }}
+                      className="text-red-600 hover:text-red-800"
+                      title="Delete this row"
+                    >
+                      🗑️ Delete
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -784,6 +890,66 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
           </p>
         )}
       </div>
+      {/* Delete row confirmation modal */}
+      {showDeleteRowModal && rowToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Row</h3>
+            <p className="text-sm text-gray-700 mb-3">This will permanently delete the selected check-in row. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
+            <input
+              type="text"
+              value={rowDeleteConfirm}
+              onChange={(e) => setRowDeleteConfirm(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+              placeholder="Type DELETE to confirm"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteRowModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                disabled={deletingRow}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (rowDeleteConfirm !== 'DELETE') return
+                  try {
+                    setDeletingRow(true)
+                    const { data: { session } } = await supabase.auth.getSession()
+                    const token = session?.access_token
+                    if (!token) {
+                      throw new Error('Unauthorized')
+                    }
+                    const resp = await fetch('/api/admin/delete-health-row', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                      body: JSON.stringify({ rowId: rowToDelete, confirm: 'DELETE' })
+                    })
+                    const result = await resp.json()
+                    if (!resp.ok || !result.success) throw new Error(result.error || 'Failed to delete row')
+                    setShowDeleteRowModal(false)
+                    setRowToDelete(null)
+                    setRowDeleteConfirm('')
+                    if (onDataUpdate) onDataUpdate()
+                  } catch (err) {
+                    console.error('Delete row failed:', err)
+                    alert('Failed to delete row')
+                  } finally {
+                    setDeletingRow(false)
+                  }
+                }}
+                className={`px-4 py-2 rounded-md text-white ${rowDeleteConfirm === 'DELETE' && !deletingRow ? 'bg-red-600 hover:bg-red-700' : 'bg-red-400 cursor-not-allowed'}`}
+                disabled={rowDeleteConfirm !== 'DELETE' || deletingRow}
+              >
+                {deletingRow ? 'Deleting...' : 'Delete Row'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
