@@ -40,7 +40,7 @@ export default function MarketingWeightProjectionEChart({ data, hideTooltips = f
     const trend = regression?.isValid ? weeks.map(w => regression!.trendPoints.find(t => t.week === w)?.value ?? null) : []
 
     const projSeries = projections.map((p) => ({
-      name: p.label,
+      name: `${p.rate} loss/wk`,
       data: weeks.map(w => p.data.find(x => x.week === w)?.weight ?? null)
     }))
 
