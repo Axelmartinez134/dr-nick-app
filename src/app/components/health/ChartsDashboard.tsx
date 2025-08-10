@@ -291,11 +291,8 @@ const WaistTrendChart = dynamic(() => import('./charts/WaistTrendChart'), { ssr:
 const WeightProjectionChart = dynamic(() => import('./charts/WeightProjectionChart'), { ssr: false })
 const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionChart'), { ssr: false })
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
-// Use require to avoid TS type resolution issues with dynamic imports
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const SystolicBloodPressureChart = dynamic(() => Promise.resolve(require('./charts/SystolicBloodPressureChart').default), { ssr: false }) as any
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const DiastolicBloodPressureChart = dynamic(() => Promise.resolve(require('./charts/DiastolicBloodPressureChart').default), { ssr: false }) as any
+const SystolicBloodPressureChart = dynamic(() => import('./charts/SystolicBloodPressureChart'), { ssr: false }) as any
+const DiastolicBloodPressureChart = dynamic(() => import('./charts/DiastolicBloodPressureChart'), { ssr: false }) as any
 
   // Data Table Component - Different versions for Client vs Dr. Nick
 function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP }: { 
