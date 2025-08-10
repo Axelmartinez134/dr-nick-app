@@ -1345,8 +1345,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                 </div>
               </div>
 
-              {/* BP Inputs inline with goals when tracking enabled and we know which week */}
-              {tracksBP && (
+              {/* BP Inputs inline with goals ONLY when reviewing a specific week (review queue) */}
+              {tracksBP && typeof selectedWeekNumber === 'number' && selectedWeekNumber >= 0 && isDoctorView && (
                 <div className="flex items-end gap-4 border-t pt-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Systolic (mmHg)</label>
