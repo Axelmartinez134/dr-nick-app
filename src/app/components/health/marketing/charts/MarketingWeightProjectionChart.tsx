@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { WeeklyCheckin, generateWeightProjections } from '../../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../../regressionUtils'
@@ -13,13 +13,17 @@ interface MarketingWeightProjectionChartProps {
   isAnimating: boolean
   animationDuration: number
   onAnimationComplete: () => void
+  hideTooltips?: boolean
+  hideTitles?: boolean
 }
 
 export default function MarketingWeightProjectionChart({ 
   data, 
   isAnimating, 
   animationDuration, 
-  onAnimationComplete 
+  onAnimationComplete,
+  hideTooltips = false,
+  hideTitles = false
 }: MarketingWeightProjectionChartProps) {
   const [animatedData, setAnimatedData] = useState<any[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
@@ -108,33 +112,45 @@ export default function MarketingWeightProjectionChart({
     })
   }, [chartData, regressionResult, actualWeightData])
 
-  // Animation effect
+  // Animation effect (guarded)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wasAnimatingRef = useRef(false)
+  const lastDataRef = useRef<any[]>([])
+
   useEffect(() => {
-    if (isAnimating && enhancedChartData.length > 0) {
-      setAnimatedData([])
-      setCurrentWeek(0)
-      
-      const maxWeek = Math.max(...enhancedChartData.map(d => d.week))
-      const stepDuration = animationDuration / (maxWeek + 1)
-      
-      const animateStep = (week: number) => {
-        const dataToShow = enhancedChartData.filter(d => d.week <= week)
-        setAnimatedData(dataToShow)
-        setCurrentWeek(week)
-        
-        if (week >= maxWeek) {
-          onAnimationComplete()
-        } else {
-          setTimeout(() => animateStep(week + 1), stepDuration)
-        }
-      }
-      
-      animateStep(0)
-    } else if (!isAnimating) {
-      setAnimatedData(enhancedChartData)
-      setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
     }
-  }, [isAnimating, animationDuration, enhancedChartData, onAnimationComplete])
+
+    if (isAnimating && enhancedChartData.length > 0) {
+      if (!wasAnimatingRef.current) {
+        wasAnimatingRef.current = true
+        setAnimatedData([])
+        setCurrentWeek(0)
+        const maxWeek = Math.max(...enhancedChartData.map(d => d.week))
+        const stepDuration = animationDuration / (maxWeek + 1)
+        const animateStep = (week: number) => {
+          const dataToShow = enhancedChartData.filter(d => d.week <= week)
+          setAnimatedData(dataToShow)
+          setCurrentWeek(week)
+          if (week < maxWeek) {
+            timerRef.current = setTimeout(() => animateStep(week + 1), stepDuration)
+          }
+        }
+        animateStep(0)
+      }
+    } else {
+      if (wasAnimatingRef.current || lastDataRef.current !== enhancedChartData) {
+        wasAnimatingRef.current = false
+        lastDataRef.current = enhancedChartData
+        setAnimatedData(enhancedChartData)
+        setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
+      }
+    }
+
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [isAnimating, animationDuration, enhancedChartData])
 
   // Calculate Y-axis domain
   const calculateYAxisDomain = () => {
@@ -201,15 +217,17 @@ export default function MarketingWeightProjectionChart({
 
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          📈 Weight Projections vs Actual
-        </h3>
-        <p className="text-sm text-gray-600">
-          Compare actual progress against projected weight loss paths
-          {isAnimating && ` (showing up to week ${currentWeek})`}
-        </p>
-      </div>
+      {!hideTitles && (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            📈 Weight Projections vs Actual
+          </h3>
+          <p className="text-sm text-gray-600">
+            Compare actual progress against projected weight loss paths
+            {isAnimating && ` (showing up to week ${currentWeek})`}
+          </p>
+        </div>
+      )}
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={displayData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -223,8 +241,8 @@ export default function MarketingWeightProjectionChart({
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
           />
-          <Tooltip content={<CustomTooltip />} />
-          <Legend />
+          {!hideTooltips && <Tooltip content={<CustomTooltip />} />}
+          {!hideTitles && <Legend />}
           
           {/* Actual weight line */}
           <Line 
@@ -298,11 +316,13 @@ export default function MarketingWeightProjectionChart({
         </LineChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 text-xs text-gray-500">
-        <p>• Blue line: Actual weight progress</p>
-        <p>• Dashed lines: Projected weight loss paths</p>
-        <p>• Black line: Actual trend direction</p>
-      </div>
+      {!hideTitles && (
+        <div className="mt-4 text-xs text-gray-500">
+          <p>• Blue line: Actual weight progress</p>
+          <p>• Dashed lines: Projected weight loss paths</p>
+          <p>• Black line: Actual trend direction</p>
+        </div>
+      )}
     </div>
   )
 } 

@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../../regressionUtils'
@@ -13,13 +13,17 @@ interface MarketingSleepConsistencyChartProps {
   isAnimating: boolean
   animationDuration: number
   onAnimationComplete: () => void
+  hideTooltips?: boolean
+  hideTitles?: boolean
 }
 
 export default function MarketingSleepConsistencyChart({ 
   data, 
   isAnimating, 
   animationDuration, 
-  onAnimationComplete 
+  onAnimationComplete,
+  hideTooltips = false,
+  hideTitles = false
 }: MarketingSleepConsistencyChartProps) {
   const [animatedData, setAnimatedData] = useState<any[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
@@ -61,33 +65,40 @@ export default function MarketingSleepConsistencyChart({
     })
   }, [chartData, regressionResult])
 
-  // Animation effect
+  // Animation effect (guarded)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wasAnimatingRef = useRef(false)
+  const lastDataRef = useRef<any[]>([])
+
   useEffect(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     if (isAnimating && enhancedChartData.length > 0) {
-      setAnimatedData([])
-      setCurrentWeek(0)
-      
-      const maxWeek = Math.max(...enhancedChartData.map(d => d.week))
-      const stepDuration = animationDuration / (maxWeek + 1)
-      
-      const animateStep = (week: number) => {
-        const dataToShow = enhancedChartData.filter(d => d.week <= week)
-        setAnimatedData(dataToShow)
-        setCurrentWeek(week)
-        
-        if (week >= maxWeek) {
-          onAnimationComplete()
-        } else {
-          setTimeout(() => animateStep(week + 1), stepDuration)
+      if (!wasAnimatingRef.current) {
+        wasAnimatingRef.current = true
+        setAnimatedData([])
+        setCurrentWeek(0)
+        const maxWeek = Math.max(...enhancedChartData.map(d => d.week))
+        const stepDuration = animationDuration / (maxWeek + 1)
+        const animateStep = (week: number) => {
+          const dataToShow = enhancedChartData.filter(d => d.week <= week)
+          setAnimatedData(dataToShow)
+          setCurrentWeek(week)
+          if (week < maxWeek) {
+            timerRef.current = setTimeout(() => animateStep(week + 1), stepDuration)
+          }
         }
+        animateStep(0)
       }
-      
-      animateStep(0)
-    } else if (!isAnimating) {
-      setAnimatedData(enhancedChartData)
-      setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
+    } else {
+      if (wasAnimatingRef.current || lastDataRef.current !== enhancedChartData) {
+        wasAnimatingRef.current = false
+        lastDataRef.current = enhancedChartData
+        setAnimatedData(enhancedChartData)
+        setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
+      }
     }
-  }, [isAnimating, animationDuration, enhancedChartData, onAnimationComplete])
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [isAnimating, animationDuration, enhancedChartData])
 
   // Calculate Y-axis domain
   const calculateYAxisDomain = () => {
@@ -169,15 +180,17 @@ export default function MarketingSleepConsistencyChart({
 
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          😴 Sleep Consistency & Recovery
-        </h3>
-        <p className="text-sm text-gray-600">
-          Sleep consistency scores from Whoop data
-          {isAnimating && ` (showing up to week ${currentWeek})`}
-        </p>
-      </div>
+      {!hideTitles && (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            😴 Sleep Consistency & Recovery
+          </h3>
+          <p className="text-sm text-gray-600">
+            Sleep consistency scores from Whoop data
+            {isAnimating && ` (showing up to week ${currentWeek})`}
+          </p>
+        </div>
+      )}
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={displayData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -191,7 +204,7 @@ export default function MarketingSleepConsistencyChart({
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${Math.round(value)}`}
           />
-          <Tooltip content={<CustomTooltip />} />
+          {!hideTooltips && <Tooltip content={<CustomTooltip />} />}
           
           {/* Reference lines for score ranges */}
           <ReferenceLine y={67} stroke="#10b981" strokeDasharray="5 5" />
@@ -225,11 +238,13 @@ export default function MarketingSleepConsistencyChart({
         </LineChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 text-xs text-gray-500">
-        <p>• Green zone (67+): Excellent sleep consistency</p>
-        <p>• Yellow zone (34-66): Good sleep consistency</p>
-        <p>• Red zone (0-33): Needs improvement</p>
-      </div>
+      {!hideTitles && (
+        <div className="mt-4 text-xs text-gray-500">
+          <p>• Green zone (67+): Excellent sleep consistency</p>
+          <p>• Yellow zone (34-66): Good sleep consistency</p>
+          <p>• Red zone (0-33): Needs improvement</p>
+        </div>
+      )}
     </div>
   )
 } 

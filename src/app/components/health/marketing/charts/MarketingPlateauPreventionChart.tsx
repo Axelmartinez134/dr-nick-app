@@ -13,13 +13,17 @@ interface MarketingPlateauPreventionChartProps {
   isAnimating: boolean
   animationDuration: number
   onAnimationComplete: () => void
+  hideTooltips?: boolean
+  hideTitles?: boolean
 }
 
 export default function MarketingPlateauPreventionChart({ 
   data, 
   isAnimating, 
   animationDuration, 
-  onAnimationComplete 
+  onAnimationComplete,
+  hideTooltips = false,
+  hideTitles = false
 }: MarketingPlateauPreventionChartProps) {
   const [animatedData, setAnimatedData] = useState<any[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
@@ -208,15 +212,17 @@ export default function MarketingPlateauPreventionChart({
 
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          🔄 Plateau Prevention Analysis
-        </h3>
-        <p className="text-sm text-gray-600">
-          Progressive averaging to prevent weight loss plateaus
-          {isAnimating && ` (showing up to week ${currentWeek})`}
-        </p>
-      </div>
+      {!hideTitles && (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            🔄 Plateau Prevention Analysis
+          </h3>
+          <p className="text-sm text-gray-600">
+            Progressive averaging to prevent weight loss plateaus
+            {isAnimating && ` (showing up to week ${currentWeek})`}
+          </p>
+        </div>
+      )}
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={displayData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -230,7 +236,7 @@ export default function MarketingPlateauPreventionChart({
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${Math.round(value * 100) / 100}%`}
           />
-          <Tooltip content={<CustomTooltip />} />
+          {!hideTooltips && <Tooltip content={<CustomTooltip />} />}
           
           <Line 
             type="monotone" 
@@ -258,11 +264,13 @@ export default function MarketingPlateauPreventionChart({
         </LineChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 text-xs text-gray-500">
-        <p>• Progressive averaging prevents plateaus</p>
-        <p>• Black line shows overall average</p>
-        <p>• Target: Consistent loss rate over time</p>
-      </div>
+      {!hideTitles && (
+        <div className="mt-4 text-xs text-gray-500">
+          <p>• Progressive averaging prevents plateaus</p>
+          <p>• Black line shows overall average</p>
+          <p>• Target: Consistent loss rate over time</p>
+        </div>
+      )}
     </div>
   )
 } 

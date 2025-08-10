@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine, formatTrendLineHover } from '../../regressionUtils'
@@ -13,13 +13,17 @@ interface MarketingWeightTrendChartProps {
   isAnimating: boolean
   animationDuration: number
   onAnimationComplete: () => void
+  hideTooltips?: boolean
+  hideTitles?: boolean
 }
 
 export default function MarketingWeightTrendChart({ 
   data, 
   isAnimating, 
   animationDuration, 
-  onAnimationComplete 
+  onAnimationComplete,
+  hideTooltips = false,
+  hideTitles = false
 }: MarketingWeightTrendChartProps) {
   const [animatedData, setAnimatedData] = useState<any[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
@@ -60,33 +64,53 @@ export default function MarketingWeightTrendChart({
     })
   }, [chartData, regressionResult])
 
-  // Animation effect
+  // Animation effect (guarded to avoid infinite loops)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const wasAnimatingRef = useRef(false)
+  const lastDataRef = useRef<any[]>([])
+
   useEffect(() => {
-    if (isAnimating && enhancedChartData.length > 0) {
-      setAnimatedData([])
-      setCurrentWeek(0)
-      
-      const maxWeek = Math.max(...enhancedChartData.map(d => d.week))
-      const stepDuration = animationDuration / (maxWeek + 1)
-      
-      const animateStep = (week: number) => {
-        const dataToShow = enhancedChartData.filter(d => d.week <= week)
-        setAnimatedData(dataToShow)
-        setCurrentWeek(week)
-        
-        if (week >= maxWeek) {
-          onAnimationComplete()
-        } else {
-          setTimeout(() => animateStep(week + 1), stepDuration)
-        }
-      }
-      
-      animateStep(0)
-    } else if (!isAnimating) {
-      setAnimatedData(enhancedChartData)
-      setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
+    // Clear any pending timers on change
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
     }
-  }, [isAnimating, animationDuration, enhancedChartData, onAnimationComplete])
+
+    if (isAnimating && enhancedChartData.length > 0) {
+      // Start only on transition to animating
+      if (!wasAnimatingRef.current) {
+        wasAnimatingRef.current = true
+        setAnimatedData([])
+        setCurrentWeek(0)
+
+        const maxWeek = Math.max(...enhancedChartData.map(d => d.week))
+        const stepDuration = animationDuration / (maxWeek + 1)
+
+        const animateStep = (week: number) => {
+          const dataToShow = enhancedChartData.filter(d => d.week <= week)
+          setAnimatedData(dataToShow)
+          setCurrentWeek(week)
+          if (week < maxWeek) {
+            timerRef.current = setTimeout(() => animateStep(week + 1), stepDuration)
+          }
+        }
+
+        animateStep(0)
+      }
+    } else {
+      // Transition to not animating: set final data once
+      if (wasAnimatingRef.current || lastDataRef.current !== enhancedChartData) {
+        wasAnimatingRef.current = false
+        lastDataRef.current = enhancedChartData
+        setAnimatedData(enhancedChartData)
+        setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
+      }
+    }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [isAnimating, animationDuration, enhancedChartData])
 
   // Calculate Y-axis domain
   const calculateYAxisDomain = () => {
@@ -146,15 +170,17 @@ export default function MarketingWeightTrendChart({
 
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          ⚖️ Weight Trend Analysis
-        </h3>
-        <p className="text-sm text-gray-600">
-          Weekly weight measurements with trend line
-          {isAnimating && ` (showing up to week ${currentWeek})`}
-        </p>
-      </div>
+      {!hideTitles && (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            ⚖️ Weight Trend Analysis
+          </h3>
+          <p className="text-sm text-gray-600">
+            Weekly weight measurements with trend line
+            {isAnimating && ` (showing up to week ${currentWeek})`}
+          </p>
+        </div>
+      )}
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={displayData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -168,7 +194,7 @@ export default function MarketingWeightTrendChart({
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${Math.round(value * 10) / 10}`}
           />
-          <Tooltip content={<CustomTooltip />} />
+          {!hideTooltips && <Tooltip content={<CustomTooltip />} />}
           
           <Line 
             type="monotone" 
@@ -198,11 +224,13 @@ export default function MarketingWeightTrendChart({
         </LineChart>
       </ResponsiveContainer>
 
-      <div className="mt-4 text-xs text-gray-500">
-        <p>• Track weekly progress</p>
-        <p>• Dark black trend line shows overall direction</p>
-        <p>• Weekly fluctuations are normal</p>
-      </div>
+      {!hideTitles && (
+        <div className="mt-4 text-xs text-gray-500">
+          <p>• Track weekly progress</p>
+          <p>• Dark black trend line shows overall direction</p>
+          <p>• Weekly fluctuations are normal</p>
+        </div>
+      )}
     </div>
   )
 } 
