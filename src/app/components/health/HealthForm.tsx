@@ -112,7 +112,7 @@ const calculateCurrentWeek = async (userId: string): Promise<number> => {
   }
 }
 
-// Check if user already submitted for current week
+// Check if user already submitted for current week (patient rows only)
 const checkIfAlreadySubmitted = async (userId: string, weekNumber: number): Promise<boolean> => {
   try {
     const { data: existing, error } = await supabase
@@ -120,6 +120,7 @@ const checkIfAlreadySubmitted = async (userId: string, weekNumber: number): Prom
       .select('id')
       .eq('user_id', userId)
       .eq('week_number', weekNumber)
+      .eq('data_entered_by', 'patient')
       .limit(1)
 
     if (error) {
@@ -132,6 +133,36 @@ const checkIfAlreadySubmitted = async (userId: string, weekNumber: number): Prom
     console.error('Error checking submission:', error)
     return false
   }
+}
+
+// Get highest existing week number for a user (any source)
+const fetchMaxExistingWeek = async (userId: string): Promise<number> => {
+  try {
+    const { data, error } = await supabase
+      .from('health_data')
+      .select('week_number')
+      .eq('user_id', userId)
+      .order('week_number', { ascending: false })
+      .limit(1)
+
+    if (error) {
+      console.warn('Error fetching max existing week:', error)
+      return 0
+    }
+    if (!data || data.length === 0) return 0
+    return Number(data[0].week_number) || 0
+  } catch (e) {
+    console.warn('Exception fetching max existing week:', e)
+    return 0
+  }
+}
+
+// Format Date to YYYY-MM-DD using UTC components
+function toIsoDateUTC(d: Date): string {
+  const year = d.getUTCFullYear()
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 // Check if current day is within submission window (Monday-Wednesday)
@@ -291,11 +322,14 @@ export default function HealthForm() {
       }
 
       const calculatedWeek = await calculateCurrentWeek(user.id)
-      setActiveWeek(calculatedWeek)
-      setDevWeek(calculatedWeek)
+      const maxExistingWeek = await fetchMaxExistingWeek(user.id)
+      // Display the later of AoE current week and next-after-highest existing week
+      const targetWeek = Math.max(calculatedWeek, (maxExistingWeek || 0) + 1)
+      setActiveWeek(targetWeek)
+      setDevWeek(targetWeek)
       
-      // Check if user already submitted for current week (week number based)
-      const alreadySubmitted = await checkIfAlreadySubmitted(user.id, calculatedWeek)
+      // Check if user already submitted for target week (patient row based)
+      const alreadySubmitted = await checkIfAlreadySubmitted(user.id, targetWeek)
       setHasSubmittedForCurrentWeek(alreadySubmitted)
       
       // Check if user already submitted this week (date-based using same UTC+14 boundaries)
@@ -312,7 +346,7 @@ export default function HealthForm() {
       await loadResistanceTrainingGoal()
       
       // Load existing form data if available
-      await loadExistingFormData(user.id, calculatedWeek)
+      await loadExistingFormData(user.id, targetWeek)
       
     } catch (error) {
       console.error('Error loading user data:', error)
@@ -486,11 +520,21 @@ export default function HealthForm() {
         return
       }
 
-      // Use dev week if in dev mode, otherwise use calculated week
-      const weekToSubmit = devMode ? devWeek : activeWeek
+      // Recompute target week at submit time to prevent stale submissions
+      const freshCalculatedWeek = await calculateCurrentWeek(user.id)
+      const freshMaxWeek = await fetchMaxExistingWeek(user.id)
+      const computedTargetWeek = Math.max(freshCalculatedWeek, (freshMaxWeek || 0) + 1)
+      const weekToSubmit = devMode ? devWeek : computedTargetWeek
 
       // Check if current day is within submission window (Monday-Wednesday)
       if (!isValidSubmissionDay(devMode)) {
+        setMessage('Submissions only allowed Monday')
+        setIsSubmitting(false)
+        return
+      }
+
+      // Block early submission if AoE calendar week has not yet reached the displayed target
+      if (!devMode && freshCalculatedWeek < computedTargetWeek) {
         setMessage('Submissions only allowed Monday')
         setIsSubmitting(false)
         return
@@ -504,22 +548,63 @@ export default function HealthForm() {
         return
       }
 
-      // Check if user is trying to submit for a future week (unless in dev mode)
-      if (!devMode && weekToSubmit > activeWeek) {
-        setMessage(`Cannot submit for Week ${weekToSubmit}. Current week is ${activeWeek}.`)
-        setIsSubmitting(false)
-        return
-      }
-
       // FUTURE FEATURE: Detect user's timezone (currently disabled)
       // const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
       
-      // Update form data with correct week number
+      // Update form data with correct week number and AoE Monday date
+      const computeAoEMondayForTarget = async (): Promise<string> => {
+        // Patient Week 1 baseline
+        const { data: p1 } = await supabase
+          .from('health_data')
+          .select('date')
+          .eq('user_id', user.id)
+          .eq('week_number', 1)
+          .eq('data_entered_by', 'patient')
+          .order('created_at', { ascending: true })
+          .limit(1)
+        if (p1 && p1.length > 0) {
+          const base = getAoEMonday(new Date(p1[0].date))
+          const d = new Date(base)
+          d.setDate(d.getDate() + (weekToSubmit - 1) * 7)
+          return toIsoDateUTC(d)
+        }
+        // Any Week 1 baseline
+        const { data: a1 } = await supabase
+          .from('health_data')
+          .select('date')
+          .eq('user_id', user.id)
+          .eq('week_number', 1)
+          .order('created_at', { ascending: true })
+          .limit(1)
+        if (a1 && a1.length > 0) {
+          const base = getAoEMonday(new Date(a1[0].date))
+          const d = new Date(base)
+          d.setDate(d.getDate() + (weekToSubmit - 1) * 7)
+          return toIsoDateUTC(d)
+        }
+        // Fallback: earliest row as baseline
+        const { data: earliest } = await supabase
+          .from('health_data')
+          .select('date, week_number')
+          .eq('user_id', user.id)
+          .order('week_number', { ascending: true })
+          .limit(1)
+        if (earliest && earliest.length > 0) {
+          const baselineDate = getAoEMonday(new Date(earliest[0].date))
+          const baselineWeek = Number(earliest[0].week_number) || 0
+          const d = new Date(baselineDate)
+          d.setDate(d.getDate() + (weekToSubmit - baselineWeek) * 7)
+          return toIsoDateUTC(d)
+        }
+        // If no baseline rows exist, assume this is Week 1 baseline
+        const d = getAoEMonday(new Date())
+        return toIsoDateUTC(d)
+      }
+
       const submissionData = {
         ...formData,
-        week_number: weekToSubmit.toString()
-        // FUTURE: Add timezone info when feature is perfected
-        // notes: `${formData.notes || ''}\n[Timezone: ${userTimeZone}]`.trim()
+        week_number: weekToSubmit.toString(),
+        date: await computeAoEMondayForTarget()
       }
 
       const result = await saveWeeklyCheckin(submissionData)
@@ -533,11 +618,12 @@ export default function HealthForm() {
         // If not in dev mode, recalculate the current week
         if (!devMode) {
           const newCurrentWeek = await calculateCurrentWeek(user.id)
-          setActiveWeek(newCurrentWeek)
-          setDevWeek(newCurrentWeek)
-          
-          // Load data for the new current week if it exists
-          await loadExistingFormData(user.id, newCurrentWeek)
+          const newMaxWeek = await fetchMaxExistingWeek(user.id)
+          const nextTarget = Math.max(newCurrentWeek, (newMaxWeek || 0) + 1)
+          setActiveWeek(nextTarget)
+          setDevWeek(nextTarget)
+          // Load data for the new target week if it exists
+          await loadExistingFormData(user.id, nextTarget)
         }
     } else {
         setMessage(`Error: ${(result.error as any)?.message || 'Unknown error occurred'}`)
