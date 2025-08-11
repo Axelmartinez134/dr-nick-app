@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { getWeeklyDataForCharts, updateHealthRecord, getHistoricalSubmissionDetails, type WeeklyCheckin } from './healthService'
+import { getWeeklyDataForCharts, updateHealthRecord, getHistoricalSubmissionDetails, createHealthRecordForPatient, type WeeklyCheckin } from './healthService'
 import { type QueueSubmission } from './DrNickQueue'
 import { getPatientMetrics, type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
@@ -400,6 +400,50 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   const [rowDeleteConfirm, setRowDeleteConfirm] = useState('')
   const [deletingRow, setDeletingRow] = useState(false)
 
+  // Add Week modal state
+  const [showAddWeekModal, setShowAddWeekModal] = useState(false)
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [addSuccess, setAddSuccess] = useState<string | null>(null)
+  const [newWeekForm, setNewWeekForm] = useState<{
+    week_number: number | ''
+    date: string
+    weight: string
+    waist: string
+    systolic_bp: string
+    diastolic_bp: string
+    symptom_tracking_days: string
+    detailed_symptom_notes: string
+    purposeful_exercise_days: string
+    resistance_training_days: string
+    poor_recovery_days: string
+    sleep_consistency_score: string
+    nutrition_compliance_days: string
+    morning_fat_burn_percent: string
+    body_fat_percentage: string
+    notes: string
+  }>({
+    week_number: '',
+    date: '',
+    weight: '',
+    waist: '',
+    systolic_bp: '',
+    diastolic_bp: '',
+    symptom_tracking_days: '',
+    detailed_symptom_notes: '',
+    purposeful_exercise_days: '',
+    resistance_training_days: '',
+    poor_recovery_days: '',
+    sleep_consistency_score: '',
+    nutrition_compliance_days: '',
+    morning_fat_burn_percent: '',
+    body_fat_percentage: '',
+    notes: ''
+  })
+
+  const existingWeeks = new Set(data.map(d => d.week_number))
+  const weekOptions = Array.from({ length: 100 }, (_, i) => i + 1).filter(w => !existingWeeks.has(w))
+
   // Helper to format created_at date as M/D/YYYY without timezone conversion
   const formatCreatedAtDate = (createdAt?: string): string => {
     if (!createdAt) return '—'
@@ -573,7 +617,19 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       // For Dr. Nick - full edit functionality
       return (
         <div className="flex items-start gap-1">
-          {isLongText ? (
+          {field === 'date' ? (
+            <input
+              type="date"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-36 px-2 py-1 text-xs border rounded text-gray-900"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSaveEdit()
+                if (e.key === 'Escape') handleCancelEdit()
+              }}
+            />
+          ) : isLongText ? (
             <textarea
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
@@ -614,6 +670,32 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
             ✕
           </button>
         </div>
+      )
+    }
+
+    // Special handling for date field: show M/D/YYYY, click to edit
+    if (field === 'date') {
+      const iso = value || ''
+      const display = (() => {
+        if (!iso) return '—'
+        const parts = String(iso).split('T')[0].split('-')
+        if (parts.length === 3) {
+          const [y, m, d] = parts
+          const mm = Number(m)
+          const dd = Number(d)
+          if (mm && dd && y) return `${mm}/${dd}/${y}`
+        }
+        return String(iso)
+      })()
+
+      return (
+        <span
+          className={isDoctorView ? "cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded" : ""}
+          onClick={() => handleCellClick(record.id!, field, String(iso).split('T')[0])}
+          title={isDoctorView ? "Click to edit" : ""}
+        >
+          {display}
+        </span>
       )
     }
 
@@ -749,6 +831,20 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       )}
       
       <div className="overflow-x-auto">
+        {isDoctorView && patientId && (
+          <div className="flex items-center justify-end mb-3">
+            <button
+              type="button"
+              onClick={() => { setShowAddWeekModal(true); setAddError(null); setAddSuccess(null) }}
+              className="px-3 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 text-sm"
+            >
+              + Add Week
+            </button>
+          </div>
+        )}
+        {addSuccess && (
+          <div className="mb-3 p-2 rounded bg-green-100 text-green-800 text-sm">{addSuccess}</div>
+        )}
         <table className="min-w-full table-auto">
           <thead className="bg-gray-100">
             <tr>
@@ -807,7 +903,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 </td>
                 {isDoctorView && (
                   <td className="px-4 py-3 text-sm text-gray-900">
-                    {formatCreatedAtDate(record.created_at)}
+                    {renderCell(record, 'date', record.date || (record.created_at ? String(record.created_at).split('T')[0] : ''))}
                   </td>
                 )}
                 <td className="px-4 py-3 text-sm text-gray-900">
@@ -945,6 +1041,277 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 disabled={rowDeleteConfirm !== 'DELETE' || deletingRow}
               >
                 {deletingRow ? 'Deleting...' : 'Delete Row'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Week modal */}
+      {isDoctorView && patientId && showAddWeekModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Add Week</h3>
+              <button className="text-gray-600 hover:text-gray-800" onClick={() => setShowAddWeekModal(false)}>✕</button>
+            </div>
+
+            {addError && (
+              <div className="mb-3 p-2 rounded bg-red-100 text-red-800 text-sm">{addError}</div>
+            )}
+            {addSuccess && (
+              <div className="mb-3 p-2 rounded bg-green-100 text-green-800 text-sm">{addSuccess}</div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Week Number</label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.week_number === '' ? '' : newWeekForm.week_number}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, week_number: e.target.value === '' ? '' : parseInt(e.target.value) }))}
+                >
+                  <option value="">Select week (1-100)</option>
+                  {weekOptions.map(w => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.date}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, date: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{`Weight (${getWeightUnitLabel(unitSystem)})`}</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  placeholder={unitSystem === 'metric' ? 'kg' : 'lbs'}
+                  value={newWeekForm.weight}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, weight: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{`Waist (${getLengthUnitLabel(unitSystem)})`}</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  placeholder={unitSystem === 'metric' ? 'cm' : 'inches'}
+                  value={newWeekForm.waist}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, waist: e.target.value }))}
+                />
+              </div>
+
+              {tracksBP && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Systolic (mmHg)</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min="60"
+                      max="250"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      placeholder="e.g., 120"
+                      value={newWeekForm.systolic_bp}
+                      onChange={(e) => setNewWeekForm(prev => ({ ...prev, systolic_bp: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Diastolic (mmHg)</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min="40"
+                      max="150"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      placeholder="e.g., 80"
+                      value={newWeekForm.diastolic_bp}
+                      onChange={(e) => setNewWeekForm(prev => ({ ...prev, diastolic_bp: e.target.value }))}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Days of Low EA Symptoms (0-7)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.symptom_tracking_days}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, symptom_tracking_days: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Detailed Symptom Notes</label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  rows={3}
+                  value={newWeekForm.detailed_symptom_notes}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, detailed_symptom_notes: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Days Strain Goal Met (0-7)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.purposeful_exercise_days}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, purposeful_exercise_days: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Resistance Training Days Goal Met (0-7)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.resistance_training_days}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, resistance_training_days: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Poor Recovery Days (0-7)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.poor_recovery_days}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, poor_recovery_days: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Sleep Consistency Score (0-100)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.sleep_consistency_score}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, sleep_consistency_score: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="7"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.nutrition_compliance_days}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, nutrition_compliance_days: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Morning Fat Burn % (0-100)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.morning_fat_burn_percent}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, morning_fat_burn_percent: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Body Fat % (0-100)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  value={newWeekForm.body_fat_percentage}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, body_fat_percentage: e.target.value }))}
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Self Reflection</label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  rows={3}
+                  value={newWeekForm.notes}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, notes: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                onClick={() => setShowAddWeekModal(false)}
+                disabled={addSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                onClick={async () => {
+                  if (!patientId) return
+                  setAddError(null)
+                  setAddSaving(true)
+                  try {
+                    // Race-condition safe: service re-validates week uniqueness
+                    const { error } = await createHealthRecordForPatient(patientId, {
+                      week_number: typeof newWeekForm.week_number === 'number' ? newWeekForm.week_number : undefined,
+                      date: newWeekForm.date || undefined,
+                      weight: newWeekForm.weight === '' ? undefined : parseFloat(newWeekForm.weight),
+                      waist: newWeekForm.waist === '' ? undefined : parseFloat(newWeekForm.waist),
+                      systolic_bp: newWeekForm.systolic_bp === '' ? undefined : parseInt(newWeekForm.systolic_bp),
+                      diastolic_bp: newWeekForm.diastolic_bp === '' ? undefined : parseInt(newWeekForm.diastolic_bp),
+                      symptom_tracking_days: newWeekForm.symptom_tracking_days === '' ? undefined : parseInt(newWeekForm.symptom_tracking_days),
+                      detailed_symptom_notes: newWeekForm.detailed_symptom_notes || undefined,
+                      purposeful_exercise_days: newWeekForm.purposeful_exercise_days === '' ? undefined : parseInt(newWeekForm.purposeful_exercise_days),
+                      resistance_training_days: newWeekForm.resistance_training_days === '' ? undefined : parseInt(newWeekForm.resistance_training_days),
+                      poor_recovery_days: newWeekForm.poor_recovery_days === '' ? undefined : parseInt(newWeekForm.poor_recovery_days),
+                      sleep_consistency_score: newWeekForm.sleep_consistency_score === '' ? undefined : parseInt(newWeekForm.sleep_consistency_score),
+                      nutrition_compliance_days: newWeekForm.nutrition_compliance_days === '' ? undefined : parseInt(newWeekForm.nutrition_compliance_days),
+                      morning_fat_burn_percent: newWeekForm.morning_fat_burn_percent === '' ? undefined : parseFloat(newWeekForm.morning_fat_burn_percent),
+                      body_fat_percentage: newWeekForm.body_fat_percentage === '' ? undefined : parseFloat(newWeekForm.body_fat_percentage),
+                      notes: newWeekForm.notes || undefined,
+                    })
+                    if (error) {
+                      setAddError(typeof error === 'string' ? error : (((error as any)?.message) || 'Failed to create week'))
+                    } else {
+                      setAddSuccess('Week created successfully')
+                      if (onDataUpdate) await onDataUpdate()
+                      setShowAddWeekModal(false)
+                      // Auto-hide success after a short delay
+                      setTimeout(() => setAddSuccess(null), 2000)
+                    }
+                  } catch (err: any) {
+                    setAddError(err?.message || 'Failed to create week')
+                  } finally {
+                    setAddSaving(false)
+                  }
+                }}
+                disabled={addSaving}
+              >
+                {addSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

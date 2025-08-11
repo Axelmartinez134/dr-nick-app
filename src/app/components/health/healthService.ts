@@ -491,6 +491,107 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
   }
 }
 
+// Function to create a new health record for a specific patient (Dr. Nick add-week modal)
+export async function createHealthRecordForPatient(
+  patientUserId: string,
+  values: Partial<WeeklyCheckin>
+) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return { data: null, error: { message: 'User not authenticated' } }
+    }
+
+    if (!patientUserId) {
+      return { data: null, error: { message: 'Patient ID is required' } }
+    }
+
+    // Re-validate: prevent duplicate week numbers
+    if (typeof values.week_number !== 'number' || values.week_number < 1 || values.week_number > 100) {
+      return { data: null, error: { message: 'Week number must be between 1 and 100' } }
+    }
+
+    const { data: existing } = await supabase
+      .from('health_data')
+      .select('id')
+      .eq('user_id', patientUserId)
+      .eq('week_number', values.week_number)
+      .limit(1)
+      .maybeSingle()
+
+    if (existing) {
+      return { data: null, error: { message: `Week ${values.week_number} already exists for this patient` } }
+    }
+
+    // Fetch patient's unit system to convert to canonical Imperial before saving
+    let unitSystem: 'imperial' | 'metric' = 'imperial'
+    try {
+      const { data: unitRow } = await supabase
+        .from('profiles')
+        .select('unit_system')
+        .eq('id', patientUserId)
+        .single()
+      if ((unitRow as any)?.unit_system === 'metric') unitSystem = 'metric'
+    } catch {}
+
+    const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
+
+    // Convert weight/waist from patient's unit system to imperial for storage
+    const weightLbs = values.weight !== undefined && values.weight !== null && values.weight !== ('' as any)
+      ? (unitSystem === 'metric' ? kilogramsToPounds(parseFloat(String(values.weight))) : parseFloat(String(values.weight)))
+      : null
+    const waistInches = values.waist !== undefined && values.waist !== null && values.waist !== ('' as any)
+      ? (unitSystem === 'metric' ? centimetersToInches(parseFloat(String(values.waist))) : parseFloat(String(values.waist)))
+      : null
+
+    const insertData: any = {
+      user_id: patientUserId,
+      week_number: values.week_number,
+      // Date is optional per spec
+      date: values.date || null,
+      weight: toTwo(weightLbs),
+      waist: toTwo(waistInches),
+      // Optional numeric fields with parsing
+      resistance_training_days: values.resistance_training_days !== undefined && values.resistance_training_days !== null && values.resistance_training_days !== ('' as any)
+        ? parseInt(String(values.resistance_training_days)) : null,
+      symptom_tracking_days: values.symptom_tracking_days !== undefined && values.symptom_tracking_days !== null && values.symptom_tracking_days !== ('' as any)
+        ? parseInt(String(values.symptom_tracking_days)) : null,
+      detailed_symptom_notes: values.detailed_symptom_notes || null,
+      purposeful_exercise_days: values.purposeful_exercise_days !== undefined && values.purposeful_exercise_days !== null && values.purposeful_exercise_days !== ('' as any)
+        ? parseInt(String(values.purposeful_exercise_days)) : null,
+      poor_recovery_days: values.poor_recovery_days !== undefined && values.poor_recovery_days !== null && values.poor_recovery_days !== ('' as any)
+        ? parseInt(String(values.poor_recovery_days)) : null,
+      sleep_consistency_score: values.sleep_consistency_score !== undefined && values.sleep_consistency_score !== null && values.sleep_consistency_score !== ('' as any)
+        ? parseInt(String(values.sleep_consistency_score)) : null,
+      morning_fat_burn_percent: values.morning_fat_burn_percent !== undefined && values.morning_fat_burn_percent !== null && values.morning_fat_burn_percent !== ('' as any)
+        ? parseFloat(String(values.morning_fat_burn_percent)) : null,
+      body_fat_percentage: values.body_fat_percentage !== undefined && values.body_fat_percentage !== null && values.body_fat_percentage !== ('' as any)
+        ? parseFloat(String(values.body_fat_percentage)) : null,
+      nutrition_compliance_days: values.nutrition_compliance_days !== undefined && values.nutrition_compliance_days !== null && values.nutrition_compliance_days !== ('' as any)
+        ? parseInt(String(values.nutrition_compliance_days)) : null,
+      systolic_bp: values.systolic_bp !== undefined && values.systolic_bp !== null && values.systolic_bp !== ('' as any)
+        ? parseInt(String(values.systolic_bp)) : null,
+      diastolic_bp: values.diastolic_bp !== undefined && values.diastolic_bp !== null && values.diastolic_bp !== ('' as any)
+        ? parseInt(String(values.diastolic_bp)) : null,
+      notes: values.notes || null,
+      // Metadata per spec
+      data_entered_by: 'dr_nick',
+      needs_review: true,
+    }
+
+    const result = await supabase
+      .from('health_data')
+      .insert(insertData)
+      .select()
+
+    return result
+  } catch (error) {
+    console.error('Error creating health record for patient:', error)
+    return { data: null, error }
+  }
+}
+
 // Helper function to generate weight loss projections
 export function generateWeightProjections(initialWeight: number, weeks: number = 16) {
   const projectionRates = [0.5, 1.0, 1.5, 2.0] // Fat loss percentages
