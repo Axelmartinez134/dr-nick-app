@@ -849,9 +849,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
           <thead className="bg-gray-100">
             <tr>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Week</th>
-              {isDoctorView && (
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
-              )}
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Weight (${getWeightUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Waist (${getLengthUnitLabel(unitSystem)})`}</th>
               {isDoctorView && tracksBP && (
@@ -901,11 +899,9 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                     </span>
                   )}
                 </td>
-                {isDoctorView && (
-                  <td className="px-4 py-3 text-sm text-gray-900">
-                    {renderCell(record, 'date', record.date || (record.created_at ? String(record.created_at).split('T')[0] : ''))}
-                  </td>
-                )}
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'date', record.date || (record.created_at ? String(record.created_at).split('T')[0] : ''))}
+                </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'weight', record.weight)}
                 </td>
