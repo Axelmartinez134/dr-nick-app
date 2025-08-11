@@ -309,13 +309,12 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
       return // Only run for Current, Onboarding, or Test clients
     }
 
-    // 2) Find the first Week 1 patient-submitted record
+    // 2) Find the first Week 1 record (regardless of who entered it)
     const { data: week1Rows, error: week1Error } = await supabase
       .from('health_data')
       .select('date, created_at')
       .eq('user_id', user.id)
       .eq('week_number', 1)
-      .eq('data_entered_by', 'patient')
       .order('created_at', { ascending: true })
       .limit(1)
 

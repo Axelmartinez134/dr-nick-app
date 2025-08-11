@@ -36,11 +36,15 @@ function calculateAoECurrentWeekFromWeek1(week1AoEMonday: Date): number {
   return weeksElapsed + 1
 }
 
-// Calendar-based week calculation: AoE weeks since the AoE Monday of Week 1 submission week
+// Calendar-based week calculation with relaxed baseline anchor.
+// Priority:
+// 1) Patient-submitted Week 1
+// 2) Any Week 1 (regardless of data_entered_by)
+// 3) Fallback to the smallest available week_number as baseline
 const calculateCurrentWeek = async (userId: string): Promise<number> => {
   try {
-    // Find first Week 1 submitted by patient
-    const { data: week1Rows, error: week1Error } = await supabase
+    // 1) Patient-submitted Week 1
+    const { data: patientWeek1Rows, error: patientWeek1Error } = await supabase
       .from('health_data')
       .select('date')
       .eq('user_id', userId)
@@ -49,17 +53,59 @@ const calculateCurrentWeek = async (userId: string): Promise<number> => {
       .order('created_at', { ascending: true })
       .limit(1)
 
-    if (week1Error) {
-      console.error('Error fetching Week 1 baseline:', week1Error)
-      return 1
+    if (patientWeek1Error) {
+      console.warn('calculateCurrentWeek: failed to fetch patient Week 1 baseline', patientWeek1Error)
     }
-    if (!week1Rows || week1Rows.length === 0) {
-      return 1 // No Week 1 yet → first submission after Week 0
+    if (patientWeek1Rows && patientWeek1Rows.length > 0) {
+      const week1Date = new Date(patientWeek1Rows[0].date)
+      const week1AoEMonday = getAoEMonday(week1Date)
+      return calculateAoECurrentWeekFromWeek1(week1AoEMonday)
     }
 
-    const week1Date = new Date(week1Rows[0].date)
-    const week1AoEMonday = getAoEMonday(week1Date)
-    return calculateAoECurrentWeekFromWeek1(week1AoEMonday)
+    // 2) Any Week 1 (admin/system imported)
+    const { data: anyWeek1Rows, error: anyWeek1Error } = await supabase
+      .from('health_data')
+      .select('date')
+      .eq('user_id', userId)
+      .eq('week_number', 1)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+    if (anyWeek1Error) {
+      console.warn('calculateCurrentWeek: failed to fetch any Week 1 baseline', anyWeek1Error)
+    }
+    if (anyWeek1Rows && anyWeek1Rows.length > 0) {
+      const week1Date = new Date(anyWeek1Rows[0].date)
+      const week1AoEMonday = getAoEMonday(week1Date)
+      return calculateAoECurrentWeekFromWeek1(week1AoEMonday)
+    }
+
+    // 3) Fallback: smallest available week_number as baseline
+    const { data: baselineRows, error: baselineError } = await supabase
+      .from('health_data')
+      .select('date, week_number')
+      .eq('user_id', userId)
+      .order('week_number', { ascending: true })
+      .limit(1)
+
+    if (baselineError) {
+      console.warn('calculateCurrentWeek: failed to fetch baseline row', baselineError)
+      return 1
+    }
+    if (!baselineRows || baselineRows.length === 0) {
+      return 1
+    }
+
+    const baselineDate = new Date(baselineRows[0].date as string)
+    const baselineWeekNumber = Number(baselineRows[0].week_number) || 0
+    const baselineAoEMonday = getAoEMonday(baselineDate)
+
+    // Weeks elapsed since baseline AoE Monday (Week 1 baseline would yield weeksElapsed+1)
+    const weeksElapsedSinceBaseline = calculateAoECurrentWeekFromWeek1(baselineAoEMonday) - 1
+    const computedCurrentWeek = baselineWeekNumber + weeksElapsedSinceBaseline
+
+    // Ensure at least Week 1
+    return Math.max(1, computedCurrentWeek)
   } catch (error) {
     console.error('Error calculating current week:', error)
     return 1
