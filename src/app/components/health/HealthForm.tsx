@@ -523,7 +523,9 @@ export default function HealthForm() {
       // Recompute target week at submit time to prevent stale submissions
       const freshCalculatedWeek = await calculateCurrentWeek(user.id)
       const freshMaxWeek = await fetchMaxExistingWeek(user.id)
+      // Display target (may be ahead due to existing future rows)
       const computedTargetWeek = Math.max(freshCalculatedWeek, (freshMaxWeek || 0) + 1)
+      // Submit to the displayed target week (optimistic), gate by AoE below
       const weekToSubmit = devMode ? devWeek : computedTargetWeek
 
       // Check if current day is within submission window (Monday-Wednesday)
@@ -533,11 +535,66 @@ export default function HealthForm() {
         return
       }
 
-      // Block early submission if AoE calendar week has not yet reached the displayed target
-      if (!devMode && freshCalculatedWeek < computedTargetWeek) {
-        setMessage('Submissions only allowed Monday')
-        setIsSubmitting(false)
-        return
+      // Check if current AoE time is within the submit week's Monday-Wednesday window
+      if (!devMode) {
+        // Compute the AoE Monday for the week we're trying to submit
+        const computeSubmitWeekAoEMonday = async (): Promise<Date> => {
+          // Patient Week 1 baseline
+          const { data: p1 } = await supabase
+            .from('health_data')
+            .select('date')
+            .eq('user_id', user.id)
+            .eq('week_number', 1)
+            .eq('data_entered_by', 'patient')
+            .order('created_at', { ascending: true })
+            .limit(1)
+          if (p1 && p1.length > 0) {
+            const baseAoEMonday = getAoEMonday(new Date(p1[0].date))
+            const submitWeekAoEMonday = new Date(baseAoEMonday)
+            submitWeekAoEMonday.setDate(baseAoEMonday.getDate() + (computedTargetWeek - 1) * 7)
+            return submitWeekAoEMonday
+          }
+          // Any Week 1 baseline
+          const { data: a1 } = await supabase
+            .from('health_data')
+            .select('date')
+            .eq('user_id', user.id)
+            .eq('week_number', 1)
+            .order('created_at', { ascending: true })
+            .limit(1)
+          if (a1 && a1.length > 0) {
+            const baseAoEMonday = getAoEMonday(new Date(a1[0].date))
+            const submitWeekAoEMonday = new Date(baseAoEMonday)
+            submitWeekAoEMonday.setDate(baseAoEMonday.getDate() + (computedTargetWeek - 1) * 7)
+            return submitWeekAoEMonday
+          }
+          // Fallback: earliest row as baseline
+          const { data: earliest } = await supabase
+            .from('health_data')
+            .select('date, week_number')
+            .eq('user_id', user.id)
+            .order('week_number', { ascending: true })
+            .limit(1)
+          if (earliest && earliest.length > 0) {
+            const baselineAoEMonday = getAoEMonday(new Date(earliest[0].date))
+            const baselineWeek = Number(earliest[0].week_number) || 0
+            const submitWeekAoEMonday = new Date(baselineAoEMonday)
+            submitWeekAoEMonday.setDate(baselineAoEMonday.getDate() + (computedTargetWeek - baselineWeek) * 7)
+            return submitWeekAoEMonday
+          }
+          // If no baseline rows exist, assume this is Week 1 baseline
+          return getAoEMonday(new Date())
+        }
+
+        const submitWeekAoEMonday = await computeSubmitWeekAoEMonday()
+        const submitWeekAoEThursday = new Date(submitWeekAoEMonday.getTime() + 3 * 24 * 60 * 60 * 1000)
+        const nowAoE = toAoE(new Date())
+        
+        if (nowAoE < submitWeekAoEMonday || nowAoE >= submitWeekAoEThursday) {
+          setMessage('Submissions only allowed Monday')
+          setIsSubmitting(false)
+          return
+        }
       }
 
       // Check if user already submitted for current week
