@@ -1,3 +1,17 @@
+SUPABASE DEBUGGING:
+-- Replace with the patient’s user_id
+select user_id, week_number, data_entered_by, date, created_at
+from health_data
+where user_id = 'USER_ID_HERE'
+order by week_number, created_at;
+
+-- Check if a patient-submitted Week 1 exists
+select *
+from health_data
+where user_id = 'USER_ID_HERE' and week_number = 1 and data_entered_by = 'patient';
+
+
+
 ## Monday Check-in and Message System
 
 ### Purpose

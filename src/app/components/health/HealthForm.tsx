@@ -1120,7 +1120,7 @@ export default function HealthForm() {
             ✅ Your information has been submitted to Dr. Nick
           </h2>
           <p className="text-gray-600 mb-4">
-            You've already submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!
+            You have submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!
           </p>
           <div className="text-sm text-gray-500 mb-6">
             You cannot submit again until the next Monday.

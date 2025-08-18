@@ -1239,7 +1239,7 @@ export default function DrNickSubmissionReview({
             <div className="text-2xl font-bold text-green-900">{unitSystem === 'metric' ? (submission.waist !== null && submission.waist !== undefined ? `${(Math.round((submission.waist * 2.54) * 100) / 100).toFixed(2)} cm` : 'N/A') : (submission.waist !== null && submission.waist !== undefined ? `${submission.waist.toFixed(2)} inches` : 'N/A')}</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-purple-700">Days Purposeful Exercise</label>
+            <label className="block text-sm font-medium text-purple-700">Days Strain Goal Met</label>
             <div className="text-2xl font-bold text-purple-900">{submission.purposeful_exercise_days ?? 'N/A'}</div>
           </div>
           <div className="bg-teal-50 p-4 rounded-lg">

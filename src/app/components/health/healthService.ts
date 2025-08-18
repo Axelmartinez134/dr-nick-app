@@ -172,15 +172,8 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
     let result
 
     if (existingRecord) {
-      // Update existing record
-      result = await supabase
-        .from('health_data')
-        .update({
-          ...checkinData,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingRecord.id)
-        .select()
+      // Do not overwrite existing patient row per policy; return an error-like response
+      return { data: null, error: { message: `Patient row for week already exists` } as any }
     } else {
       // Insert new record
       result = await supabase
