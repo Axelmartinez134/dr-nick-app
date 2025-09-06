@@ -73,6 +73,7 @@ export default function DrNickSubmissionReview({
   
   // Resistance training goal state
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState(0)
+  const [proteinGoalGrams, setProteinGoalGrams] = useState('150')
   
   // Nutrition compliance days state
   const [nutritionComplianceDays, setNutritionComplianceDays] = useState('0')
@@ -685,7 +686,7 @@ export default function DrNickSubmissionReview({
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('weight_change_goal_percent')
+        .select('weight_change_goal_percent, protein_goal_grams')
         .eq('id', submission.user_id)
         .single()
       
@@ -695,6 +696,7 @@ export default function DrNickSubmissionReview({
       }
       
       setWeightChangeGoal(data.weight_change_goal_percent || '1.00')
+      setProteinGoalGrams(String((data as any)?.protein_goal_grams ?? 150))
     } catch (err) {
       console.error('Failed to load weight change goal:', err)
     }
@@ -1308,6 +1310,51 @@ export default function DrNickSubmissionReview({
           </div>
           
           <div className="flex justify-center gap-6 items-start">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <label className="block text-sm font-medium text-blue-700">Daily Protein Goal (grams)</label>
+              <p className="text-xs text-blue-600 mb-2">Target daily protein intake in grams</p>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={proteinGoalGrams}
+                    onChange={(e) => setProteinGoalGrams(e.target.value)}
+                    className="w-24 px-2 py-1 border border-blue-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="150"
+                  />
+                  <span className="text-sm text-blue-700">g</span>
+                </div>
+                <button
+                  onClick={async () => {
+                    const rounded = Math.round(parseFloat(proteinGoalGrams))
+                    setProteinGoalGrams(String(isNaN(rounded) ? 150 : rounded))
+                    await (async () => {
+                      try {
+                        const val = isNaN(rounded) ? 150 : rounded
+                        const { error } = await supabase
+                          .from('profiles')
+                          .update({ protein_goal_grams: val })
+                          .eq('id', submission.user_id)
+                        if (error) {
+                          console.error('Error updating protein goal:', error)
+                          alert('Failed to update protein goal')
+                          return
+                        }
+                        alert('Protein goal updated successfully!')
+                      } catch (err) {
+                        console.error('Failed to update protein goal:', err)
+                        alert('Failed to update protein goal')
+                      }
+                    })()
+                  }}
+                  className="w-full px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
+                  title="Update daily protein goal"
+                >
+                  Update
+                </button>
+              </div>
+            </div>
             <div className="bg-pink-50 p-4 rounded-lg">
               <label className="block text-sm font-medium text-pink-700">Week-over-Week Weight Loss %</label>
               <p className="text-xs text-pink-600 mb-2">Target percentage for weekly weight reduction</p>

@@ -1330,6 +1330,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   // Weight change goal editing (doctor view only)
   const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
   const [goalLoading, setGoalLoading] = useState(false)
+  const [proteinGoalGrams, setProteinGoalGrams] = useState<string>('150')
   
   // Resistance training goal editing (doctor view only)
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState(0)
@@ -1439,7 +1440,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
       // Load weight change goal and resistance training goal
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('weight_change_goal_percent, resistance_training_days_goal')
+        .select('weight_change_goal_percent, resistance_training_days_goal, protein_goal_grams')
         .eq('id', patientId)
         .single()
       
@@ -1448,6 +1449,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
       } else {
         setWeightChangeGoal(profileData.weight_change_goal_percent || '1.00')
         setResistanceTrainingGoal(profileData.resistance_training_days_goal || 0)
+        setProteinGoalGrams(String((profileData as any)?.protein_goal_grams ?? 150))
       }
       
     } catch (err) {
@@ -1514,6 +1516,28 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
       alert('Failed to update weight change goal')
     } finally {
       setGoalLoading(false)
+    }
+  }
+
+  const handleProteinGoalUpdate = async () => {
+    if (!isDoctorView || !patientId) return
+    const rounded = Math.round(parseFloat(proteinGoalGrams))
+    const val = isNaN(rounded) ? 150 : rounded
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ protein_goal_grams: val })
+        .eq('id', patientId)
+      if (error) {
+        console.error('Error updating protein goal:', error)
+        alert('Failed to update protein goal')
+        return
+      }
+      setProteinGoalGrams(String(val))
+      alert('Protein goal updated successfully!')
+    } catch (err) {
+      console.error('Error updating protein goal:', err)
+      alert('Failed to update protein goal')
     }
   }
 
@@ -1787,8 +1811,45 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
 
       {/* Goals Editing - Doctor View Only */}
       {isDoctorView && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           {/* Weight Change Goal - Left Side */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  🍗 Daily Protein Goal (grams)
+                </h3>
+                <p className="text-gray-600">
+                  Set the daily protein target for {patientName || 'this client'}
+                </p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="text-right">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Goal Grams
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={proteinGoalGrams}
+                      onChange={(e) => setProteinGoalGrams(e.target.value)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-md text-center text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-gray-700 font-medium">g</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleProteinGoalUpdate}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Update Goal
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Weight Change Goal */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1832,7 +1893,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             </div>
           </div>
 
-          {/* Resistance Training Goal + Blood Pressure Inputs - Right Side */}
+          {/* Resistance Training Goal + Blood Pressure Inputs */}
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex flex-col gap-6">
               <div className="flex items-center justify-between">
