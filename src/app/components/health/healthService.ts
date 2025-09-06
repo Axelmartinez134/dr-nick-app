@@ -40,6 +40,8 @@ export interface CheckinFormData {
   week_number: string
   weight?: string
   waist?: string
+  systolic_bp?: string
+  diastolic_bp?: string
   resistance_training_days?: string
   symptom_tracking_days?: string
   detailed_symptom_notes?: string
@@ -122,6 +124,8 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       week_number: parseInt(data.week_number),
       weight: toTwo(weightLbs),
       waist: toTwo(waistInches),
+      systolic_bp: data.systolic_bp ? Math.round(parseFloat(data.systolic_bp)) : null,
+      diastolic_bp: data.diastolic_bp ? Math.round(parseFloat(data.diastolic_bp)) : null,
       resistance_training_days: data.resistance_training_days ? parseInt(data.resistance_training_days) : null,
       symptom_tracking_days: data.symptom_tracking_days ? parseInt(data.symptom_tracking_days) : null,
       detailed_symptom_notes: data.detailed_symptom_notes || null,

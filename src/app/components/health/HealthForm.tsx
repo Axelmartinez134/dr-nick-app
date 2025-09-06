@@ -202,6 +202,8 @@ export default function HealthForm() {
     detailed_symptom_notes: '',
     purposeful_exercise_days: '',
     poor_recovery_days: '',
+    systolic_bp: '',
+    diastolic_bp: '',
     energetic_constraints_reduction_ok: false,
     notes: '',
     // Add all image fields
@@ -243,6 +245,7 @@ export default function HealthForm() {
   // Resistance training goal state
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState<number>(0)
   const [isTestAccount, setIsTestAccount] = useState<boolean>(false)
+  const [tracksBP, setTracksBP] = useState<boolean>(false)
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -295,7 +298,7 @@ export default function HealthForm() {
 
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('resistance_training_days_goal, client_status')
+        .select('resistance_training_days_goal, client_status, track_blood_pressure')
         .eq('id', user.id)
         .single()
 
@@ -306,6 +309,7 @@ export default function HealthForm() {
 
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
       setIsTestAccount((profileData as any)?.client_status === 'Test')
+      setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
     } catch (error) {
       console.error('Error loading resistance training goal:', error)
     }
@@ -374,6 +378,8 @@ export default function HealthForm() {
           detailed_symptom_notes: existingData.detailed_symptom_notes || '',
           purposeful_exercise_days: existingData.purposeful_exercise_days?.toString() || '',
           poor_recovery_days: existingData.poor_recovery_days?.toString() || '',
+          systolic_bp: (existingData as any)?.systolic_bp != null ? String((existingData as any).systolic_bp) : '',
+          diastolic_bp: (existingData as any)?.diastolic_bp != null ? String((existingData as any).diastolic_bp) : '',
           energetic_constraints_reduction_ok: existingData.energetic_constraints_reduction_ok || false,
           // Load image URLs
           lumen_day1_image: existingData.lumen_day1_image || '',
@@ -1548,6 +1554,43 @@ export default function HealthForm() {
             />
           </div>
         </div>
+
+        {/* Blood Pressure (mmHg) - Only when tracking is enabled */}
+        {tracksBP && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🩺 Blood Pressure (mmHg)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="systolic_bp" className="block text-sm font-medium text-gray-700 mb-1">
+                Systolic Blood Pressure (mmHg)
+              </label>
+              <input
+                type="number"
+                id="systolic_bp"
+                step="1"
+                value={formData.systolic_bp as any}
+                onChange={(e) => handleInputChange('systolic_bp' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="120"
+              />
+            </div>
+            <div>
+              <label htmlFor="diastolic_bp" className="block text-sm font-medium text-gray-700 mb-1">
+                Diastolic Blood Pressure (mmHg)
+              </label>
+              <input
+                type="number"
+                id="diastolic_bp"
+                step="1"
+                value={formData.diastolic_bp as any}
+                onChange={(e) => handleInputChange('diastolic_bp' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="80"
+              />
+            </div>
+          </div>
+        </div>
+        )}
 
         {/* Energetic Constraints Question */}
         <div className="space-y-4">
