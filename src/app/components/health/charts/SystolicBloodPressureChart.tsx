@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
+import { calculateLinearRegression } from '../regressionUtils'
 
 interface SystolicBloodPressureChartProps {
   data: WeeklyCheckin[]
@@ -97,6 +98,25 @@ export default function SystolicBloodPressureChart({ data }: SystolicBloodPressu
           <YAxis label={{ value: 'mmHg', angle: -90, position: 'insideLeft' }} domain={calculateYAxisDomain} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="systolic" stroke="#2563eb" strokeWidth={3} dot={{ fill: '#2563eb', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Systolic (mmHg)" connectNulls={true} />
+          {/* Trend line in black, only over actual data weeks */}
+          {(() => {
+            if (chartData.length < 2) return null
+            const minWeek = Math.min(...chartData.map(d => d.week))
+            const maxWeek = Math.max(...chartData.map(d => d.week))
+            const regression = calculateLinearRegression(
+              chartData.map(d => ({ week: d.week, value: d.systolic as number })),
+              minWeek,
+              maxWeek
+            )
+            if (!regression.isValid) return null
+            const trendData = chartData.map(point => {
+              const tp = regression.trendPoints.find(tp => tp.week === point.week)
+              return { ...point, trendLine: tp ? tp.value : null }
+            })
+            return (
+              <Line type="monotone" dataKey="trendLine" stroke="#000000" strokeWidth={2} dot={false} activeDot={false} name="" connectNulls={true} data={trendData as any} />
+            )
+          })()}
         </LineChart>
       </ResponsiveContainer>
     </div>
