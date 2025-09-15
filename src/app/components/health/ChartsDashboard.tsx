@@ -14,6 +14,7 @@ import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
 import MorningFatBurnChart from './charts/MorningFatBurnChart'
 import ComplianceMetricsTable from './ComplianceMetricsTable'
 import StickyNotes from './StickyNotes'
+import { kilogramsToPounds, poundsToKilograms } from './unitCore'
 
 // Patient Status Management Component
 function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?: string; onBpTrackingChange?: (enabled: boolean) => void }) {
@@ -380,6 +381,55 @@ const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionC
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
 const SystolicBloodPressureChart = dynamic(() => import('./charts/SystolicBloodPressureChart'), { ssr: false }) as any
 const DiastolicBloodPressureChart = dynamic(() => import('./charts/DiastolicBloodPressureChart'), { ssr: false }) as any
+
+// Lightweight inline component for editing Week 0 initial_weight
+function InitialWeightEditor({ chartData, unitSystem, onSaved }: { chartData: WeeklyCheckin[]; unitSystem: UnitSystem; onSaved: () => void }) {
+  const week0 = chartData.find(d => d.week_number === 0)
+  const currentLbs = week0?.initial_weight ?? week0?.weight ?? null
+  const displayVal = currentLbs !== null ? (unitSystem === 'metric' ? poundsToKilograms(currentLbs) : currentLbs) : null
+
+  const [val, setVal] = useState<string>(displayVal !== null ? String(displayVal) : '')
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (!week0?.id) return
+    setSaving(true)
+    try {
+      const lbs = unitSystem === 'metric' ? (kilogramsToPounds(parseFloat(val)) ?? null) : (isNaN(parseFloat(val)) ? null : parseFloat(val))
+      await updateHealthRecord(week0.id, { initial_weight: lbs })
+      onSaved()
+    } catch (e) {
+      console.error('Failed to update initial weight:', e)
+      alert('Failed to update initial weight')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2">
+        <label className="text-xs font-medium text-gray-700">Initial Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</label>
+        <input
+          type="number"
+          step="0.01"
+          className="w-28 px-2 py-1 border border-gray-300 rounded-md text-gray-900"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder={unitSystem === 'metric' ? 'kg' : 'lbs'}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving}
+        className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 text-sm"
+      >
+        {saving ? 'Saving...' : 'Update Initial Weight'}
+      </button>
+    </div>
+  )
+}
 
   // Data Table Component - Different versions for Client vs Dr. Nick
 function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP }: { 
@@ -818,12 +868,33 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
         {isDoctorView ? "📋 Client Check-in Data (Editable)" : "📋 Your Check-in Data"}
       </h3>
-      <p className="text-gray-600 mb-4">
+      <p className="text-gray-600 mb-2">
         {isDoctorView 
           ? "Click any cell to edit Client data. This table shows the raw data used to generate the progress charts above."
           : "This table shows the raw data used to generate your progress charts above"
         }
       </p>
+      {isDoctorView && (
+        <p className="text-xs text-gray-500 mb-3">
+          This sets the start point for “📊 Weight Loss Trend vs. Projections”. If incorrect, the chart will look misconfigured.
+        </p>
+      )}
+      {isDoctorView && patientId && (
+        <div className="flex items-center justify-start gap-3 mb-3 flex-wrap">
+          <InitialWeightEditor
+            chartData={data}
+            unitSystem={unitSystem}
+            onSaved={onDataUpdate || (() => {})}
+          />
+          <button
+            type="button"
+            onClick={() => { setShowAddWeekModal(true); setAddError(null); setAddSuccess(null) }}
+            className="px-3 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 text-sm"
+          >
+            + Add Week
+          </button>
+        </div>
+      )}
       {!isDoctorView && missedCount > 0 && (
         <p className="text-xs text-gray-500 mt-1">
           {`Note: Your dashboard includes ${missedCount} week${missedCount === 1 ? '' : 's'} marked 'no data' to reflect missed check-ins. This keeps your charts aligned week-to-week.`}
@@ -831,17 +902,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       )}
       
       <div className="overflow-x-auto">
-        {isDoctorView && patientId && (
-          <div className="flex items-center justify-end mb-3">
-            <button
-              type="button"
-              onClick={() => { setShowAddWeekModal(true); setAddError(null); setAddSuccess(null) }}
-              className="px-3 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 text-sm"
-            >
-              + Add Week
-            </button>
-          </div>
-        )}
+        {isDoctorView && patientId && null}
         {addSuccess && (
           <div className="mb-3 p-2 rounded bg-green-100 text-green-800 text-sm">{addSuccess}</div>
         )}
