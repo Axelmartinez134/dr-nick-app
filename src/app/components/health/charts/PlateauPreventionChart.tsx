@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin, calculateLossPercentageRate } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 
@@ -39,6 +39,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function PlateauPreventionChart({ data }: PlateauPreventionChartProps) {
+
   // Process data to calculate plateau prevention using Dr. Nick's progressive averaging method
   const chartData = useMemo(() => {
     // Include Week 0 in sorting for baseline calculations but filter out null weights
@@ -153,6 +154,19 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
     return [0, maxValue + padding]
   }
 
+  // Custom label renderer for right-edge average text inside chart
+  const AvgRightLabel = ({ viewBox, value }: any) => {
+    const { x, y, width } = viewBox || {}
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number') return null
+    const labelX = x + width - 8 // 8px padding from right edge
+    const labelY = y - 6 // small upward nudge to reduce overlap with points
+    return (
+      <text x={labelX} y={labelY} textAnchor="end" fontSize={12} fontWeight={600} fill="#000000">
+        {`Avg: ${Number(value).toFixed(2)}%`}
+      </text>
+    )
+  }
+
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -247,7 +261,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
             connectNulls={true}
           />
           
-          {/* Horizontal average line - Dark black as requested */}
+          {/* Horizontal average line - Dark black */}
           {averageLineResult.isValid && (
             <Line 
               type="monotone" 
@@ -260,8 +274,14 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
               connectNulls={true}
           />
           )}
+          {/* Right-edge always-visible label for the average line using an invisible ReferenceLine */}
+          {averageLineResult.isValid && (
+            <ReferenceLine y={averageLineResult.averageValue} strokeOpacity={0} label={<AvgRightLabel value={averageLineResult.averageValue} />} />
+          )}
         </LineChart>
       </ResponsiveContainer>
+
+      {/* Right-edge label now rendered via ReferenceLine label inside the chart */}
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Tracks average weekly weight loss % over time to detect plateaus early</p>
