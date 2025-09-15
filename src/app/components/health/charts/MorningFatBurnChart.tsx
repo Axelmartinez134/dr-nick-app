@@ -39,16 +39,26 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) {
-  // Process morning fat burn data only (exclude null values for calculation, but keep for display)
+  // Build calendar-complete series (weeks 0..max) with nulls for missing values
   const chartData = useMemo(() => {
-    return data
-      .filter(entry => entry.morning_fat_burn_percent !== null)
-      .sort((a, b) => a.week_number - b.week_number)
-      .map(entry => ({
-        week: entry.week_number,
-        fatBurn: entry.morning_fat_burn_percent,
-        date: new Date(entry.date).toLocaleDateString()
-      }))
+    const allWeeksMap = new Map<number, WeeklyCheckin>(data.map(entry => [entry.week_number, entry]))
+    const maxWeekNumber = data.length > 0 ? Math.max(...data.map(d => d.week_number)) : 0
+
+    const fullChartData = Array.from({ length: maxWeekNumber + 1 }, (_, i) => {
+      const entry = allWeeksMap.get(i)
+      const raw: any = (entry as any)?.morning_fat_burn_percent
+      const parsed = raw !== null && raw !== undefined && raw !== '' ? parseFloat(String(raw)) : null
+      const value = Number.isNaN(parsed as number) ? null : (parsed as number | null)
+
+      return {
+        week: i,
+        fatBurn: value,
+        date: entry?.date || (entry as any)?.created_at || ''
+      }
+    })
+
+    // Keep week 0 even if null, filter other completely missing weeks only by presence of value
+    return fullChartData.filter(d => d.fatBurn !== null || d.week === 0)
   }, [data])
 
   // Calculate regression for trend line (Week 0 to latest week)
@@ -57,7 +67,9 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: '', weeklyChange: 0, totalChange: 0, correlation: 'None' }
     }
 
-    const regressionData = chartData.map(d => ({ week: d.week, value: d.fatBurn! }))
+    const regressionData = chartData
+      .filter(d => d.fatBurn !== null)
+      .map(d => ({ week: d.week, value: d.fatBurn as number }))
     const minWeek = Math.min(...chartData.map(d => d.week))
     const maxWeek = Math.max(...chartData.map(d => d.week))
 
@@ -83,7 +95,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
     
     const allValues = chartData
       .map(d => d.fatBurn)
-      .filter(val => val !== null && val !== undefined && !isNaN(val!)) as number[]
+      .filter(val => val !== null && val !== undefined && !isNaN(val as number)) as number[]
     
     if (allValues.length === 0) return [0, 100]
     
@@ -174,11 +186,12 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
             connectNulls={true}
           />
 
-          {/* Regression trend line - Dark black */}
+          {/* Continuous regression trend line across full week range */}
           {regressionResult.isValid && (
             <Line 
               type="monotone" 
-              dataKey="trendLine" 
+              dataKey="value" 
+              data={regressionResult.trendPoints as any}
               stroke="#000000" 
               strokeWidth={2}
               dot={false}
