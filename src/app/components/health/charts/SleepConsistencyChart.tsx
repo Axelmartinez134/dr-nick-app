@@ -41,19 +41,24 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 export default function SleepConsistencyChart({ data }: SleepConsistencyChartProps) {
   // Process sleep data
   const chartData = data
-    .filter(entry => entry.sleep_consistency_score !== null)
+    .filter(entry => {
+      const v: any = (entry as any).sleep_consistency_score
+      if (v === null || v === undefined || v === '') return false
+      const n = parseFloat(String(v))
+      return !Number.isNaN(n) && Number.isFinite(n)
+    })
     .sort((a, b) => a.week_number - b.week_number)
     .map(entry => ({
       week: entry.week_number,
-      sleepScore: entry.sleep_consistency_score,
+      sleepScore: parseFloat(String((entry as any).sleep_consistency_score)),
       date: entry.date // Keep raw date
     }))
 
   // Calculate regression for trend line (Week 0 to latest week)
   const regressionResult = useMemo(() => {
-    if (chartData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
-    
-    const regressionData = chartData.map(d => ({ week: d.week, value: d.sleepScore! }))
+    const valid = chartData.filter(d => typeof d.sleepScore === 'number' && d.sleepScore !== null && !Number.isNaN(d.sleepScore as number))
+    if (valid.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+    const regressionData = valid.map(d => ({ week: d.week, value: d.sleepScore as number }))
     const minWeek = Math.min(...chartData.map(d => d.week))
     const maxWeek = Math.max(...chartData.map(d => d.week))
     
@@ -226,18 +231,19 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
             connectNulls={true}
           />
           
-          {/* Regression trend line - Dark black as requested */}
+          {/* Continuous regression trend line across full week range */}
           {regressionResult.isValid && (
             <Line 
               type="monotone" 
-              dataKey="trendLine" 
+              dataKey="value" 
+              data={regressionResult.trendPoints as any}
               stroke="#000000" 
               strokeWidth={2}
               dot={false}
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-          />
+            />
           )}
         </LineChart>
       </ResponsiveContainer>

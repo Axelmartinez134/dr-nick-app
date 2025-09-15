@@ -43,15 +43,30 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 import { poundsToKilograms } from '../unitCore'
 
 export default function WeightTrendChart({ data, unitSystem = 'imperial' }: WeightTrendChartProps) {
-  // Process weight data only
-  const chartDataImperial = data
-    .filter(entry => entry.weight !== null)
-    .sort((a, b) => a.week_number - b.week_number)
-    .map(entry => ({
-      week: entry.week_number,
-      weight: entry.weight,
-      date: new Date(entry.date).toLocaleDateString()
-    }))
+  // Build full week series and set null for missing values
+  const weeks = data.map(d => d.week_number)
+  const minWeek = Math.min(...weeks)
+  const maxWeek = Math.max(...weeks)
+
+  const byWeek: Record<number, { weight?: number | null; date?: string | null }> = {}
+  data.forEach(entry => {
+    const raw = (entry as any).weight
+    const num = raw === null || raw === undefined || raw === '' ? null : parseFloat(String(raw))
+    byWeek[entry.week_number] = {
+      weight: num !== null && !Number.isNaN(num) && Number.isFinite(num) ? num : null,
+      date: entry.date || null
+    }
+  })
+
+  const chartDataImperial = [] as Array<{ week: number; weight: number | null; date?: string }>
+  for (let w = minWeek; w <= maxWeek; w++) {
+    const rec = byWeek[w] || {}
+    chartDataImperial.push({
+      week: w,
+      weight: rec.weight ?? null,
+      date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
+    })
+  }
 
   const chartData = unitSystem === 'metric'
     ? chartDataImperial.map(d => ({ ...d, weight: poundsToKilograms(d.weight as number) }))
@@ -59,9 +74,9 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
 
   // Calculate regression for trend line (Week 0 to latest week)
   const regressionResult = useMemo(() => {
-    if (chartData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
-    
-    const regressionData = chartData.map(d => ({ week: d.week, value: d.weight! }))
+    const valid = chartData.filter(d => typeof d.weight === 'number' && d.weight !== null && !Number.isNaN(d.weight as number))
+    if (valid.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+    const regressionData = valid.map(d => ({ week: d.week, value: d.weight as number }))
     const minWeek = Math.min(...chartData.map(d => d.week))
     const maxWeek = Math.max(...chartData.map(d => d.week))
     
@@ -186,18 +201,19 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
             connectNulls={true}
           />
           
-          {/* Regression trend line - Dark black as requested */}
+          {/* Continuous regression trend line across full week range */}
           {regressionResult.isValid && (
             <Line 
               type="monotone" 
-              dataKey="trendLine" 
+              dataKey="value" 
+              data={regressionResult.trendPoints as any}
               stroke="#000000" 
               strokeWidth={2}
               dot={false}
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-          />
+            />
           )}
         </LineChart>
       </ResponsiveContainer>

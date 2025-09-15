@@ -30,14 +30,28 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function DiastolicBloodPressureChart({ data }: DiastolicBloodPressureChartProps) {
-  const chartData = data
-    .filter(entry => entry.diastolic_bp !== null && entry.diastolic_bp !== undefined)
-    .sort((a, b) => a.week_number - b.week_number)
-    .map(entry => ({
-      week: entry.week_number,
-      diastolic: entry.diastolic_bp,
-      date: new Date(entry.date).toLocaleDateString()
-    }))
+  // Build full week series and set null for missing values
+  const weeks = data.map(d => d.week_number)
+  const minWeek = Math.min(...weeks)
+  const maxWeek = Math.max(...weeks)
+  const byWeek: Record<number, { diastolic?: number | null; date?: string | null }> = {}
+  data.forEach(entry => {
+    const raw = (entry as any).diastolic_bp
+    const num = raw === null || raw === undefined || raw === '' ? null : parseFloat(String(raw))
+    byWeek[entry.week_number] = {
+      diastolic: num !== null && !Number.isNaN(num) && Number.isFinite(num) ? num : null,
+      date: entry.date || null
+    }
+  })
+  const chartData: Array<{ week: number; diastolic: number | null; date?: string }> = []
+  for (let w = minWeek; w <= maxWeek; w++) {
+    const rec = byWeek[w] || {}
+    chartData.push({
+      week: w,
+      diastolic: rec.diastolic ?? null,
+      date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
+    })
+  }
 
   // Dynamic Y-axis domain to avoid 0 baseline; mirror other charts' behavior
   const calculateYAxisDomain = useMemo(() => {
@@ -98,23 +112,20 @@ export default function DiastolicBloodPressureChart({ data }: DiastolicBloodPres
           <YAxis label={{ value: 'mmHg', angle: -90, position: 'insideLeft' }} domain={calculateYAxisDomain} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="diastolic" stroke="#059669" strokeWidth={3} dot={{ fill: '#059669', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Diastolic (mmHg)" connectNulls={true} />
-          {/* Trend line in black, only over actual data weeks */}
+          {/* Continuous regression trend line across full week range */}
           {(() => {
             if (chartData.length < 2) return null
             const minWeek = Math.min(...chartData.map(d => d.week))
             const maxWeek = Math.max(...chartData.map(d => d.week))
+            const valid = chartData.filter(d => typeof d.diastolic === 'number' && d.diastolic !== null && !Number.isNaN(d.diastolic as number))
             const regression = calculateLinearRegression(
-              chartData.map(d => ({ week: d.week, value: d.diastolic as number })),
+              valid.map(d => ({ week: d.week, value: d.diastolic as number })),
               minWeek,
               maxWeek
             )
             if (!regression.isValid) return null
-            const trendData = chartData.map(point => {
-              const tp = regression.trendPoints.find(tp => tp.week === point.week)
-              return { ...point, trendLine: tp ? tp.value : null }
-            })
             return (
-              <Line type="monotone" dataKey="trendLine" stroke="#000000" strokeWidth={2} dot={false} activeDot={false} name="" connectNulls={true} data={trendData as any} />
+              <Line type="monotone" dataKey="value" data={regression.trendPoints as any} stroke="#000000" strokeWidth={2} dot={false} activeDot={false} name="" connectNulls={true} />
             )
           })()}
         </LineChart>
