@@ -528,7 +528,7 @@ ${data.monday_message.message_content || 'Not generated yet'}
 === CALCULATED METRICS ===
 Total Weight Loss: ${formatNumber(data.calculated_metrics.total_weight_loss_percentage)}%
 Weekly Loss Rate: ${formatNumber(data.calculated_metrics.weekly_weight_loss_percentage)}%
-Plateau Prevention Rate: ${formatNumber(data.calculated_metrics.plateau_prevention_rate)}%
+Plateau Prevention (Weight Loss Rate) — Week ${data.current_week.week_number} [progressive averaging: weeks 1–4 = cumulative mean of weekly loss%; week 5+ = rolling 4-week mean based on individual week-over-week loss vs the immediately prior recorded week]: ${formatNumber(data.calculated_metrics.plateau_prevention_rate)}%
 Weeks of Data: ${data.calculated_metrics.weeks_of_data}
 Baseline Weight: ${formatWeightVal(data.calculated_metrics.baseline_weight)}
 Current Trend: ${data.calculated_metrics.current_trend}

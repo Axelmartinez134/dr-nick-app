@@ -6,6 +6,7 @@ import {
   updateDrNickAnalysis,
   getWeeklyDataForCharts 
 } from './healthService'
+import { computePlateauPreventionRateForWeek } from './plateauUtils'
 import { getSignedImageUrl } from './imageService'
 import { supabase } from '../auth/AuthContext'
 import { updateHealthRecord } from './healthService'
@@ -584,6 +585,12 @@ export default function DrNickSubmissionReview({
         throw new Error('No authentication token available')
       }
 
+      // Compute submission-week Plateau Prevention (Weight Loss Rate) from loaded chart data
+      const plateauPreventionForSubmission = computePlateauPreventionRateForWeek(
+        submissionChartData,
+        submission.week_number
+      )
+
       const response = await fetch('/api/grok/analyze', {
         method: 'POST',
         headers: {
@@ -594,7 +601,8 @@ export default function DrNickSubmissionReview({
           submissionId: submission.id,
           userId: submission.user_id,
           customPrompt: grokPrompt,
-          temperature: grokTemperature
+          temperature: grokTemperature,
+          plateauPreventionRate: plateauPreventionForSubmission
         })
       })
 

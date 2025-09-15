@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { formatDataForGrok, saveGrokAnalysisResponse, GrokDataPackage } from '../../../components/health/grokService'
+import { computePlateauPreventionRateForWeek } from '../../../components/health/plateauUtils'
 
 // Type definition for health data record
 interface HealthDataRecord {
@@ -315,7 +316,7 @@ export async function POST(request: NextRequest) {
     )
     
     // Parse request body
-    const { submissionId, userId, customPrompt, temperature } = await request.json()
+    const { submissionId, userId, customPrompt, temperature, plateauPreventionRate } = await request.json()
     
     if (!submissionId || !userId) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
@@ -345,6 +346,21 @@ export async function POST(request: NextRequest) {
     // Build comprehensive data package using NEW API function
     console.log('Building data package for Grok analysis...')
     const dataPackage = await buildGrokDataPackageAPI(submissionId, userId, submissionData[0], supabase)
+
+    // If plateauPreventionRate provided by client, override; otherwise compute for submission week
+    try {
+      const submissionWeek = submissionData[0].week_number
+      const historicalForUtils = (dataPackage.historical_data || []).map(h => ({
+        week_number: h.week_number,
+        weight: h.weight
+      }))
+      const computedForWeek = computePlateauPreventionRateForWeek(historicalForUtils as any, submissionWeek)
+      dataPackage.calculated_metrics.plateau_prevention_rate = typeof plateauPreventionRate === 'number'
+        ? Math.round(plateauPreventionRate * 100) / 100
+        : (computedForWeek !== null ? computedForWeek : dataPackage.calculated_metrics.plateau_prevention_rate)
+    } catch (e) {
+      // If computation fails, keep existing value
+    }
     
     // Format data for Grok
     const prompt = customPrompt || 'Please analyze this patient\'s health data and provide actionable recommendations.'
