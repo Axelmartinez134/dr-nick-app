@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 
@@ -37,6 +37,20 @@ export default function SystolicBloodPressureChart({ data }: SystolicBloodPressu
       systolic: entry.systolic_bp,
       date: new Date(entry.date).toLocaleDateString()
     }))
+
+  // Dynamic Y-axis domain to avoid 0 baseline; mirror other charts' behavior
+  const calculateYAxisDomain = useMemo(() => {
+    const values = chartData
+      .map(d => (typeof d.systolic === 'number' ? d.systolic : null))
+      .filter((v): v is number => v !== null && !isNaN(v))
+
+    if (values.length === 0) return [0, 200]
+
+    const minValue = Math.min(...values)
+    const maxValue = Math.max(...values)
+    const padding = Math.max(2, (maxValue - minValue) * 0.1)
+    return [minValue - padding, maxValue + padding]
+  }, [chartData])
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -80,7 +94,7 @@ export default function SystolicBloodPressureChart({ data }: SystolicBloodPressu
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} />
-          <YAxis label={{ value: 'mmHg', angle: -90, position: 'insideLeft' }} />
+          <YAxis label={{ value: 'mmHg', angle: -90, position: 'insideLeft' }} domain={calculateYAxisDomain} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="systolic" stroke="#2563eb" strokeWidth={3} dot={{ fill: '#2563eb', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Systolic (mmHg)" connectNulls={true} />
         </LineChart>
