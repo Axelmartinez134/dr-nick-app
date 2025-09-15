@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin, calculateLossPercentageRate } from '../../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../../regressionUtils'
 
@@ -196,6 +196,19 @@ export default function MarketingPlateauPreventionChart({
 
   const displayData = isAnimating ? animatedData : enhancedChartData
 
+  // Right-edge average label renderer (marketing)
+  const AvgRightLabel = ({ viewBox, value }: any) => {
+    const { x, y, width } = viewBox || {}
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number') return null
+    const labelX = x + width - 8
+    const labelY = y - 6
+    return (
+      <text x={labelX} y={labelY} textAnchor="end" fontSize={12} fontWeight={600} fill="#000000">
+        {`Avg: ${Number(value).toFixed(2)}%`}
+      </text>
+    )
+  }
+
   if (displayData.length === 0) {
     return (
       <div className="text-center py-8">
@@ -250,16 +263,10 @@ export default function MarketingPlateauPreventionChart({
           />
           
           {averageLineResult.isValid && (
-            <Line 
-              type="monotone" 
-              dataKey="trendLine" 
-              stroke="#000000" 
-              strokeWidth={2}
-              dot={false}
-              activeDot={false}
-              name="Average Line"
-              animationDuration={isAnimating ? animationDuration / 2 : 0}
-            />
+            <>
+              <ReferenceLine y={averageLineResult.averageValue} stroke="#000000" strokeWidth={2} />
+              <ReferenceLine y={averageLineResult.averageValue} strokeOpacity={0} label={<AvgRightLabel value={averageLineResult.averageValue} />} />
+            </>
           )}
         </LineChart>
       </ResponsiveContainer>
