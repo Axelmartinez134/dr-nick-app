@@ -57,6 +57,7 @@ Format: Title; Description; Acceptance; Dependencies
   - `marketing_aliases` exists with columns: alias (text pk unique, lowercase), current_slug (text), patient_id (uuid), created_by (uuid), created_at (timestamptz default now), updated_at (timestamptz default now); FKs: current_slug → marketing_shares(slug), patient_id → profiles(id); unique index on lower(alias)
   - On revoke of current slug, app logic falls back alias to previous active snapshot
 - Dependencies: none
+ - Status: completed (migrated to Supabase). Notes: created pgcrypto extension; added updated_at trigger; FKs set (patient_id CASCADE, current_slug RESTRICT); alias is case‑insensitive unique via unique index on lower(alias).
 
 2. Snapshot builder (server)
 - Description: Build a server utility that fetches weekly data, computes metrics, precomputes ALL chart series, and produces compact `snapshot_json` (schema_version=1).
