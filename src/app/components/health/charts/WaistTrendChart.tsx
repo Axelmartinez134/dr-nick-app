@@ -43,28 +43,15 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 import { inchesToCentimeters } from '../unitCore'
 
 export default function WaistTrendChart({ data, unitSystem = 'imperial' }: WaistTrendChartProps) {
-  // Build full week series and set null for missing values
-  const weeks = data.map(d => d.week_number)
-  const minWeek = Math.min(...weeks)
-  const maxWeek = Math.max(...weeks)
-  const byWeek: Record<number, { waist?: number | null; date?: string | null }> = {}
-  data.forEach(entry => {
-    const raw = (entry as any).waist
-    const num = raw === null || raw === undefined || raw === '' ? null : parseFloat(String(raw))
-    byWeek[entry.week_number] = {
-      waist: num !== null && !Number.isNaN(num) && Number.isFinite(num) ? num : null,
-      date: entry.date || null
-    }
-  })
-  const chartDataImperial: Array<{ week: number; waist: number | null; date?: string }> = []
-  for (let w = minWeek; w <= maxWeek; w++) {
-    const rec = byWeek[w] || {}
-    chartDataImperial.push({
-      week: w,
-      waist: rec.waist ?? null,
-      date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
-    })
-  }
+  // Process waist data only
+  const chartDataImperial = data
+    .filter(entry => entry.waist !== null)
+    .sort((a, b) => a.week_number - b.week_number)
+    .map(entry => ({
+      week: entry.week_number,
+      waist: entry.waist,
+      date: new Date(entry.date).toLocaleDateString()
+    }))
 
   const chartData = unitSystem === 'metric'
     ? chartDataImperial.map(d => ({ ...d, waist: inchesToCentimeters(d.waist as number) }))
@@ -72,9 +59,9 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial' }: Waist
 
   // Calculate regression for trend line (Week 0 to latest week)
   const regressionResult = useMemo(() => {
-    const valid = chartData.filter(d => typeof d.waist === 'number' && d.waist !== null && !Number.isNaN(d.waist as number))
-    if (valid.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
-    const regressionData = valid.map(d => ({ week: d.week, value: d.waist as number }))
+    if (chartData.length < 2) return { isValid: false, trendPoints: [], slope: 0, intercept: 0, rSquared: 0, equation: "", weeklyChange: 0, totalChange: 0, correlation: "None" }
+    
+    const regressionData = chartData.map(d => ({ week: d.week, value: d.waist! }))
     const minWeek = Math.min(...chartData.map(d => d.week))
     const maxWeek = Math.max(...chartData.map(d => d.week))
     
@@ -199,19 +186,18 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial' }: Waist
             connectNulls={true}
           />
           
-          {/* Continuous regression trend line across full week range */}
+          {/* Regression trend line - Dark black as requested */}
           {regressionResult.isValid && (
             <Line 
               type="monotone" 
-              dataKey="value" 
-              data={regressionResult.trendPoints as any}
+              dataKey="trendLine" 
               stroke="#000000" 
               strokeWidth={2}
               dot={false}
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
-            />
+          />
           )}
         </LineChart>
       </ResponsiveContainer>

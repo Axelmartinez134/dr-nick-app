@@ -622,6 +622,8 @@ export default function DrNickSubmissionReview({
     }
   }
 
+  // (Initial weight editor is provided inside ChartsDashboard for consistency)
+
   // Load Monday template
   const loadMondayTemplate = async () => {
     try {

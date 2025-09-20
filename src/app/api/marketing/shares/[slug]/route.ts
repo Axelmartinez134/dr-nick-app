@@ -14,17 +14,14 @@ function getSupabaseService()
   return createClient(url, key)
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { slug: string } }
-) {
+export async function GET(_req: Request, context: any) {
   try {
     const supabase = getSupabaseService()
     if (!supabase) {
       return NextResponse.json({ error: 'Server missing Supabase env' }, { status: 500 })
     }
 
-    const slug = params.slug
+    const slug = context?.params?.slug as string
     const { data: row, error } = await supabase
       .from('marketing_shares')
       .select('snapshot_json, revoked_at, view_count')

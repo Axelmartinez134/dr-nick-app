@@ -28,15 +28,17 @@ export default function MarketingSleepConsistencyChart({
   const [animatedData, setAnimatedData] = useState<any[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
 
-  // Process sleep data
-  const chartData = data
-    .filter(entry => entry.sleep_consistency_score !== null)
-    .sort((a, b) => a.week_number - b.week_number)
-    .map(entry => ({
-      week: entry.week_number,
-      sleepScore: entry.sleep_consistency_score,
-      date: entry.date // Keep raw date
-    }))
+  // Process sleep data (memoized)
+  const chartData = useMemo(() => {
+    return data
+      .filter(entry => entry.sleep_consistency_score !== null)
+      .sort((a, b) => a.week_number - b.week_number)
+      .map(entry => ({
+        week: entry.week_number,
+        sleepScore: entry.sleep_consistency_score,
+        date: entry.date || ''
+      }))
+  }, [data])
 
   // Calculate regression for trend line
   const regressionResult = useMemo(() => {
@@ -68,7 +70,7 @@ export default function MarketingSleepConsistencyChart({
   // Animation effect (guarded)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasAnimatingRef = useRef(false)
-  const lastDataRef = useRef<any[]>([])
+  const lastSigRef = useRef<string>('')
 
   useEffect(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
@@ -90,9 +92,10 @@ export default function MarketingSleepConsistencyChart({
         animateStep(0)
       }
     } else {
-      if (wasAnimatingRef.current || lastDataRef.current !== enhancedChartData) {
+      const sig = `${enhancedChartData.length}:${enhancedChartData[enhancedChartData.length - 1]?.week ?? -1}`
+      if (wasAnimatingRef.current || lastSigRef.current !== sig) {
         wasAnimatingRef.current = false
-        lastDataRef.current = enhancedChartData
+        lastSigRef.current = sig
         setAnimatedData(enhancedChartData)
         setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
       }

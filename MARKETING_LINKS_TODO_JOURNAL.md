@@ -104,3 +104,5 @@ This journal logs each implementation task, decisions, and completion notes so w
 
 ## Completion Notes
 - 2025-09-20: Created DB tables with FKs and updated backlog. Added no-redirect alias SSR + asset pinning to plan.
+ - 2025-09-20: P0 build fix — replaced `<a href="/">` with `<Link href="/">` on alias/version SSR pages to satisfy `@next/next/no-html-link-for-pages`. Files: `src/app/m/[alias]/page.tsx`, `src/app/m/version/[slug]/page.tsx`.
+ - 2025-09-20: P0 build fix — Next.js 15 route signatures. Updated `GET` handler in `api/marketing/shares/[slug]/route.ts` to accept `(req, context)` and read `context.params.slug`. Also aligned `src/app/m/version/[slug]/page.tsx` to use `params: Promise<{ slug: string }>` like alias page.

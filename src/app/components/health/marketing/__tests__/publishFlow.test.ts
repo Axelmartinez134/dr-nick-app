@@ -19,7 +19,7 @@ function createMockSupabase() {
     },
     from: (table: string) => {
       // Chain-able query builder stub
-      let builder: any = {}
+      const builder: any = {}
       builder.select = (_cols: string) => builder
       builder.eq = (col: string, val: any) => {
         builder._eq = { col, val }

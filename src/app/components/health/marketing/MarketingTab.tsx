@@ -9,9 +9,11 @@ import PatientSelector from './PatientSelector'
 // import AnimationControls from './AnimationControls'
 import AnimatedChartPreview from './AnimatedChartPreview'
 import PlaceholderSections from './PlaceholderSections'
+import { useRouter } from 'next/navigation'
 
 export default function MarketingTab() {
   const [selectedPatientId, setSelectedPatientId] = useState<string>('')
+  const [alias, setAlias] = useState<string>('')
   const [animationSpeed, setAnimationSpeed] = useState('slow')
   const [isAnimating, setIsAnimating] = useState(false)
   const [isRecordingMode, setIsRecordingMode] = useState(false)
@@ -29,6 +31,35 @@ export default function MarketingTab() {
   const handleAnimationComplete = useCallback(() => {
     setIsAnimating(false)
   }, [])
+
+  const router = useRouter()
+
+  const handleQuickPublish = async () => {
+    try {
+      if (!selectedPatientId) return
+      const res = await fetch('/api/marketing/shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: selectedPatientId,
+          alias,
+          settings: {
+            displayNameMode: 'first_name',
+            captionsEnabled: true,
+            layout: 'stack',
+            selectedMedia: {}
+          }
+        })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Publish failed')
+      router.push(`/m/${json.alias}`)
+    } catch (e) {
+      console.error('Quick publish failed', e)
+      const msg = e instanceof Error ? e.message : 'Publish failed'
+      alert(msg)
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -142,9 +173,7 @@ export default function MarketingTab() {
 
           {/* Action Controls */}
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              🎬 Animation Control
-            </h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">🎬 Animation Control</h3>
             <button
               onClick={handleStartAnimation}
               disabled={!selectedPatientId || isAnimating}
@@ -159,6 +188,24 @@ export default function MarketingTab() {
             <p className="text-xs text-gray-500 mt-2">
               Charts will animate from Week 0 to latest week
             </p>
+          <div className="mt-6 border-t pt-4">
+            <h4 className="text-sm font-semibold text-gray-900 mb-2">⚡ Quick Publish</h4>
+            <input
+              type="text"
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              placeholder="Alias (e.g., andrea)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 mb-2"
+            />
+            <button
+              onClick={handleQuickPublish}
+              disabled={!selectedPatientId}
+              className={`w-full py-2 px-3 rounded font-medium ${!selectedPatientId ? 'bg-gray-300 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
+            >
+              Publish & View /m/{alias || 'alias'}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">Publishes a snapshot with sensible defaults and opens the public link.</p>
+          </div>
           </div>
 
           {/* Placeholder Sections */}

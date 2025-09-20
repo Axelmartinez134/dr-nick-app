@@ -28,15 +28,17 @@ export default function MarketingWaistTrendChart({
   const [animatedData, setAnimatedData] = useState<any[]>([])
   const [currentWeek, setCurrentWeek] = useState(0)
 
-  // Process waist data only
-  const chartData = data
-    .filter(entry => entry.waist !== null)
-    .sort((a, b) => a.week_number - b.week_number)
-    .map(entry => ({
-      week: entry.week_number,
-      waist: entry.waist,
-      date: new Date(entry.date).toLocaleDateString()
-    }))
+  // Process waist data only (memoized to avoid render loops)
+  const chartData = useMemo(() => {
+    return data
+      .filter(entry => entry.waist !== null)
+      .sort((a, b) => a.week_number - b.week_number)
+      .map(entry => ({
+        week: entry.week_number,
+        waist: entry.waist,
+        date: entry.date ? new Date(entry.date).toLocaleDateString() : ''
+      }))
+  }, [data])
 
   // Calculate regression for trend line
   const regressionResult = useMemo(() => {
@@ -67,7 +69,7 @@ export default function MarketingWaistTrendChart({
   // Animation effect (guarded)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const wasAnimatingRef = useRef(false)
-  const lastDataRef = useRef<any[]>([])
+  const lastSigRef = useRef<string>('')
 
   useEffect(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
@@ -89,9 +91,10 @@ export default function MarketingWaistTrendChart({
         animateStep(0)
       }
     } else {
-      if (wasAnimatingRef.current || lastDataRef.current !== enhancedChartData) {
+      const sig = `${enhancedChartData.length}:${enhancedChartData[enhancedChartData.length - 1]?.week ?? -1}`
+      if (wasAnimatingRef.current || lastSigRef.current !== sig) {
         wasAnimatingRef.current = false
-        lastDataRef.current = enhancedChartData
+        lastSigRef.current = sig
         setAnimatedData(enhancedChartData)
         setCurrentWeek(Math.max(...enhancedChartData.map(d => d.week), 0))
       }

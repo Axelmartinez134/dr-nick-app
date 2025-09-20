@@ -1,6 +1,9 @@
 -- Create tables for Marketing Links: marketing_shares (immutable snapshots) and marketing_aliases (no-redirect alias)
 -- Includes foreign keys and useful indexes
 
+-- Ensure UUID generator is available
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- 1) marketing_shares: one row per published snapshot (immutable)
 CREATE TABLE IF NOT EXISTS marketing_shares (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -30,7 +33,6 @@ CREATE TABLE IF NOT EXISTS marketing_aliases (
   created_by UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT uq_marketing_aliases_alias UNIQUE (alias),
   CONSTRAINT fk_marketing_aliases_current_slug
     FOREIGN KEY (current_slug) REFERENCES marketing_shares(slug) ON DELETE RESTRICT,
   CONSTRAINT fk_marketing_aliases_patient
@@ -41,7 +43,7 @@ CREATE TABLE IF NOT EXISTS marketing_aliases (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_marketing_aliases_alias_lower ON marketing_aliases (lower(alias));
 
 -- Trigger to update updated_at on marketing_aliases changes
-CREATE OR REPLACE FUNCTION set_updated_at_timestamp()
+CREATE OR REPLACE FUNCTION set_updated_at_marketing_aliases()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at := now();
@@ -52,6 +54,6 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_marketing_aliases_updated_at ON marketing_aliases;
 CREATE TRIGGER trg_marketing_aliases_updated_at
 BEFORE UPDATE ON marketing_aliases
-FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
+FOR EACH ROW EXECUTE FUNCTION set_updated_at_marketing_aliases();
 
 

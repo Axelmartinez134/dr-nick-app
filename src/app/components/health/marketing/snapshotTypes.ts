@@ -1,4 +1,4 @@
-'use client'
+ 
 
 // Snapshot schema version for forward compatibility
 export const SNAPSHOT_SCHEMA_VERSION = 1 as const
