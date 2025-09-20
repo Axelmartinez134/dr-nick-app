@@ -95,19 +95,36 @@ export default function MarketingPlateauPreventionChart({
     return plateauPreventionData
   }, [data])
 
-  // Calculate horizontal average line (mean of all plateau prevention values)
+  // Calculate horizontal average line using Monday "overall_loss_rate_percent" method
   const averageLineResult = useMemo(() => {
-    if (chartData.length === 0) return { isValid: false, averageValue: 0 }
-    
-    // Calculate the average of all plateau prevention values
-    const sum = chartData.reduce((acc, d) => acc + d.lossRate, 0)
-    const averageValue = sum / chartData.length
-    
+    const sortedAll = (data || [])
+      .filter(entry => entry.weight !== null && entry.weight !== undefined)
+      .sort((a, b) => a.week_number - b.week_number)
+
+    const maxWeekNumber = (data && data.length > 0) ? Math.max(...data.map(d => d.week_number)) : 0
+
+    if (maxWeekNumber <= 0 || sortedAll.length < 2) return { isValid: false, averageValue: 0 }
+
+    let sum = 0
+    for (let i = 1; i < sortedAll.length; i++) {
+      const curr = sortedAll[i]
+      const prev = sortedAll[i - 1]
+      if (curr.week_number === prev.week_number + 1 && curr.weight !== null && prev.weight !== null) {
+        const prevW = parseFloat(String(prev.weight))
+        const currW = parseFloat(String(curr.weight))
+        if (Number.isFinite(prevW) && Number.isFinite(currW) && prevW !== 0) {
+          const individualLoss = ((prevW - currW) / prevW) * 100
+          sum += individualLoss
+        }
+      }
+    }
+
+    const averageValue = sum / maxWeekNumber
     return {
       isValid: true,
-      averageValue: Math.round(averageValue * 100) / 100 // Round to 2 decimal places
+      averageValue: Math.round(averageValue * 100) / 100
     }
-  }, [chartData])
+  }, [data])
 
   // Add horizontal average line to chart data
   const enhancedChartData = useMemo(() => {
