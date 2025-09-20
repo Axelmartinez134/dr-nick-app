@@ -67,6 +67,7 @@ Format: Title; Description; Acceptance; Dependencies
   - Computes Plateau Prevention — Weight/—Waist; Weight Trend; Projections; others
   - Pins selected media at publish into `marketing-assets/{slug}/...` and points `snapshot_json.media` to the pinned URLs (asset pinning)
 - Dependencies: 1
+ - Status: completed (implemented snapshot types, normalize helper, data loaders, derived series, summary metrics, asset pinning, and `snapshotBuilder`; unit tests passing)
 
 3. API: POST /api/marketing/shares (create)
 - Description: Auth route to create a share (from Editor/Wizard). Validates alias uniqueness; builds snapshot; inserts row; returns versioned slug + alias.
