@@ -8,7 +8,7 @@ This document captures the full plan we agreed to for the Marketing Links projec
 
 - A branded, mobile‑first client story page (one link per client) designed for Instagram in‑app viewing.
 - A simple Admin flow to create, edit (as a Draft), preview, and publish each link as an immutable snapshot.
-- A stable alias (e.g., `/m/andrea`) that always redirects to the latest published version; older versions keep their own versioned slugs.
+- A stable alias (e.g., `/m/andrea`) that always serves the latest published version server‑side (no redirect); older versions keep their own versioned slugs.
 - A consistent, clean template across all clients with collapsible sections ("choose‑your‑own‑adventure").
 - Light analytics (Views, CTA Clicks) and basic share management.
 
@@ -49,11 +49,13 @@ Behavioral guarantees
 
 Format: Title; Description; Acceptance; Dependencies
 
-1. Create DB table: marketing_shares
-- Description: Add `marketing_shares` with columns and indexes for slugs, alias, settings, counters, and snapshot JSON.
+1. Create DB tables: marketing_shares and marketing_aliases
+- Description: Add immutable snapshots table and alias mapping table for no‑redirect alias SSR.
 - Acceptance:
-  - Table exists with columns: id, slug (unique), alias (unique), patient_id, display_name_mode, pseudonym, charts[], layout, captions_enabled, branding_logo, watermark_text, cta_label, cta_url, unit_system_locked, snapshot_json, schema_version, created_by, created_at, revoked_at, view_count, cta_click_count
-  - Indexes on slug, alias
+  - `marketing_shares` exists with columns: id (uuid pk), slug (text unique), patient_id (uuid), snapshot_json (jsonb), schema_version (int, default 1), created_by (uuid), created_at (timestamptz default now), revoked_at (timestamptz), view_count (int default 0), cta_click_count (int default 0); FK patient_id → profiles(id)
+  - Index on slug; index on patient_id
+  - `marketing_aliases` exists with columns: alias (text pk unique, lowercase), current_slug (text), patient_id (uuid), created_by (uuid), created_at (timestamptz default now), updated_at (timestamptz default now); FKs: current_slug → marketing_shares(slug), patient_id → profiles(id); unique index on lower(alias)
+  - On revoke of current slug, app logic falls back alias to previous active snapshot
 - Dependencies: none
 
 2. Snapshot builder (server)
@@ -62,6 +64,7 @@ Format: Title; Description; Acceptance; Dependencies
   - Returns JSON with meta, metrics, weeks, derived series for all supported charts, and media placeholders
   - Uses nutrition_compliance_days (two‑decimal %), purposeful_exercise_days (1–7)
   - Computes Plateau Prevention — Weight/—Waist; Weight Trend; Projections; others
+  - Pins selected media at publish into `marketing-assets/{slug}/...` and points `snapshot_json.media` to the pinned URLs (asset pinning)
 - Dependencies: 1
 
 3. API: POST /api/marketing/shares (create)
@@ -79,10 +82,11 @@ Format: Title; Description; Acceptance; Dependencies
   - Cache-Control added (public, s-maxage, stale-while-revalidate)
 - Dependencies: 1, 2
 
-5. API: GET /m/[alias] (alias redirect)
-- Description: Route that 302-redirects to the latest versioned slug for this alias.
+5. Public alias page: app/m/[alias]/page.tsx (no redirect)
+- Description: Server-render the latest active snapshot for an alias; anchors preserved.
 - Acceptance:
-  - 302 to latest slug; 404 if alias not found
+  - SSR returns latest snapshot content for alias
+  - If no active snapshots: show friendly "This page is not available" + CTA to home (no 3xx)
 - Dependencies: 1, 3
 
 6. API: POST /api/marketing/shares/[slug]/revoke
@@ -98,12 +102,13 @@ Format: Title; Description; Acceptance; Dependencies
 - Dependencies: 1
 
 8. Storage: create public bucket `marketing-assets`
-- Description: Create Supabase Storage bucket; set CORS; document upload path convention `marketing-assets/{slug}/...`
+- Description: Create Supabase Storage bucket; set CORS; define upload conventions for library assets and snapshot‑pinned assets (`marketing-assets/lib/...` and `marketing-assets/{slug}/...`).
 - Acceptance:
   - Bucket exists; tested upload/read
+  - Publish step copies chosen media into `marketing-assets/{slug}/...` (asset pinning) and uses those URLs in snapshots
 - Dependencies: none
 
-9. Public page route: app/m/[slug]/page.tsx
+9. Public versioned page: app/m/[slug]/page.tsx
 - Description: Build viewer page that renders from snapshot; supports anchors; unit toggle; collapsible sections; CTA logic.
 - Acceptance:
   - Renders Logo+tagline, Identity, Unit toggle, Compliance cards
@@ -178,14 +183,15 @@ Format: Title; Description; Acceptance; Dependencies
 ## 3) Skills you’ll learn (and quick definitions)
 
 - Next.js App Router APIs
-  - Dynamic routes (`app/m/[slug]/page.tsx`), Route Handlers (`/api/...`), cache headers
+  - Dynamic routes (`app/m/[alias]/page.tsx`, `app/m/[slug]/page.tsx`), Route Handlers (`/api/...`), cache headers
+  - Migration file: `add_marketing_links_tables.sql`
 - Supabase SQL & Storage
   - Designing tables, indexing slugs & alias, atomic counters, storage buckets & public URLs
 - Snapshot architecture
   - Precomputing chart series so public pages are fast and consistent
 - Slug vs Alias (definition)
   - Slug: the immutable, versioned URL (e.g., `/m/andrea-2025-09-15-1`)
-  - Alias: a vanity path (e.g., `/m/andrea`) that 302‑redirects to the latest slug
+  - Alias: a vanity path (e.g., `/m/andrea`) that server‑renders the latest snapshot (no redirect)
 - ECharts animation & labeling
   - Smooth reveal; stable axes; placing labels outside plot via grid padding + offsets
 - IntersectionObserver & sticky CSS
@@ -222,3 +228,4 @@ Format: Title; Description; Acceptance; Dependencies
 - Watermark (optional): "The Fittest You"
 - Assets bucket: `marketing-assets`
 - Tagline: "Become the Fittest Version of Yourself."
+
