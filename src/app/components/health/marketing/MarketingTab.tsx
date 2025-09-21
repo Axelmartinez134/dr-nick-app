@@ -53,7 +53,7 @@ export default function MarketingTab() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Publish failed')
-      router.push(`/m/${json.alias}`)
+      router.push(`/${json.alias}`)
     } catch (e) {
       console.error('Quick publish failed', e)
       const msg = e instanceof Error ? e.message : 'Publish failed'
@@ -202,7 +202,7 @@ export default function MarketingTab() {
               disabled={!selectedPatientId}
               className={`w-full py-2 px-3 rounded font-medium ${!selectedPatientId ? 'bg-gray-300 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
             >
-              Publish & View /m/{alias || 'alias'}
+              Publish & View /{alias || 'alias'}
             </button>
             <p className="text-xs text-gray-500 mt-2">Publishes a snapshot with sensible defaults and opens the public link.</p>
           </div>

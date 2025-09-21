@@ -6,14 +6,16 @@ import React, { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { type WeeklyCheckin, generateWeightProjections } from '../../healthService'
 import { calculateLinearRegression } from '../../regressionUtils'
+import { poundsToKilograms, type UnitSystem } from '../../unitUtils'
 
 interface Props {
   data: WeeklyCheckin[]
   hideTooltips?: boolean
   hideTitles?: boolean
+  unitSystem?: UnitSystem
 }
 
-export default function MarketingWeightProjectionEChart({ data, hideTooltips = false, hideTitles = false }: Props) {
+export default function MarketingWeightProjectionEChart({ data, hideTooltips = false, hideTitles = false, unitSystem = 'imperial' }: Props) {
   const actual = useMemo(() => {
     return data
       .filter(e => e.weight !== null)
@@ -49,15 +51,20 @@ export default function MarketingWeightProjectionEChart({ data, hideTooltips = f
 
   const option = useMemo(() => {
     // Y-axis domain to include actual + projections with padding (mimic client)
+    const toDisplay = (v: number | null) => unitSystem === 'metric' ? (poundsToKilograms(v) ?? v) : v
     const allValues: number[] = []
-    seriesData.actualWeights.forEach(v => { if (v !== null && v !== undefined) allValues.push(v as number) })
-    seriesData.projections.forEach(p => p.data.forEach(v => { if (v !== null && v !== undefined) allValues.push(v as number) }))
+    seriesData.actualWeights.forEach(v => { const d = toDisplay(v as any); if (d !== null && d !== undefined) allValues.push(d as number) })
+    seriesData.projections.forEach(p => p.data.forEach(v => { const d = toDisplay(v as any); if (d !== null && d !== undefined) allValues.push(d as number) }))
     const hasValues = allValues.length > 0
     const minValue = hasValues ? Math.min(...allValues) : 0
     const maxValue = hasValues ? Math.max(...allValues) : 100
     const padding = hasValues ? (maxValue - minValue) * 0.1 : 0
     const yMin = hasValues ? minValue - padding : 0
     const yMax = hasValues ? maxValue + padding : 100
+
+    // Convert series for display
+    const actualDisplay = seriesData.actualWeights.map(v => toDisplay(v as any))
+    const projectionsDisplay = seriesData.projections.map(p => ({ name: p.name, data: p.data.map(v => toDisplay(v as any)) }))
 
     return {
       backgroundColor: 'transparent',
@@ -66,15 +73,15 @@ export default function MarketingWeightProjectionEChart({ data, hideTooltips = f
       legend: hideTitles ? undefined : { top: 10 },
       grid: { left: 50, right: 20, top: hideTitles ? 10 : 40, bottom: 40 },
       xAxis: { type: 'category', data: seriesData.weeks, boundaryGap: false, name: 'Week' },
-      yAxis: { type: 'value', name: 'Weight (lbs)', min: yMin, max: yMax },
+      yAxis: { type: 'value', name: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)', min: yMin, max: yMax },
       title: hideTitles ? undefined : { text: 'Weight Projections vs Actual', left: 'center' },
       series: [
-        { name: 'Actual', type: 'line', data: seriesData.actualWeights, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { width: 4, color: '#2563eb' }, itemStyle: { color: '#2563eb' } },
-        ...seriesData.projections.map((p, idx) => ({ name: p.name, type: 'line', data: p.data, smooth: true, symbol: 'none', lineStyle: { width: 2, type: 'dashed' } })),
+        { name: 'Actual', type: 'line', data: actualDisplay, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { width: 4, color: '#2563eb' }, itemStyle: { color: '#2563eb' } },
+        ...projectionsDisplay.map((p) => ({ name: p.name, type: 'line', data: p.data, smooth: true, symbol: 'none', lineStyle: { width: 2, type: 'dashed' } })),
         ...(seriesData.trend.length ? [{ name: 'Actual Trend', type: 'line', data: seriesData.trend, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#000' } }] : [])
       ]
     } as any
-  }, [seriesData, hideTooltips, hideTitles])
+  }, [seriesData, hideTooltips, hideTitles, unitSystem])
 
   return (
     <div className="w-full h-full">

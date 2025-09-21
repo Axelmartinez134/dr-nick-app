@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     // Availability check (case-insensitive)
     const available = await validateAliasAvailable(supabase, alias)
     if (!available.ok) {
-      return NextResponse.json({ error: 'Alias already taken' }, { status: 400 })
+      return NextResponse.json({ error: available.reason || 'Alias already taken' }, { status: 400 })
     }
 
     // Resolve created_by as admin profile id (fallback to patientId if not found)

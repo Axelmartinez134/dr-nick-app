@@ -4,6 +4,12 @@ import Link from 'next/link'
 import { normalizeSnapshot } from '@/app/components/health/marketing/snapshotTypes'
 
 export const dynamic = 'force-dynamic'
+export const metadata = {
+  robots: {
+    index: false,
+    follow: false,
+  },
+}
 
 async function fetchSnapshotBySlug(slug: string) {
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL

@@ -8,7 +8,7 @@ This document captures the full plan we agreed to for the Marketing Links projec
 
 - A branded, mobile‑first client story page (one link per client) designed for Instagram in‑app viewing.
 - A simple Admin flow to create, edit (as a Draft), preview, and publish each link as an immutable snapshot.
-- A stable alias (e.g., `/m/andrea`) that always serves the latest published version server‑side (no redirect); older versions keep their own versioned slugs.
+- A stable alias (e.g., `/andrea`) that always serves the latest published version server‑side (no redirect); older versions keep their own versioned slugs at `/version/{slug}`.
 - A consistent, clean template across all clients with collapsible sections ("choose‑your‑own‑adventure").
 - Light analytics (Views, CTA Clicks) and basic share management.
 
@@ -39,7 +39,7 @@ Admin (what you see)
 
 Behavioral guarantees
 - Snapshot (not live): published pages are stable and fast.
-- Alias redirects to latest version; versioned slugs persist for history.
+- Alias SSRs the latest version (no redirects); versioned slugs persist for history.
 - Performance: small initial JS; lazy‑load optional sections; precomputed series; MP4 loops preferred over GIFs.
 - Animations: default 8s; hard cap 10s.
 
@@ -75,6 +75,7 @@ Format: Title; Description; Acceptance; Dependencies
   - 400 if alias taken
   - 200 with { slug, alias } on success; row saved with snapshot_json
 - Dependencies: 1, 2
+ - Status: completed (implemented in `src/app/api/marketing/shares/route.ts`)
 
 4. API: GET /api/marketing/shares/[slug] (public fetch)
 - Description: Public route returns snapshot payload for a versioned slug if not revoked; increments view_count; cache headers set.
@@ -83,12 +84,21 @@ Format: Title; Description; Acceptance; Dependencies
   - 410 if revoked
   - Cache-Control added (public, s-maxage, stale-while-revalidate)
 - Dependencies: 1, 2
+ - Status: completed (implemented in `src/app/api/marketing/shares/[slug]/route.ts`)
 
-5. Public alias page: app/m/[alias]/page.tsx (no redirect)
+5. Public alias page: app/[alias]/page.tsx (no redirect)
 - Description: Server-render the latest active snapshot for an alias; anchors preserved.
 - Acceptance:
-  - SSR returns latest snapshot content for alias
-  - If no active snapshots: show friendly "This page is not available" + CTA to home (no 3xx)
+  - SSR returns latest snapshot content for `/${alias}` with no redirects.
+  - If no active snapshots: show friendly "This page is not available" + CTA to home (no 3xx).
+  - Identity header: first name or anonymized label per snapshot settings.
+  - Unit toggle: Imperial default; Metric available; all numeric callouts honor toggle.
+  - Compliance summary cards: Total Loss %, Weekly Loss %, Avg Nutrition %, Avg Purposeful Exercise Days.
+  - Charts: default ON expanded — Weight Trend, Weight Projection, Plateau Prevention — Weight (with end label number). Optionals collapsed — Waist Trend; Plateau Prevention — Waist; Nutrition Compliance; Sleep Consistency; Morning Fat Burn; Body Fat %.
+  - CTA behavior: sticky CTA always visible; four inline CTA blocks; sticky hides when an inline CTA is in view.
+  - Layout: mobile‑first 9:16 aspect; clean vertical story layout; stable axes; smooth animations (default 8s, cap 10s).
+  - Anchors supported: #charts, #photos, #fit3d, #testing, #testimonial, #cta.
+  - Cache headers appropriate for public viewing (short SWR + revalidate on publish).
 - Dependencies: 1, 3
 
 6. API: POST /api/marketing/shares/[slug]/revoke
@@ -110,7 +120,7 @@ Format: Title; Description; Acceptance; Dependencies
   - Publish step copies chosen media into `marketing-assets/{slug}/...` (asset pinning) and uses those URLs in snapshots
 - Dependencies: none
 
-9. Public versioned page: app/m/[slug]/page.tsx
+9. Public versioned page: app/version/[slug]/page.tsx
 - Description: Build viewer page that renders from snapshot; supports anchors; unit toggle; collapsible sections; CTA logic.
 - Acceptance:
   - Renders Logo+tagline, Identity, Unit toggle, Compliance cards
@@ -185,15 +195,15 @@ Format: Title; Description; Acceptance; Dependencies
 ## 3) Skills you’ll learn (and quick definitions)
 
 - Next.js App Router APIs
-  - Dynamic routes (`app/m/[alias]/page.tsx`, `app/m/[slug]/page.tsx`), Route Handlers (`/api/...`), cache headers
+  - Dynamic routes (`app/[alias]/page.tsx`, `app/version/[slug]/page.tsx`), Route Handlers (`/api/...`), cache headers
   - Migration file: `add_marketing_links_tables.sql`
 - Supabase SQL & Storage
   - Designing tables, indexing slugs & alias, atomic counters, storage buckets & public URLs
 - Snapshot architecture
   - Precomputing chart series so public pages are fast and consistent
 - Slug vs Alias (definition)
-  - Slug: the immutable, versioned URL (e.g., `/m/andrea-2025-09-15-1`)
-  - Alias: a vanity path (e.g., `/m/andrea`) that server‑renders the latest snapshot (no redirect)
+  - Slug: the immutable, versioned URL (e.g., `/version/andrea-2025-09-15-1`)
+  - Alias: a vanity path (e.g., `/andrea`) that server‑renders the latest snapshot (no redirect)
 - ECharts animation & labeling
   - Smooth reveal; stable axes; placing labels outside plot via grid padding + offsets
 - IntersectionObserver & sticky CSS

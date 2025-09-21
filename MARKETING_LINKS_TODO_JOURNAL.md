@@ -92,7 +92,7 @@ This journal logs each implementation task, decisions, and completion notes so w
 ---
 
 ## Decisions (running log)
-- No-redirect alias: `/m/{alias}` SSRs latest snapshot; versioned `/m/{slug}` renders immutable versions.
+- No-redirect alias: `/m/{alias}` SSRs latest snapshot; versioned `/m/version/{slug}` renders immutable versions.
 - Two new tables only: `marketing_shares`, `marketing_aliases` (with FKs). Status: completed, migrated.
 - Snapshot stores all weekly numeric data, plus precomputed derived series and summary metrics.
 - Asset pinning: yes; pinned to `marketing-assets/{slug}/...` at publish; retention = keep forever.
@@ -106,3 +106,5 @@ This journal logs each implementation task, decisions, and completion notes so w
 - 2025-09-20: Created DB tables with FKs and updated backlog. Added no-redirect alias SSR + asset pinning to plan.
  - 2025-09-20: P0 build fix — replaced `<a href="/">` with `<Link href="/">` on alias/version SSR pages to satisfy `@next/next/no-html-link-for-pages`. Files: `src/app/m/[alias]/page.tsx`, `src/app/m/version/[slug]/page.tsx`.
  - 2025-09-20: P0 build fix — Next.js 15 route signatures. Updated `GET` handler in `api/marketing/shares/[slug]/route.ts` to accept `(req, context)` and read `context.params.slug`. Also aligned `src/app/m/version/[slug]/page.tsx` to use `params: Promise<{ slug: string }>` like alias page.
+ - 2025-09-20: Removed conflicting dynamic route `src/app/m/[slug]/page.tsx` to resolve Next.js collision ("You cannot use different slug names for the same dynamic path ('alias' !== 'slug')"). Versioned route now lives only at `src/app/m/version/[slug]/page.tsx`.
+ - 2025-09-20: Aligned docs to use `/m/version/{slug}` consistently; updated behavioral note to SSR latest (no redirect); corrected backlog and skills entries.

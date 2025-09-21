@@ -7,6 +7,7 @@ import ReactECharts from 'echarts-for-react'
 import type * as echarts from 'echarts'
 import { type WeeklyCheckin } from '../../healthService'
 import { calculateLinearRegression } from '../../regressionUtils'
+import { poundsToKilograms, type UnitSystem } from '../../unitUtils'
 
 interface Props {
   data: WeeklyCheckin[]
@@ -14,15 +15,23 @@ interface Props {
   hideTitles?: boolean
   progress?: number
   onReady?: (inst: echarts.ECharts) => void
+  unitSystem?: UnitSystem
 }
 
-export default function MarketingWeightTrendEChart({ data, hideTooltips = false, hideTitles = false, progress = 1, onReady }: Props) {
-  const chartData = useMemo(() => {
+export default function MarketingWeightTrendEChart({ data, hideTooltips = false, hideTitles = false, progress = 1, onReady, unitSystem = 'imperial' }: Props) {
+  const baseData = useMemo(() => {
     return data
       .filter(entry => entry.weight !== null)
       .sort((a, b) => a.week_number - b.week_number)
       .map(entry => ({ week: entry.week_number, weight: entry.weight! }))
   }, [data])
+
+  const chartData = useMemo(() => {
+    if (unitSystem === 'metric') {
+      return baseData.map(d => ({ week: d.week, weight: poundsToKilograms(d.weight) ?? d.weight }))
+    }
+    return baseData
+  }, [baseData, unitSystem])
 
   const regression = useMemo(() => {
     if (chartData.length < 2) return null
@@ -83,7 +92,8 @@ export default function MarketingWeightTrendEChart({ data, hideTooltips = false,
           const p = Array.isArray(params) ? params[0] : params
           const week = p?.axisValue ?? ''
           const val = p?.data?.[1] ?? ''
-          return `Week ${week}<br/>Weight: ${val} lbs`
+          const unitLabel = unitSystem === 'metric' ? 'kg' : 'lbs'
+          return `Week ${week}<br/>Weight: ${val} ${unitLabel}`
         }
       },
       grid: { left: 50, right: 20, top: hideTitles ? 10 : 40, bottom: 40 },
@@ -96,7 +106,7 @@ export default function MarketingWeightTrendEChart({ data, hideTooltips = false,
       },
       yAxis: {
         type: 'value',
-        name: 'Weight (lbs)',
+        name: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)',
         min: yMin,
         max: yMax
       },

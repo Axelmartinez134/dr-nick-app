@@ -1,6 +1,10 @@
 // Alias and slug helpers for Marketing Links
 
 const ALIAS_REGEX = /^[a-z0-9-]+$/
+const RESERVED_ALIASES = new Set([
+  'version', 'api', 'inactive', 'login', 'signup', 'admin',
+  'favicon.ico', 'robots.txt', 'sitemap.xml', 'assets', 'marketing-assets'
+])
 
 export function sanitizeAlias(input: string): string {
   const lower = (input || '').toLowerCase().trim()
@@ -10,11 +14,12 @@ export function sanitizeAlias(input: string): string {
 }
 
 export function isAliasValidFormat(alias: string): boolean {
-  return !!alias && ALIAS_REGEX.test(alias)
+  return !!alias && ALIAS_REGEX.test(alias) && !RESERVED_ALIASES.has(alias)
 }
 
 // Case-insensitive uniqueness check using ilike
 export async function validateAliasAvailable(supabase: any, alias: string): Promise<{ ok: boolean; reason?: string }> {
+  if (RESERVED_ALIASES.has(alias)) return { ok: false, reason: 'Alias is reserved' }
   const { data, error } = await supabase
     .from('marketing_aliases')
     .select('alias')
