@@ -14,17 +14,17 @@ function getSupabaseService()
   return createClient(url, key)
 }
 
-export async function GET(_req: Request, context: any) {
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
     const supabase = getSupabaseService()
     if (!supabase) {
       return NextResponse.json({ error: 'Server missing Supabase env' }, { status: 500 })
     }
 
-    const slug = context?.params?.slug as string
+    const { slug } = await params
     const { data: row, error } = await supabase
       .from('marketing_shares')
-      .select('snapshot_json, revoked_at, view_count')
+      .select('snapshot_json, schema_version, revoked_at, view_count')
       .eq('slug', slug)
       .single()
 
@@ -43,7 +43,11 @@ export async function GET(_req: Request, context: any) {
       .update({ view_count: nextCount })
       .eq('slug', slug)
 
-    const res = NextResponse.json(row.snapshot_json, {
+    const payload = typeof row.snapshot_json === 'object' && row.snapshot_json
+      ? { ...row.snapshot_json, schema_version: (row as any).schema_version ?? (row.snapshot_json as any)?.schema_version ?? 1 }
+      : row.snapshot_json
+
+    const res = NextResponse.json(payload, {
       status: 200,
       headers: {
         'Cache-Control': 'public, max-age=60, s-maxage=300, stale-while-revalidate=600',
