@@ -99,7 +99,15 @@ Format: Title; Description; Acceptance; Dependencies
   - Layout: mobile‑first 9:16 aspect; clean vertical story layout; stable axes; smooth animations (default 8s, cap 10s).
   - Anchors supported: #charts, #photos, #fit3d, #testing, #testimonial, #cta.
   - Cache headers appropriate for public viewing (short SWR + revalidate on publish).
-- Dependencies: 1, 3
+ - Dependencies: 1, 3
+ - Status: completed
+   - Notes:
+     - Implemented server-rendered alias page (`/areg` example) with client-parity copy for all charts.
+     - Swapped in client `PlateauPreventionChart` to match visuals/average label; resolved overflow by removing outer fixed-height wrapper.
+     - Weight Trend/Projections ECharts adjusted to mirror client behavior: hidden internal titles, cleaned axis ticks, red actual line, black trend line; added below-chart legend with color indicators.
+     - Optional charts (Waist, Sleep, Morning Fat Burn, Body Fat) use client-facing titles/descriptions/bullets; captions placed outside embedded components.
+     - CTAs are in-flow per-section during editing (no fixed CTA); version page CTA also converted to in-flow.
+     - Cache headers preserved; anchors exist; unit toggle supported.
 
 6. API: POST /api/marketing/shares/[slug]/revoke
 - Description: Auth route sets revoked_at; future GET returns 410; alias should skip revoked version.
