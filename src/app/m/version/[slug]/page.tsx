@@ -75,19 +75,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
         </div>
       </section>
 
-      {/* Placeholder for chart(s) – we will wire real charts in the next slice */}
+      {/* In-flow CTA under main content (no fixed positioning) */}
       <section className="max-w-md mx-auto p-4">
-        <div className="rounded border p-4 text-center text-gray-600">
-          Versioned page — charts will render here next.
-        </div>
-      </section>
-
-      {/* Sticky CTA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/90 border-t p-3">
-        <div className="max-w-md mx-auto">
+        <div id="cta" className="mt-2">
           <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
         </div>
-      </div>
+      </section>
     </main>
   )
 }

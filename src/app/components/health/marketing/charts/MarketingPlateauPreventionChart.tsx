@@ -95,7 +95,7 @@ export default function MarketingPlateauPreventionChart({
     return plateauPreventionData
   }, [data])
 
-  // Calculate horizontal average line using Monday "overall_loss_rate_percent" method
+  // Calculate horizontal average line using Monday method; fall back to average of computed loss rates if no consecutive pairs
   const averageLineResult = useMemo(() => {
     const sortedAll = (data || [])
       .filter(entry => entry.weight !== null && entry.weight !== undefined)
@@ -106,20 +106,25 @@ export default function MarketingPlateauPreventionChart({
     if (maxWeekNumber <= 0 || sortedAll.length < 2) return { isValid: false, averageValue: 0 }
 
     let sum = 0
+    let pairCount = 0
     for (let i = 1; i < sortedAll.length; i++) {
       const curr = sortedAll[i]
       const prev = sortedAll[i - 1]
-      if (curr.week_number === prev.week_number + 1 && curr.weight !== null && prev.weight !== null) {
+      // Prefer consecutive pairs; if gaps exist we still compute using the immediate previous measurement
+      if (curr.weight !== null && prev.weight !== null) {
         const prevW = parseFloat(String(prev.weight))
         const currW = parseFloat(String(curr.weight))
         if (Number.isFinite(prevW) && Number.isFinite(currW) && prevW !== 0) {
           const individualLoss = ((prevW - currW) / prevW) * 100
           sum += individualLoss
+          if (curr.week_number === prev.week_number + 1) pairCount++
         }
       }
     }
 
-    const averageValue = sum / maxWeekNumber
+    // If we had at least one consecutive pair, normalize by maxWeekNumber as before; otherwise average by number of computed pairs
+    const divisor = pairCount > 0 ? maxWeekNumber : Math.max(sortedAll.length - 1, 1)
+    const averageValue = sum / divisor
     return {
       isValid: true,
       averageValue: Math.round(averageValue * 100) / 100
@@ -165,7 +170,7 @@ export default function MarketingPlateauPreventionChart({
     }
   }, [isAnimating, animationDuration, enhancedChartData, onAnimationComplete])
 
-  // Calculate Y-axis domain
+  // Calculate Y-axis domain (ensure visibility near zero)
   const calculateYAxisDomain = () => {
     const displayData = isAnimating ? animatedData : enhancedChartData
     const allValues: number[] = []
@@ -183,7 +188,11 @@ export default function MarketingPlateauPreventionChart({
     
     // For loss rates, we want to show from 0 to a reasonable maximum
     const yMax = Math.max(maxValue * 1.2, 3) // At least 3% max
-    return [Math.min(minValue - 0.5, 0), yMax]
+    const lower = Math.min(minValue - 0.5, 0)
+    // If average line is ~0, ensure headroom so it’s visible above x-axis
+    const nearZero = averageLineResult.isValid && Math.abs(averageLineResult.averageValue) < 0.25
+    const yMin = nearZero ? -0.5 : (lower >= 0 ? 0 : lower)
+    return [yMin, yMax]
   }
 
   // Custom tooltip
@@ -271,19 +280,40 @@ export default function MarketingPlateauPreventionChart({
           <Line 
             type="monotone" 
             dataKey="lossRate" 
-            stroke="#10b981" 
+            stroke="#3b82f6" 
             strokeWidth={3}
-            dot={{ fill: '#10b981', strokeWidth: 2, r: 5 }}
+            dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
             name="Loss Rate"
             animationDuration={isAnimating ? animationDuration / 2 : 0}
           />
+
+          {/* Draw average as a dedicated series to guarantee visibility */}
+          {averageLineResult.isValid && (
+            <Line 
+              type="monotone" 
+              dataKey="trendLine" 
+              stroke="#000000" 
+              strokeWidth={2}
+              dot={false}
+              activeDot={false}
+              name="Average"
+              connectNulls
+            />
+          )}
           
           {averageLineResult.isValid && (
-            <>
-              <ReferenceLine y={averageLineResult.averageValue} stroke="#000000" strokeWidth={2} />
-              <ReferenceLine y={averageLineResult.averageValue} strokeOpacity={0} label={<AvgRightLabel value={averageLineResult.averageValue} />} />
-            </>
+            <ReferenceLine
+              y={averageLineResult.averageValue}
+              strokeOpacity={0}
+              label={{
+                position: 'right',
+                value: `Avg: ${averageLineResult.averageValue.toFixed(2)}%`,
+                fill: '#000000',
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            />
           )}
         </LineChart>
       </ResponsiveContainer>

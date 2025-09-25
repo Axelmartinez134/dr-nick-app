@@ -43,10 +43,7 @@ export default function MarketingWeightTrendEChart({ data, hideTooltips = false,
 
   const option = useMemo(() => {
     const pairs = chartData.map(d => [d.week, d.weight] as [number, number])
-    const trendPairs = (regression?.isValid ? chartData.map(p => {
-      const tp = regression!.trendPoints.find(t => t.week === p.week)
-      return tp ? [p.week, tp.value] : [p.week, null]
-    }) : []) as any
+    const trendPairs = (regression?.isValid ? regression.trendPoints.map(tp => [tp.week, tp.value]) : []) as any
 
     // Moving head position along the series
     const maxIndex = Math.max(0, chartData.length - 1)
@@ -108,50 +105,35 @@ export default function MarketingWeightTrendEChart({ data, hideTooltips = false,
         type: 'value',
         name: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)',
         min: yMin,
-        max: yMax
+        max: yMax,
+        axisLabel: {
+          formatter: (val: number) => {
+            const num = typeof val === 'number' ? val : parseFloat(String(val))
+            if (!Number.isFinite(num)) return ''
+            return Math.round(num * 10) / 10
+          }
+        }
       },
       title: hideTitles ? undefined : { text: 'Weight Trend Analysis', left: 'center' },
       series: [
-        // Ghost full line (low opacity) - full path
+        // Single weight line (client style)
         {
-          id: 'ghostWeight',
-          name: 'Weight (ghost)',
+          name: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)',
           type: 'line',
           data: pairs,
           smooth: true,
-          smoothMonotone: 'x',
-          symbol: 'none',
-          lineStyle: { width: 3, color: 'rgba(139,92,246,0.35)' },
-        },
-        // Revealed animated line (updated via setOption from parent)
-        {
-          id: 'revealWeight',
-          name: 'Weight',
-          type: 'line',
-          data: [] as [number, number][],
-          smooth: true,
-          smoothMonotone: 'x',
           symbol: 'none',
           lineStyle: { width: 3, color: '#8b5cf6' },
           itemStyle: { color: '#8b5cf6' },
         },
-        // Moving head as scatter point
-        {
-          id: 'headWeight',
-          type: 'scatter',
-          data: [] as [number, number][],
-          symbol: 'circle',
-          symbolSize: 12,
-          itemStyle: { color: '#8b5cf6' }
-        },
-        // Trend line
+        // Trend line (full-range, non-smoothed, solid black)
         ...(regression?.isValid ? [{
-          name: 'Trend',
+          name: 'Trend Line',
           type: 'line',
           data: trendPairs,
-          smooth: true,
-          smoothMonotone: 'x',
+          smooth: false,
           symbol: 'none',
+          connectNulls: true,
           lineStyle: { width: 2, color: '#000000' }
         }] : [])
       ]

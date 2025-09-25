@@ -14,29 +14,25 @@ export const metadata = {
 }
 
 async function fetchSnapshotByAlias(alias: string) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!SUPABASE_URL || !ANON_KEY) return null
+  const supabase = createClient(SUPABASE_URL, ANON_KEY)
 
   // Resolve alias → current slug
-  const { data: aliasRow } = await supabase
-    .from('marketing_aliases')
-    .select('current_slug')
-    .eq('alias', alias)
-    .single()
-
-  const slug = aliasRow?.current_slug
-  if (!slug) return null
-
-  // Fetch snapshot via internal API (increments view_count, sets cache headers)
+  // Resolve alias to slug via internal API to avoid Supabase client chunking on server
   const hdr = await headers()
   const proto = hdr.get('x-forwarded-proto') ?? (process.env.NODE_ENV === 'production' ? 'https' : 'http')
   const host = hdr.get('host') ?? 'localhost:3000'
   const baseFromHeaders = `${proto}://${host}`
   const envBase = process.env.NEXT_PUBLIC_BASE_URL
   const base = envBase && /^https?:\/\//.test(envBase) ? envBase : baseFromHeaders
+  const aliasRes = await fetch(`${base}/api/marketing/aliases/${encodeURIComponent(alias)}`, { cache: 'no-store' })
+  const aliasJson = aliasRes.ok ? await aliasRes.json() : null
+  const slug = aliasJson?.slug
+  if (!slug) return null
 
+  // Fetch snapshot via internal API (increments view_count, sets cache headers)
   try {
     const res = await fetch(`${base}/api/marketing/shares/${encodeURIComponent(slug)}`, {
       cache: 'no-store'

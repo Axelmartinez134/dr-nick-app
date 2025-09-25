@@ -59,12 +59,18 @@ export default function MarketingWeightProjectionEChart({ data, hideTooltips = f
     const minValue = hasValues ? Math.min(...allValues) : 0
     const maxValue = hasValues ? Math.max(...allValues) : 100
     const padding = hasValues ? (maxValue - minValue) * 0.1 : 0
-    const yMin = hasValues ? minValue - padding : 0
-    const yMax = hasValues ? maxValue + padding : 100
+    const yMinRaw = hasValues ? minValue - padding : 0
+    const yMaxRaw = hasValues ? maxValue + padding : 100
+    // Round y-axis domain to tidy 5-unit steps to avoid awkward ticks like 169.58
+    const roundTo = 5
+    const yMin = Math.floor(yMinRaw / roundTo) * roundTo
+    const yMax = Math.ceil(yMaxRaw / roundTo) * roundTo
 
     // Convert series for display
     const actualDisplay = seriesData.actualWeights.map(v => toDisplay(v as any))
     const projectionsDisplay = seriesData.projections.map(p => ({ name: p.name, data: p.data.map(v => toDisplay(v as any)) }))
+    const projectionColors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b']
+    const trendDisplay = seriesData.trend.map(v => (v === null || v === undefined) ? v : toDisplay(v as any))
 
     return {
       backgroundColor: 'transparent',
@@ -73,12 +79,24 @@ export default function MarketingWeightProjectionEChart({ data, hideTooltips = f
       legend: hideTitles ? undefined : { top: 10 },
       grid: { left: 50, right: 20, top: hideTitles ? 10 : 40, bottom: 40 },
       xAxis: { type: 'category', data: seriesData.weeks, boundaryGap: false, name: 'Week' },
-      yAxis: { type: 'value', name: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)', min: yMin, max: yMax },
+      yAxis: {
+        type: 'value',
+        name: unitSystem === 'metric' ? 'Weight (kg)' : 'Weight (lbs)',
+        min: yMin,
+        max: yMax,
+        axisLabel: {
+          formatter: (val: number) => {
+            const n = typeof val === 'number' ? val : parseFloat(String(val))
+            if (!Number.isFinite(n)) return ''
+            return Math.round(n)
+          }
+        }
+      },
       title: hideTitles ? undefined : { text: 'Weight Projections vs Actual', left: 'center' },
       series: [
-        { name: 'Actual', type: 'line', data: actualDisplay, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { width: 4, color: '#2563eb' }, itemStyle: { color: '#2563eb' } },
-        ...projectionsDisplay.map((p) => ({ name: p.name, type: 'line', data: p.data, smooth: true, symbol: 'none', lineStyle: { width: 2, type: 'dashed' } })),
-        ...(seriesData.trend.length ? [{ name: 'Actual Trend', type: 'line', data: seriesData.trend, smooth: true, symbol: 'none', lineStyle: { width: 2, color: '#000' } }] : [])
+        { name: 'Actual', type: 'line', data: actualDisplay, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { width: 4, color: '#ef4444' }, itemStyle: { color: '#ef4444' } },
+        ...projectionsDisplay.map((p, idx) => ({ name: p.name, type: 'line', data: p.data, smooth: true, symbol: 'none', lineStyle: { width: 2, type: 'dashed', color: projectionColors[idx % projectionColors.length] } })),
+        ...(trendDisplay.length ? [{ name: 'Actual Trend', type: 'line', data: trendDisplay, smooth: false, symbol: 'none', connectNulls: true, lineStyle: { width: 2, color: '#000' } }] : [])
       ]
     } as any
   }, [seriesData, hideTooltips, hideTitles, unitSystem])

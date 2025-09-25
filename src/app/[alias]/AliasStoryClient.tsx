@@ -5,33 +5,22 @@ import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTyp
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
-const MarketingPlateauPreventionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingPlateauPreventionEChart'), { ssr: false })
+const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
+const MarketingWaistTrendChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingWaistTrendChart'), { ssr: false })
+const MarketingSleepConsistencyChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingSleepConsistencyChart'), { ssr: false })
+const MarketingMorningFatBurnChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingMorningFatBurnChart'), { ssr: false })
+const MarketingBodyFatPercentageChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingBodyFatPercentageChart'), { ssr: false })
 
 type UnitSystem = 'imperial' | 'metric'
 
 export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
-  const [inlineCtaVisible, setInlineCtaVisible] = useState(false)
-
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      const anyVisible = entries.some((e) => e.isIntersecting)
-      setInlineCtaVisible(anyVisible)
-    }, { root: null, rootMargin: '0px 0px -20% 0px', threshold: 0.01 })
-
-    const nodes = document.querySelectorAll('.inline-cta-sentinel')
-    nodes.forEach((n) => observer.observe(n))
-    return () => {
-      nodes.forEach((n) => observer.unobserve(n))
-      observer.disconnect()
-    }
-  }, [])
 
   const m = snapshot.metrics
   const meta = snapshot.meta
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen bg-white pb-24">
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
         <div className="text-sm text-gray-500">{meta.watermarkText || 'The Fittest You'}</div>
@@ -73,16 +62,13 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
         </div>
       </section>
 
-      {/* Inline CTA after summary cards */}
-      <section className="max-w-md mx-auto px-4">
-        <div id="cta" className="inline-cta-sentinel mt-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
-        </div>
-      </section>
-
       {/* Charts */}
       <section id="charts" className="max-w-md mx-auto p-4">
         <div className="rounded border p-2">
+          <div className="mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
+            <p className="text-sm text-gray-600">Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress.</p>
+          </div>
           <div className="w-full" style={{ height: 300 }}>
             <MarketingWeightTrendEChart
               data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
@@ -90,35 +76,144 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
               unitSystem={unitSystem}
             />
           </div>
+          <div className="mt-3 text-xs text-gray-500">
+            <p>• Track weekly progress</p>
+            <p>• Dark black trend line shows overall direction</p>
+            <p>• Weekly fluctuations are normal - focus on trendline should be prioritized</p>
+          </div>
+        </div>
+
+        <div className="rounded border p-2 mt-4">
+          <div className="mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
+            <p className="text-sm text-gray-600">Compares actual weight loss against 4 different fat loss projection rates. Helps identify if progress is on track with expectations.</p>
+          </div>
+          <div className="w-full" style={{ height: 300 }}>
+            <MarketingWeightProjectionEChart
+              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+              hideTitles={true}
+              unitSystem={unitSystem}
+            />
+          </div>
+          {/* Client-style legend below the chart */}
+          <div className="mt-2 text-xs text-gray-700 flex flex-wrap gap-4">
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-red-500" />Actual Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-emerald-500" />0.5% loss/wk</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-blue-600" />1.0% loss/wk</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
+          </div>
+          <div className="mt-3 text-xs text-gray-500">
+            <p>• Red line shows actual progress (irregular pattern expected)</p>
+            <p>• Dark black trend line shows actual weight trajectory</p>
+            <p>• Dotted lines show theoretical projections extending to match your current progress</p>
+            <p>• Projections help identify if progress is on track with expectations</p>
+          </div>
+        </div>
+
+        <div className="rounded border p-2 mt-4">
+          <div className="w-full">
+            <ClientPlateauPreventionChart
+              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+            />
+          </div>
         </div>
       </section>
 
-      {/* Weight Projection Chart (optional collapsed) */}
+      {/* Inline CTA after Charts */}
+      <section className="max-w-md mx-auto px-4">
+        <div className="inline-cta-sentinel mt-2">
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+        </div>
+      </section>
+
+      {/* Optional charts (collapsed) */}
       <section className="max-w-md mx-auto p-4">
         <details className="rounded border">
-          <summary className="p-2 cursor-pointer select-none">Weight Projection</summary>
+          <summary className="p-2 cursor-pointer select-none">Waist Trend</summary>
           <div className="p-2">
-            <div className="w-full" style={{ height: 300 }}>
-              <MarketingWeightProjectionEChart
-                data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                hideTitles={false}
-              unitSystem={unitSystem}
-              />
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">📏 Waist Trend Analysis</h3>
+              <p className="text-sm text-gray-600">Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress.</p>
+            </div>
+            <MarketingWaistTrendChart
+              data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
+              isAnimating={false}
+              animationDuration={0}
+              onAnimationComplete={() => {}}
+              hideTitles={true}
+            />
+            <div className="mt-3 text-xs text-gray-500">
+              <p>• Often more accurate than weight for fat loss tracking</p>
+              <p>• Dark black trend line shows overall waist measurement change direction</p>
+              <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
             </div>
           </div>
         </details>
-      </section>
 
-      {/* Plateau Prevention — Weight (optional collapsed) */}
-      <section className="max-w-md mx-auto p-4">
-        <details className="rounded border">
-          <summary className="p-2 cursor-pointer select-none">Plateau Prevention — Weight</summary>
+        <details className="rounded border mt-4">
+          <summary className="p-2 cursor-pointer select-none">Sleep Consistency</summary>
           <div className="p-2">
-            <div className="w-full" style={{ height: 300 }}>
-              <MarketingPlateauPreventionEChart
-                data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                hideTitles={false}
-              />
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">😴 Sleep Consistency & Recovery</h3>
+              <p className="text-sm text-gray-600">Weekly sleep quality scores from biometric analysis (added by Dr. Nick)</p>
+            </div>
+            <MarketingSleepConsistencyChart
+              data={(snapshot.derived.sleepTrend || []).map(([week, value]) => ({ date: '', week_number: week, sleep_consistency_score: value })) as any}
+              isAnimating={false}
+              animationDuration={0}
+              onAnimationComplete={() => {}}
+              hideTitles={true}
+            />
+            <div className="mt-3 text-xs text-gray-500">
+              <p>• Data sourced from biometric analysis by Dr. Nick</p>
+              <p>• Dark black trend line shows overall sleep consistency direction</p>
+              <p>• Higher scores indicate better sleep consistency and recovery</p>
+              <p>• Sleep consistency directly impacts weight loss and overall progress</p>
+            </div>
+          </div>
+        </details>
+
+        <details className="rounded border mt-4">
+          <summary className="p-2 cursor-pointer select-none">Morning Fat Burn %</summary>
+          <div className="p-2">
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">🔥 Morning Fat Oxidation %</h3>
+              <p className="text-sm text-gray-600">Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.</p>
+            </div>
+            <MarketingMorningFatBurnChart
+              data={(snapshot.derived.morningFatBurnTrend || []).map(([week, value]) => ({ date: '', week_number: week, morning_fat_burn_percent: value })) as any}
+              isAnimating={false}
+              animationDuration={0}
+              onAnimationComplete={() => {}}
+              hideTitles={true}
+            />
+            <div className="mt-3 text-xs text-gray-500">
+              <p>• Measured weekly through metabolic analysis</p>
+              <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
+              <p>• Shows how well your body burns fat in a fasted state</p>
+            </div>
+          </div>
+        </details>
+
+        <details className="rounded border mt-4">
+          <summary className="p-2 cursor-pointer select-none">Body Fat %</summary>
+          <div className="p-2">
+            <div className="mb-2">
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Body Fat Percentage</h3>
+              <p className="text-sm text-gray-600">Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results.</p>
+            </div>
+            <MarketingBodyFatPercentageChart
+              data={(snapshot.derived.bodyFatTrend || []).map(([week, value]) => ({ date: '', week_number: week, body_fat_percentage: value })) as any}
+              isAnimating={false}
+              animationDuration={0}
+              onAnimationComplete={() => {}}
+              hideTitles={true}
+            />
+            <div className="mt-3 text-xs text-gray-500">
+              <p>• Measured using the most precise testing methodology Dr. Nick has determined available in your situation</p>
+              <p>• Scheduled periodically based on your progress milestones</p>
+              <p>• More accurate than weight alone for tracking fat loss</p>
             </div>
           </div>
         </details>
@@ -127,6 +222,13 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
       {/* Photos placeholder */}
       <section id="photos" className="max-w-md mx-auto p-4">
         <div className="rounded border p-4 text-gray-600">Photos section coming soon</div>
+      </section>
+
+      {/* Inline CTA after Photos (Hero) */}
+      <section className="max-w-md mx-auto px-4">
+        <div id="cta" className="inline-cta-sentinel mt-4 mb-2">
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+        </div>
       </section>
 
       {/* Fit3D placeholder */}
@@ -139,17 +241,26 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
         <div className="rounded border p-4 text-gray-600">Testing (DocSend) section coming soon</div>
       </section>
 
+      {/* Inline CTA after Testing */}
+      <section className="max-w-md mx-auto px-4">
+        <div className="inline-cta-sentinel mt-4 mb-2">
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+        </div>
+      </section>
+
       {/* Testimonial placeholder */}
       <section id="testimonial" className="max-w-md mx-auto p-4">
         <div className="rounded border p-4 text-gray-600">Testimonial section coming soon</div>
       </section>
 
-      {/* Sticky CTA */}
-      <div className={`fixed bottom-0 left-0 right-0 bg-white/90 border-t p-3 transition-opacity ${inlineCtaVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="max-w-md mx-auto">
+      {/* Inline CTA above footer (after Testimonials) */}
+      <section className="max-w-md mx-auto px-4">
+        <div className="inline-cta-sentinel mt-4 mb-2">
           <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
         </div>
-      </div>
+      </section>
+
+      {/* No global fixed CTA while editing — using per-section CTAs above */}
     </main>
   )
 }
