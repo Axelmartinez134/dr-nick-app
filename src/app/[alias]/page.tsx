@@ -72,7 +72,21 @@ export default async function Page({ params }: { params: Promise<{ alias: string
     )
   }
 
-  return <AliasStoryClient snapshot={snapshot} />
+  // Pass resolved slug to the client for analytics (CTA clicks)
+  // We re-use the alias API result to avoid re-resolving on the client
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const hdr = await headers()
+  const proto = hdr.get('x-forwarded-proto') ?? (process.env.NODE_ENV === 'production' ? 'https' : 'http')
+  const host = hdr.get('host') ?? 'localhost:3000'
+  const baseFromHeaders = `${proto}://${host}`
+  const envBase = process.env.NEXT_PUBLIC_BASE_URL
+  const base = envBase && /^https?:\/\//.test(envBase) ? envBase : baseFromHeaders
+  const aliasRes = await fetch(`${base}/api/marketing/aliases/${encodeURIComponent(alias)}`, { cache: 'no-store' })
+  const aliasJson = aliasRes.ok ? await aliasRes.json() : null
+  const shareSlug = aliasJson?.slug || null
+
+  return <AliasStoryClient snapshot={snapshot} shareSlug={shareSlug || undefined} />
 }
 
 

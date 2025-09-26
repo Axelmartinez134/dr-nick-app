@@ -13,12 +13,12 @@ const MarketingBodyFatPercentageChart = dynamic(() => import('@/app/components/h
 
 type UnitSystem = 'imperial' | 'metric'
 
-export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson }) {
+export default function AliasStoryClient({ snapshot, shareSlug }: { snapshot: SnapshotJson; shareSlug?: string }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
 
   const m = snapshot.metrics
   const meta = snapshot.meta
-  const slug = snapshot?.meta?.slug as any // optional, if available in meta
+  const slug = (shareSlug as any) || (snapshot?.meta as any)?.slug
   const reportClick = (ctaId: string) => {
     try {
       const s = (window as any).__marketingSlug || slug
