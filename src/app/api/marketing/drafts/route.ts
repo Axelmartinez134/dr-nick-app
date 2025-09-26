@@ -1,0 +1,54 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { sanitizeAlias, isAliasValidFormat } from '@/app/components/health/marketing/aliasUtils'
+
+function getServiceClient()
+{
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE || process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  return createClient(url, key)
+}
+
+// POST /api/marketing/drafts — create draft
+export async function POST(req: NextRequest)
+{
+  try {
+    const supabase = getServiceClient()
+    if (!supabase) return NextResponse.json({ error: 'Server missing Supabase env' }, { status: 500 })
+
+    const body = await req.json()
+    const { patientId, alias: inputAlias } = body || {}
+    if (!patientId || !inputAlias) return NextResponse.json({ error: 'Missing patientId or alias' }, { status: 400 })
+
+    const alias = sanitizeAlias(String(inputAlias))
+    if (!isAliasValidFormat(alias)) return NextResponse.json({ error: 'Invalid alias' }, { status: 400 })
+
+    // Create an empty draft
+    const draft = {
+      meta: { displayNameMode: 'first_name', captionsEnabled: true, layout: 'stack', chartsEnabled: { weightTrend: true, projection: true, plateauWeight: true } },
+      media: { beforePhotoUrl: null, afterPhotoUrl: null, loopVideoUrl: null, fit3d: { images: [], youtubeId: null }, testing: { docsendUrl: null } }
+    }
+
+    // Resolve created_by (admin) or fallback to patient
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || process.env.ADMIN_EMAIL
+    let createdBy: string | null = null
+    if (adminEmail) {
+      const { data: adminRow } = await supabase.from('profiles').select('id').eq('email', adminEmail).single()
+      createdBy = adminRow?.id || null
+    }
+
+    const { data, error } = await supabase
+      .from('marketing_drafts')
+      .insert({ patient_id: patientId, alias, draft_json: draft, created_by: createdBy || patientId })
+      .select('id')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    return NextResponse.json({ draftId: data.id, alias })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
+  }
+}
+
+

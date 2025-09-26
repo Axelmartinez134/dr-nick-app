@@ -213,6 +213,17 @@ export default function MarketingTab() {
               <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/${publishResult.alias}`)} className="text-xs text-gray-600 underline">Copy</button>
               <a className="text-blue-600 underline" href={`/version/${publishResult.slug}`} target="_blank">Open Version</a>
               <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/version/${publishResult.slug}`)} className="text-xs text-gray-600 underline">Copy</button>
+              <button
+                className="ml-2 text-xs px-2 py-1 border rounded"
+                onClick={async () => {
+                  const res = await fetch('/api/marketing/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patientId: selectedPatientId, alias: publishResult.alias }) })
+                  const json = await res.json()
+                  if (!res.ok) { alert(json.error || 'Failed to create draft'); return }
+                  window.location.href = `/admin/marketing/editor/${json.draftId}`
+                }}
+              >
+                Continue editing
+              </button>
             </div>
           )}
         </div>
