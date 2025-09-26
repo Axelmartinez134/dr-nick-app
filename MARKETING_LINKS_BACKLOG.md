@@ -114,10 +114,15 @@ Format: Title; Description; Acceptance; Dependencies
 - Acceptance:
   - 200 on success; subsequent fetch is 410; alias target updates to next latest if exists
 - Dependencies: 1, 3
- - Status: planned
+ - Status: completed
    - Notes:
-     - Alias (e.g., `/areg`) must always resolve to the latest non‑revoked snapshot (order by `created_at` DESC). If newest is revoked, fall back to previous non‑revoked.
-     - Versioned page for a revoked slug returns 410 (Gone) with a friendly message.
+     - Implemented POST `/api/marketing/shares/[slug]/revoke`.
+       - Sets `revoked_at` (idempotent: second call returns status without error).
+       - Finds aliases pointing at the slug and updates `current_slug` to the latest non‑revoked snapshot for the same `patient_id`.
+       - Returns JSON summary: `{ status, slug, alreadyRevoked, aliasUpdated, newAliasSlug }`.
+     - `GET /api/marketing/shares/[slug]` returns 410 (Gone) for revoked slugs (existing behavior confirmed).
+     - Alias resolver remains case‑insensitive and now reliably returns the latest non‑revoked slug.
+     - Manual smoke tests passed: revoke newest → alias falls back to previous; revoke again → no‑op; revoke with no fallback → alias shows "not available" until a new snapshot is published.
 
 7. API: POST /api/marketing/shares/[slug]/click (CTA)
 - Description: Public route increments cta_click_count when CTA pressed.
