@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import PreviewClient from './PreviewClient'
 
 export default function EditorClient({ draftId, initialDraft }: { draftId: string; initialDraft: any }) {
   const [draft, setDraft] = useState<any>(initialDraft?.draft_json || initialDraft)
