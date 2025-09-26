@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { sanitizeAlias, isAliasValidFormat } from './aliasUtils'
 import PatientSelector from './PatientSelector'
+import LinkManager from './LinkManager'
 // import AnimationControls from './AnimationControls'
 import AnimatedChartPreview from './AnimatedChartPreview'
 import PlaceholderSections from './PlaceholderSections'
@@ -246,6 +247,9 @@ export default function MarketingTab() {
           </div>
         </div>
       </div>
+
+      {/* Link Manager (Active Links) */}
+      <LinkManager />
 
       {/* Main Layout - 3 Column Design */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
