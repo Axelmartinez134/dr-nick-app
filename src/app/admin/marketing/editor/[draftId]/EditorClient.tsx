@@ -200,7 +200,9 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           <section className="bg-white rounded border p-3">
             <div className="text-sm text-gray-700 mb-3">Live Preview</div>
             {preview ? (
-              <iframe title="preview" srcDoc={`<!doctype html><html><head><meta charset=\"utf-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" /></head><body style=\"margin:0;padding:0\"><div id=\"root\"></div><script>window.__SNAPSHOT__=${JSON.stringify(preview)};<\/script></body></html>`} className="w-full h-[600px] border rounded" />
+              // Render AliasStoryClient directly for parity
+              // eslint-disable-next-line @next/next/no-img-element
+              <PreviewClient snapshot={preview} />
             ) : (
               <div className="text-xs text-gray-500">Preview will appear after the first save…</div>
             )}

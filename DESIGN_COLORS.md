@@ -1,4 +1,4 @@
-### Design colors (semantic tokens)
+A### Design colors (semantic tokens)
 
 Purpose: Keep UI colors consistent across screens. Use these semantic tokens, not ad-hoc values. Tailwind classes are shown for reference. Adjust centrally here if we need to tweak.
 

@@ -56,7 +56,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </div>
       </header>
 
-      {/* Hero media: below unit toggle; two-column layout (left + optional right) */}
+      {/* Hero media: below unit toggle; two-column layout (left + optional right)
+          Priority: prefer images (after/before) over loop video */}
       {(() => {
         const media = (snapshot as any)?.media || {}
         const loop = media?.loopVideoUrl as string | undefined
@@ -71,13 +72,19 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           try { return /\.mp4($|\?)/i.test(new URL(u).pathname) } catch { return false }
         }
 
-        const primary = loop || beforeUrl || afterUrl || null
+        // Prefer images first, then loop
+        const primary = afterUrl || beforeUrl || loop || null
         if (!primary) return null
 
         const secondary = (() => {
-          // If primary is loop, prefer after/before; else prefer fit3d first image
-          if (loop && (afterUrl || beforeUrl)) return afterUrl || beforeUrl
-          return firstFit3d || null
+          // If primary is an image and we also have a loop, show loop on the right
+          if ((primary === afterUrl || primary === beforeUrl) && loop) return loop
+          // Otherwise prefer first fit3d item
+          if (firstFit3d) return firstFit3d
+          // Or the other image if available
+          if (primary === afterUrl && beforeUrl) return beforeUrl
+          if (primary === beforeUrl && afterUrl) return afterUrl
+          return null
         })()
 
         const render = (u: string) => (
