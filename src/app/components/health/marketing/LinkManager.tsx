@@ -22,10 +22,18 @@ export default function LinkManager() {
 
   return (
     <section className="bg-white rounded-lg shadow-md p-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">🔗 Link Manager (Active Links)</h3>
-        <button className="text-sm text-blue-600" onClick={() => setOpen(v => !v)}>{open ? 'Collapse' : 'Expand'}</button>
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-4 py-3 text-left font-medium text-gray-900 hover:bg-gray-50 focus:outline-none flex items-center justify-between rounded-t-lg"
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-2">
+          <span>{open ? '🔼' : '🔽'}</span>
+          <span className="text-lg font-semibold text-gray-900">🔗 Link Manager (Active Links)</span>
+        </span>
+        <span className="text-sm text-gray-500">{open ? 'Click to collapse' : 'Click to expand'}</span>
+      </button>
       {open && (
         <div className="mt-4">
           <div className="flex items-center justify-between gap-3 mb-3">

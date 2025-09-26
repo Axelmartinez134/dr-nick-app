@@ -229,7 +229,10 @@ export default function MarketingTab() {
           )}
         </div>
       </div>
-      
+
+      {/* Link Manager (Active Links) */}
+      <LinkManager />
+
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center">
@@ -247,9 +250,6 @@ export default function MarketingTab() {
           </div>
         </div>
       </div>
-
-      {/* Link Manager (Active Links) */}
-      <LinkManager />
 
       {/* Main Layout - 3 Column Design */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
