@@ -37,8 +37,17 @@ export default function LinkManager() {
       {open && (
         <div className="mt-4">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <input value={q} onChange={(e) => { setPage(1); setQ(e.target.value) }} placeholder="Search by client, alias, or slug…" className="flex-1 px-3 py-2 border rounded" />
-            <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="px-2 py-2 border rounded">
+            <input
+              value={q}
+              onChange={(e) => { setPage(1); setQ(e.target.value) }}
+              placeholder="Search by client, alias, or slug…"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded bg-white text-gray-900 placeholder-gray-500 focus:outline-none focus:border-gray-500"
+            />
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as any)}
+              className="px-2 py-2 border border-gray-300 rounded bg-white text-gray-900 focus:outline-none"
+            >
               <option value="updated_desc">Updated desc</option>
               <option value="views_desc">Views desc</option>
               <option value="cta_desc">CTA desc</option>
@@ -48,7 +57,7 @@ export default function LinkManager() {
           <div className="overflow-auto">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-600">
+                <tr className="text-left text-gray-700">
                   <th className="py-2 pr-3">Client</th>
                   <th className="py-2 pr-3">Alias</th>
                   <th className="py-2 pr-3">Current version</th>
@@ -61,38 +70,38 @@ export default function LinkManager() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={`${r.alias}-${r.currentSlug}`} className="border-t">
-                    <td className="py-2 pr-3">
-                      <div className="font-medium text-gray-900">{r.patient.name}</div>
-                      <div className="text-gray-500 text-xs">{r.patient.email}</div>
+                    <td className="py-2 pr-3 text-gray-900">
+                      <div className="font-medium">{r.patient.name}</div>
+                      <div className="text-gray-600 text-xs">{r.patient.email}</div>
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2 pr-3 text-gray-900">
                       <a className="text-blue-600 underline" href={`/${r.alias}`} target="_blank">/{r.alias}</a>
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2 pr-3 text-gray-900">
                       <a className="text-blue-600 underline" href={`/version/${r.currentSlug}`} target="_blank">{r.currentSlug}</a>
                     </td>
-                    <td className="py-2 pr-3">{new Date(r.createdAt).toLocaleString()}</td>
-                    <td className="py-2 pr-3">{r.views}</td>
-                    <td className="py-2 pr-3">{r.ctas}</td>
+                    <td className="py-2 pr-3 text-gray-900">{new Date(r.createdAt).toLocaleString()}</td>
+                    <td className="py-2 pr-3 text-gray-900">{r.views}</td>
+                    <td className="py-2 pr-3 text-gray-900">{r.ctas}</td>
                     <td className="py-2 pr-3">
                       <div className="flex flex-wrap gap-2">
-                        <a className="px-2 py-1 border rounded text-xs" href={`/${r.alias}`} target="_blank">Open Alias</a>
-                        <button className="px-2 py-1 border rounded text-xs" onClick={async () => {
+                        <a className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" href={`/${r.alias}`} target="_blank">Open Alias</a>
+                        <button className="px-2 py-1 rounded text-xs bg-blue-600 text-white hover:bg-blue-700" onClick={async () => {
                           const res = await fetch('/api/marketing/drafts/from-latest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patientId: r.patient.id, alias: r.alias }) })
                           const json = await res.json()
                           if (!res.ok) { alert(json.error || 'Failed to create draft'); return }
                           window.location.href = `/admin/marketing/editor/${json.draftId}`
                         }}>Continue editing</button>
-                        <a className="px-2 py-1 border rounded text-xs" href={`/version/${r.currentSlug}`} target="_blank">Open Version</a>
-                        <button className="px-2 py-1 border rounded text-xs" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/${r.alias}`)}>Copy Alias URL</button>
-                        <button className="px-2 py-1 border rounded text-xs" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/version/${r.currentSlug}`)}>Copy Version URL</button>
-                        <button className="px-2 py-1 border rounded text-xs" onClick={async () => {
+                        <a className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" href={`/version/${r.currentSlug}`} target="_blank">Open Version</a>
+                        <button className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/${r.alias}`)}>Copy Alias URL</button>
+                        <button className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/version/${r.currentSlug}`)}>Copy Version URL</button>
+                        <button className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" onClick={async () => {
                           const res = await fetch(`/api/marketing/drafts/from-latest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patientId: r.patient.id, alias: r.alias }) })
                           const json = await res.json()
                           if (!res.ok) { alert(json.error || 'Failed'); return }
                           window.location.href = `/admin/marketing/editor/${json.draftId}`
                         }}>Change Display Label</button>
-                        <button className="px-2 py-1 border rounded text-xs" onClick={async () => {
+                        <button className="px-2 py-1 border border-red-300 text-red-700 rounded text-xs hover:bg-red-50" onClick={async () => {
                           if (!confirm('Revoke this version?')) return
                           const res = await fetch(`/api/marketing/shares/${encodeURIComponent(r.currentSlug)}/revoke`, { method: 'POST' })
                           const j = await res.json()
