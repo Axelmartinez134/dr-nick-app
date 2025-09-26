@@ -34,7 +34,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    let alreadyRevoked = !!share.revoked_at
+    const alreadyRevoked = !!share.revoked_at
 
     // Revoke if not already
     if (!alreadyRevoked) {
