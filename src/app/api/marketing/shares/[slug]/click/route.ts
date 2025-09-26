@@ -37,21 +37,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
       return NextResponse.json({ error: 'Revoked' }, { status: 404 })
     }
 
-    const { error: updErr } = await supabase.rpc('sql_increment_cta_click', { _slug: slug })
+    const { error: updErr } = await supabase.rpc('increment_cta_click', { _slug: slug })
     if (updErr) {
-      // Fallback to direct update if RPC not present
-      const { error: fallbackErr } = await supabase
-        .from('marketing_shares')
-        .update({ cta_click_count: (null as any) }) // no-op; we will use increment via RPC alternative below
-        .eq('slug', slug)
-      // Ignore fallback error; try raw increment with single update
-      const { error: incErr } = await supabase.rpc('exec_raw', {
-        sql: `update marketing_shares set cta_click_count = cta_click_count + 1 where slug = $1`,
-        params: [slug]
-      } as any)
-      if (fallbackErr && incErr) {
-        return NextResponse.json({ error: updErr.message || 'Failed to count' }, { status: 500 })
-      }
+      return NextResponse.json({ error: updErr.message || 'Failed to count' }, { status: 500 })
     }
 
     return NextResponse.json({ counted: true }, { status: 200 })
