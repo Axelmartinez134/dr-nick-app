@@ -13,7 +13,7 @@ const MarketingBodyFatPercentageChart = dynamic(() => import('@/app/components/h
 
 type UnitSystem = 'imperial' | 'metric'
 
-export default function AliasStoryClient({ snapshot, shareSlug }: { snapshot: SnapshotJson; shareSlug?: string }) {
+export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
 
   const m = snapshot.metrics
@@ -27,7 +27,7 @@ export default function AliasStoryClient({ snapshot, shareSlug }: { snapshot: Sn
           method: 'POST',
           keepalive: true,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ctaId, pageType: 'alias' })
+          body: JSON.stringify({ ctaId, pageType })
         })
       }
     } catch {}
@@ -55,6 +55,50 @@ export default function AliasStoryClient({ snapshot, shareSlug }: { snapshot: Sn
           </button>
         </div>
       </header>
+
+      {/* Hero media: below unit toggle; two-column layout (left + optional right) */}
+      {(() => {
+        const media = (snapshot as any)?.media || {}
+        const loop = media?.loopVideoUrl as string | undefined
+        const beforeUrl = media?.beforePhotoUrl as string | undefined
+        const afterUrl = media?.afterPhotoUrl as string | undefined
+        const firstFit3d = Array.isArray(media?.fit3d?.images) && media.fit3d.images.length > 0
+          ? (media.fit3d.images[0] as string)
+          : undefined
+
+        const isMp4 = (u?: string) => {
+          if (!u) return false
+          try { return /\.mp4($|\?)/i.test(new URL(u).pathname) } catch { return false }
+        }
+
+        const primary = loop || beforeUrl || afterUrl || null
+        if (!primary) return null
+
+        const secondary = (() => {
+          // If primary is loop, prefer after/before; else prefer fit3d first image
+          if (loop && (afterUrl || beforeUrl)) return afterUrl || beforeUrl
+          return firstFit3d || null
+        })()
+
+        const render = (u: string) => (
+          <div className="rounded border overflow-hidden">
+            {isMp4(u) ? (
+              <video src={u} muted loop playsInline autoPlay controls={false} className="w-full h-auto" />
+            ) : (
+              <img src={u} alt="Hero" className="w-full h-auto" />
+            )}
+          </div>
+        )
+
+        return (
+          <section className="max-w-md mx-auto px-4">
+            <div className="grid grid-cols-2 gap-3 items-start">
+              <div>{render(primary)}</div>
+              <div>{secondary ? render(secondary as string) : null}</div>
+            </div>
+          </section>
+        )
+      })()}
 
       {/* Compliance cards */}
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">

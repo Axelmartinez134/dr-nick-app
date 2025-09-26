@@ -143,11 +143,59 @@ Format: Title; Description; Acceptance; Dependencies
   - Bucket exists; tested upload/read
   - Publish step copies chosen media into `marketing-assets/{slug}/...` (asset pinning) and uses those URLs in snapshots
 - Dependencies: none
- - Status: planned
-   - Notes:
-     - Use pin‑on‑publish: draft uploads live in a temp area; on Publish, copy to `marketing-assets/{slug}/...` and update snapshot URLs.
-     - Alias path (e.g., `/areg`) stays stable; publishing a new snapshot only advances `current_slug` behind the alias.
-     - No file size/type constraints for now (can be added later).
+ - Status: completed
+   - Notes (implementation record):
+     - Bucket created as public via SQL (idempotent):
+       ```sql
+       insert into storage.buckets (id, name, public)
+       values ('marketing-assets', 'marketing-assets', true)
+       on conflict (id) do update set name = excluded.name, public = excluded.public;
+       ```
+     - Public read policy for this bucket (idempotent):
+       ```sql
+       do $$
+       begin
+         if not exists (
+           select 1 from pg_policies
+           where schemaname = 'storage' and tablename = 'objects'
+             and policyname = 'Public read for marketing-assets'
+         ) then
+           create policy "Public read for marketing-assets"
+             on storage.objects
+             for select
+             to anon, authenticated
+             using (bucket_id = 'marketing-assets');
+         end if;
+       end $$;
+       ```
+     - CORS: Supabase Storage serves permissive CORS by default; no per‑bucket CORS UI. If restriction is needed later, place a proxy in front (e.g., Vercel Edge/Cloudflare) and set headers there.
+     - Pin‑on‑publish integrated:
+       - `snapshotBuilder` calls `pinAssets` to copy provided media to stable, versioned paths before DB insert.
+       - Destination paths (spec‑aligned):
+         - Photos: `marketing-assets/{slug}/photos/before.*`, `.../photos/after.*`
+         - Videos: `marketing-assets/{slug}/videos/loop.*`
+         - Fit3D images/videos: `marketing-assets/{slug}/fit3d/NN.*`
+       - External references (YouTube `youtubeId`, DocSend URLs) are not copied; they remain external.
+       - Supported types for pinning: photos `jpg/jpeg/png/webp`; loop videos `mp4`.
+       - Draft sources may live under `marketing-assets/drafts/{any}/...`; drafts are left in place after publish (cleanup deferred).
+     - Atomic publish guard:
+       - In `POST /api/marketing/shares`, if any provided media fails to pin, the API returns 500 and does not insert a row or advance the alias (prevents partial/broken snapshots).
+     - Library area created for future shared assets: `marketing-assets/lib/branding/` (e.g., `logo.svg`, `watermark.png`).
+   - How to manually publish & verify (for future):
+     1) Upload draft media to any public URL (e.g., `marketing-assets/drafts/{id}/...`) and copy the public URLs.
+     2) Call `POST /api/marketing/shares` with those URLs in `settings.selectedMedia`.
+     3) On success, verify pinned files under `marketing-assets/{slug}/...` and confirm `marketing_shares.snapshot_json.media.*` now contains only pinned URLs.
+     4) Open `/{alias}` and ensure assets resolve.
+   - Troubleshooting:
+     - 500 on publish: at least one provided URL was unreachable; ensure the source URLs are public and valid, then retry.
+     - Missing pinned file: check Storage under the expected path and confirm content type by extension; rerun publish.
+     - Bucket/Policy checks:
+       ```sql
+       select id, name, public from storage.buckets where id = 'marketing-assets';
+       select policyname, roles, cmd from pg_policies
+       where schemaname = 'storage' and tablename = 'objects'
+         and policyname = 'Public read for marketing-assets';
+       ```
 
 9. Public versioned page: app/version/[slug]/page.tsx
 - Description: Build viewer page that renders from snapshot; supports anchors; unit toggle; collapsible sections; CTA logic.
@@ -159,11 +207,17 @@ Format: Title; Description; Acceptance; Dependencies
   - Fit3D (images or YouTube), Testing (DocSend), Testimonials (YouTube), all collapsible
   - Sticky CTA + inline CTAs (after Hero, after Charts, after DocSend, above footer); sticky hides when an inline CTA is in view
 - Dependencies: 4, 7
- - Status: planned
-   - Notes:
-     - Track Views and CTA Clicks the same as alias pages (no suppression).
-     - `noindex` for now (not intended for SEO/organic discovery).
-     - Revoked slugs render a friendly page with HTTP 410 (Gone).
+ - Status: completed
+   - Notes (implementation record):
+     - Added SSR page at `app/version/[slug]/page.tsx`; `dynamic = 'force-dynamic'`, `noindex` set.
+     - Fetches snapshot via internal API `GET /api/marketing/shares/[slug]` (increments view_count, cache headers respected).
+     - Friendly revoked UI: if API returns 410, page renders a “This version was revoked” screen (HTTP 200 for simplicity).
+     - Rendering uses the same `AliasStoryClient` as alias pages for full parity; passes `shareSlug=slug` and `pageType='version'` so CTA clicks are recorded with page context.
+     - Old route `app/m/version/[slug]/page.tsx` removed.
+     - Anchors supported: `#charts`, `#photos`, `#fit3d`, `#testing`, `#testimonial`, `#cta`.
+   - How to verify:
+     - Open `/version/{activeSlug}` → snapshot renders; CTAs post; view_count increments.
+     - Revoke a slug, open `/version/{revokedSlug}` → friendly revoked screen appears.
 
 10. Admin: Create Link (Wizard)
 - Description: Wizard UI with 4 steps: Client & display; Defaults; Branding & CTA; Snapshot summary → Publish (creates versioned slug + alias).

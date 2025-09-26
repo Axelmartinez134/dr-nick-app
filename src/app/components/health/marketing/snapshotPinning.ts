@@ -96,7 +96,7 @@ export async function pinAssets(
     beforePhotoUrl = await copyUrlToBucket(
       supabase,
       selected.beforePhotoUrl,
-      `${slug}/before.${ext}`
+      `${slug}/photos/before.${ext}`
     )
   }
 
@@ -107,7 +107,7 @@ export async function pinAssets(
     afterPhotoUrl = await copyUrlToBucket(
       supabase,
       selected.afterPhotoUrl,
-      `${slug}/after.${ext}`
+      `${slug}/photos/after.${ext}`
     )
   }
 
@@ -118,7 +118,7 @@ export async function pinAssets(
     loopVideoUrl = await copyUrlToBucket(
       supabase,
       selected.loopVideoUrl,
-      `${slug}/loop.${ext}`
+      `${slug}/videos/loop.${ext}`
     )
   }
 

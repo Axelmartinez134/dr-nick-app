@@ -66,6 +66,41 @@ export async function POST(request: NextRequest) {
     // Build snapshot (data load, derived, metrics, pin assets)
     const { slug, snapshotJson } = await snapshotBuilder(supabase, patientId, alias, settings)
 
+    // Atomic pinning validation: for any provided media, require a pinned URL
+    try {
+      const failures: string[] = []
+      const sel = (settings as any)?.selectedMedia || {}
+      const media = (snapshotJson as any)?.media || {}
+
+      const nonEmpty = (v: any) => typeof v === 'string' && v.trim().length > 0
+
+      if (typeof sel.beforePhotoUrl === 'string' && sel.beforePhotoUrl.trim().length > 0) {
+        if (!nonEmpty(media.beforePhotoUrl)) failures.push('beforePhotoUrl')
+      }
+      if (typeof sel.afterPhotoUrl === 'string' && sel.afterPhotoUrl.trim().length > 0) {
+        if (!nonEmpty(media.afterPhotoUrl)) failures.push('afterPhotoUrl')
+      }
+      if (typeof sel.loopVideoUrl === 'string' && sel.loopVideoUrl.trim().length > 0) {
+        if (!nonEmpty(media.loopVideoUrl)) failures.push('loopVideoUrl')
+      }
+
+      if (sel.fit3d && Array.isArray(sel.fit3d.images)) {
+        const provided = sel.fit3d.images.filter((x: any) => typeof x === 'string' && x.trim().length > 0)
+        const pinned = Array.isArray(media?.fit3d?.images) ? media.fit3d.images : []
+        for (let i = 0; i < provided.length; i++) {
+          if (!nonEmpty(pinned[i])) failures.push(`fit3d.images[${i}]`)
+        }
+      }
+
+      if (failures.length > 0) {
+        console.warn('[publish] pinning validation failed', { alias, patientId, failures })
+        return NextResponse.json({ error: 'Pinning failed', failures }, { status: 500 })
+      }
+    } catch (e: any) {
+      console.error('[publish] pinning validation error', { error: e?.message || String(e) })
+      return NextResponse.json({ error: 'Pinning validation error' }, { status: 500 })
+    }
+
     // Transactional publish: insert share, upsert alias pointer
     // Supabase JS doesn't do DB transactions across RPC easily without SQL; do sequential with checks
     const { error: insertErr } = await supabase
