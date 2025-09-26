@@ -18,6 +18,7 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
 
   const m = snapshot.metrics
   const meta = snapshot.meta
+  const slug = snapshot?.meta?.slug as any // optional, if available in meta
 
   return (
     <main className="min-h-screen bg-white pb-24">
@@ -123,7 +124,20 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
       {/* Inline CTA after Charts */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+          <a
+            href="#cta"
+            className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium"
+            onClick={() => {
+              try {
+                const s = (window as any).__marketingSlug || slug
+                if (s) {
+                  fetch(`/api/marketing/shares/${encodeURIComponent(s)}/click`, { method: 'POST', keepalive: true })
+                }
+              } catch {}
+            }}
+          >
+            Book a consult
+          </a>
         </div>
       </section>
 
