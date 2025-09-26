@@ -40,10 +40,15 @@ export async function POST(request: NextRequest) {
       alias = await nextAnonymousAlias(supabase)
     }
 
-    // Availability check (case-insensitive)
-    const available = await validateAliasAvailable(supabase, alias)
-    if (!available.ok) {
-      return NextResponse.json({ error: available.reason || 'Alias already taken' }, { status: 400 })
+    // Availability check (case-insensitive) — allow reuse if the alias belongs to this patient
+    const { data: existingAlias } = await supabase
+      .from('marketing_aliases')
+      .select('alias, patient_id')
+      .ilike('alias', alias)
+      .maybeSingle()
+
+    if (existingAlias && existingAlias.patient_id !== patientId) {
+      return NextResponse.json({ error: 'Alias already taken' }, { status: 400 })
     }
 
     // Resolve created_by as admin profile id (fallback to patientId if not found)
