@@ -114,12 +114,21 @@ Format: Title; Description; Acceptance; Dependencies
 - Acceptance:
   - 200 on success; subsequent fetch is 410; alias target updates to next latest if exists
 - Dependencies: 1, 3
+ - Status: planned
+   - Notes:
+     - Alias (e.g., `/areg`) must always resolve to the latest non‑revoked snapshot (order by `created_at` DESC). If newest is revoked, fall back to previous non‑revoked.
+     - Versioned page for a revoked slug returns 410 (Gone) with a friendly message.
 
 7. API: POST /api/marketing/shares/[slug]/click (CTA)
 - Description: Public route increments cta_click_count when CTA pressed.
 - Acceptance:
   - 200 increment
 - Dependencies: 1
+ - Status: planned
+   - Notes:
+     - Count ALL CTAs on the page (primary and per‑section).
+     - Minimal dedup to keep numbers sane: throttle 1 click per session per slug per 10s; store timestamped events for future breakdowns.
+     - Basic bot filtering (ignore well‑known crawler UAs / headless fetchers).
 
 8. Storage: create public bucket `marketing-assets`
 - Description: Create Supabase Storage bucket; set CORS; define upload conventions for library assets and snapshot‑pinned assets (`marketing-assets/lib/...` and `marketing-assets/{slug}/...`).
@@ -127,6 +136,11 @@ Format: Title; Description; Acceptance; Dependencies
   - Bucket exists; tested upload/read
   - Publish step copies chosen media into `marketing-assets/{slug}/...` (asset pinning) and uses those URLs in snapshots
 - Dependencies: none
+ - Status: planned
+   - Notes:
+     - Use pin‑on‑publish: draft uploads live in a temp area; on Publish, copy to `marketing-assets/{slug}/...` and update snapshot URLs.
+     - Alias path (e.g., `/areg`) stays stable; publishing a new snapshot only advances `current_slug` behind the alias.
+     - No file size/type constraints for now (can be added later).
 
 9. Public versioned page: app/version/[slug]/page.tsx
 - Description: Build viewer page that renders from snapshot; supports anchors; unit toggle; collapsible sections; CTA logic.
@@ -138,6 +152,11 @@ Format: Title; Description; Acceptance; Dependencies
   - Fit3D (images or YouTube), Testing (DocSend), Testimonials (YouTube), all collapsible
   - Sticky CTA + inline CTAs (after Hero, after Charts, after DocSend, above footer); sticky hides when an inline CTA is in view
 - Dependencies: 4, 7
+ - Status: planned
+   - Notes:
+     - Track Views and CTA Clicks the same as alias pages (no suppression).
+     - `noindex` for now (not intended for SEO/organic discovery).
+     - Revoked slugs render a friendly page with HTTP 410 (Gone).
 
 10. Admin: Create Link (Wizard)
 - Description: Wizard UI with 4 steps: Client & display; Defaults; Branding & CTA; Snapshot summary → Publish (creates versioned slug + alias).
@@ -146,6 +165,8 @@ Format: Title; Description; Acceptance; Dependencies
   - Uses defaults (charts, layout, captions on, Imperial)
   - On Publish, calls create API; shows success with Copy Link + Open
 - Dependencies: 3, 8
+ - Status: planned
+   - Notes (defaults): layout `stack`; charts ON expanded: Weight Trend, Weight Projections, Plateau Prevention — Weight; optional charts collapsed (Waist, Sleep, Morning Fat Burn, Body Fat); captions ON; unit default Imperial; watermark “The Fittest You”.
 
 11. Admin: Editor (Draft) with auto‑save
 - Description: Structured form sections: Charts; Media (Before/After, loop MP4, Fit3D images/YouTube, DocSend, Testimonial YouTube); Branding; CTA; Identity; Settings. Auto‑save Draft JSON.
@@ -154,12 +175,16 @@ Format: Title; Description; Acceptance; Dependencies
   - Toggles for optional sections; chart checkboxes (core three locked on)
   - “Publish snapshot” creates new versioned slug and updates alias target
 - Dependencies: 8, 3
+ - Status: planned
+   - Notes: Autosave “immediate” with ~600–800ms debounce; reuse client chart components directly for parity; Publish pins assets and advances alias.
 
 12. Admin: Preview (true‑to‑public)
 - Description: Preview the Draft using the same components as public page (without publishing).
 - Acceptance:
   - Mirrors public view; supports anchors; animations; CTA behavior
 - Dependencies: 9, 11
+ - Status: planned
+   - Notes: Preview uses the same rendering components as public; analytics calls disabled in Preview.
 
 13. Admin: Shares Manager
 - Description: Table of shares with columns: Client label; Created; Charts; Layout; Captions; CTA; Views; CTA Clicks; Status. Row actions: Copy, View, Duplicate, Revoke.
@@ -167,36 +192,48 @@ Format: Title; Description; Acceptance; Dependencies
   - Duplicate seeds a new Draft from the selected snapshot
   - Revoke sets revoked_at; alias target auto‑updates to latest
 - Dependencies: 3, 6, 7
+ - Status: planned
+   - Notes: Show aggregate counts; store timestamps backend for future date-range analytics; actions: Copy/View/Duplicate/Revoke.
 
 14. Compliance charts and summary cards
 - Description: Add Nutrition Compliance % (two decimals) and Purposeful Exercise Days (1–7) charts with regression lines; compute top‑page averages for both.
 - Acceptance:
   - Charts render in optional section; cards show correct averages
 - Dependencies: 2, 9
+ - Status: planned
+   - Notes: Keep both charts optional behind toggles by default on marketing pages.
 
 15. Chart polish and fixes
 - Description: Apply polish: smooth animations; stable axes; minimal tooltips; tap‑to‑view values; recompute Weight Trend vs Projections on unit/initial‑weight changes; fix BP Y‑axes.
 - Acceptance:
   - Visual QA across devices; regressions resolved
 - Dependencies: 9
+ - Status: planned
+   - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
 
 16. Unit toggle consistency
 - Description: Ensure all numbers/axes/caption pill respect unit toggle; add optional text callouts for Fit3D/Testing that convert units dynamically (not inside PDFs/videos).
 - Acceptance:
   - Toggle converts all relevant on‑page numeric callouts
 - Dependencies: 9, 12
+ - Status: planned
+   - Notes: Verify axes labels, derived numbers, caption text reflect unit changes uniformly across all charts/sections.
 
 17. Performance hardening
 - Description: Code‑split heavy components; lazy‑load optional sections on expand; preconnect assets; confirm initial JS budget.
 - Acceptance:
   - Lighthouse/Perf checks; smooth in IG in‑app; no jank on animation
 - Dependencies: 9
+ - Status: planned
+   - Notes: Lazy‑load optional sections; code‑split heavy chart bundles; preconnect to asset/CDN origins; maintain small initial JS.
 
 18. Documentation & handoff
 - Description: Create one‑pagers: “Create a link in 60s,” “Update media & publish,” “Understand Views & CTA Clicks.”
 - Acceptance:
   - Markdown docs added to repo; linked from Admin
 - Dependencies: 10–17
+ - Status: planned
+   - Notes: Prioritize “Wizard quick start” first; add asset management and analytics docs later.
 
 ---
 
