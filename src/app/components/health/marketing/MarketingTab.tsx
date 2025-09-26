@@ -5,6 +5,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { sanitizeAlias, isAliasValidFormat } from './aliasUtils'
 import PatientSelector from './PatientSelector'
 // import AnimationControls from './AnimationControls'
 import AnimatedChartPreview from './AnimatedChartPreview'
@@ -14,6 +15,10 @@ import { useRouter } from 'next/navigation'
 export default function MarketingTab() {
   const [selectedPatientId, setSelectedPatientId] = useState<string>('')
   const [alias, setAlias] = useState<string>('')
+  const [aliasSanitized, setAliasSanitized] = useState<string>('')
+  const [aliasStatus, setAliasStatus] = useState<'idle' | 'checking' | 'invalid' | 'available' | 'taken'>('idle')
+  const [publishing, setPublishing] = useState<boolean>(false)
+  const [publishResult, setPublishResult] = useState<{ slug: string; alias: string } | null>(null)
   const [animationSpeed, setAnimationSpeed] = useState('slow')
   const [isAnimating, setIsAnimating] = useState(false)
   const [isRecordingMode, setIsRecordingMode] = useState(false)
@@ -34,6 +39,34 @@ export default function MarketingTab() {
 
   const router = useRouter()
 
+  // Debounced alias sanitize + availability check
+  useEffect(() => {
+    const next = sanitizeAlias(alias || '')
+    setAliasSanitized(next)
+    if (!next) {
+      setAliasStatus('idle')
+      return
+    }
+    if (!isAliasValidFormat(next)) {
+      setAliasStatus('invalid')
+      return
+    }
+    setAliasStatus('checking')
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/marketing/aliases/${encodeURIComponent(next)}`, { cache: 'no-store' })
+        if (res.ok) {
+          setAliasStatus('taken')
+        } else {
+          setAliasStatus('available')
+        }
+      } catch {
+        setAliasStatus('available')
+      }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [alias])
+
   const handleQuickPublish = async () => {
     try {
       if (!selectedPatientId) return
@@ -42,11 +75,22 @@ export default function MarketingTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patientId: selectedPatientId,
-          alias,
+          alias: aliasSanitized,
           settings: {
             displayNameMode: 'first_name',
             captionsEnabled: true,
             layout: 'stack',
+            chartsEnabled: {
+              weightTrend: true,
+              projection: true,
+              plateauWeight: true,
+              waistTrend: false,
+              plateauWaist: false,
+              nutritionCompliancePct: false,
+              sleepTrend: false,
+              morningFatBurnTrend: false,
+              bodyFatTrend: false
+            },
             selectedMedia: {}
           }
         })
@@ -61,8 +105,118 @@ export default function MarketingTab() {
     }
   }
 
+  const handleWizardPublish = async () => {
+    try {
+      if (!selectedPatientId || aliasStatus !== 'available') return
+      setPublishing(true)
+      setPublishResult(null)
+      const res = await fetch('/api/marketing/shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patientId: selectedPatientId,
+          alias: aliasSanitized,
+          settings: {
+            displayNameMode: 'first_name',
+            captionsEnabled: true,
+            layout: 'stack',
+            chartsEnabled: {
+              weightTrend: true,
+              projection: true,
+              plateauWeight: true,
+              waistTrend: false,
+              plateauWaist: false,
+              nutritionCompliancePct: false,
+              sleepTrend: false,
+              morningFatBurnTrend: false,
+              bodyFatTrend: false
+            },
+            selectedMedia: {}
+          }
+        })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Publish failed')
+      setPublishResult({ slug: json.slug, alias: json.alias })
+    } catch (e) {
+      console.error('Publish failed', e)
+      const msg = e instanceof Error ? e.message : 'Publish failed'
+      alert(msg)
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      {/* Create Link Wizard */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">🔗 Create Link (Wizard)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Step 1: Client & Alias */}
+          <div className="space-y-3 md:col-span-2">
+            <div>
+              <label className="text-sm text-gray-700 block mb-1">Select client</label>
+              <PatientSelector 
+                selectedPatientId={selectedPatientId}
+                onPatientSelect={setSelectedPatientId}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-gray-700 block mb-1">Alias</label>
+              <input
+                type="text"
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                placeholder="e.g., areg"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                aria-invalid={aliasStatus === 'invalid' || aliasStatus === 'taken'}
+              />
+              <div className="text-xs text-gray-500 mt-1">Your page will be at <span className="font-mono">/{aliasSanitized || 'alias'}</span>.</div>
+              <div className="mt-1 text-xs">
+                {aliasStatus === 'idle' && <span className="text-gray-400">Enter an alias to check availability.</span>}
+                {aliasStatus === 'checking' && <span className="text-gray-500">Checking availability…</span>}
+                {aliasStatus === 'invalid' && <span className="text-red-600">Invalid or reserved. Use lowercase letters, numbers, and hyphens.</span>}
+                {aliasStatus === 'available' && <span className="text-green-700">Available</span>}
+                {aliasStatus === 'taken' && <span className="text-red-600">Taken. Choose a different alias.</span>}
+              </div>
+            </div>
+          </div>
+
+          {/* Step 2: Defaults (read-only) */}
+          <div className="bg-gray-50 rounded p-3">
+            <div className="text-sm font-semibold text-gray-800 mb-1">Defaults</div>
+            <ul className="text-xs text-gray-600 list-disc ml-4 space-y-1">
+              <li>Layout: stack</li>
+              <li>Captions: on</li>
+              <li>Charts on: Weight Trend, Projections, Plateau Weight</li>
+              <li>Charts off: Waist, Sleep, Nutrition %, Morning Fat Burn %, Body Fat %</li>
+              <li>Unit: Imperial (locked)</li>
+            </ul>
+            <div className="text-[11px] text-gray-500 mt-2">You can change settings later in the Editor.</div>
+          </div>
+        </div>
+
+        {/* Step 3: Publish */}
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <button
+            onClick={handleWizardPublish}
+            disabled={!selectedPatientId || aliasStatus !== 'available' || publishing}
+            className={`px-4 py-2 rounded font-medium ${(!selectedPatientId || aliasStatus !== 'available' || publishing) ? 'bg-gray-300 text-gray-500' : 'bg-green-600 text-white hover:bg-green-700'}`}
+          >
+            {publishing ? 'Publishing…' : `Publish snapshot`}
+          </button>
+          {publishResult && (
+            <div className="text-sm text-gray-700 flex items-center gap-2">
+              <span>Published “{publishResult.alias}” → {publishResult.slug}</span>
+              <a className="text-blue-600 underline" href={`/${publishResult.alias}`} target="_blank">Open Alias</a>
+              <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/${publishResult.alias}`)} className="text-xs text-gray-600 underline">Copy</button>
+              <a className="text-blue-600 underline" href={`/version/${publishResult.slug}`} target="_blank">Open Version</a>
+              <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/version/${publishResult.slug}`)} className="text-xs text-gray-600 underline">Copy</button>
+            </div>
+          )}
+        </div>
+      </div>
       
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6">

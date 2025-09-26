@@ -226,8 +226,24 @@ Format: Title; Description; Acceptance; Dependencies
   - Uses defaults (charts, layout, captions on, Imperial)
   - On Publish, calls create API; shows success with Copy Link + Open
 - Dependencies: 3, 8
- - Status: planned
-   - Notes (defaults): layout `stack`; charts ON expanded: Weight Trend, Weight Projections, Plateau Prevention — Weight; optional charts collapsed (Waist, Sleep, Morning Fat Burn, Body Fat); captions ON; unit default Imperial; watermark “The Fittest You”.
+ - Status: completed
+   - Notes (implementation record):
+     - Placement: A compact "Create Link" card added at the TOP of `MarketingTab` (no new route).
+     - Data: Patient selector reuses the existing profiles source from the Marketing tab (no active filter).
+     - Alias: Live sanitize (via `aliasUtils.sanitizeAlias`) with case-insensitive availability check using `GET /api/marketing/aliases/{alias}`.
+       - Validation gates: patient required; alias valid/allowed; alias not taken by another patient. Publish disabled until valid.
+       - If alias belongs to the same patient, server allows and advances alias; UI messaging indicates advance behavior.
+     - Defaults (kept simple; read-only in wizard):
+       - layout: `stack`; captions: ON; unit: Imperial (locked)
+       - chartsEnabled: weightTrend/projection/plateauWeight = ON; waistTrend/plateauWaist/nutritionCompliancePct/sleepTrend/morningFatBurnTrend/bodyFatTrend = OFF
+     - Publish: Calls `POST /api/marketing/shares` with the selected `patientId`, validated `alias`, defaults, and empty `selectedMedia` (uploads come in Step 11).
+     - Success UI: Shows { slug, alias } with buttons + copy for `/{alias}` and `/version/{slug}`.
+     - Errors: Inline alias errors; simple toast/alert for network/server issues; button disabled while submitting.
+     - Security: Lives on admin-only Marketing tab; server-only publish endpoint; no service keys in the client.
+   - How to verify:
+     - Select patient, enter available alias → Publish → open Alias and Version links.
+     - Enter taken alias (other patient) → inline error; publish disabled.
+     - Use an alias already owned by the same patient → Publish allowed; alias advances.
 
 11. Admin: Editor (Draft) with auto‑save
 - Description: Structured form sections: Charts; Media (Before/After, loop MP4, Fit3D images/YouTube, DocSend, Testimonial YouTube); Branding; CTA; Identity; Settings. Auto‑save Draft JSON.
