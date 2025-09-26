@@ -19,6 +19,19 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
   const m = snapshot.metrics
   const meta = snapshot.meta
   const slug = snapshot?.meta?.slug as any // optional, if available in meta
+  const reportClick = (ctaId: string) => {
+    try {
+      const s = (window as any).__marketingSlug || slug
+      if (s) {
+        fetch(`/api/marketing/shares/${encodeURIComponent(s)}/click`, {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ctaId, pageType: 'alias' })
+        })
+      }
+    } catch {}
+  }
 
   return (
     <main className="min-h-screen bg-white pb-24">
@@ -127,14 +140,7 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
           <a
             href="#cta"
             className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium"
-            onClick={() => {
-              try {
-                const s = (window as any).__marketingSlug || slug
-                if (s) {
-                  fetch(`/api/marketing/shares/${encodeURIComponent(s)}/click`, { method: 'POST', keepalive: true })
-                }
-              } catch {}
-            }}
+            onClick={() => reportClick('after_charts')}
           >
             Book a consult
           </a>
@@ -241,7 +247,7 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
       {/* Inline CTA after Photos (Hero) */}
       <section className="max-w-md mx-auto px-4">
         <div id="cta" className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_photos')}>Book a consult</a>
         </div>
       </section>
 
@@ -258,7 +264,7 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
       {/* Inline CTA after Testing */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testing')}>Book a consult</a>
         </div>
       </section>
 
@@ -270,7 +276,7 @@ export default function AliasStoryClient({ snapshot }: { snapshot: SnapshotJson 
       {/* Inline CTA above footer (after Testimonials) */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">Book a consult</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testimonials')}>Book a consult</a>
         </div>
       </section>
 
