@@ -129,11 +129,13 @@ Format: Title; Description; Acceptance; Dependencies
 - Acceptance:
   - 200 increment
 - Dependencies: 1
- - Status: planned
+ - Status: completed
    - Notes:
-     - Count ALL CTAs on the page (primary and per‑section).
-     - Minimal dedup to keep numbers sane: throttle 1 click per session per slug per 10s; store timestamped events for future breakdowns.
-     - Basic bot filtering (ignore well‑known crawler UAs / headless fetchers).
+     - Minimal implementation shipped: aggregate-only counter, no dedup, no bot filter.
+     - Endpoint: `POST /api/marketing/shares/[slug]/click` validates slug (not revoked) and increments `marketing_shares.cta_click_count`.
+     - Supabase SQL function added in prod: `public.increment_cta_click(_slug text)`; API calls `supabase.rpc('increment_cta_click', { _slug })`.
+     - Wired ALL CTAs on the alias page to post clicks with labels: `after_charts`, `after_photos`, `after_testing`, `after_testimonials`.
+     - Future upgrade path: add events table for timestamps/dedup without changing the endpoint contract; optional bot filtering.
 
 8. Storage: create public bucket `marketing-assets`
 - Description: Create Supabase Storage bucket; set CORS; define upload conventions for library assets and snapshot‑pinned assets (`marketing-assets/lib/...` and `marketing-assets/{slug}/...`).
