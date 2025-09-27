@@ -120,7 +120,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             <h3 className="font-semibold text-gray-900 mb-3">Data Range</h3>
             <div className="grid grid-cols-1 gap-3 text-sm text-gray-900">
               <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-900">Start week: 1</div>
+                <div className="text-sm text-gray-900">Start week: 0 and 1</div>
                 <label className="flex items-center gap-2">End week
                   <input
                     type="number"
