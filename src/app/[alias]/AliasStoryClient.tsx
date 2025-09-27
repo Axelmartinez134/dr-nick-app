@@ -39,7 +39,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     <main className="min-h-screen bg-white pb-24">
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
-        <div className="text-sm text-gray-500">{meta.watermarkText || 'The Fittest You'}</div>
+        <div className="text-sm text-gray-700">{meta.watermarkText || 'The Fittest You'}</div>
         <h1 className="text-xl font-bold mt-1">Become the Fittest Version of Yourself.</h1>
         <div className="mt-1 text-gray-700">{displayLabel}</div>
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">
@@ -120,19 +120,19 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Compliance cards */}
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">
         <div className="rounded border p-3">
-          <div className="text-xs text-gray-500">Total Loss %</div>
+          <div className="text-xs text-gray-700">Total Loss %</div>
           <div className="text-lg font-semibold">{m.totalLossPct ?? '—'}</div>
         </div>
         <div className="rounded border p-3">
-          <div className="text-xs text-gray-500">Weekly Loss %</div>
+          <div className="text-xs text-gray-700">Weekly Loss %</div>
           <div className="text-lg font-semibold">{m.weeklyLossPct ?? '—'}</div>
         </div>
         <div className="rounded border p-3">
-          <div className="text-xs text-gray-500">Avg Nutrition %</div>
+          <div className="text-xs text-gray-700">Avg Nutrition %</div>
           <div className="text-lg font-semibold">{m.avgNutritionCompliancePct ?? '—'}</div>
         </div>
         <div className="rounded border p-3">
-          <div className="text-xs text-gray-500">Avg Exercise Days</div>
+          <div className="text-xs text-gray-700">Avg Exercise Days</div>
           <div className="text-lg font-semibold">{m.avgPurposefulExerciseDays ?? '—'}</div>
         </div>
       </section>
@@ -142,7 +142,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <div className="rounded border p-2">
           <div className="mb-2">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
-            <p className="text-sm text-gray-600">Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress.</p>
+            <p className="text-sm text-gray-700">Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress.</p>
           </div>
           <div className="w-full" style={{ height: 300 }}>
             <MarketingWeightTrendEChart
@@ -151,7 +151,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               unitSystem={unitSystem}
             />
           </div>
-          <div className="mt-3 text-xs text-gray-500">
+          <div className="mt-3 text-xs text-gray-700">
             <p>• Track weekly progress</p>
             <p>• Dark black trend line shows overall direction</p>
             <p>• Weekly fluctuations are normal - focus on trendline should be prioritized</p>
@@ -161,7 +161,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <div className="rounded border p-2 mt-4">
           <div className="mb-2">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
-            <p className="text-sm text-gray-600">Compares actual weight loss against 4 different fat loss projection rates. Helps identify if progress is on track with expectations.</p>
+            <p className="text-sm text-gray-700">Compares actual weight loss against 4 different fat loss projection rates. Helps identify if progress is on track with expectations.</p>
           </div>
           <div className="w-full" style={{ height: 300 }}>
             <MarketingWeightProjectionEChart
@@ -178,7 +178,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
             <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
           </div>
-          <div className="mt-3 text-xs text-gray-500">
+          <div className="mt-3 text-xs text-gray-700">
             <p>• Red line shows actual progress (irregular pattern expected)</p>
             <p>• Dark black trend line shows actual weight trajectory</p>
             <p>• Dotted lines show theoretical projections extending to match your current progress</p>
@@ -209,7 +209,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">📏 Waist Trend Analysis</h3>
-              <p className="text-sm text-gray-600">Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress.</p>
+              <p className="text-sm text-gray-700">Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress.</p>
             </div>
             <MarketingWaistTrendChart
               data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
@@ -218,7 +218,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               onAnimationComplete={() => {}}
               hideTitles={true}
             />
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="mt-3 text-xs text-gray-700">
               <p>• Often more accurate than weight for fat loss tracking</p>
               <p>• Dark black trend line shows overall waist measurement change direction</p>
               <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
@@ -231,7 +231,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">😴 Sleep Consistency & Recovery</h3>
-              <p className="text-sm text-gray-600">Weekly sleep quality scores from biometric analysis (added by Dr. Nick)</p>
+              <p className="text-sm text-gray-700">Weekly sleep quality scores from biometric analysis (added by Dr. Nick)</p>
             </div>
             <MarketingSleepConsistencyChart
               data={(snapshot.derived.sleepTrend || []).map(([week, value]) => ({ date: '', week_number: week, sleep_consistency_score: value })) as any}
@@ -240,7 +240,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               onAnimationComplete={() => {}}
               hideTitles={true}
             />
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="mt-3 text-xs text-gray-700">
               <p>• Data sourced from biometric analysis by Dr. Nick</p>
               <p>• Dark black trend line shows overall sleep consistency direction</p>
               <p>• Higher scores indicate better sleep consistency and recovery</p>
@@ -254,7 +254,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">🔥 Morning Fat Oxidation %</h3>
-              <p className="text-sm text-gray-600">Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.</p>
+              <p className="text-sm text-gray-700">Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.</p>
             </div>
             <MarketingMorningFatBurnChart
               data={(snapshot.derived.morningFatBurnTrend || []).map(([week, value]) => ({ date: '', week_number: week, morning_fat_burn_percent: value })) as any}
@@ -276,7 +276,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Body Fat Percentage</h3>
-              <p className="text-sm text-gray-600">Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results.</p>
+              <p className="text-sm text-gray-700">Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results.</p>
             </div>
             <MarketingBodyFatPercentageChart
               data={(snapshot.derived.bodyFatTrend || []).map(([week, value]) => ({ date: '', week_number: week, body_fat_percentage: value })) as any}
@@ -285,7 +285,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               onAnimationComplete={() => {}}
               hideTitles={true}
             />
-            <div className="mt-3 text-xs text-gray-500">
+            <div className="mt-3 text-xs text-gray-700">
               <p>• Measured using the most precise testing methodology Dr. Nick has determined available in your situation</p>
               <p>• Scheduled periodically based on your progress milestones</p>
               <p>• More accurate than weight alone for tracking fat loss</p>
