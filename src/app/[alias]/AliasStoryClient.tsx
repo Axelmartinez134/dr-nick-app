@@ -77,11 +77,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         if (!primary) return null
 
         const secondary = (() => {
-          // If primary is an image and we also have a loop, show loop on the right
+          // Option A: only show the other hero media or loop; ignore Fit3D
           if ((primary === afterUrl || primary === beforeUrl) && loop) return loop
-          // Otherwise prefer first fit3d item
-          if (firstFit3d) return firstFit3d
-          // Or the other image if available
           if (primary === afterUrl && beforeUrl) return beforeUrl
           if (primary === beforeUrl && afterUrl) return afterUrl
           return null
