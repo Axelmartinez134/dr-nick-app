@@ -271,8 +271,11 @@ Format: Title; Description; Acceptance; Dependencies
 - Acceptance:
   - Mirrors public view; supports anchors; animations; CTA behavior
 - Dependencies: 9, 11
- - Status: planned
-   - Notes: Preview uses the same rendering components as public; analytics calls disabled in Preview.
+ - Status: completed
+   - Notes (succinct record):
+     - Preview component renders `AliasStoryClient` with snapshot from `GET /api/marketing/drafts/[id]/preview` (built via `snapshotPreviewBuilder`, no pinning).
+     - Anchors and animations match public; CTAs use same layout but preview path avoids recording analytics events.
+     - Editor layout: two‑column (left panels, right live preview), updates after each autosave.
 
 13. Admin: Shares Manager
 - Description: Table of shares with columns: Client label; Created; Charts; Layout; Captions; CTA; Views; CTA Clicks; Status. Row actions: Copy, View, Duplicate, Revoke.
