@@ -76,16 +76,20 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                     <div className="text-xs text-gray-700 mb-2">{slot === 'before' ? 'Before' : 'After'}</div>
                     {val ? (
                       <div className="space-y-2">
-                        <img src={val} alt={slot} className="w-full h-auto rounded" />
+                        {/\.mp4($|\?)/i.test(val) ? (
+                          <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
+                        ) : (
+                          <img src={val} alt={slot} className="w-full h-auto rounded" />
+                        )}
                         <div className="flex gap-2">
-                          <label className="px-2 py-1 border rounded cursor-pointer text-sm">Replace<input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} /></label>
+                          <label className="px-2 py-1 border rounded cursor-pointer text-sm">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} /></label>
                           <button className="px-2 py-1 border rounded text-sm" onClick={() => setMedia({ [key]: null })}>Remove</button>
                         </div>
                       </div>
                     ) : (
                       <label className="flex items-center justify-center h-32 border-2 border-dashed rounded cursor-pointer text-sm text-gray-600">
-                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} />
-                        Drop image or click to upload
+                        <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} />
+                        Drop image/MP4 or click to upload
                       </label>
                     )}
                   </div>
