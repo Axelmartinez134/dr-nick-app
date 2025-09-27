@@ -106,7 +106,10 @@ export async function snapshotBuilder(
       },
       captionsEnabled: settings.captionsEnabled,
       layout: settings.layout,
-      watermarkText: settings.watermarkText ?? null
+      watermarkText: settings.watermarkText ?? null,
+      // Strip CTA label (centralized config) and allow identity override
+      ctaLabel: null,
+      displayNameOverride: (settings as any)?.displayNameOverride ?? null
     },
     metrics,
     weeksRaw,

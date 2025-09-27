@@ -95,12 +95,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.watermarkText || ''} onChange={(e) => setMeta({ watermarkText: e.target.value })} placeholder="The Fittest You" />
           </section>
 
-          {/* CTA */}
-          <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">CTA</h3>
-            <label className="text-sm text-gray-900 block mb-1">CTA label</label>
-            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.ctaLabel || ''} onChange={(e) => setMeta({ ctaLabel: e.target.value })} placeholder="Book a consult" />
-          </section>
+          {/* CTA removed by spec: centralized via marketingConfig */}
 
           {/* Identity */}
           <section className="bg-white rounded border p-4">
@@ -226,7 +221,10 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       displayNameMode: 'first_name',
                       captionsEnabled: true,
                       layout: 'stack',
-                      chartsEnabled: {
+                      watermarkText: draft?.meta?.watermarkText || null,
+                      ctaLabel: draft?.meta?.ctaLabel || null,
+                      displayNameOverride: draft?.meta?.displayNameOverride || null,
+                      chartsEnabled: draft?.meta?.chartsEnabled || {
                         weightTrend: true, projection: true, plateauWeight: true,
                         waistTrend: false, plateauWaist: false, nutritionCompliancePct: false,
                         sleepTrend: false, morningFatBurnTrend: false, bodyFatTrend: false

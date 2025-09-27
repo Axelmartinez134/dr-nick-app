@@ -86,7 +86,7 @@ export async function snapshotPreviewBuilder(
       layout: meta.layout,
       watermarkText: null,
       // Optional marketing fields (fallbacks applied in client)
-      ctaLabel: (meta as any)?.ctaLabel ?? null,
+      ctaLabel: null,
       calendlyUrl: (meta as any)?.calendlyUrl ?? null,
       displayNameOverride: (meta as any)?.displayNameOverride ?? null
     },

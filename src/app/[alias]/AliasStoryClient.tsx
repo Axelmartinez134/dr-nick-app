@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
+import { CTA_LABEL, CALENDLY_URL } from '@/app/components/health/marketing/marketingConfig'
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
@@ -198,7 +199,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA after Charts */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_charts')}>{ctaLabel}</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_charts')}>{CTA_LABEL}</a>
         </div>
       </section>
 
@@ -323,7 +324,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA after Photos (Hero) */}
       <section className="max-w-md mx-auto px-4">
         <div id="cta" className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_photos')}>{ctaLabel}</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_photos')}>{CTA_LABEL}</a>
         </div>
       </section>
 
@@ -337,7 +338,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA after Testing */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testing')}>{ctaLabel}</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testing')}>{CTA_LABEL}</a>
         </div>
       </section>
 
@@ -349,7 +350,16 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA above footer (after Testimonials) */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testimonials')}>{ctaLabel}</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testimonials')}>{CTA_LABEL}</a>
+        </div>
+      </section>
+
+      {/* Calendly Section */}
+      <section id="cta" className="max-w-md mx-auto p-4">
+        <div className="rounded border p-2">
+          <div className="text-sm text-gray-700 mb-2">Schedule a consult</div>
+          <div className="calendly-inline-widget" data-url={CALENDLY_URL} style={{ minWidth: 320, height: 700 }} />
+          <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async />
         </div>
       </section>
 
