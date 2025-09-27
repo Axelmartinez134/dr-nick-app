@@ -88,12 +88,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             </div>
           </section>
 
-          {/* Branding */}
-          <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Branding</h3>
-            <label className="text-sm text-gray-900 block mb-1">Watermark text</label>
-            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.watermarkText || ''} onChange={(e) => setMeta({ watermarkText: e.target.value })} placeholder="The Fittest You" />
-          </section>
+          {/* Branding removed by spec; tagline is centralized in marketingConfig */}
 
           {/* CTA removed by spec: centralized via marketingConfig */}
 

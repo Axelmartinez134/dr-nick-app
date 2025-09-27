@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
-import { CTA_LABEL, CALENDLY_URL } from '@/app/components/health/marketing/marketingConfig'
+import { CTA_LABEL, CALENDLY_URL, TAGLINE } from '@/app/components/health/marketing/marketingConfig'
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
@@ -40,7 +40,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     <main className="min-h-screen bg-white pb-24">
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
-        <div className="text-sm text-gray-700">{meta.watermarkText || 'The Fittest You'}</div>
+        <div className="text-sm text-gray-700">{TAGLINE}</div>
         <h1 className="text-xl font-bold mt-1">Become the Fittest Version of Yourself.</h1>
         <div className="mt-1 text-gray-700">{displayLabel}</div>
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">

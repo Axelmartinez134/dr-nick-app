@@ -84,6 +84,7 @@ export async function snapshotPreviewBuilder(
       },
       captionsEnabled: meta.captionsEnabled,
       layout: meta.layout,
+      // Watermark centralized via marketingConfig
       watermarkText: null,
       // Optional marketing fields (fallbacks applied in client)
       ctaLabel: null,

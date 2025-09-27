@@ -106,7 +106,8 @@ export async function snapshotBuilder(
       },
       captionsEnabled: settings.captionsEnabled,
       layout: settings.layout,
-      watermarkText: settings.watermarkText ?? null,
+      // Watermark centralized via marketingConfig; do not persist per snapshot
+      watermarkText: null,
       // Strip CTA label (centralized config) and allow identity override
       ctaLabel: null,
       displayNameOverride: (settings as any)?.displayNameOverride ?? null
