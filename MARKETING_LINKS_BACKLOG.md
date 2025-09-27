@@ -283,8 +283,13 @@ Format: Title; Description; Acceptance; Dependencies
   - Duplicate seeds a new Draft from the selected snapshot
   - Revoke sets revoked_at; alias target auto‑updates to latest
 - Dependencies: 3, 6, 7
- - Status: planned
-   - Notes: Show aggregate counts; store timestamps backend for future date-range analytics; actions: Copy/View/Duplicate/Revoke.
+ - Status: completed
+   - Notes (succinct record):
+     - UI: `LinkManager` added at top of `MarketingTab` (above Content Creation Studio). Collapsible header is fully clickable with hover glow; high‑contrast text; no blue focus ring.
+     - Data: `GET /api/marketing/links` joins aliases/shares/profiles; supports search, sort (updated/views/cta), and pagination.
+     - Columns: Client, Alias, Current version, Published date, Views, CTA.
+     - Actions: Open Alias, Open Version, Copy URLs, Continue editing (seeds draft from latest), Change Display Label (seeds draft), Revoke current version.
+     - Behavior: Only active (non‑revoked) versions listed; list refreshes after revoke.
 
 14. Compliance charts and summary cards
 - Description: Add Nutrition Compliance % (two decimals) and Purposeful Exercise Days (1–7) charts with regression lines; compute top‑page averages for both.
@@ -300,7 +305,7 @@ Format: Title; Description; Acceptance; Dependencies
   - Visual QA across devices; regressions resolved
 - Dependencies: 9
  - Status: planned
-  - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
+   - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
     - Implement missing optional marketing charts not yet rendered:
       - Plateau Prevention — Waist (uses existing derived series `plateauWaist`)
       - Nutrition Compliance % (uses existing derived series `nutritionCompliancePct`)
