@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
 import { CTA_LABEL, CALENDLY_URL, TAGLINE, DOCSEND_URL } from '@/app/components/health/marketing/marketingConfig'
 import dynamic from 'next/dynamic'
-import { MARKETING_CHARTS } from '@/app/components/health/marketing/marketingChartsConfig'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
 const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
@@ -153,135 +152,81 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Charts */}
       <section id="charts" className="max-w-md mx-auto p-4">
-        {/* Public clamp notice if range exceeded */}
-        {(() => {
-          const dw = (snapshot as any)?.meta?.displayWeeks
-          if (dw && typeof dw.start === 'number' && typeof dw.end === 'number' && typeof dw.effectiveEnd === 'number' && dw.effectiveEnd < dw.end) {
-            return (
-              <div className="mb-2 text-xs text-gray-600">Showing weeks {dw.start}–{dw.effectiveEnd} (requested {dw.start}–{dw.end} where end exceeded available data)</div>
-            )
-          }
-          return null
-        })()}
+        {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
+        <div className="rounded border p-2">
+          <div className="mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
+            <p className="text-sm text-gray-700">Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress.</p>
+          </div>
+          <div className="w-full" style={{ height: 300 }}>
+            <MarketingWeightTrendEChart
+              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+              hideTitles={false}
+              unitSystem={unitSystem}
+            />
+          </div>
+          <div className="mt-3 text-xs text-gray-700">
+            <p>• Track weekly progress</p>
+            <p>• Dark black trend line shows overall direction</p>
+            <p>• Weekly fluctuations are normal - focus on trendline should be prioritized</p>
+          </div>
+        </div>
+        )}
 
-        {MARKETING_CHARTS.map((cfg, idx) => {
-          const enabled = !!(chartsEnabled as any)[cfg.id]
-          const has = cfg.hasData(snapshot)
-          if (!enabled || !has) return null
+        {chartsEnabled.projection && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
+        <div className="rounded border p-2 mt-4">
+          <div className="mb-2">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
+            <p className="text-sm text-gray-700">Compares actual weight loss against 4 different fat loss projection rates. Helps identify if progress is on track with expectations.</p>
+          </div>
+          <div className="w-full" style={{ height: 300 }}>
+            <MarketingWeightProjectionEChart
+              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+              hideTitles={true}
+              unitSystem={unitSystem}
+            />
+          </div>
+          {/* Client-style legend below the chart */}
+          <div className="mt-2 text-xs text-gray-700 flex flex-wrap gap-4">
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-red-500" />Actual Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-emerald-500" />0.5% loss/wk</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-blue-600" />1.0% loss/wk</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
+            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
+          </div>
+          <div className="mt-3 text-xs text-gray-700">
+            <p>• Red line shows actual progress (irregular pattern expected)</p>
+            <p>• Dark black trend line shows actual weight trajectory</p>
+            <p>• Dotted lines show theoretical projections extending to match your current progress</p>
+            <p>• Projections help identify if progress is on track with expectations</p>
+          </div>
+        </div>
+        )}
 
-          const renderChart = () => {
-            switch (cfg.componentKey) {
-              case 'weightTrend':
-                return (
-                  <MarketingWeightTrendEChart
-                    data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                    hideTitles={false}
-                    unitSystem={unitSystem}
-                  />
-                )
-              case 'projection':
-                return (
-                  <>
-                    <MarketingWeightProjectionEChart
-                      data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                      hideTitles={true}
-                      unitSystem={unitSystem}
-                    />
-                    <div className="mt-2 text-xs text-gray-700 flex flex-wrap gap-4">
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-red-500" />Actual Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</div>
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-emerald-500" />0.5% loss/wk</div>
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-blue-600" />1.0% loss/wk</div>
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
-                      <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
-                    </div>
-                  </>
-                )
-              case 'plateauWeight':
-                return (
-                  <ClientPlateauPreventionChart
-                    data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                  />
-                )
-              case 'waistTrend':
-                return (
-                  <MarketingWaistTrendChart
-                    data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
-                    isAnimating={false}
-                    animationDuration={0}
-                    onAnimationComplete={() => {}}
-                    hideTitles={true}
-                  />
-                )
-              case 'sleepTrend':
-                return (
-                  <MarketingSleepConsistencyChart
-                    data={(snapshot.derived.sleepTrend || []).map(([week, value]) => ({ date: '', week_number: week, sleep_consistency_score: value })) as any}
-                    isAnimating={false}
-                    animationDuration={0}
-                    onAnimationComplete={() => {}}
-                    hideTitles={true}
-                  />
-                )
-              case 'morningFatBurnTrend':
-                return (
-                  <MarketingMorningFatBurnChart
-                    data={(snapshot.derived.morningFatBurnTrend || []).map(([week, value]) => ({ date: '', week_number: week, morning_fat_burn_percent: value })) as any}
-                    isAnimating={false}
-                    animationDuration={0}
-                    onAnimationComplete={() => {}}
-                    hideTitles={true}
-                  />
-                )
-              case 'bodyFatTrend':
-                return (
-                  <MarketingBodyFatPercentageChart
-                    data={(snapshot.derived.bodyFatTrend || []).map(([week, value]) => ({ date: '', week_number: week, body_fat_percentage: value })) as any}
-                    isAnimating={false}
-                    animationDuration={0}
-                    onAnimationComplete={() => {}}
-                    hideTitles={true}
-                  />
-                )
-              default:
-                return null
-            }
-          }
-
-          const wrapper = (
-            <div className={`rounded border p-2 ${idx > 0 ? 'mt-4' : ''}`}>
-              <div className="mb-2">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">{cfg.title}</h3>
-              </div>
-              <div className="w-full" style={{ height: cfg.id === 'projection' || cfg.id === 'weightTrend' ? 300 : 300 }}>
-                {renderChart()}
-              </div>
-              {cfg.descriptionBullets?.length ? (
-                <div className="mt-3 text-xs text-gray-700">
-                  {cfg.descriptionBullets.map((b, i) => (<p key={i}>• {b}</p>))}
-                </div>
-              ) : null}
-            </div>
-          )
-
-          if (!cfg.collapsedByDefault) return wrapper
-          return (
-            <details key={cfg.id} className={`rounded border ${idx > 0 ? 'mt-4' : ''}`} open={false}>
-              <summary className="p-2 cursor-pointer select-none">{cfg.title}</summary>
-              <div className="p-2">
-                {renderChart()}
-                {cfg.descriptionBullets?.length ? (
-                  <div className="mt-3 text-xs text-gray-700">
-                    {cfg.descriptionBullets.map((b, i) => (<p key={i}>• {b}</p>))}
-                  </div>
-                ) : null}
-              </div>
-            </details>
-          )
-        })}
+        {chartsEnabled.plateauWeight && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
+        <div className="rounded border p-2 mt-4">
+          <div className="w-full">
+            <ClientPlateauPreventionChart
+              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+            />
+          </div>
+        </div>
+        )}
       </section>
 
       {/* Inline CTA after Charts */}
       <section className="max-w-md mx-auto px-4">
+        {(() => {
+          const dw = (snapshot.meta as any)?.displayWeeks
+          if (dw && typeof dw.start === 'number' && typeof dw.end === 'number' && typeof dw.effectiveEnd === 'number' && dw.effectiveEnd < dw.end) {
+            return (
+              <div className="text-xs text-gray-600 mb-2">
+                Showing weeks {dw.start}–{dw.effectiveEnd} (requested {dw.start}–{dw.end})
+              </div>
+            )
+          }
+          return null
+        })()}
         <div className="inline-cta-sentinel mt-2">
           <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_charts')}>{CTA_LABEL}</a>
         </div>
