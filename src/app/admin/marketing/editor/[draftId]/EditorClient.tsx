@@ -68,7 +68,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Charts toggles */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="grid grid-cols-2 gap-2 text-sm text-gray-900">
               {[
                 ['weightTrend','Weight Trend'],
                 ['projection','Projections'],
@@ -80,7 +80,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 ['morningFatBurnTrend','Morning Fat Burn %'],
                 ['bodyFatTrend','Body Fat %'],
               ].map(([key,label]) => (
-                <label key={key} className="flex items-center gap-2">
+                <label key={key} className="flex items-center gap-2 text-gray-900">
                   <input type="checkbox" checked={!!draft?.meta?.chartsEnabled?.[key as any]} onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [key]: e.target.checked } })} />
                   <span>{label}</span>
                 </label>
@@ -91,26 +91,26 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Branding */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Branding</h3>
-            <label className="text-sm text-gray-700 block mb-1">Watermark text</label>
-            <input className="w-full px-3 py-2 border rounded" value={draft?.meta?.watermarkText || ''} onChange={(e) => setMeta({ watermarkText: e.target.value })} placeholder="The Fittest You" />
+            <label className="text-sm text-gray-900 block mb-1">Watermark text</label>
+            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.watermarkText || ''} onChange={(e) => setMeta({ watermarkText: e.target.value })} placeholder="The Fittest You" />
           </section>
 
           {/* CTA */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">CTA</h3>
-            <label className="text-sm text-gray-700 block mb-1">CTA label</label>
-            <input className="w-full px-3 py-2 border rounded" value={draft?.meta?.ctaLabel || ''} onChange={(e) => setMeta({ ctaLabel: e.target.value })} placeholder="Book a consult" />
+            <label className="text-sm text-gray-900 block mb-1">CTA label</label>
+            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.ctaLabel || ''} onChange={(e) => setMeta({ ctaLabel: e.target.value })} placeholder="Book a consult" />
           </section>
 
           {/* Identity */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Identity</h3>
-            <div className="flex gap-3 items-center text-sm">
+            <div className="flex gap-3 items-center text-sm text-gray-900">
               <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name' })} /> First name</label>
               <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'anonymous'} onChange={() => setMeta({ displayNameMode: 'anonymous' })} /> Anonymous</label>
             </div>
-            <label className="text-sm text-gray-700 block mt-3 mb-1">Custom label override</label>
-            <input className="w-full px-3 py-2 border rounded" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
+            <label className="text-sm text-gray-900 block mt-3 mb-1">Custom label override</label>
+            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
           </section>
           {/* Hero before/after */}
           <section className="bg-white rounded border p-4">
@@ -251,7 +251,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
         {/* Right: Preview */}
         <div className="space-y-3">
           <section className="bg-white rounded border p-3">
-            <div className="text-sm text-gray-700 mb-3">Live Preview</div>
+            <div className="text-sm text-gray-900 mb-3">Live Preview</div>
             {preview ? (
               // Render AliasStoryClient directly for parity
               // eslint-disable-next-line @next/next/no-img-element
