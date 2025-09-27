@@ -252,8 +252,19 @@ Format: Title; Description; Acceptance; Dependencies
   - Toggles for optional sections; chart checkboxes (core three locked on)
   - “Publish snapshot” creates new versioned slug and updates alias target
 - Dependencies: 8, 3
- - Status: planned
-   - Notes: Autosave “immediate” with ~600–800ms debounce; reuse client chart components directly for parity; Publish pins assets and advances alias.
+ - Status: completed
+   - Notes (succinct record):
+     - Placement: `app/admin/marketing/editor/[draftId]` SSR page with admin guard; Wizard success offers "Continue editing" deep‑link.
+     - Autosave: ~700ms debounce to `marketing_drafts`; preview uses `GET /api/marketing/drafts/[id]/preview` and `snapshotPreviewBuilder` (no pinning).
+     - Uploads: proxied via server route to `marketing-assets/drafts/{draftId}/...`; leaves files on remove (cleanup later).
+     - Preview: Renders `AliasStoryClient` for true client‑parity; honors `chartsEnabled` flags.
+     - Publish: Button calls `POST /api/marketing/shares` with settings + draft media; atomic pin/publish enforced in API; alias advances on success.
+     - Charts: All implemented charts default ON in Editor (weight trend, projections, plateau weight, waist trend, sleep, morning fat burn, body fat). `plateauWaist` and `nutritionCompliancePct` deferred (flags present, default OFF) → tracked in Step 15.
+     - Labels/Order: Editor toggle labels match public chart titles; order mirrors alias page.
+     - Branding/CTA: Watermark removed; `TAGLINE`, `CTA_LABEL`, `CALENDLY_URL` centralized in `marketingConfig.ts`; CTA not editable in Editor.
+     - Testing: DocSend embedded via centralized `DOCSEND_URL`, overridable per draft (`media.testing.docsendUrl`).
+     - Media: Hero Before/After supports MP4; After renders on right; Fit3D (max 2) supports images/MP4 + optional YouTube ID; hero ignores Fit3D.
+     - UI: High‑contrast text/buttons per design guidance.
 
 12. Admin: Preview (true‑to‑public)
 - Description: Preview the Draft using the same components as public page (without publishing).
