@@ -53,11 +53,11 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b">
         <div className="max-w-6xl mx-auto p-3 flex items-center justify-between">
-          <div className="text-sm text-gray-700">
+          <div className="text-sm text-gray-900">
             <span className="font-medium">Edit Draft</span> {patientAlias}
           </div>
           <div className="text-xs">
-            {saving ? <span className="text-gray-600">Saving…</span> : saveError ? <span className="text-red-600">Save failed — Retry</span> : <span className="text-green-700">Saved</span>}
+            {saving ? <span className="text-gray-900">Saving…</span> : saveError ? <span className="text-red-600">Save failed — Retry</span> : <span className="text-green-700">Saved</span>}
           </div>
         </div>
       </div>
@@ -121,7 +121,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 const val = draft?.media?.[key] || null
                 return (
                   <div key={slot} className="border rounded p-3">
-                    <div className="text-xs text-gray-700 mb-2">{slot === 'before' ? 'Before' : 'After'}</div>
+                    <div className="text-xs text-gray-900 mb-2">{slot === 'before' ? 'Before' : 'After'}</div>
                     {val ? (
                       <div className="space-y-2">
                         {/\.mp4($|\?)/i.test(val) ? (
@@ -135,7 +135,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                         </div>
                       </div>
                     ) : (
-                      <label className="flex items-center justify-center h-32 border-2 border-dashed rounded cursor-pointer text-sm text-gray-600">
+                      <label className="flex items-center justify-center h-32 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
                         <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} />
                         Drop image/MP4 or click to upload
                       </label>
@@ -159,7 +159,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                   </div>
                 </div>
               ) : (
-                <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-600">
+                <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
                   <input type="file" accept="video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('loop', f); setMedia({ loopVideoUrl: url }) }} />
                   Drop MP4 or click to upload (auto-plays muted, loops)
                 </label>
@@ -176,7 +176,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 const url = arr[idx] || null
                 return (
                   <div key={idx} className="border rounded p-3">
-                    <div className="text-xs text-gray-700 mb-2">{url ? `Item ${idx+1}` : `Add ${idx===0?'first':'second'}`}</div>
+                    <div className="text-xs text-gray-900 mb-2">{url ? `Item ${idx+1}` : `Add ${idx===0?'first':'second'}`}</div>
                     {url ? (
                       <div className="space-y-2">
                         {/\.mp4($|\?)/i.test(url) ? (
@@ -190,7 +190,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                         </div>
                       </div>
                     ) : (
-                      <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-600">
+                      <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
                         <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url2 = await upload('fit3d', f, idx); const next = [...arr]; next[idx] = url2; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next.filter(Boolean) } }) }} />
                         {idx===0 ? 'Add first' : 'Add second'}
                       </label>
@@ -200,15 +200,15 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
               })}
             </div>
             <div className="mt-3">
-              <label className="text-sm text-gray-700 block mb-1">YouTube ID (optional)</label>
-              <input type="text" value={draft?.media?.fit3d?.youtubeId || ''} onChange={(e) => setMedia({ fit3d: { ...(draft.media?.fit3d||{}), youtubeId: e.target.value } })} className="w-full px-3 py-2 border rounded" placeholder="e.g., dQw4w9WgXcQ" />
+              <label className="text-sm text-gray-900 block mb-1">YouTube ID (optional)</label>
+              <input type="text" value={draft?.media?.fit3d?.youtubeId || ''} onChange={(e) => setMedia({ fit3d: { ...(draft.media?.fit3d||{}), youtubeId: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="e.g., dQw4w9WgXcQ" />
             </div>
           </section>
 
           {/* Testing (DocSend) */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Testing (DocSend)</h3>
-            <input type="url" value={draft?.media?.testing?.docsendUrl || ''} onChange={(e) => setMedia({ testing: { ...(draft.media?.testing||{}), docsendUrl: e.target.value } })} className="w-full px-3 py-2 border rounded" placeholder="https://docs.docsend.com/..." />
+            <input type="url" value={draft?.media?.testing?.docsendUrl || ''} onChange={(e) => setMedia({ testing: { ...(draft.media?.testing||{}), docsendUrl: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="https://docs.docsend.com/..." />
           </section>
 
           {/* Publish */}
@@ -257,7 +257,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
               // eslint-disable-next-line @next/next/no-img-element
               <PreviewClient snapshot={preview} />
             ) : (
-              <div className="text-xs text-gray-500">Preview will appear after the first save…</div>
+              <div className="text-xs text-gray-900">Preview will appear after the first save…</div>
             )}
           </section>
         </div>
