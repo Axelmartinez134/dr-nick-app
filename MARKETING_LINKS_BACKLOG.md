@@ -286,7 +286,13 @@ Format: Title; Description; Acceptance; Dependencies
   - Visual QA across devices; regressions resolved
 - Dependencies: 9
  - Status: planned
-   - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
+  - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
+    - Implement missing optional marketing charts not yet rendered:
+      - Plateau Prevention — Waist (uses existing derived series `plateauWaist`)
+      - Nutrition Compliance % (uses existing derived series `nutritionCompliancePct`)
+    - Render both as optional, collapsed sections on alias and preview pages; honor `chartsEnabled.plateauWaist` and `chartsEnabled.nutritionCompliancePct`.
+    - Ensure Editor chart toggles match public labels exactly and map 1:1 to flags.
+    - After implementing these charts, update Editor defaults so these toggles are available and consistent with public behavior.
 
 16. Unit toggle consistency
 - Description: Ensure all numbers/axes/caption pill respect unit toggle; add optional text callouts for Fit3D/Testing that convert units dynamically (not inside PDFs/videos).

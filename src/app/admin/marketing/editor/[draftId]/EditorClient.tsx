@@ -70,18 +70,24 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
             <div className="grid grid-cols-2 gap-2 text-sm text-gray-900">
               {[
-                ['weightTrend','Weight Trend'],
-                ['projection','Projections'],
-                ['plateauWeight','Plateau Weight'],
+                // Order to mirror public alias page rendering
+                ['weightTrend','Weight Trend Analysis'],
+                ['projection','Weight Loss Trend vs. Projections'],
+                ['plateauWeight','Plateau Prevention (Weight Loss Rate)'],
                 ['waistTrend','Waist Trend'],
-                ['plateauWaist','Plateau Waist'],
-                ['nutritionCompliancePct','Nutrition %'],
                 ['sleepTrend','Sleep Consistency'],
                 ['morningFatBurnTrend','Morning Fat Burn %'],
                 ['bodyFatTrend','Body Fat %'],
+                // Additional toggles not currently shown on alias page
+                ['plateauWaist','Plateau Prevention — Waist'],
+                ['nutritionCompliancePct','Nutrition Compliance %'],
               ].map(([key,label]) => (
                 <label key={key} className="flex items-center gap-2 text-gray-900">
-                  <input type="checkbox" checked={!!draft?.meta?.chartsEnabled?.[key as any]} onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [key]: e.target.checked } })} />
+                  <input
+                    type="checkbox"
+                    checked={draft?.meta?.chartsEnabled?.[key as any] ?? true}
+                    onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [key]: e.target.checked } })}
+                  />
                   <span>{label}</span>
                 </label>
               ))}

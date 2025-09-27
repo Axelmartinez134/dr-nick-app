@@ -26,7 +26,24 @@ export async function POST(req: NextRequest)
 
     // Create an empty draft
     const draft = {
-      meta: { displayNameMode: 'first_name', captionsEnabled: true, layout: 'stack', chartsEnabled: { weightTrend: true, projection: true, plateauWeight: true } },
+      meta: {
+        displayNameMode: 'first_name',
+        captionsEnabled: true,
+        layout: 'stack',
+        // Defaults: turn ON all implemented charts; defer missing ones to OFF for now
+        chartsEnabled: {
+          weightTrend: true,
+          projection: true,
+          plateauWeight: true,
+          waistTrend: true,
+          sleepTrend: true,
+          morningFatBurnTrend: true,
+          bodyFatTrend: true,
+          // Not yet implemented on alias/preview pages
+          plateauWaist: false,
+          nutritionCompliancePct: false
+        }
+      },
       media: { beforePhotoUrl: null, afterPhotoUrl: null, loopVideoUrl: null, fit3d: { images: [], youtubeId: null }, testing: { docsendUrl: null } }
     }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
-import { CTA_LABEL, CALENDLY_URL, TAGLINE } from '@/app/components/health/marketing/marketingConfig'
+import { CTA_LABEL, CALENDLY_URL, TAGLINE, DOCSEND_URL } from '@/app/components/health/marketing/marketingConfig'
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
@@ -22,6 +22,18 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   const ctaLabel = (meta as any)?.ctaLabel || 'Book a consult'
   const displayLabel = (meta as any)?.displayNameOverride || meta.patientLabel
   const slug = (shareSlug as any) || (snapshot?.meta as any)?.slug
+  const chartsEnabled = {
+    weightTrend: true,
+    projection: true,
+    plateauWeight: true,
+    waistTrend: false,
+    plateauWaist: false,
+    nutritionCompliancePct: false,
+    sleepTrend: false,
+    morningFatBurnTrend: false,
+    bodyFatTrend: false,
+    ...(meta as any)?.chartsEnabled
+  } as Record<string, boolean>
   const reportClick = (ctaId: string) => {
     try {
       const s = (window as any).__marketingSlug || slug
@@ -140,6 +152,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Charts */}
       <section id="charts" className="max-w-md mx-auto p-4">
+        {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
         <div className="rounded border p-2">
           <div className="mb-2">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
@@ -158,7 +171,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             <p>• Weekly fluctuations are normal - focus on trendline should be prioritized</p>
           </div>
         </div>
+        )}
 
+        {chartsEnabled.projection && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
         <div className="rounded border p-2 mt-4">
           <div className="mb-2">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
@@ -186,7 +201,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             <p>• Projections help identify if progress is on track with expectations</p>
           </div>
         </div>
+        )}
 
+        {chartsEnabled.plateauWeight && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
         <div className="rounded border p-2 mt-4">
           <div className="w-full">
             <ClientPlateauPreventionChart
@@ -194,6 +211,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             />
           </div>
         </div>
+        )}
       </section>
 
       {/* Inline CTA after Charts */}
@@ -205,6 +223,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Optional charts (collapsed) */}
       <section className="max-w-md mx-auto p-4">
+        {chartsEnabled.waistTrend && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
         <details className="rounded border">
           <summary className="p-2 cursor-pointer select-none">Waist Trend</summary>
           <div className="p-2">
@@ -226,7 +245,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
           </div>
         </details>
+        )}
 
+        {chartsEnabled.sleepTrend && Array.isArray(snapshot.derived.sleepTrend) && (snapshot.derived.sleepTrend as any[]).length > 0 && (
         <details className="rounded border mt-4">
           <summary className="p-2 cursor-pointer select-none">Sleep Consistency</summary>
           <div className="p-2">
@@ -249,7 +270,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
           </div>
         </details>
+        )}
 
+        {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.derived.morningFatBurnTrend) && (snapshot.derived.morningFatBurnTrend as any[]).length > 0 && (
         <details className="rounded border mt-4">
           <summary className="p-2 cursor-pointer select-none">Morning Fat Burn %</summary>
           <div className="p-2">
@@ -271,7 +294,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
           </div>
         </details>
+        )}
 
+        {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.derived.bodyFatTrend) && (snapshot.derived.bodyFatTrend as any[]).length > 0 && (
         <details className="rounded border mt-4">
           <summary className="p-2 cursor-pointer select-none">Body Fat %</summary>
           <div className="p-2">
@@ -293,6 +318,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
           </div>
         </details>
+        )}
       </section>
 
       {/* Fit3D section */}
@@ -330,9 +356,14 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       
 
-      {/* Testing placeholder */}
+      {/* Testing (DocSend) */}
       <section id="testing" className="max-w-md mx-auto p-4">
-        <div className="rounded border p-4 text-gray-600">Testing (DocSend) section coming soon</div>
+        <div className="rounded border p-2">
+          <div className="text-sm text-gray-700 mb-2">Metabolic/Cardio Testing</div>
+          <div className="w-full">
+            <iframe src={(snapshot as any)?.media?.testing?.docsendUrl || DOCSEND_URL} allow="fullscreen" width="640" height="480" className="w-full" />
+          </div>
+        </div>
       </section>
 
       {/* Inline CTA after Testing */}
