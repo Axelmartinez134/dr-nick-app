@@ -84,7 +84,11 @@ export async function snapshotPreviewBuilder(
       },
       captionsEnabled: meta.captionsEnabled,
       layout: meta.layout,
-      watermarkText: null
+      watermarkText: null,
+      // Optional marketing fields (fallbacks applied in client)
+      ctaLabel: (meta as any)?.ctaLabel ?? null,
+      calendlyUrl: (meta as any)?.calendlyUrl ?? null,
+      displayNameOverride: (meta as any)?.displayNameOverride ?? null
     },
     metrics,
     weeksRaw,

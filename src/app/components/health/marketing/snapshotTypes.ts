@@ -32,6 +32,10 @@ export interface SnapshotMeta {
   captionsEnabled: boolean
   layout: 'stack' | 'three_up'
   watermarkText?: string | null
+  // New optional fields for marketing UI
+  ctaLabel?: string | null
+  calendlyUrl?: string | null
+  displayNameOverride?: string | null
 }
 
 export interface SnapshotMetrics {
@@ -105,7 +109,10 @@ export function normalizeSnapshot(input: any): SnapshotJson {
       chartsEnabled: typeof input.meta?.chartsEnabled === 'object' && input.meta?.chartsEnabled ? input.meta.chartsEnabled : {},
       captionsEnabled: !!input.meta?.captionsEnabled,
       layout: input.meta?.layout === 'three_up' ? 'three_up' : 'stack',
-      watermarkText: input.meta?.watermarkText ?? null
+      watermarkText: input.meta?.watermarkText ?? null,
+      ctaLabel: input.meta?.ctaLabel ?? null,
+      calendlyUrl: input.meta?.calendlyUrl ?? null,
+      displayNameOverride: input.meta?.displayNameOverride ?? null
     }
 
     const metrics: SnapshotMetrics = {

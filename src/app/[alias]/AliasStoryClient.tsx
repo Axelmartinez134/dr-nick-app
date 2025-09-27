@@ -18,6 +18,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
   const m = snapshot.metrics
   const meta = snapshot.meta
+  const ctaLabel = (meta as any)?.ctaLabel || 'Book a consult'
+  const displayLabel = (meta as any)?.displayNameOverride || meta.patientLabel
   const slug = (shareSlug as any) || (snapshot?.meta as any)?.slug
   const reportClick = (ctaId: string) => {
     try {
@@ -39,7 +41,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       <header className="max-w-md mx-auto p-4 text-center">
         <div className="text-sm text-gray-500">{meta.watermarkText || 'The Fittest You'}</div>
         <h1 className="text-xl font-bold mt-1">Become the Fittest Version of Yourself.</h1>
-        <div className="mt-1 text-gray-700">{meta.patientLabel}</div>
+        <div className="mt-1 text-gray-700">{displayLabel}</div>
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">
           <button
             className={`px-3 py-1 rounded border ${unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
@@ -196,13 +198,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA after Charts */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-2">
-          <a
-            href="#cta"
-            className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium"
-            onClick={() => reportClick('after_charts')}
-          >
-            Book a consult
-          </a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_charts')}>{ctaLabel}</a>
         </div>
       </section>
 
@@ -298,22 +294,40 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </details>
       </section>
 
-      {/* Photos placeholder */}
-      <section id="photos" className="max-w-md mx-auto p-4">
-        <div className="rounded border p-4 text-gray-600">Photos section coming soon</div>
+      {/* Fit3D section */}
+      <section id="fit3d" className="max-w-md mx-auto p-4">
+        <details className="rounded border">
+          <summary className="p-2 cursor-pointer select-none">Fit3D</summary>
+          <div className="p-2">
+            <div className="mb-2 text-sm text-gray-700">3D body scans highlighting body composition changes.</div>
+            <div className="grid grid-cols-2 gap-2">
+              {(((snapshot as any)?.media?.fit3d?.images || []) as string[]).slice(0,2).map((u, i) => (
+                <div key={i} className="rounded border overflow-hidden">
+                  {/\.mp4($|\?)/i.test(u) ? (
+                    <video src={u} muted playsInline controls className="w-full h-auto" />
+                  ) : (
+                    <img src={u} alt={`Fit3D ${i+1}`} className="w-full h-auto" />
+                  )}
+                </div>
+              ))}
+            </div>
+            {(snapshot as any)?.media?.fit3d?.youtubeId ? (
+              <div className="mt-3">
+                <iframe className="w-full aspect-video" src={`https://www.youtube.com/embed/${(snapshot as any).media.fit3d.youtubeId}`} title="Fit3D" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+              </div>
+            ) : null}
+          </div>
+        </details>
       </section>
 
       {/* Inline CTA after Photos (Hero) */}
       <section className="max-w-md mx-auto px-4">
         <div id="cta" className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_photos')}>Book a consult</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_photos')}>{ctaLabel}</a>
         </div>
       </section>
 
-      {/* Fit3D placeholder */}
-      <section id="fit3d" className="max-w-md mx-auto p-4">
-        <div className="rounded border p-4 text-gray-600">Fit3D section coming soon</div>
-      </section>
+      
 
       {/* Testing placeholder */}
       <section id="testing" className="max-w-md mx-auto p-4">
@@ -323,7 +337,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA after Testing */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testing')}>Book a consult</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testing')}>{ctaLabel}</a>
         </div>
       </section>
 
@@ -335,7 +349,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Inline CTA above footer (after Testimonials) */}
       <section className="max-w-md mx-auto px-4">
         <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testimonials')}>Book a consult</a>
+          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testimonials')}>{ctaLabel}</a>
         </div>
       </section>
 

@@ -33,6 +33,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   }, [draftId, draft])
 
   const setMedia = (patch: any) => setDraft((d: any) => ({ ...d, media: { ...(d?.media || {}), ...patch } }))
+  const setMeta = (patch: any) => setDraft((d: any) => ({ ...d, meta: { ...(d?.meta || {}), ...patch } }))
 
   async function upload(kind: 'before' | 'after' | 'loop' | 'fit3d', file: File, index = 0) {
     const fd = new FormData()
@@ -64,6 +65,53 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6 p-4">
         {/* Left: Editor panels */}
         <div className="space-y-6">
+          {/* Charts toggles */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {[
+                ['weightTrend','Weight Trend'],
+                ['projection','Projections'],
+                ['plateauWeight','Plateau Weight'],
+                ['waistTrend','Waist Trend'],
+                ['plateauWaist','Plateau Waist'],
+                ['nutritionCompliancePct','Nutrition %'],
+                ['sleepTrend','Sleep Consistency'],
+                ['morningFatBurnTrend','Morning Fat Burn %'],
+                ['bodyFatTrend','Body Fat %'],
+              ].map(([key,label]) => (
+                <label key={key} className="flex items-center gap-2">
+                  <input type="checkbox" checked={!!draft?.meta?.chartsEnabled?.[key as any]} onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [key]: e.target.checked } })} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          {/* Branding */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Branding</h3>
+            <label className="text-sm text-gray-700 block mb-1">Watermark text</label>
+            <input className="w-full px-3 py-2 border rounded" value={draft?.meta?.watermarkText || ''} onChange={(e) => setMeta({ watermarkText: e.target.value })} placeholder="The Fittest You" />
+          </section>
+
+          {/* CTA */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">CTA</h3>
+            <label className="text-sm text-gray-700 block mb-1">CTA label</label>
+            <input className="w-full px-3 py-2 border rounded" value={draft?.meta?.ctaLabel || ''} onChange={(e) => setMeta({ ctaLabel: e.target.value })} placeholder="Book a consult" />
+          </section>
+
+          {/* Identity */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Identity</h3>
+            <div className="flex gap-3 items-center text-sm">
+              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name' })} /> First name</label>
+              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'anonymous'} onChange={() => setMeta({ displayNameMode: 'anonymous' })} /> Anonymous</label>
+            </div>
+            <label className="text-sm text-gray-700 block mt-3 mb-1">Custom label override</label>
+            <input className="w-full px-3 py-2 border rounded" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
+          </section>
           {/* Hero before/after */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Hero — Before / After</h3>
