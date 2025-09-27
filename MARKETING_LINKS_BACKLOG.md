@@ -312,6 +312,7 @@ Format: Title; Description; Acceptance; Dependencies
 - Dependencies: 9
  - Status: planned
   - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
+    - Library audit: evaluate Recharts vs ECharts standardization vs continued mix to reduce bundle size and improve load time; code‑split and lazy‑load heavy bundles; measure with Lighthouse.
 
 16. Unit toggle consistency
 - Description: Ensure all numbers/axes/caption pill respect unit toggle; add optional text callouts for Fit3D/Testing that convert units dynamically (not inside PDFs/videos).

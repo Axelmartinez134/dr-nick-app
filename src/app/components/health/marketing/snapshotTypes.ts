@@ -36,6 +36,12 @@ export interface SnapshotMeta {
   ctaLabel?: string | null
   calendlyUrl?: string | null
   displayNameOverride?: string | null
+  // Optional global display range for charts/metrics
+  displayWeeks?: {
+    start: number
+    end: number
+    effectiveEnd?: number
+  }
 }
 
 export interface SnapshotMetrics {

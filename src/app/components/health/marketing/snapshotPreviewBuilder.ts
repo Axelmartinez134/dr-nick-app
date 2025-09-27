@@ -12,6 +12,7 @@ export interface PreviewMetaSettings {
   layout: 'stack' | 'three_up'
   chartsEnabled?: Record<string, boolean>
   chartsOrder?: string[]
+  displayWeeks?: { start: number; end: number }
 }
 
 export interface PreviewMedia {
@@ -32,7 +33,7 @@ export async function snapshotPreviewBuilder(
   const profile = await loadPatientProfile(supabase, patientId)
   const weekly = await loadPatientWeeklyRows(supabase, patientId)
 
-  const weeksRaw: SnapshotWeek[] = weekly.map(w => ({
+  const fullWeeks: SnapshotWeek[] = weekly.map(w => ({
     week_number: w.week_number,
     fields: {
       weight: w.weight ?? null,
@@ -47,6 +48,18 @@ export async function snapshotPreviewBuilder(
       symptom_tracking_days: w.symptom_tracking_days ?? null
     }
   }))
+
+  // Apply optional global display range before computing metrics/derived
+  let weeksRaw: SnapshotWeek[] = fullWeeks
+  let effectiveEnd: number | undefined = undefined
+  if (meta.displayWeeks && typeof meta.displayWeeks.start === 'number' && typeof meta.displayWeeks.end === 'number') {
+    const start = Math.max(1, Math.floor(meta.displayWeeks.start))
+    const endRequested = Math.max(start, Math.floor(meta.displayWeeks.end))
+    const availableMax = fullWeeks.reduce((m, w) => Math.max(m, w.week_number), 0)
+    const end = Math.min(endRequested, availableMax)
+    effectiveEnd = end
+    weeksRaw = fullWeeks.filter(w => w.week_number >= start && w.week_number <= end)
+  }
 
   const derived = buildDerived(weeksRaw)
   const metrics = computeSummaryMetrics(weeksRaw)
@@ -90,6 +103,8 @@ export async function snapshotPreviewBuilder(
       ctaLabel: null,
       calendlyUrl: (meta as any)?.calendlyUrl ?? null,
       displayNameOverride: (meta as any)?.displayNameOverride ?? null
+      ,
+      displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd } : undefined
     },
     metrics,
     weeksRaw,

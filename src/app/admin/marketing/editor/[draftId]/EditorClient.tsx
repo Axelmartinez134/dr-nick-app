@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import PreviewClient from './PreviewClient'
+import { MARKETING_CHARTS } from '@/app/components/health/marketing/marketingChartsConfig'
 
 export default function EditorClient({ draftId, initialDraft }: { draftId: string; initialDraft: any }) {
   const [draft, setDraft] = useState<any>(initialDraft?.draft_json || initialDraft)
@@ -69,29 +70,48 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
             <div className="grid grid-cols-2 gap-2 text-sm text-gray-900">
-              {[
-                // Order to mirror public alias page rendering
-                ['weightTrend','Weight Trend Analysis'],
-                ['projection','Weight Loss Trend vs. Projections'],
-                ['plateauWeight','Plateau Prevention (Weight Loss Rate)'],
-                ['waistTrend','Waist Trend'],
-                ['sleepTrend','Sleep Consistency'],
-                ['morningFatBurnTrend','Morning Fat Burn %'],
-                ['bodyFatTrend','Body Fat %'],
-                // Additional toggles not currently shown on alias page
-                ['plateauWaist','Plateau Prevention — Waist'],
-                ['nutritionCompliancePct','Nutrition Compliance %'],
-              ].map(([key,label]) => (
-                <label key={key} className="flex items-center gap-2 text-gray-900">
+              {MARKETING_CHARTS.map((cfg) => (
+                <label key={cfg.id} className="flex items-center gap-2 text-gray-900">
                   <input
                     type="checkbox"
-                    checked={draft?.meta?.chartsEnabled?.[key as any] ?? true}
-                    onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [key]: e.target.checked } })}
+                    checked={(draft?.meta?.chartsEnabled?.[cfg.id as any]) ?? cfg.defaultEnabled}
+                    onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [cfg.id]: e.target.checked } })}
                   />
-                  <span>{label}</span>
+                  <span>{cfg.title}</span>
                 </label>
               ))}
             </div>
+          </section>
+
+          {/* Global data range */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Data Range (weeks)</h3>
+            <div className="flex items-center gap-3 text-sm text-gray-900">
+              <div>
+                <label className="block mb-1">Start</label>
+                <input type="number" min={1} value={draft?.meta?.displayWeeks?.start ?? ''} onChange={(e) => {
+                  const start = Math.max(1, parseInt(e.target.value || '1', 10))
+                  const end = draft?.meta?.displayWeeks?.end ?? start
+                  setMeta({ displayWeeks: { start, end } })
+                }} className="px-2 py-1 border rounded w-24" />
+              </div>
+              <div>
+                <label className="block mb-1">End</label>
+                <input type="number" min={1} value={draft?.meta?.displayWeeks?.end ?? ''} onChange={(e) => {
+                  const currentStart = draft?.meta?.displayWeeks?.start ?? 1
+                  const end = Math.max(currentStart, parseInt(e.target.value || String(currentStart), 10))
+                  setMeta({ displayWeeks: { start: currentStart, end } })
+                }} className="px-2 py-1 border rounded w-24" />
+              </div>
+            </div>
+            {/* Clamp guidance — actual clamp/effectiveEnd is determined by preview builder; editor shows advisory */}
+            {(() => {
+              const dw = draft?.meta?.displayWeeks
+              if (!dw) return null
+              return (
+                <div className="mt-2 text-xs text-gray-700">If the end exceeds available data, preview will clamp and show a notice.</div>
+              )
+            })()}
           </section>
 
           {/* Branding removed by spec; tagline is centralized in marketingConfig */}
