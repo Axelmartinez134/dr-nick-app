@@ -130,8 +130,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                           <img src={val} alt={slot} className="w-full h-auto rounded" />
                         )}
                         <div className="flex gap-2">
-                          <label className="px-2 py-1 border rounded cursor-pointer text-sm">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} /></label>
-                          <button className="px-2 py-1 border rounded text-sm" onClick={() => setMedia({ [key]: null })}>Remove</button>
+                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} /></label>
+                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ [key]: null })}>Remove</button>
                         </div>
                       </div>
                     ) : (
@@ -151,11 +151,11 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             <h3 className="font-semibold text-gray-900 mb-3">Loop (MP4)</h3>
             <div className="border rounded p-3">
               {draft?.media?.loopVideoUrl ? (
-                <div className="space-y-2">
+                  <div className="space-y-2">
                   <video src={draft.media.loopVideoUrl} muted loop playsInline autoPlay className="w-full h-auto" />
                   <div className="flex gap-2">
-                    <label className="px-2 py-1 border rounded cursor-pointer text-sm">Replace<input type="file" accept="video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('loop', f); setMedia({ loopVideoUrl: url }) }} /></label>
-                    <button className="px-2 py-1 border rounded text-sm" onClick={() => setMedia({ loopVideoUrl: null })}>Remove</button>
+                    <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('loop', f); setMedia({ loopVideoUrl: url }) }} /></label>
+                    <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ loopVideoUrl: null })}>Remove</button>
                   </div>
                 </div>
               ) : (
@@ -185,8 +185,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                           <img src={url} alt={`fit3d-${idx+1}`} className="w-full h-auto rounded" />
                         )}
                         <div className="flex gap-2">
-                          <label className="px-2 py-1 border rounded cursor-pointer text-sm">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url2 = await upload('fit3d', f, idx); const next = [...arr]; next[idx] = url2; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next } }) }} /></label>
-                          <button className="px-2 py-1 border rounded text-sm" onClick={() => { const next = [...arr]; next[idx] = ''; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next.filter(Boolean) } }) }}>Remove</button>
+                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url2 = await upload('fit3d', f, idx); const next = [...arr]; next[idx] = url2; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next } }) }} /></label>
+                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium" onClick={() => { const next = [...arr]; next[idx] = ''; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next.filter(Boolean) } }) }}>Remove</button>
                         </div>
                       </div>
                     ) : (
