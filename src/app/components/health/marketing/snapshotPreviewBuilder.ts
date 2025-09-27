@@ -63,6 +63,24 @@ export async function snapshotPreviewBuilder(
 
   const derived = buildDerived(weeksRaw)
   const metrics = computeSummaryMetrics(weeksRaw)
+  // Override Total Loss % to always use week 0 baseline when available
+  try {
+    const baseline = fullWeeks
+      .filter(w => typeof w.week_number === 'number' && w.week_number === 0)
+      .map(w => w.fields?.weight)
+      .find(v => v !== null && v !== undefined) as number | undefined
+    const latestInRange = [...weeksRaw]
+      .filter(w => typeof w.week_number === 'number' && (w.fields?.weight !== null && w.fields?.weight !== undefined))
+      .sort((a, b) => a.week_number - b.week_number)
+      .reverse()
+      .find(w => w.week_number > 0)?.fields?.weight as number | undefined
+    if (typeof baseline === 'number' && baseline > 0 && typeof latestInRange === 'number') {
+      const pct = ((baseline - latestInRange) / baseline) * 100
+      // Round to 1 decimal to match existing UI
+      const roundedPct = Math.round(pct * 10) / 10
+      ;(metrics as any).totalLossPct = roundedPct
+    }
+  } catch {}
 
   const patientLabel = meta.displayNameMode === 'first_name'
     ? String(profile.full_name || 'Client').split(/\s+/)[0]

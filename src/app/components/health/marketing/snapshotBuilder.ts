@@ -80,6 +80,24 @@ export async function snapshotBuilder(
   // 4) Derived series and summary metrics
   const derived = buildDerived(weeksRaw)
   const metrics = computeSummaryMetrics(weeksRaw)
+  // Override Total Loss % to always use week 0 baseline when available
+  try {
+    const baseline = fullWeeks
+      .filter(w => typeof w.week_number === 'number' && w.week_number === 0)
+      .map(w => w.fields?.weight)
+      .find(v => v !== null && v !== undefined) as number | undefined
+    const latestInRange = [...weeksRaw]
+      .filter(w => typeof w.week_number === 'number' && (w.fields?.weight !== null && w.fields?.weight !== undefined))
+      .sort((a, b) => a.week_number - b.week_number)
+      .reverse()
+      .find(w => w.week_number > 0)?.fields?.weight as number | undefined
+    if (typeof baseline === 'number' && baseline > 0 && typeof latestInRange === 'number') {
+      const pct = ((baseline - latestInRange) / baseline) * 100
+      // Round to 1 decimal to match existing UI
+      const rounded = Math.round(pct * 10) / 10
+      ;(metrics as any).totalLossPct = rounded
+    }
+  } catch {}
 
   // 5) Determine patient label
   const patientLabel = settings.displayNameMode === 'first_name'
