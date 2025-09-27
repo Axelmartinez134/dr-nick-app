@@ -57,7 +57,12 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       </header>
 
       {/* Hero media: below unit toggle; two-column layout (left + optional right)
-          Priority: prefer images (after/before) over loop video */}
+          Layout rules:
+          - If both images exist: left=Before, right=After
+          - If only After: right=After; left=Loop (if present) else empty
+          - If only Before: left=Before; right=Loop (if present) else empty
+          - If neither image: left=Loop (if present)
+          Fit3D is ignored for hero. */}
       {(() => {
         const media = (snapshot as any)?.media || {}
         const loop = media?.loopVideoUrl as string | undefined
@@ -72,17 +77,23 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           try { return /\.mp4($|\?)/i.test(new URL(u).pathname) } catch { return false }
         }
 
-        // Prefer images first, then loop
-        const primary = afterUrl || beforeUrl || loop || null
-        if (!primary) return null
+        // Decide left/right explicitly
+        let left: string | null = null
+        let right: string | null = null
+        if (beforeUrl && afterUrl) {
+          left = beforeUrl
+          right = afterUrl
+        } else if (afterUrl && !beforeUrl) {
+          right = afterUrl
+          left = loop || null
+        } else if (beforeUrl && !afterUrl) {
+          left = beforeUrl
+          right = loop || null
+        } else if (!beforeUrl && !afterUrl) {
+          left = loop || null
+        }
 
-        const secondary = (() => {
-          // Option A: only show the other hero media or loop; ignore Fit3D
-          if ((primary === afterUrl || primary === beforeUrl) && loop) return loop
-          if (primary === afterUrl && beforeUrl) return beforeUrl
-          if (primary === beforeUrl && afterUrl) return afterUrl
-          return null
-        })()
+        if (!left && !right) return null
 
         const render = (u: string) => (
           <div className="rounded border overflow-hidden">
@@ -97,8 +108,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         return (
           <section className="max-w-md mx-auto px-4">
             <div className="grid grid-cols-2 gap-3 items-start">
-              <div>{render(primary)}</div>
-              <div>{secondary ? render(secondary as string) : null}</div>
+              <div>{left ? render(left) : null}</div>
+              <div>{right ? render(right) : null}</div>
             </div>
           </section>
         )
