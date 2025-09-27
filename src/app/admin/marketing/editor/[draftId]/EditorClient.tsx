@@ -8,8 +8,9 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [preview, setPreview] = useState<any | null>(null)
-  const [availableMaxWeek, setAvailableMaxWeek] = useState<number>(0)
+  const [fullAvailableMaxWeek, setFullAvailableMaxWeek] = useState<number>(0)
   const initializedRangeRef = useRef<boolean>(false)
+  const fullMaxSetRef = useRef<boolean>(false)
 
   // Debounced autosave
   useEffect(() => {
@@ -38,7 +39,10 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   useEffect(() => {
     if (preview && Array.isArray(preview.weeksRaw)) {
       const maxW = preview.weeksRaw.reduce((m: number, w: any) => Math.max(m, Number(w?.week_number || 0)), 0)
-      setAvailableMaxWeek(maxW)
+      if (!fullMaxSetRef.current) {
+        setFullAvailableMaxWeek(maxW)
+        fullMaxSetRef.current = true
+      }
       if (!initializedRangeRef.current && maxW > 0) {
         // Initialize to full range if not already set
         if (!draft?.meta?.displayWeeks || typeof draft.meta.displayWeeks.end !== 'number') {
@@ -115,25 +119,18 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Data Range</h3>
             <div className="grid grid-cols-1 gap-3 text-sm text-gray-900">
-              <div className="grid grid-cols-2 gap-3 items-center">
-                <label className="flex items-center gap-2">Start week
-                  <input
-                    type="number"
-                    className="ml-2 w-24 px-2 py-1 border rounded text-gray-900"
-                    value={1}
-                    readOnly
-                  />
-                </label>
-                <label className="flex items-center gap-2 justify-end">End week
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-900">Start week: 1</div>
+                <label className="flex items-center gap-2">End week
                   <input
                     type="number"
                     className="ml-2 w-24 px-2 py-1 border rounded text-gray-900"
                     min={1}
-                    max={Math.max(1, availableMaxWeek)}
-                    value={draft?.meta?.displayWeeks?.end ?? availableMaxWeek || 1}
+                    max={Math.max(1, fullAvailableMaxWeek)}
+                    value={draft?.meta?.displayWeeks?.end ?? fullAvailableMaxWeek || 1}
                     onChange={(e) => {
                       const raw = parseInt(e.target.value || '1', 10)
-                      const clamped = Math.max(1, Math.min(raw, Math.max(1, availableMaxWeek)))
+                      const clamped = Math.max(1, Math.min(raw, Math.max(1, fullAvailableMaxWeek)))
                       setMeta({ displayWeeks: { start: 1, end: clamped } })
                     }}
                   />
@@ -143,20 +140,20 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 <input
                   type="range"
                   min={1}
-                  max={Math.max(1, availableMaxWeek)}
-                  value={draft?.meta?.displayWeeks?.end ?? availableMaxWeek || 1}
+                  max={Math.max(1, fullAvailableMaxWeek)}
+                  value={draft?.meta?.displayWeeks?.end ?? fullAvailableMaxWeek || 1}
                   onChange={(e) => {
                     const raw = parseInt(e.target.value || '1', 10)
-                    const clamped = Math.max(1, Math.min(raw, Math.max(1, availableMaxWeek)))
+                    const clamped = Math.max(1, Math.min(raw, Math.max(1, fullAvailableMaxWeek)))
                     setMeta({ displayWeeks: { start: 1, end: clamped } })
                   }}
                   className="w-full"
                 />
                 <div className="text-xs text-gray-500 mt-1">Slide to reduce the displayed weeks. Defaults to full data range.</div>
               </div>
-              {(draft?.meta?.displayWeeks?.end || 0) > availableMaxWeek && availableMaxWeek > 0 && (
+              {(draft?.meta?.displayWeeks?.end || 0) > fullAvailableMaxWeek && fullAvailableMaxWeek > 0 && (
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                  Requested end week ({draft?.meta?.displayWeeks?.end}) exceeds available data ({availableMaxWeek}). Preview will clamp to {availableMaxWeek}.
+                  Requested end week ({draft?.meta?.displayWeeks?.end}) exceeds available data ({fullAvailableMaxWeek}). Preview will clamp to {fullAvailableMaxWeek}.
                 </div>
               )}
             </div>
