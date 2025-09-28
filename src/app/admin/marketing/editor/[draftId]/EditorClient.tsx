@@ -142,7 +142,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                     className="ml-2 w-24 px-2 py-1 border rounded text-gray-900"
                     min={1}
                     max={Math.max(1, fullAvailableMaxWeek)}
-                    value={draft?.meta?.displayWeeks?.end ?? fullAvailableMaxWeek || 1}
+                    value={(draft?.meta?.displayWeeks?.end ?? fullAvailableMaxWeek) || 1}
                     onChange={(e) => {
                       const raw = parseInt(e.target.value || '1', 10)
                       const clamped = Math.max(1, Math.min(raw, Math.max(1, fullAvailableMaxWeek)))
@@ -156,7 +156,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                   type="range"
                   min={1}
                   max={Math.max(1, fullAvailableMaxWeek)}
-                  value={draft?.meta?.displayWeeks?.end ?? fullAvailableMaxWeek || 1}
+                  value={(draft?.meta?.displayWeeks?.end ?? fullAvailableMaxWeek) || 1}
                   onChange={(e) => {
                     const raw = parseInt(e.target.value || '1', 10)
                     const clamped = Math.max(1, Math.min(raw, Math.max(1, fullAvailableMaxWeek)))

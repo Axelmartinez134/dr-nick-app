@@ -124,8 +124,23 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           </div>
         )
 
+        // Result capsule data
+        const weeksMax = Array.isArray((snapshot as any)?.weeksRaw) && (snapshot as any).weeksRaw.length > 0
+          ? Math.max(...((snapshot as any).weeksRaw as any[]).map((w: any) => Number(w?.week_number || 0)))
+          : 0
+        const dwCaps = (snapshot.meta as any)?.displayWeeks
+        const weeksShown = typeof dwCaps?.effectiveEnd === 'number' ? dwCaps.effectiveEnd : weeksMax
+        const totalLoss = typeof m.totalLossPct === 'number' ? m.totalLossPct : null
+
         return (
-          <section className="max-w-md mx-auto px-4">
+          <section className="max-w-md mx-auto px-4 relative">
+            {totalLoss !== null && weeksShown > 0 ? (
+              <div className="absolute z-10 left-3 -top-3">
+                <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">
+                  {totalLoss}% total loss • {weeksShown} weeks
+                </div>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-3 items-start">
               <div>{left ? render(left) : null}</div>
               <div>{right ? render(right) : null}</div>
@@ -151,6 +166,30 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Avg Exercise Days</div>
           <div className="text-xl font-bold text-gray-900">{m.avgPurposefulExerciseDays ?? '—'}</div>
+        </div>
+      </section>
+
+      {/* Testimonial */}
+      <section className="max-w-md mx-auto px-4">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm bg-white">
+          <div className="text-gray-900 text-base font-semibold mb-1">What clients say</div>
+          <p className="italic text-gray-700 text-sm">“I tried everything before this. Dr. Nick’s weekly adjustments finally made the scale move without killing my energy. I feel lighter, stronger, and clear on what to do next.”</p>
+          <div className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+            <div className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs">A</div>
+            <div>Areg</div>
+          </div>
+        </div>
+      </section>
+
+      {/* What you’ll get */}
+      <section className="max-w-md mx-auto px-4 mt-3">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm bg-white">
+          <div className="text-gray-900 text-base font-semibold mb-2">What you’ll get</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+            <div className="flex items-start gap-2 text-gray-700"><span>🗓️</span><span>Weekly expert adjustments</span></div>
+            <div className="flex items-start gap-2 text-gray-700"><span>🧬</span><span>Data‑driven nutrition</span></div>
+            <div className="flex items-start gap-2 text-gray-700"><span>✅</span><span>Accountability that sticks</span></div>
+          </div>
         </div>
       </section>
 
@@ -235,7 +274,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       <section className="max-w-md mx-auto p-4">
         {chartsEnabled.waistTrend && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
         <details className="rounded-lg border border-gray-200 shadow-sm">
-          <summary className="p-2 cursor-pointer select-none">Waist Trend</summary>
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Waist Trend</summary>
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">📏 Waist Trend Analysis</h3>
@@ -259,7 +298,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
         {chartsEnabled.sleepTrend && Array.isArray(snapshot.derived.sleepTrend) && (snapshot.derived.sleepTrend as any[]).length > 0 && (
         <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-          <summary className="p-2 cursor-pointer select-none">Sleep Consistency</summary>
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Sleep Consistency</summary>
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">😴 Sleep Consistency & Recovery</h3>
@@ -284,7 +323,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
         {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.derived.morningFatBurnTrend) && (snapshot.derived.morningFatBurnTrend as any[]).length > 0 && (
         <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-          <summary className="p-2 cursor-pointer select-none">Morning Fat Burn %</summary>
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Morning Fat Burn %</summary>
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">🔥 Morning Fat Oxidation %</h3>
@@ -308,7 +347,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
         {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.derived.bodyFatTrend) && (snapshot.derived.bodyFatTrend as any[]).length > 0 && (
         <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-          <summary className="p-2 cursor-pointer select-none">Body Fat %</summary>
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Body Fat %</summary>
           <div className="p-2">
             <div className="mb-2">
               <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Body Fat Percentage</h3>
@@ -357,12 +396,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </details>
       </section>
 
-      {/* Inline CTA after Photos (Hero) */}
-      <section className="max-w-md mx-auto px-4">
-        <div id="cta" className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_photos')}>{CTA_LABEL}</a>
-        </div>
-      </section>
+      {/* Inline CTA after Photos (Hero) removed to keep focus */}
 
       
 
@@ -376,24 +410,14 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </div>
       </section>
 
-      {/* Inline CTA after Testing */}
-      <section className="max-w-md mx-auto px-4">
-        <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testing')}>{CTA_LABEL}</a>
-        </div>
-      </section>
+      {/* Extra CTAs removed to keep two key placements */}
 
       {/* Testimonial placeholder */}
       <section id="testimonial" className="max-w-md mx-auto p-4">
         <div className="rounded border p-4 text-gray-600">Testimonial section coming soon</div>
       </section>
 
-      {/* Inline CTA above footer (after Testimonials) */}
-      <section className="max-w-md mx-auto px-4">
-        <div className="inline-cta-sentinel mt-4 mb-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_testimonials')}>{CTA_LABEL}</a>
-        </div>
-      </section>
+      {/* Extra CTAs removed */}
 
       {/* Calendly Section */}
       <section id="cta" className="max-w-md mx-auto p-4">
