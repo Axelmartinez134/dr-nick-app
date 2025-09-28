@@ -86,6 +86,17 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6 p-4">
         {/* Left: Editor panels */}
         <div className="space-y-6">
+          {/* Identity */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Identity</h3>
+            <div className="flex gap-3 items-center text-sm text-gray-900">
+              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name' })} /> First name</label>
+              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'anonymous'} onChange={() => setMeta({ displayNameMode: 'anonymous' })} /> Anonymous</label>
+            </div>
+            <label className="text-sm text-gray-900 block mt-3 mb-1">Custom label override</label>
+            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
+          </section>
+
           {/* Charts toggles */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
@@ -162,17 +173,6 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Branding removed by spec; tagline is centralized in marketingConfig */}
 
           {/* CTA removed by spec: centralized via marketingConfig */}
-
-          {/* Identity */}
-          <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Identity</h3>
-            <div className="flex gap-3 items-center text-sm text-gray-900">
-              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name' })} /> First name</label>
-              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'anonymous'} onChange={() => setMeta({ displayNameMode: 'anonymous' })} /> Anonymous</label>
-            </div>
-            <label className="text-sm text-gray-900 block mt-3 mb-1">Custom label override</label>
-            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
-          </section>
           {/* Hero before/after */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Hero — Before / After</h3>
