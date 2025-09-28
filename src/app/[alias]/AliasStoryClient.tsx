@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
 import { CTA_LABEL, CALENDLY_URL, TAGLINE, DOCSEND_URL } from '@/app/components/health/marketing/marketingConfig'
+import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
@@ -78,6 +79,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     : 0
   const dwGlobal = (snapshot.meta as any)?.displayWeeks
   const weeksShown = typeof dwGlobal?.effectiveEnd === 'number' ? dwGlobal.effectiveEnd : weeksMax
+  const weeksStart = typeof dwGlobal?.start === 'number' ? Math.max(1, Math.floor(dwGlobal.start)) : 1
 
   // Total loss display with two decimals and inline weeks
   const totalLossPctNum = typeof m.totalLossPct === 'number' ? (m.totalLossPct as number) : null
@@ -167,6 +169,34 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         const showBeforeLabelOnLeft = !!beforeUrl && !!left && left === beforeUrl
         const showAfterLabelOnRight = !!afterUrl && !!right && right === afterUrl
 
+        // Helpers to format weight with units
+        const formatWeight = (lbs: number): string => {
+          if (unitSystem === 'metric') {
+            const kg = poundsToKilograms(lbs)
+            const v = typeof kg === 'number' ? kg : lbs
+            return `${v.toFixed(1)} kg`
+          }
+          return `${lbs.toFixed(1)} lbs`
+        }
+
+        const getWeightForWeek = (weekNum: number): number | null => {
+          const w = (weeksRawAny as any[])?.find((x: any) => Number(x?.week_number) === weekNum)
+          if (!w) return null
+          const wt = w?.fields?.weight
+          return typeof wt === 'number' ? wt : null
+        }
+
+        const getNearestWeightUpTo = (endWeek: number, startWeek: number): number | null => {
+          for (let i = endWeek; i >= Math.max(1, startWeek); i--) {
+            const v = getWeightForWeek(i)
+            if (typeof v === 'number') return v
+          }
+          return null
+        }
+
+        const leftWeightLbs = getWeightForWeek(0)
+        const rightWeightLbs = weeksShown > 0 ? getNearestWeightUpTo(weeksShown, weeksStart) : null
+
         return (
           <section className="max-w-md mx-auto px-4">
             <div className="grid grid-cols-2 gap-3 items-start">
@@ -176,12 +206,22 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                     <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">Before</div>
                   </div>
                 ) : null}
+                {showBeforeLabelOnLeft && typeof leftWeightLbs === 'number' ? (
+                  <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{formatWeight(leftWeightLbs)}</div>
+                  </div>
+                ) : null}
                 {left ? render(left) : null}
               </div>
               <div className="relative">
                 {showAfterLabelOnRight ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
                     <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">After</div>
+                  </div>
+                ) : null}
+                {showAfterLabelOnRight && typeof rightWeightLbs === 'number' ? (
+                  <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{formatWeight(rightWeightLbs)}</div>
                   </div>
                 ) : null}
                 {right ? render(right) : null}
@@ -484,11 +524,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* No global fixed CTA while editing — using per-section CTAs above */}
     </main>
     <div className={`fixed bottom-0 left-0 right-0 z-50 md:hidden transform transition-transform duration-300 ease-in-out ${showStickyCTA ? 'translate-y-0' : 'translate-y-full'}`}>
-      <div className="bg-gradient-to-br from-[#1E3A8A] to-[#374151]" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
-        <div className="max-w-md mx-auto px-4 py-3">
+      <div className="bg-blue-600" style={{ paddingTop: 'calc(8px + env(safe-area-inset-bottom)/2)', paddingBottom: 'calc(8px + env(safe-area-inset-bottom)/2)' }}>
+        <div className="max-w-md mx-auto px-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-white text-sm font-semibold">Become the Fittest You.</div>
-            <button onClick={scrollToCTA} className="bg-white text-[#1E3A8A] font-bold text-sm rounded-full px-4 py-2 transform transition duration-200 hover:scale-105 active:scale-95">
+            <div className="text-white text-sm font-semibold text-center">Ready to Become the Fittest You?</div>
+            <button onClick={scrollToCTA} className="bg-white text-blue-600 font-bold text-sm rounded-full px-3 py-2 transform transition duration-200 hover:scale-105 active:scale-95">
               {CTA_LABEL}
             </button>
           </div>

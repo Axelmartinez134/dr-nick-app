@@ -6,6 +6,7 @@ export const SNAPSHOT_SCHEMA_VERSION = 1 as const
 // Numeric weekly fields copied from health_data into weeksRaw
 export interface SnapshotWeekFields {
   weight?: number | null
+  initial_weight?: number | null
   waist?: number | null
   systolic_bp?: number | null
   diastolic_bp?: number | null

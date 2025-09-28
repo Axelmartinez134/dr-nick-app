@@ -37,6 +37,7 @@ export async function snapshotPreviewBuilder(
     week_number: w.week_number,
     fields: {
       weight: w.weight ?? null,
+      initial_weight: (w as any)?.initial_weight ?? null,
       waist: w.waist ?? null,
       systolic_bp: w.systolic_bp ?? null,
       diastolic_bp: w.diastolic_bp ?? null,
@@ -58,7 +59,7 @@ export async function snapshotPreviewBuilder(
     const availableMax = fullWeeks.reduce((m, w) => Math.max(m, w.week_number), 0)
     const end = Math.min(endRequested, availableMax)
     effectiveEnd = end
-    weeksRaw = fullWeeks.filter(w => w.week_number >= start && w.week_number <= end)
+    weeksRaw = fullWeeks.filter(w => (w.week_number === 0) || (w.week_number >= start && w.week_number <= end))
   }
 
   const derived = buildDerived(weeksRaw)
