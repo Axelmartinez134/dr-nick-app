@@ -93,8 +93,12 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
               <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name' })} /> First name</label>
               <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'anonymous'} onChange={() => setMeta({ displayNameMode: 'anonymous' })} /> Anonymous</label>
             </div>
-            <label className="text-sm text-gray-900 block mt-3 mb-1">Custom label override</label>
-            <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
+            {((draft?.meta?.displayNameMode || 'first_name') === 'anonymous') && (
+              <>
+                <label className="text-sm text-gray-900 block mt-3 mb-1">Custom label override</label>
+                <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
+              </>
+            )}
           </section>
 
           {/* Charts toggles */}
