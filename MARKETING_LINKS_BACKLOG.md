@@ -313,6 +313,14 @@ Format: Title; Description; Acceptance; Dependencies
  - Status: planned
   - Notes: Client‑parity is the baseline; reuse the exact client chart components where possible; normalize any wrapper behavior so marketing looks identical.
     - Library audit: evaluate Recharts vs ECharts standardization vs continued mix to reduce bundle size and improve load time; code‑split and lazy‑load heavy bundles; measure with Lighthouse.
+    - Lead capture options for Testing section (embed + email capture):
+      - Self‑hosted PDF gate (recommended for speed): Inline email form above Testing → POST lead (alias/slug, email) → reveal embedded PDF (<object type="application/pdf">) and show an “Open in new tab” fallback. Pros: fastest to ship, fully controllable, no third‑party iframe blocks. Cons: no vendor doc analytics.
+      - DocuSign PowerForms: Use a PowerForm URL from a Template; DocuSign collects name/email and shows the document. Open in new tab for reliability (mobile/in‑app). Optionally add DocuSign Connect webhook to store leads, or rely on DocuSign export. Pros: audit trail, no server envelope creation. Cons: less brand control; iframe may be blocked in some browsers.
+      - DocuSign Embedded (Recipient View): We collect email first, server creates envelope, then embed embedded signing URL with a new‑tab fallback. Pros: brand‑controlled flow; audit trail. Cons: heavier integration; third‑party cookie/iframe caveats in in‑app browsers.
+      - External viewers (e.g., DocSend): Typically blocked in iframes via X‑Frame‑Options/CSP. Use direct links only or avoid for embedded experience.
+      - Proxying assets: Serve PDFs via a Next.js route to control headers (no X‑Frame‑Options: DENY; frame‑ancestors allow our domain) to guarantee embeddability.
+      - UX practices: Lazy‑render embeds on view; always provide an “Open in new tab” fallback; clear CTA copy (e.g., “Get your free PDF”); optional consent checkbox.
+      - Data model: Add `marketing_leads(id, email, alias_or_slug, source, created_at)`; optionally sync to ESP; emit events (lead_submit, testing_view) for analytics.
 
 16. Unit toggle consistency
 - Description: Ensure all numbers/axes/caption pill respect unit toggle; add optional text callouts for Fit3D/Testing that convert units dynamically (not inside PDFs/videos).
