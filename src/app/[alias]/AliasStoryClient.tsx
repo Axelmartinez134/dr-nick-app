@@ -253,96 +253,234 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </div>
       </section>
 
-      {/* Testimonial */}
-      <section className="max-w-md mx-auto px-4">
-        <div className="rounded-lg border border-gray-200 p-3 shadow-sm bg-white">
-          <div className="text-gray-900 text-base font-semibold mb-1">What clients say</div>
-          <p className="italic text-gray-700 text-sm">“I tried everything before this. Dr. Nick’s weekly adjustments finally made the scale move without killing my energy. I feel lighter, stronger, and clear on what to do next.”</p>
-          <div className="mt-2 flex items-center gap-2 text-sm text-gray-700">
-            <div className="w-6 h-6 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs">A</div>
-            <div>Areg</div>
-          </div>
-        </div>
-      </section>
+      {/* Removed: old testimonial card and "What you'll get" section */}
 
-      {/* What you’ll get */}
-      <section className="max-w-md mx-auto px-4 mt-3">
-        <div className="rounded-lg border border-gray-200 p-3 shadow-sm bg-white">
-          <div className="text-gray-900 text-base font-semibold mb-2">What you’ll get</div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-            <div className="flex items-start gap-2 text-gray-700"><span>🗓️</span><span>Weekly expert adjustments</span></div>
-            <div className="flex items-start gap-2 text-gray-700"><span>🧬</span><span>Data‑driven nutrition</span></div>
-            <div className="flex items-start gap-2 text-gray-700"><span>✅</span><span>Accountability that sticks</span></div>
-          </div>
-        </div>
-      </section>
-
-      {/* Charts */}
+      {/* Pillar Modules (collapsible) */}
       <section id="charts" className="max-w-md mx-auto p-4">
-        {/* Four pillars */}
-        <div className="rounded-lg border border-gray-200 p-3 shadow-sm bg-white mb-3">
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex items-start gap-2 text-gray-700"><span>🧪</span><span>Metabolic Health</span></div>
-            <div className="flex items-start gap-2 text-gray-700"><span>🥗</span><span>Dietary Protocol</span></div>
-            <div className="flex items-start gap-2 text-gray-700"><span>🏋️</span><span>Fitness Optimized</span></div>
-            <div className="flex items-start gap-2 text-gray-700"><span>⚡</span><span>Discipline</span></div>
-          </div>
-        </div>
-        {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="mb-2">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
-            <p className="text-sm text-gray-700">Track weekly weight with a clear trend line indicating overall direction.</p>
-          </div>
-          <div className="w-full" style={{ height: 300 }}>
-            <MarketingWeightTrendEChart
-              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-              hideTitles={false}
-              unitSystem={unitSystem}
-            />
-          </div>
-          <div className="mt-3 text-xs text-gray-600">
-            <p>• Weekly fluctuations are normal; follow the trend.</p>
-          </div>
-        </div>
-        )}
+        {/* 🧪 Metabolic Health */}
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🧪 Metabolic Health</summary>
+          <div className="p-2">
+            <p className="text-sm text-gray-700 mb-3">Build metabolic flexibility so your body prefers fat as a fuel and your rate of loss stays on track.</p>
+            {chartsEnabled.plateauWeight && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+              <div className="w-full">
+                <ClientPlateauPreventionChart
+                  data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+                />
+              </div>
+            </div>
+            )}
 
-        {chartsEnabled.projection && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-        <div className="rounded-lg border border-gray-200 p-3 mt-4 shadow-sm">
-          <div className="mb-2">
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
-            <p className="text-sm text-gray-700">Compare actual progress against four projection rates.</p>
-          </div>
-          <div className="w-full" style={{ height: 300 }}>
-            <MarketingWeightProjectionEChart
-              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-              hideTitles={true}
-              unitSystem={unitSystem}
-            />
-          </div>
-          {/* Client-style legend below the chart */}
-          <div className="mt-2 text-xs text-gray-700 flex flex-wrap gap-4">
-            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-red-500" />Actual Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-emerald-500" />0.5% loss/wk</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-blue-600" />1.0% loss/wk</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
-            <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
-          </div>
-          <div className="mt-3 text-xs text-gray-600">
-            <p>• Actual vs projected loss rates at a glance.</p>
-          </div>
-        </div>
-        )}
+            {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.derived.morningFatBurnTrend) && (snapshot.derived.morningFatBurnTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 mt-4 shadow-sm">
+              <div className="p-2">
+                <div className="mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">🔥 Morning Fat Oxidation %</h3>
+                  <p className="text-sm text-gray-700">Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.</p>
+                </div>
+                <MarketingMorningFatBurnChart
+                  data={(snapshot.derived.morningFatBurnTrend || []).map(([week, value]) => ({ date: '', week_number: week, morning_fat_burn_percent: value })) as any}
+                  isAnimating={false}
+                  animationDuration={0}
+                  onAnimationComplete={() => {}}
+                  hideTitles={true}
+                />
+                <div className="mt-3 text-xs text-gray-500">
+                  <p>• Measured weekly through metabolic analysis</p>
+                  <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
+                  <p>• Shows how well your body burns fat in a fasted state</p>
+                </div>
+              </div>
+            </div>
+            )}
 
-        {chartsEnabled.plateauWeight && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-        <div className="rounded-lg border border-gray-200 p-3 mt-4 shadow-sm">
-          <div className="w-full">
-            <ClientPlateauPreventionChart
-              data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-            />
+            {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.derived.bodyFatTrend) && (snapshot.derived.bodyFatTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 mt-4 shadow-sm">
+              <div className="p-2">
+                <div className="mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Body Fat Percentage</h3>
+                  <p className="text-sm text-gray-700">Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results.</p>
+                </div>
+                <MarketingBodyFatPercentageChart
+                  data={(snapshot.derived.bodyFatTrend || []).map(([week, value]) => ({ date: '', week_number: week, body_fat_percentage: value })) as any}
+                  isAnimating={false}
+                  animationDuration={0}
+                  onAnimationComplete={() => {}}
+                  hideTitles={true}
+                />
+                <div className="mt-3 text-xs text-gray-700">
+                  <p>• Measured using the most precise testing methodology Dr. Nick has determined available in your situation</p>
+                  <p>• Scheduled periodically based on your progress milestones</p>
+                  <p>• More accurate than weight alone for tracking fat loss</p>
+                </div>
+              </div>
+            </div>
+            )}
+
+            <div className="mt-3">
+              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+            </div>
           </div>
-        </div>
-        )}
+        </details>
+
+        {/* 🥗 Dietary Protocol */}
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🥗 Dietary Protocol</summary>
+          <div className="p-2">
+            <p className="text-sm text-gray-700 mb-3">Dialed-in macros and consistency keep your actual results aligned with projections.</p>
+            {chartsEnabled.projection && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+              <div className="mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
+                <p className="text-sm text-gray-700">Compare actual progress against four projection rates.</p>
+              </div>
+              <div className="w-full" style={{ height: 300 }}>
+                <MarketingWeightProjectionEChart
+                  data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+                  hideTitles={true}
+                  unitSystem={unitSystem}
+                />
+              </div>
+              <div className="mt-2 text-xs text-gray-700 flex flex-wrap gap-4">
+                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-red-500" />Actual Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</div>
+                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-emerald-500" />0.5% loss/wk</div>
+                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-blue-600" />1.0% loss/wk</div>
+                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
+                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
+              </div>
+            </div>
+            )}
+
+            {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 p-3 mt-4 shadow-sm">
+              <div className="mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
+                <p className="text-sm text-gray-700">Track weekly weight with a clear trend line indicating overall direction.</p>
+              </div>
+              <div className="w-full" style={{ height: 300 }}>
+                <MarketingWeightTrendEChart
+                  data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
+                  hideTitles={false}
+                  unitSystem={unitSystem}
+                />
+              </div>
+              <div className="mt-3 text-xs text-gray-600">
+                <p>• Weekly fluctuations are normal; follow the trend.</p>
+              </div>
+            </div>
+            )}
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+                <div className="text-xs text-gray-700">Avg Nutrition %</div>
+                <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? m.avgNutritionCompliancePct.toFixed(2) : '—'}</div>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+            </div>
+          </div>
+        </details>
+
+        {/* 🏋️ Fitness Optimized */}
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🏋️ Fitness Optimized</summary>
+          <div className="p-2">
+            <p className="text-sm text-gray-700 mb-3">Build capacity and protect lean mass while measurements reflect healthier body composition.</p>
+            {chartsEnabled.waistTrend && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 shadow-sm">
+              <div className="p-2">
+                <div className="mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">📏 Waist Trend Analysis</h3>
+                  <p className="text-sm text-gray-700">Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress.</p>
+                </div>
+                <MarketingWaistTrendChart
+                  data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
+                  isAnimating={false}
+                  animationDuration={0}
+                  onAnimationComplete={() => {}}
+                  hideTitles={true}
+                />
+                <div className="mt-3 text-xs text-gray-700">
+                  <p>• Often more accurate than weight for fat loss tracking</p>
+                  <p>• Dark black trend line shows overall waist measurement change direction</p>
+                  <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
+                </div>
+              </div>
+            </div>
+            )}
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+                <div className="text-xs text-gray-700">Avg Exercise Days</div>
+                <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? m.avgPurposefulExerciseDays.toFixed(2) : '—'}</div>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+            </div>
+          </div>
+        </details>
+
+        {/* ⚡ Discipline */}
+        <details className="rounded-lg border border-gray-200 shadow-sm">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">⚡ Discipline</summary>
+          <div className="p-2">
+            <p className="text-sm text-gray-700 mb-3">Consistency compounds—better sleep and nutrition adherence accelerate results.</p>
+            {chartsEnabled.sleepTrend && Array.isArray(snapshot.derived.sleepTrend) && (snapshot.derived.sleepTrend as any[]).length > 0 && (
+            <div className="rounded-lg border border-gray-200 shadow-sm">
+              <div className="p-2">
+                <div className="mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">😴 Sleep Consistency & Recovery</h3>
+                  <p className="text-sm text-gray-700">Weekly sleep quality scores from biometric analysis (added by Dr. Nick)</p>
+                </div>
+                <MarketingSleepConsistencyChart
+                  data={(snapshot.derived.sleepTrend || []).map(([week, value]) => ({ date: '', week_number: week, sleep_consistency_score: value })) as any}
+                  isAnimating={false}
+                  animationDuration={0}
+                  onAnimationComplete={() => {}}
+                  hideTitles={true}
+                />
+                <div className="mt-3 text-xs text-gray-700">
+                  <p>• Data sourced from biometric analysis by Dr. Nick</p>
+                  <p>• Dark black trend line shows overall sleep consistency direction</p>
+                  <p>• Higher scores indicate better sleep consistency and recovery</p>
+                  <p>• Sleep consistency directly impacts weight loss and overall progress</p>
+                </div>
+              </div>
+            </div>
+            )}
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+                <div className="text-xs text-gray-700">Avg Nutrition %</div>
+                <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? m.avgNutritionCompliancePct.toFixed(2) : '—'}</div>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      {/* Testimonial (moved directly below Discipline) */}
+      <section id="testimonial" className="max-w-md mx-auto px-4 pb-4 pt-0">
+        <details className="rounded-lg border border-gray-200 shadow-sm">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s testimonial`}</summary>
+          <div className="p-2">
+            {((snapshot as any)?.media?.testimonialYoutubeId) ? (
+              <div className="mb-3">
+                <iframe className="w-full aspect-video" src={`https://www.youtube.com/embed/${(snapshot as any).media.testimonialYoutubeId}`} title="Testimonial" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+              </div>
+            ) : null}
+            <p className="italic text-gray-700 text-sm">{((snapshot as any)?.meta?.testimonialQuote) || 'tetsemonial coming soon'}</p>
+          </div>
+        </details>
       </section>
 
       {/* Inline CTA after Charts */}
@@ -358,136 +496,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           }
           return null
         })()}
-        <div className="inline-cta-sentinel mt-2">
-          <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium" onClick={() => reportClick('after_charts')}>{CTA_LABEL}</a>
-        </div>
       </section>
 
-      {/* Optional charts (collapsed) */}
-      <section className="max-w-md mx-auto p-4">
-        {chartsEnabled.waistTrend && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
-        <details className="rounded-lg border border-gray-200 shadow-sm">
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Waist Trend</summary>
-          <div className="p-2">
-            <div className="mb-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">📏 Waist Trend Analysis</h3>
-              <p className="text-sm text-gray-700">Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress.</p>
-            </div>
-            <MarketingWaistTrendChart
-              data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
-              isAnimating={false}
-              animationDuration={0}
-              onAnimationComplete={() => {}}
-              hideTitles={true}
-            />
-            <div className="mt-3 text-xs text-gray-700">
-              <p>• Often more accurate than weight for fat loss tracking</p>
-              <p>• Dark black trend line shows overall waist measurement change direction</p>
-              <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
-            </div>
-          </div>
-        </details>
-        )}
+      {/* Removed: legacy optional charts section (now inside pillar modules) */}
 
-        {chartsEnabled.sleepTrend && Array.isArray(snapshot.derived.sleepTrend) && (snapshot.derived.sleepTrend as any[]).length > 0 && (
-        <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Sleep Consistency</summary>
-          <div className="p-2">
-            <div className="mb-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">😴 Sleep Consistency & Recovery</h3>
-              <p className="text-sm text-gray-700">Weekly sleep quality scores from biometric analysis (added by Dr. Nick)</p>
-            </div>
-            <MarketingSleepConsistencyChart
-              data={(snapshot.derived.sleepTrend || []).map(([week, value]) => ({ date: '', week_number: week, sleep_consistency_score: value })) as any}
-              isAnimating={false}
-              animationDuration={0}
-              onAnimationComplete={() => {}}
-              hideTitles={true}
-            />
-            <div className="mt-3 text-xs text-gray-700">
-              <p>• Data sourced from biometric analysis by Dr. Nick</p>
-              <p>• Dark black trend line shows overall sleep consistency direction</p>
-              <p>• Higher scores indicate better sleep consistency and recovery</p>
-              <p>• Sleep consistency directly impacts weight loss and overall progress</p>
-            </div>
-          </div>
-        </details>
-        )}
-
-        {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.derived.morningFatBurnTrend) && (snapshot.derived.morningFatBurnTrend as any[]).length > 0 && (
-        <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Morning Fat Burn %</summary>
-          <div className="p-2">
-            <div className="mb-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">🔥 Morning Fat Oxidation %</h3>
-              <p className="text-sm text-gray-700">Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.</p>
-            </div>
-            <MarketingMorningFatBurnChart
-              data={(snapshot.derived.morningFatBurnTrend || []).map(([week, value]) => ({ date: '', week_number: week, morning_fat_burn_percent: value })) as any}
-              isAnimating={false}
-              animationDuration={0}
-              onAnimationComplete={() => {}}
-              hideTitles={true}
-            />
-            <div className="mt-3 text-xs text-gray-500">
-              <p>• Measured weekly through metabolic analysis</p>
-              <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
-              <p>• Shows how well your body burns fat in a fasted state</p>
-            </div>
-          </div>
-        </details>
-        )}
-
-        {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.derived.bodyFatTrend) && (snapshot.derived.bodyFatTrend as any[]).length > 0 && (
-        <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">Body Fat %</summary>
-          <div className="p-2">
-            <div className="mb-2">
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Body Fat Percentage</h3>
-              <p className="text-sm text-gray-700">Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results.</p>
-            </div>
-            <MarketingBodyFatPercentageChart
-              data={(snapshot.derived.bodyFatTrend || []).map(([week, value]) => ({ date: '', week_number: week, body_fat_percentage: value })) as any}
-              isAnimating={false}
-              animationDuration={0}
-              onAnimationComplete={() => {}}
-              hideTitles={true}
-            />
-            <div className="mt-3 text-xs text-gray-700">
-              <p>• Measured using the most precise testing methodology Dr. Nick has determined available in your situation</p>
-              <p>• Scheduled periodically based on your progress milestones</p>
-              <p>• More accurate than weight alone for tracking fat loss</p>
-            </div>
-          </div>
-        </details>
-        )}
-      </section>
-
-      {/* Fit3D section */}
-      <section id="fit3d" className="max-w-md mx-auto p-4">
-        <details className="rounded border">
-          <summary className="p-2 cursor-pointer select-none">Fit3D</summary>
-          <div className="p-2">
-            <div className="mb-2 text-sm text-gray-700">3D body scans highlighting body composition changes.</div>
-            <div className="grid grid-cols-2 gap-2">
-              {(((snapshot as any)?.media?.fit3d?.images || []) as string[]).slice(0,2).map((u, i) => (
-                <div key={i} className="rounded border overflow-hidden">
-                  {/\.mp4($|\?)/i.test(u) ? (
-                    <video src={u} muted playsInline controls className="w-full h-auto" />
-                  ) : (
-                    <img src={u} alt={`Fit3D ${i+1}`} className="w-full h-auto" />
-                  )}
-                </div>
-              ))}
-            </div>
-            {(snapshot as any)?.media?.fit3d?.youtubeId ? (
-              <div className="mt-3">
-                <iframe className="w-full aspect-video" src={`https://www.youtube.com/embed/${(snapshot as any).media.fit3d.youtubeId}`} title="Fit3D" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
-              </div>
-            ) : null}
-          </div>
-        </details>
-      </section>
+      {/* Removed: Fit3D section (public/preview) */}
 
       {/* Inline CTA after Photos (Hero) removed to keep focus */}
 
@@ -505,10 +518,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Extra CTAs removed to keep two key placements */}
 
-      {/* Testimonial placeholder */}
-      <section id="testimonial" className="max-w-md mx-auto p-4">
-        <div className="rounded border p-4 text-gray-600">Testimonial section coming soon</div>
-      </section>
+      {/* Removed: testimonial here (moved above) */}
 
       {/* Extra CTAs removed */}
 
