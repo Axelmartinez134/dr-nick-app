@@ -28,12 +28,19 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/* Calendly perf hints */}
+        <link rel="dns-prefetch" href="https://assets.calendly.com" />
+        <link rel="preconnect" href="https://assets.calendly.com" crossOrigin="anonymous" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
           {children}
         </AuthProvider>
+        {/* Calendly script globally so it’s ready when the section mounts */}
+        <script defer src="https://assets.calendly.com/assets/external/widget.js" />
       </body>
     </html>
   );

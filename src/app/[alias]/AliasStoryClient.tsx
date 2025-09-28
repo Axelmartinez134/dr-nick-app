@@ -18,6 +18,9 @@ type UnitSystem = 'imperial' | 'metric'
 export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
+  const [calInitAttempted, setCalInitAttempted] = useState(false)
+  const [calInitRetried, setCalInitRetried] = useState(false)
+  const [calFailed, setCalFailed] = useState(false)
 
   const m = snapshot.metrics
   const meta = snapshot.meta
@@ -36,6 +39,47 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     bodyFatTrend: false,
     ...(meta as any)?.chartsEnabled
   } as Record<string, boolean>
+
+  // Preconnect to media host and preload hero assets
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const media: any = (snapshot as any)?.media || {}
+      const heroCandidates: (string | undefined)[] = [
+        media?.beforePhotoUrl as string | undefined,
+        media?.afterPhotoUrl as string | undefined,
+        media?.loopVideoUrl as string | undefined
+      ]
+      const urls: string[] = heroCandidates.filter((u): u is string => !!u)
+      if (urls.length === 0) return
+      const host = new URL(urls[0]).origin
+      const head = document.head
+      if (head) {
+        const preconnect = document.createElement('link')
+        preconnect.rel = 'preconnect'
+        preconnect.href = host
+        preconnect.crossOrigin = 'anonymous'
+        head.appendChild(preconnect)
+
+        const dnsPrefetch = document.createElement('link')
+        dnsPrefetch.rel = 'dns-prefetch'
+        dnsPrefetch.href = host
+        head.appendChild(dnsPrefetch)
+
+        urls.slice(0, 2).forEach((u) => {
+          try {
+            const isMp4 = /\.mp4($|\?)/i.test(new URL(u).pathname)
+            const link = document.createElement('link')
+            link.rel = 'preload'
+            link.as = isMp4 ? 'video' : 'image'
+            if (isMp4) link.type = 'video/mp4'
+            link.href = u
+            head.appendChild(link)
+          } catch {}
+        })
+      }
+    } catch {}
+  }, [snapshot])
   const reportClick = (ctaId: string) => {
     try {
       const s = (window as any).__marketingSlug || slug
@@ -71,6 +115,42 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     const el = document.getElementById('cta')
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  // Calendly robust init: initialize after script loads; retry once; then fallback link
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    let retryTimer: any
+    const tryInit = () => {
+      const w = window as any
+      const Calendly = w?.Calendly
+      const container = document.getElementById('calendly-container')
+      if (Calendly && container && !calInitAttempted) {
+        try {
+          Calendly.initInlineWidget({ url: CALENDLY_URL, parentElement: container })
+          setCalInitAttempted(true)
+          return
+        } catch {}
+      }
+      if (!calInitRetried) {
+        setCalInitRetried(true)
+        retryTimer = setTimeout(() => {
+          const Calendly2 = (window as any)?.Calendly
+          const container2 = document.getElementById('calendly-container')
+          if (Calendly2 && container2 && !calInitAttempted) {
+            try {
+              Calendly2.initInlineWidget({ url: CALENDLY_URL, parentElement: container2 })
+              setCalInitAttempted(true)
+            } catch { setCalFailed(true) }
+          } else {
+            setCalFailed(true)
+          }
+        }, 2000)
+      }
+    }
+    // Try immediately; if script not ready, we'll retry via timer
+    tryInit()
+    return () => clearTimeout(retryTimer)
+  }, [CALENDLY_URL, calInitAttempted, calInitRetried])
 
   // Weeks shown logic for KPIs and hero overlays
   const weeksRawAny = (snapshot as any)?.weeksRaw
@@ -158,9 +238,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         const render = (u: string) => (
           <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             {isMp4(u) ? (
-              <video src={u} muted loop playsInline autoPlay controls={false} className="w-full h-auto" />
+              <video src={u} muted loop playsInline autoPlay preload="auto" controls={false} className="w-full h-auto pointer-events-none" />
             ) : (
-              <img src={u} alt="Hero" className="w-full h-auto" />
+              <img src={u} alt="Hero" loading="eager" fetchPriority="high" className="w-full h-auto" />
             )}
           </div>
         )
