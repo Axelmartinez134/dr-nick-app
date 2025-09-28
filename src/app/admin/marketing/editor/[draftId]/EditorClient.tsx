@@ -90,7 +90,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Identity</h3>
             <div className="flex gap-3 items-center text-sm text-gray-900">
-              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name' })} /> First name</label>
+              <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'first_name'} onChange={() => setMeta({ displayNameMode: 'first_name', displayNameOverride: null })} /> First name</label>
               <label className="flex items-center gap-2"><input type="radio" name="displayNameMode" checked={(draft?.meta?.displayNameMode || 'first_name') === 'anonymous'} onChange={() => setMeta({ displayNameMode: 'anonymous' })} /> Anonymous</label>
             </div>
             {((draft?.meta?.displayNameMode || 'first_name') === 'anonymous') && (

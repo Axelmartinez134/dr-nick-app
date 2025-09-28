@@ -102,7 +102,7 @@ export async function snapshotBuilder(
   // 5) Determine patient label
   const patientLabel = settings.displayNameMode === 'first_name'
     ? firstNameOnly(profile.full_name)
-    : `Client ${shortIdFromSlug(slug)}`
+    : ((settings as any)?.displayNameOverride || `Client ${shortIdFromSlug(slug)}`)
 
   // 6) Pin assets for this snapshot
   const media = await pinAssets(supabase, slug, settings.selectedMedia)
@@ -142,6 +142,7 @@ export async function snapshotBuilder(
       // Strip CTA label (centralized config) and allow identity override
       ctaLabel: null,
       displayNameOverride: (settings as any)?.displayNameOverride ?? null,
+      displayNameMode: settings.displayNameMode,
       displayWeeks: settings.displayWeeks ? { start: settings.displayWeeks.start, end: settings.displayWeeks.end, effectiveEnd } : undefined
     },
     metrics,

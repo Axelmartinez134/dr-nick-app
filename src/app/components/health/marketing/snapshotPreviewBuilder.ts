@@ -84,7 +84,7 @@ export async function snapshotPreviewBuilder(
 
   const patientLabel = meta.displayNameMode === 'first_name'
     ? String(profile.full_name || 'Client').split(/\s+/)[0]
-    : 'Client PREVIEW'
+    : (meta as any)?.displayNameOverride || 'Client PREVIEW'
 
   const snapshot: SnapshotJson = {
     schema_version: SNAPSHOT_SCHEMA_VERSION,
@@ -120,7 +120,8 @@ export async function snapshotPreviewBuilder(
       // Optional marketing fields (fallbacks applied in client)
       ctaLabel: null,
       calendlyUrl: (meta as any)?.calendlyUrl ?? null,
-      displayNameOverride: (meta as any)?.displayNameOverride ?? null
+      displayNameOverride: (meta as any)?.displayNameOverride ?? null,
+      displayNameMode: meta.displayNameMode
       ,
       displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd } : undefined
     },
