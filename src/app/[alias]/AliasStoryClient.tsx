@@ -16,6 +16,7 @@ type UnitSystem = 'imperial' | 'metric'
 
 export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
+  const [showStickyCTA, setShowStickyCTA] = useState(false)
 
   const m = snapshot.metrics
   const meta = snapshot.meta
@@ -48,17 +49,55 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     } catch {}
   }
 
+  // Sticky CTA visibility (mobile only)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const isMobile = window.matchMedia('(max-width: 768px)').matches
+    if (!isMobile) return
+    setShowStickyCTA(true) // show immediately on load
+    const target = document.querySelector('.lead-capture') as Element | null
+    if (!target) return
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0]
+      setShowStickyCTA(!entry.isIntersecting)
+    }, { threshold: 0.01, rootMargin: '0px' })
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [])
+
+  const scrollToCTA = () => {
+    try { reportClick('sticky') } catch {}
+    const el = document.getElementById('cta')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // Weeks shown logic for KPIs and hero overlays
+  const weeksRawAny = (snapshot as any)?.weeksRaw
+  const weeksMax = Array.isArray(weeksRawAny) && weeksRawAny.length > 0
+    ? Math.max(...(weeksRawAny as any[]).map((w: any) => Number(w?.week_number || 0)))
+    : 0
+  const dwGlobal = (snapshot.meta as any)?.displayWeeks
+  const weeksShown = typeof dwGlobal?.effectiveEnd === 'number' ? dwGlobal.effectiveEnd : weeksMax
+
+  // Total loss display with two decimals and inline weeks
+  const totalLossPctNum = typeof m.totalLossPct === 'number' ? (m.totalLossPct as number) : null
+  const totalLossDisplay = totalLossPctNum !== null
+    ? `${totalLossPctNum.toFixed(1)}%${weeksShown > 0 ? `\u00A0•\u00A0${weeksShown} weeks` : ''}`
+    : '—'
+
   return (
+    <>
     <main className="min-h-screen bg-white pb-24">
       {/* Brand Bar */}
       <div className="w-full bg-blue-600 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="max-w-md mx-auto px-4 py-3 text-center">
-          <div className="font-semibold tracking-wide">{TAGLINE}</div>
+          <div className="font-semibold tracking-wide">Data driven health guided by an actual MD.</div>
         </div>
       </div>
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
-        <h1 className="text-2xl font-bold text-gray-900">{displayLabel}</h1>
+        <div className="text-xs text-gray-700">Board‑certified • 1:1 coaching • Science‑backed</div>
+        <h1 className="text-2xl font-bold text-gray-900 mt-2">{displayLabel}</h1>
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">
           <button
             className={`px-3 py-1 rounded-md border ${unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'}`}
@@ -124,26 +163,29 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           </div>
         )
 
-        // Result capsule data
-        const weeksMax = Array.isArray((snapshot as any)?.weeksRaw) && (snapshot as any).weeksRaw.length > 0
-          ? Math.max(...((snapshot as any).weeksRaw as any[]).map((w: any) => Number(w?.week_number || 0)))
-          : 0
-        const dwCaps = (snapshot.meta as any)?.displayWeeks
-        const weeksShown = typeof dwCaps?.effectiveEnd === 'number' ? dwCaps.effectiveEnd : weeksMax
-        const totalLoss = typeof m.totalLossPct === 'number' ? m.totalLossPct : null
+        // Decide where labels should render (only on actual before/after images)
+        const showBeforeLabelOnLeft = !!beforeUrl && !!left && left === beforeUrl
+        const showAfterLabelOnRight = !!afterUrl && !!right && right === afterUrl
 
         return (
-          <section className="max-w-md mx-auto px-4 relative">
-            {totalLoss !== null && weeksShown > 0 ? (
-              <div className="absolute z-10 left-3 -top-3">
-                <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">
-                  {totalLoss}% total loss • {weeksShown} weeks
-                </div>
-              </div>
-            ) : null}
+          <section className="max-w-md mx-auto px-4">
             <div className="grid grid-cols-2 gap-3 items-start">
-              <div>{left ? render(left) : null}</div>
-              <div>{right ? render(right) : null}</div>
+              <div className="relative">
+                {showBeforeLabelOnLeft ? (
+                  <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">Before</div>
+                  </div>
+                ) : null}
+                {left ? render(left) : null}
+              </div>
+              <div className="relative">
+                {showAfterLabelOnRight ? (
+                  <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">After</div>
+                  </div>
+                ) : null}
+                {right ? render(right) : null}
+              </div>
             </div>
           </section>
         )
@@ -153,19 +195,21 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Total Loss %</div>
-          <div className="text-xl font-bold text-gray-900">{m.totalLossPct ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">
+            {totalLossDisplay}
+          </div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Weekly Loss %</div>
-          <div className="text-xl font-bold text-gray-900">{m.weeklyLossPct ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.weeklyLossPct === 'number' ? m.weeklyLossPct.toFixed(2) : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Avg Nutrition %</div>
-          <div className="text-xl font-bold text-gray-900">{m.avgNutritionCompliancePct ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? m.avgNutritionCompliancePct.toFixed(2) : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Avg Exercise Days</div>
-          <div className="text-xl font-bold text-gray-900">{m.avgPurposefulExerciseDays ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? m.avgPurposefulExerciseDays.toFixed(2) : '—'}</div>
         </div>
       </section>
 
@@ -195,6 +239,15 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Charts */}
       <section id="charts" className="max-w-md mx-auto p-4">
+        {/* Four pillars */}
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm bg-white mb-3">
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="flex items-start gap-2 text-gray-700"><span>🧪</span><span>Metabolic Health</span></div>
+            <div className="flex items-start gap-2 text-gray-700"><span>🥗</span><span>Dietary Protocol</span></div>
+            <div className="flex items-start gap-2 text-gray-700"><span>🏋️</span><span>Fitness Optimized</span></div>
+            <div className="flex items-start gap-2 text-gray-700"><span>⚡</span><span>Discipline</span></div>
+          </div>
+        </div>
         {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="mb-2">
@@ -420,7 +473,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Extra CTAs removed */}
 
       {/* Calendly Section */}
-      <section id="cta" className="max-w-md mx-auto p-4">
+      <section id="cta" className="lead-capture max-w-md mx-auto p-4">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-sm text-gray-900 mb-2">Schedule a consult</div>
           <div className="calendly-inline-widget" data-url={CALENDLY_URL} style={{ minWidth: 320, height: 700 }} />
@@ -430,6 +483,19 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* No global fixed CTA while editing — using per-section CTAs above */}
     </main>
+    <div className={`fixed bottom-0 left-0 right-0 z-50 md:hidden transform transition-transform duration-300 ease-in-out ${showStickyCTA ? 'translate-y-0' : 'translate-y-full'}`}>
+      <div className="bg-gradient-to-br from-[#1E3A8A] to-[#374151]" style={{ paddingBottom: 'calc(12px + env(safe-area-inset-bottom))' }}>
+        <div className="max-w-md mx-auto px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-white text-sm font-semibold">Become the Fittest You.</div>
+            <button onClick={scrollToCTA} className="bg-white text-[#1E3A8A] font-bold text-sm rounded-full px-4 py-2 transform transition duration-200 hover:scale-105 active:scale-95">
+              {CTA_LABEL}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </>
   )
 }
 
