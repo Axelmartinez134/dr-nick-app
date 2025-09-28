@@ -208,7 +208,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 ) : null}
                 {showBeforeLabelOnLeft && typeof leftWeightLbs === 'number' ? (
                   <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
-                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{formatWeight(leftWeightLbs)}</div>
+                    <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeight(leftWeightLbs)}</div>
                   </div>
                 ) : null}
                 {left ? render(left) : null}
@@ -221,7 +221,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 ) : null}
                 {showAfterLabelOnRight && typeof rightWeightLbs === 'number' ? (
                   <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
-                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{formatWeight(rightWeightLbs)}</div>
+                    <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeight(rightWeightLbs)}</div>
                   </div>
                 ) : null}
                 {right ? render(right) : null}
@@ -254,6 +254,12 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       </section>
 
       {/* Removed: old testimonial card and "What you'll get" section */}
+
+      {/* Guidance copy before pillars */}
+      <div className="max-w-md mx-auto px-4 mt-2 mb-2 text-center">
+        <div className="text-sm font-semibold text-gray-900">Explore what matters to you</div>
+        <div className="text-sm text-gray-700">Open a section to see the numbers behind the results.</div>
+      </div>
 
       {/* Pillar Modules (collapsible) */}
       <section id="charts" className="max-w-md mx-auto p-4">
@@ -478,7 +484,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 <iframe className="w-full aspect-video" src={`https://www.youtube.com/embed/${(snapshot as any).media.testimonialYoutubeId}`} title="Testimonial" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
               </div>
             ) : null}
-            <p className="italic text-gray-700 text-sm">{((snapshot as any)?.meta?.testimonialQuote) || 'tetsemonial coming soon'}</p>
+            <p className="italic text-gray-700 text-sm">{((snapshot as any)?.meta?.testimonialQuote) || 'testimonial coming soon'}</p>
           </div>
         </details>
       </section>
