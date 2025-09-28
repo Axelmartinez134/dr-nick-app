@@ -50,20 +50,24 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
   return (
     <main className="min-h-screen bg-white pb-24">
+      {/* Brand Bar */}
+      <div className="w-full bg-blue-600 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="max-w-md mx-auto px-4 py-3 text-center">
+          <div className="font-semibold tracking-wide">{TAGLINE}</div>
+        </div>
+      </div>
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
-        <div className="text-sm text-gray-700">{TAGLINE}</div>
-        <h1 className="text-xl font-bold mt-1">Become the Fittest Version of Yourself.</h1>
-        <div className="mt-1 text-gray-700">{displayLabel}</div>
+        <h1 className="text-2xl font-bold text-gray-900">{displayLabel}</h1>
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">
           <button
-            className={`px-3 py-1 rounded border ${unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            className={`px-3 py-1 rounded-md border ${unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'}`}
             onClick={() => setUnitSystem('imperial')}
           >
             Imperial
           </button>
           <button
-            className={`px-3 py-1 rounded border ${unitSystem === 'metric' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            className={`px-3 py-1 rounded-md border ${unitSystem === 'metric' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'}`}
             onClick={() => setUnitSystem('metric')}
           >
             Metric
@@ -111,7 +115,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         if (!left && !right) return null
 
         const render = (u: string) => (
-          <div className="rounded border overflow-hidden">
+          <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             {isMp4(u) ? (
               <video src={u} muted loop playsInline autoPlay controls={false} className="w-full h-auto" />
             ) : (
@@ -132,31 +136,31 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Compliance cards */}
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">
-        <div className="rounded border p-3">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Total Loss %</div>
-          <div className="text-lg font-semibold">{m.totalLossPct ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{m.totalLossPct ?? '—'}</div>
         </div>
-        <div className="rounded border p-3">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Weekly Loss %</div>
-          <div className="text-lg font-semibold">{m.weeklyLossPct ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{m.weeklyLossPct ?? '—'}</div>
         </div>
-        <div className="rounded border p-3">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Avg Nutrition %</div>
-          <div className="text-lg font-semibold">{m.avgNutritionCompliancePct ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{m.avgNutritionCompliancePct ?? '—'}</div>
         </div>
-        <div className="rounded border p-3">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Avg Exercise Days</div>
-          <div className="text-lg font-semibold">{m.avgPurposefulExerciseDays ?? '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{m.avgPurposefulExerciseDays ?? '—'}</div>
         </div>
       </section>
 
       {/* Charts */}
       <section id="charts" className="max-w-md mx-auto p-4">
         {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-        <div className="rounded border p-2">
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="mb-2">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
-            <p className="text-sm text-gray-700">Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress.</p>
+            <p className="text-sm text-gray-700">Track weekly weight with a clear trend line indicating overall direction.</p>
           </div>
           <div className="w-full" style={{ height: 300 }}>
             <MarketingWeightTrendEChart
@@ -165,19 +169,17 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               unitSystem={unitSystem}
             />
           </div>
-          <div className="mt-3 text-xs text-gray-700">
-            <p>• Track weekly progress</p>
-            <p>• Dark black trend line shows overall direction</p>
-            <p>• Weekly fluctuations are normal - focus on trendline should be prioritized</p>
+          <div className="mt-3 text-xs text-gray-600">
+            <p>• Weekly fluctuations are normal; follow the trend.</p>
           </div>
         </div>
         )}
 
         {chartsEnabled.projection && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-        <div className="rounded border p-2 mt-4">
+        <div className="rounded-lg border border-gray-200 p-3 mt-4 shadow-sm">
           <div className="mb-2">
             <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
-            <p className="text-sm text-gray-700">Compares actual weight loss against 4 different fat loss projection rates. Helps identify if progress is on track with expectations.</p>
+            <p className="text-sm text-gray-700">Compare actual progress against four projection rates.</p>
           </div>
           <div className="w-full" style={{ height: 300 }}>
             <MarketingWeightProjectionEChart
@@ -194,17 +196,14 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
             <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
           </div>
-          <div className="mt-3 text-xs text-gray-700">
-            <p>• Red line shows actual progress (irregular pattern expected)</p>
-            <p>• Dark black trend line shows actual weight trajectory</p>
-            <p>• Dotted lines show theoretical projections extending to match your current progress</p>
-            <p>• Projections help identify if progress is on track with expectations</p>
+          <div className="mt-3 text-xs text-gray-600">
+            <p>• Actual vs projected loss rates at a glance.</p>
           </div>
         </div>
         )}
 
         {chartsEnabled.plateauWeight && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-        <div className="rounded border p-2 mt-4">
+        <div className="rounded-lg border border-gray-200 p-3 mt-4 shadow-sm">
           <div className="w-full">
             <ClientPlateauPreventionChart
               data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
@@ -235,7 +234,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Optional charts (collapsed) */}
       <section className="max-w-md mx-auto p-4">
         {chartsEnabled.waistTrend && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
-        <details className="rounded border">
+        <details className="rounded-lg border border-gray-200 shadow-sm">
           <summary className="p-2 cursor-pointer select-none">Waist Trend</summary>
           <div className="p-2">
             <div className="mb-2">
@@ -259,7 +258,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         )}
 
         {chartsEnabled.sleepTrend && Array.isArray(snapshot.derived.sleepTrend) && (snapshot.derived.sleepTrend as any[]).length > 0 && (
-        <details className="rounded border mt-4">
+        <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
           <summary className="p-2 cursor-pointer select-none">Sleep Consistency</summary>
           <div className="p-2">
             <div className="mb-2">
@@ -284,7 +283,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         )}
 
         {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.derived.morningFatBurnTrend) && (snapshot.derived.morningFatBurnTrend as any[]).length > 0 && (
-        <details className="rounded border mt-4">
+        <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
           <summary className="p-2 cursor-pointer select-none">Morning Fat Burn %</summary>
           <div className="p-2">
             <div className="mb-2">
@@ -308,7 +307,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         )}
 
         {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.derived.bodyFatTrend) && (snapshot.derived.bodyFatTrend as any[]).length > 0 && (
-        <details className="rounded border mt-4">
+        <details className="rounded-lg border border-gray-200 mt-4 shadow-sm">
           <summary className="p-2 cursor-pointer select-none">Body Fat %</summary>
           <div className="p-2">
             <div className="mb-2">
@@ -369,8 +368,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Testing (DocSend) */}
       <section id="testing" className="max-w-md mx-auto p-4">
-        <div className="rounded border p-2">
-          <div className="text-sm text-gray-700 mb-2">Metabolic/Cardio Testing</div>
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+          <div className="text-sm text-gray-900 mb-2">Metabolic/Cardio Testing</div>
           <div className="w-full">
             <iframe src={(snapshot as any)?.media?.testing?.docsendUrl || DOCSEND_URL} allow="fullscreen" width="640" height="480" className="w-full" />
           </div>
@@ -398,8 +397,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Calendly Section */}
       <section id="cta" className="max-w-md mx-auto p-4">
-        <div className="rounded border p-2">
-          <div className="text-sm text-gray-700 mb-2">Schedule a consult</div>
+        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+          <div className="text-sm text-gray-900 mb-2">Schedule a consult</div>
           <div className="calendly-inline-widget" data-url={CALENDLY_URL} style={{ minWidth: 320, height: 700 }} />
           <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async />
         </div>
