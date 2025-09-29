@@ -310,14 +310,14 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Compliance cards */}
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Total Loss %</div>
+          <div className="text-xs text-gray-700">Total Fat Loss %</div>
           <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">
             {totalLossDisplay}
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Weekly Loss %</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.weeklyLossPct === 'number' ? m.weeklyLossPct.toFixed(2) : '—'}</div>
+          <div className="text-xs text-gray-700">Weekly Fat Loss %</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.weeklyLossPct === 'number' ? `${m.weeklyLossPct.toFixed(2)}%` : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Nutrition Compliance %</div>
