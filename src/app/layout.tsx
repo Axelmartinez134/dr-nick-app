@@ -29,9 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Calendly perf hints */}
-        <link rel="dns-prefetch" href="https://assets.calendly.com" />
-        <link rel="preconnect" href="https://assets.calendly.com" crossOrigin="anonymous" />
+        {/* Booking widget perf hints */}
+        <link rel="dns-prefetch" href="https://www.cnvrsnly.com" />
+        <link rel="preconnect" href="https://www.cnvrsnly.com" crossOrigin="anonymous" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
@@ -39,8 +39,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
         </AuthProvider>
-        {/* Calendly script globally so it’s ready when the section mounts */}
-        <script defer src="https://assets.calendly.com/assets/external/widget.js" />
+        {/* Booking widget script is embedded where used */}
       </body>
     </html>
   );

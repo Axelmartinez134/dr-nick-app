@@ -608,12 +608,12 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Extra CTAs removed */}
 
-      {/* Calendly Section */}
+      {/* Booking Section */}
       <section id="cta" className="lead-capture max-w-md mx-auto p-4">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-sm text-gray-900 mb-2">Schedule a consult</div>
-          <div className="calendly-inline-widget" data-url={CALENDLY_URL} style={{ minWidth: 320, height: 700 }} />
-          <script type="text/javascript" src="https://assets.calendly.com/assets/external/widget.js" async />
+          <iframe src="https://www.cnvrsnly.com/widget/booking/1RQQzveFefB7hCunO2cI" style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" />
+          <script src="https://www.cnvrsnly.com/js/form_embed.js" type="text/javascript" />
         </div>
       </section>
 
