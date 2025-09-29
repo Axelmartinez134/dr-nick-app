@@ -6,6 +6,7 @@ import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTyp
 import { CTA_LABEL, TAGLINE } from '@/app/components/health/marketing/marketingConfig'
 import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
+import MarketingFooter from '@/app/components/health/marketing/MarketingFooter'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
 const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
 const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
@@ -127,10 +128,22 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     return () => observer.disconnect()
   }, [])
 
-  const scrollToCTA = () => {
-    try { reportClick('sticky') } catch {}
+  const scrollToCTA = (source?: string): void => {
+    try { reportClick(source || 'cta') } catch {}
+    // Hide sticky CTA during programmatic scroll
+    setShowStickyCTA(false)
     const el = document.getElementById('cta')
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // After a short delay, decide visibility based on whether CTA is in view
+    window.setTimeout(() => {
+      try {
+        const target = document.getElementById('cta')
+        if (!target) return
+        const r = target.getBoundingClientRect()
+        const fullyInView = r.top >= 0 && r.bottom <= window.innerHeight
+        setShowStickyCTA(!fullyInView)
+      } catch {}
+    }, 900)
   }
 
   // Removed Calendly init (switched to cnvrsnly embed)
@@ -152,7 +165,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
   return (
     <>
-    <main className="min-h-screen bg-white pb-24">
+    <main className="min-h-screen bg-white pb-8">
       {/* Brand Bar */}
       <div className="w-full bg-blue-600 bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="max-w-md mx-auto px-4 py-3 text-center">
@@ -307,12 +320,12 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="text-xl font-bold text-gray-900">{typeof m.weeklyLossPct === 'number' ? m.weeklyLossPct.toFixed(2) : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Avg Nutrition %</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? m.avgNutritionCompliancePct.toFixed(2) : '—'}</div>
+          <div className="text-xs text-gray-700">Nutrition Compliance %</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? `${m.avgNutritionCompliancePct.toFixed(2)}%` : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Avg Exercise Days</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? m.avgPurposefulExerciseDays.toFixed(2) : '—'}</div>
+          <div className="text-xs text-gray-700">Exercise Compliance %</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(0)}%` : '—'}</div>
         </div>
       </section>
 
@@ -388,7 +401,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             )}
 
             <div className="mt-3">
-              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+              <button onClick={(e) => { e.preventDefault(); scrollToCTA('metabolic_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
             </div>
           </div>
         </details>
@@ -448,7 +461,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
 
             <div className="mt-3">
-              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+              <button onClick={(e) => { e.preventDefault(); scrollToCTA('dietary_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
             </div>
           </div>
         </details>
@@ -483,13 +496,13 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-                <div className="text-xs text-gray-700">Avg Exercise Days</div>
-                <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? m.avgPurposefulExerciseDays.toFixed(2) : '—'}</div>
+                <div className="text-xs text-gray-700">Exercise Compliance %</div>
+                <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(0)}%` : '—'}</div>
               </div>
             </div>
 
             <div className="mt-3">
-              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+              <button onClick={(e) => { e.preventDefault(); scrollToCTA('fitness_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
             </div>
           </div>
         </details>
@@ -531,7 +544,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
 
             <div className="mt-3">
-              <a href="#cta" className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium">{CTA_LABEL}</a>
+              <button onClick={(e) => { e.preventDefault(); scrollToCTA('discipline_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
             </div>
           </div>
         </details>
@@ -540,7 +553,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Testimonial (moved directly below Discipline) */}
       <section id="testimonial" className="max-w-md mx-auto px-4 pb-4 pt-0">
         <details className="rounded-lg border border-gray-200 shadow-sm">
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s testimonial`}</summary>
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s Testimonial`}</summary>
           <div className="p-2">
             {((snapshot as any)?.meta?.testimonialQuote) ? (
               <div className="mb-3 relative rounded-xl border border-gray-200 bg-gradient-to-br from-indigo-50/40 to-white shadow-sm p-4 md:p-5">
@@ -637,6 +650,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 </div>
               )
             })()}
+            <div className="mt-3">
+              <button onClick={(e) => { e.preventDefault(); scrollToCTA('testimonial_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
+            </div>
           </div>
         </details>
       </section>
@@ -721,14 +737,20 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </div>
       </section>
 
+      {/* Spacer to avoid sticky CTA overlap (mobile only, only when visible) */}
+      {showStickyCTA ? (
+        <div className="md:hidden" style={{ height: 'calc(56px + env(safe-area-inset-bottom)/2)' }} />
+      ) : null}
+
       {/* No global fixed CTA while editing — using per-section CTAs above */}
     </main>
+    <MarketingFooter year={2025} />
     <div className={`fixed bottom-0 left-0 right-0 z-50 md:hidden transform transition-transform duration-300 ease-in-out ${showStickyCTA ? 'translate-y-0' : 'translate-y-full'}`}>
       <div className="bg-blue-600" style={{ paddingTop: 'calc(8px + env(safe-area-inset-bottom)/2)', paddingBottom: 'calc(8px + env(safe-area-inset-bottom)/2)' }}>
         <div className="max-w-md mx-auto px-3">
           <div className="flex items-center justify-between gap-3">
             <div className="text-white text-sm font-semibold text-center">Ready to Become the Fittest You?</div>
-            <button onClick={scrollToCTA} className="bg-white text-blue-600 font-bold text-sm rounded-full px-3 py-2 transform transition duration-200 hover:scale-105 active:scale-95">
+            <button onClick={(e) => { e.preventDefault(); scrollToCTA('sticky') }} className="bg-white text-blue-600 font-bold text-sm rounded-full px-3 py-2 transform transition duration-200 hover:scale-105 active:scale-95">
               {CTA_LABEL}
             </button>
           </div>
