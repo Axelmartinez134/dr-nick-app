@@ -12,6 +12,7 @@ export interface SelectedMedia {
   fit3d?: { images?: string[]; youtubeId?: string | null }
   testing?: { pdfUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
   testimonialYoutubeId?: string | null
+  testimonial?: { beforeUrl?: string | null; afterUrl?: string | null; youtubeUrl?: string | null }
 }
 
 function guessExtFromUrl(url: string | null | undefined, fallback: string): string {
@@ -157,6 +158,26 @@ export async function pinAssets(
     }
   }
 
+  // Testimonial before/after
+  let testimonialBefore: string | null | undefined = null
+  let testimonialAfter: string | null | undefined = null
+  if (selected.testimonial?.beforeUrl) {
+    const ext = guessExtFromUrl(selected.testimonial.beforeUrl, 'webp')
+    testimonialBefore = await copyUrlToBucket(
+      supabase,
+      selected.testimonial.beforeUrl,
+      `${slug}/testimonial/before.${ext}`
+    )
+  }
+  if (selected.testimonial?.afterUrl) {
+    const ext = guessExtFromUrl(selected.testimonial.afterUrl, 'webp')
+    testimonialAfter = await copyUrlToBucket(
+      supabase,
+      selected.testimonial.afterUrl,
+      `${slug}/testimonial/after.${ext}`
+    )
+  }
+
   const media: SnapshotMedia = {
     beforePhotoUrl: beforePhotoUrl ?? null,
     afterPhotoUrl: afterPhotoUrl ?? null,
@@ -169,7 +190,12 @@ export async function pinAssets(
       pdfUrl: testingPdfUrl ?? null,
       callouts: selected.testing?.callouts ?? {}
     },
-    testimonialYoutubeId: selected.testimonialYoutubeId ?? null
+    testimonialYoutubeId: selected.testimonialYoutubeId ?? null,
+    testimonial: {
+      beforeUrl: testimonialBefore ?? null,
+      afterUrl: testimonialAfter ?? null,
+      youtubeUrl: selected.testimonial?.youtubeUrl ?? null
+    }
   }
 
   return media

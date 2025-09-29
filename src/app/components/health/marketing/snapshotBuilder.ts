@@ -18,6 +18,7 @@ export interface BuilderSettings {
   chartsOrder?: string[]
   displayWeeks?: { start: number; end: number }
   selectedMedia: SelectedMedia
+  testimonialQuote?: string | null
 }
 
 function firstNameOnly(full: string | null | undefined): string {
@@ -144,6 +145,7 @@ export async function snapshotBuilder(
       ctaLabel: null,
       displayNameOverride: (settings as any)?.displayNameOverride ?? null,
       displayNameMode: settings.displayNameMode,
+      testimonialQuote: (settings as any)?.testimonialQuote ?? null,
       displayWeeks: settings.displayWeeks ? { start: settings.displayWeeks.start, end: settings.displayWeeks.end, effectiveEnd } : undefined
     },
     metrics,

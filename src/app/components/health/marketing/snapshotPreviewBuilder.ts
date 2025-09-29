@@ -22,6 +22,7 @@ export interface PreviewMedia {
   fit3d?: { images?: string[]; youtubeId?: string | null }
   testing?: { pdfUrl?: string | null; callouts?: any }
   testimonialYoutubeId?: string | null
+  testimonial?: { beforeUrl?: string | null; afterUrl?: string | null; youtubeUrl?: string | null }
 }
 
 export async function snapshotPreviewBuilder(
@@ -122,7 +123,8 @@ export async function snapshotPreviewBuilder(
       ctaLabel: null,
       calendlyUrl: (meta as any)?.calendlyUrl ?? null,
       displayNameOverride: (meta as any)?.displayNameOverride ?? null,
-      displayNameMode: meta.displayNameMode
+      displayNameMode: meta.displayNameMode,
+      testimonialQuote: (meta as any)?.testimonialQuote ?? null
       ,
       displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd } : undefined
     },
@@ -141,7 +143,12 @@ export async function snapshotPreviewBuilder(
         pdfUrl: media.testing?.pdfUrl ?? null,
         callouts: media.testing?.callouts ?? {}
       },
-      testimonialYoutubeId: media.testimonialYoutubeId ?? null
+      testimonialYoutubeId: media.testimonialYoutubeId ?? null,
+      testimonial: {
+        beforeUrl: media.testimonial?.beforeUrl ?? null,
+        afterUrl: media.testimonial?.afterUrl ?? null,
+        youtubeUrl: media.testimonial?.youtubeUrl ?? null
+      }
     }
   }
 

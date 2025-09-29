@@ -38,6 +38,7 @@ export interface SnapshotMeta {
   calendlyUrl?: string | null
   displayNameOverride?: string | null
   displayNameMode?: 'first_name' | 'anonymous'
+  testimonialQuote?: string | null
   // Optional global display range for charts/metrics
   displayWeeks?: {
     start: number
@@ -85,6 +86,11 @@ export interface SnapshotMedia {
     }
   }
   testimonialYoutubeId?: string | null
+  testimonial?: {
+    beforeUrl?: string | null
+    afterUrl?: string | null
+    youtubeUrl?: string | null
+  }
 }
 
 export interface SnapshotJson {

@@ -101,6 +101,41 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             )}
           </section>
 
+          {/* Hero before/after */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Hero — Before / After</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {['before','after'].map((slot, i) => {
+                const key = slot === 'before' ? 'beforePhotoUrl' : 'afterPhotoUrl'
+                const val = draft?.media?.[key] || null
+                return (
+                  <div key={slot} className="border rounded p-3">
+                    <div className="text-xs text-gray-900 mb-2">{slot === 'before' ? 'Before' : 'After'}</div>
+                    {val ? (
+                      <div className="space-y-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {/\.mp4($|\?)/i.test(val) ? (
+                          <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
+                        ) : (
+                          <img src={val} alt={slot} className="w-full h-auto rounded" />
+                        )}
+                        <div className="flex gap-2">
+                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} /></label>
+                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ [key]: null })}>Remove</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex items-center justify-center h-32 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
+                        <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} />
+                        Drop image/MP4 or click to upload
+                      </label>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
           {/* Charts toggles */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
@@ -177,87 +212,35 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Branding removed by spec; tagline is centralized in marketingConfig */}
 
           {/* CTA removed by spec: centralized via marketingConfig */}
-          {/* Hero before/after */}
-          <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Hero — Before / After</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {['before','after'].map((slot, i) => {
-                const key = slot === 'before' ? 'beforePhotoUrl' : 'afterPhotoUrl'
-                const val = draft?.media?.[key] || null
-                return (
-                  <div key={slot} className="border rounded p-3">
-                    <div className="text-xs text-gray-900 mb-2">{slot === 'before' ? 'Before' : 'After'}</div>
-                    {val ? (
-                      <div className="space-y-2">
-                        {/\.mp4($|\?)/i.test(val) ? (
-                          <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
-                        ) : (
-                          <img src={val} alt={slot} className="w-full h-auto rounded" />
-                        )}
-                        <div className="flex gap-2">
-                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} /></label>
-                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ [key]: null })}>Remove</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <label className="flex items-center justify-center h-32 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
-                        <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} />
-                        Drop image/MP4 or click to upload
-                      </label>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </section>
 
-          {/* Loop video */}
+          {/* Client Testimonial */}
           <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Loop (MP4)</h3>
-            <div className="border rounded p-3">
-              {draft?.media?.loopVideoUrl ? (
-                  <div className="space-y-2">
-                  <video src={draft.media.loopVideoUrl} muted loop playsInline autoPlay className="w-full h-auto" />
-                  <div className="flex gap-2">
-                    <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('loop', f); setMedia({ loopVideoUrl: url }) }} /></label>
-                    <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ loopVideoUrl: null })}>Remove</button>
-                  </div>
-                </div>
-              ) : (
-                <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
-                  <input type="file" accept="video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('loop', f); setMedia({ loopVideoUrl: url }) }} />
-                  Drop MP4 or click to upload (auto-plays muted, loops)
-                </label>
-              )}
-            </div>
-          </section>
-
-          {/* Fit3D (max 2) */}
-          <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Fit3D (max 2)</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Client Testimonial</h3>
             <div className="grid grid-cols-2 gap-3">
               {[0,1].map((idx) => {
-                const arr: string[] = (draft?.media?.fit3d?.images || [])
-                const url = arr[idx] || null
+                const before = draft?.media?.testimonial?.beforeUrl || null
+                const after = draft?.media?.testimonial?.afterUrl || null
+                const url = idx === 0 ? before : after
                 return (
                   <div key={idx} className="border rounded p-3">
-                    <div className="text-xs text-gray-900 mb-2">{url ? `Item ${idx+1}` : `Add ${idx===0?'first':'second'}`}</div>
+                    <div className="text-xs text-gray-900 mb-2">{idx===0 ? 'Before' : 'After'}</div>
                     {url ? (
                       <div className="space-y-2">
                         {/\.mp4($|\?)/i.test(url) ? (
-                          <video src={url} muted loop playsInline autoPlay className="w-full h-auto" />
+                          <video src={url} muted loop playsInline autoPlay className="w-full h-auto rounded" />
                         ) : (
-                          <img src={url} alt={`fit3d-${idx+1}`} className="w-full h-auto rounded" />
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={url} alt={`testimonial-${idx===0?'before':'after'}`} className="w-full h-auto rounded" />
                         )}
                         <div className="flex gap-2">
-                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url2 = await upload('fit3d', f, idx); const next = [...arr]; next[idx] = url2; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next } }) }} /></label>
-                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium" onClick={() => { const next = [...arr]; next[idx] = ''; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next.filter(Boolean) } }) }}>Remove</button>
+                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = idx===0 ? 'testimonial_before' : 'testimonial_after'; const url2 = await upload(kind as any, f); const next = { ...(draft.media?.testimonial||{}) }; if (idx===0) next.beforeUrl = url2; else next.afterUrl = url2; setMedia({ testimonial: next }) }} /></label>
+                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium" onClick={() => { const next = { ...(draft.media?.testimonial||{}) }; if (idx===0) next.beforeUrl = null; else next.afterUrl = null; setMedia({ testimonial: next }) }}>Remove</button>
                         </div>
                       </div>
                     ) : (
                       <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
-                        <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url2 = await upload('fit3d', f, idx); const next = [...arr]; next[idx] = url2; setMedia({ fit3d: { ...(draft.media?.fit3d||{}), images: next.filter(Boolean) } }) }} />
-                        {idx===0 ? 'Add first' : 'Add second'}
+                        <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = idx===0 ? 'testimonial_before' : 'testimonial_after'; const url2 = await upload(kind as any, f); const next = { ...(draft.media?.testimonial||{}) }; if (idx===0) next.beforeUrl = url2; else next.afterUrl = url2; setMedia({ testimonial: next }) }} />
+                        {idx===0 ? 'Before' : 'After'}
                       </label>
                     )}
                   </div>
@@ -265,8 +248,12 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
               })}
             </div>
             <div className="mt-3">
-              <label className="text-sm text-gray-900 block mb-1">YouTube ID (optional)</label>
-              <input type="text" value={draft?.media?.fit3d?.youtubeId || ''} onChange={(e) => setMedia({ fit3d: { ...(draft.media?.fit3d||{}), youtubeId: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="e.g., dQw4w9WgXcQ" />
+              <label className="text-sm text-gray-900 block mb-1">Testimonial YouTube Link</label>
+              <input type="text" value={draft?.media?.testimonial?.youtubeUrl || ''} onChange={(e) => setMedia({ testimonial: { ...(draft.media?.testimonial||{}), youtubeUrl: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="Paste a YouTube URL" />
+            </div>
+            <div className="mt-3">
+              <label className="text-sm text-gray-900 block mb-1">Text Testimonial</label>
+              <textarea value={draft?.meta?.testimonialQuote || ''} onChange={(e) => setMeta({ testimonialQuote: e.target.value })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" rows={3} placeholder="Short quote" />
             </div>
           </section>
 

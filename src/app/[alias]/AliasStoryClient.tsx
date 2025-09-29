@@ -542,12 +542,101 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <details className="rounded-lg border border-gray-200 shadow-sm">
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s testimonial`}</summary>
           <div className="p-2">
-            {((snapshot as any)?.media?.testimonialYoutubeId) ? (
-              <div className="mb-3">
-                <iframe className="w-full aspect-video" src={`https://www.youtube.com/embed/${(snapshot as any).media.testimonialYoutubeId}`} title="Testimonial" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+            {((snapshot as any)?.meta?.testimonialQuote) ? (
+              <div className="mb-3 relative rounded-xl border border-gray-200 bg-gradient-to-br from-indigo-50/40 to-white shadow-sm p-4 md:p-5">
+                <div aria-hidden className="absolute -top-3 -left-1 text-6xl leading-none text-indigo-200 select-none">“</div>
+                <div className="mx-auto max-w-prose">
+                  <p className="text-gray-900 italic leading-relaxed">
+                    {(snapshot as any).meta.testimonialQuote}
+                  </p>
+                  <div className="mt-3 text-xs tracking-wide text-gray-600">— {displayLabel}</div>
+                </div>
               </div>
             ) : null}
-            <p className="italic text-gray-700 text-sm">{((snapshot as any)?.meta?.testimonialQuote) || 'testimonial coming soon'}</p>
+            {(() => {
+              const youtubeUrl = (snapshot as any)?.media?.testimonial?.youtubeUrl as string | undefined
+              const legacyId = (snapshot as any)?.media?.testimonialYoutubeId as string | undefined
+              const getYoutubeId = (u?: string): string | null => {
+                if (!u) return null
+                try {
+                  const url = new URL(u)
+                  if (url.hostname.includes('youtu.be')) return url.pathname.slice(1)
+                  const id = url.searchParams.get('v')
+                  if (id) return id
+                  const m = url.pathname.match(/\/shorts\/([^/]+)/)
+                  if (m) return m[1]
+                } catch {}
+                return null
+              }
+              const vid = getYoutubeId(youtubeUrl) || legacyId || null
+              if (!vid) return null
+              return (
+                <div className="mb-3 rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="aspect-video">
+                    <iframe className="w-full h-full" src={`https://www.youtube.com/embed/${vid}`} title="Testimonial" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
+                  </div>
+                </div>
+              )
+            })()}
+            {(() => {
+              const t = (snapshot as any)?.media?.testimonial
+              if (!t) return null
+              const items: { label: string; url: string }[] = []
+              if (typeof t.beforeUrl === 'string' && t.beforeUrl) items.push({ label: 'Before', url: t.beforeUrl })
+              if (typeof t.afterUrl === 'string' && t.afterUrl) items.push({ label: 'After', url: t.afterUrl })
+              if (items.length === 0) return null
+              // helpers for weight overlays
+              const getWeightForWeek = (weekNum: number): number | null => {
+                const w = (weeksRawAny as any[])?.find((x: any) => Number(x?.week_number) === weekNum)
+                if (!w) return null
+                const wt = w?.fields?.weight
+                return typeof wt === 'number' ? wt : null
+              }
+              const getNearestWeightUpTo = (endWeek: number, startWeek: number): number | null => {
+                for (let i = endWeek; i >= Math.max(1, startWeek); i--) {
+                  const v = getWeightForWeek(i)
+                  if (typeof v === 'number') return v
+                }
+                return null
+              }
+              const beforeWeightLbs = getWeightForWeek(0)
+              const afterWeightLbs = weeksShown > 0 ? getNearestWeightUpTo(weeksShown, weeksStart) : null
+              const formatWeightLocal = (lbs: number): string => {
+                if (unitSystem === 'metric') {
+                  const kg = poundsToKilograms(lbs)
+                  const v = typeof kg === 'number' ? kg : lbs
+                  return `${v.toFixed(1)} kg`
+                }
+                return `${lbs.toFixed(1)} lbs`
+              }
+              const listClass = items.length === 1 ? 'flex justify-center' : 'grid grid-cols-2 gap-3'
+              return (
+                <div className={listClass}>
+                  {items.map(({ label, url }) => {
+                    const isBefore = label === 'Before'
+                    const weight = isBefore ? beforeWeightLbs : afterWeightLbs
+                    return (
+                      <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible">
+                        <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
+                          <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{label}</div>
+                        </div>
+                        {typeof weight === 'number' ? (
+                          <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
+                            <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeightLocal(weight)}</div>
+                          </div>
+                        ) : null}
+                        {/\.mp4($|\?)/i.test(url) ? (
+                          <video src={url} muted loop playsInline autoPlay className="w-full h-auto rounded-lg" />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={url} alt={label} className="w-full h-auto rounded-lg" />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </div>
         </details>
       </section>
