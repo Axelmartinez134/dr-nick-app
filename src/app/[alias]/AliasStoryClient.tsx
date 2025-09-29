@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Script from 'next/script'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
-import { CTA_LABEL, CALENDLY_URL, TAGLINE, DOCSEND_URL } from '@/app/components/health/marketing/marketingConfig'
+import { CTA_LABEL, TAGLINE, DOCSEND_URL } from '@/app/components/health/marketing/marketingConfig'
 import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
@@ -18,9 +19,6 @@ type UnitSystem = 'imperial' | 'metric'
 export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
-  const [calInitAttempted, setCalInitAttempted] = useState(false)
-  const [calInitRetried, setCalInitRetried] = useState(false)
-  const [calFailed, setCalFailed] = useState(false)
 
   const m = snapshot.metrics
   const meta = snapshot.meta
@@ -116,41 +114,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // Calendly robust init: initialize after script loads; retry once; then fallback link
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    let retryTimer: any
-    const tryInit = () => {
-      const w = window as any
-      const Calendly = w?.Calendly
-      const container = document.getElementById('calendly-container')
-      if (Calendly && container && !calInitAttempted) {
-        try {
-          Calendly.initInlineWidget({ url: CALENDLY_URL, parentElement: container })
-          setCalInitAttempted(true)
-          return
-        } catch {}
-      }
-      if (!calInitRetried) {
-        setCalInitRetried(true)
-        retryTimer = setTimeout(() => {
-          const Calendly2 = (window as any)?.Calendly
-          const container2 = document.getElementById('calendly-container')
-          if (Calendly2 && container2 && !calInitAttempted) {
-            try {
-              Calendly2.initInlineWidget({ url: CALENDLY_URL, parentElement: container2 })
-              setCalInitAttempted(true)
-            } catch { setCalFailed(true) }
-          } else {
-            setCalFailed(true)
-          }
-        }, 2000)
-      }
-    }
-    // Try immediately; if script not ready, we'll retry via timer
-    tryInit()
-    return () => clearTimeout(retryTimer)
-  }, [CALENDLY_URL, calInitAttempted, calInitRetried])
+  // Removed Calendly init (switched to cnvrsnly embed)
 
   // Weeks shown logic for KPIs and hero overlays
   const weeksRawAny = (snapshot as any)?.weeksRaw
@@ -613,7 +577,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-sm text-gray-900 mb-2">Schedule a consult</div>
           <iframe src="https://www.cnvrsnly.com/widget/booking/1RQQzveFefB7hCunO2cI" style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" />
-          <script src="https://www.cnvrsnly.com/js/form_embed.js" type="text/javascript" />
+          <Script src="https://www.cnvrsnly.com/js/form_embed.js" strategy="afterInteractive" />
         </div>
       </section>
 
