@@ -325,7 +325,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="text-xs text-gray-700">Exercise Compliance %</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(0)}%` : '—'}</div>
+          <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(2)}%` : '—'}</div>
         </div>
       </section>
 
@@ -497,7 +497,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
                 <div className="text-xs text-gray-700">Exercise Compliance %</div>
-                <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(0)}%` : '—'}</div>
+                <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(2)}%` : '—'}</div>
               </div>
             </div>
 
@@ -690,11 +690,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               const isIOS = /iP(hone|od|ad)/.test(ua) || (/Macintosh/.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document)
               return (
                 <>
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="text-sm text-gray-900">{firstNameForTitle}'s Metabolic/Cardio Testing</div>
-                    <a href={pdfUrl} target="_blank" rel="noopener" className="text-sm text-blue-600 underline">Open PDF in a new tab</a>
+                  <div className="mb-3 flex items-center justify-between rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
+                    <div className="text-sm md:text-base font-semibold text-gray-900">{firstNameForTitle}'s Metabolic/Cardio Testing</div>
+                    <a href={pdfUrl} target="_blank" rel="noopener" className="text-xs md:text-sm text-blue-600 hover:text-blue-700 underline underline-offset-2">Open PDF in a new tab</a>
                   </div>
-                  <div className="overflow-x-hidden">
+                  <div className="overflow-x-hidden rounded-md p-1" style={{ border: '2px solid #d1d5db' }}>
                     {isIOS ? (
                       <PdfJsInlineIOS url={pdfUrl} className="block w-full max-w-full h-[65vh] md:h-[700px] overflow-auto" />
                     ) : (
@@ -731,7 +731,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Booking Section */}
       <section id="cta" className="lead-capture max-w-md mx-auto p-4">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-sm text-gray-900 mb-2">Schedule a consult</div>
+          <div className="mb-3 rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
+            <div className="text-sm md:text-base font-semibold text-gray-900">Schedule a consult</div>
+          </div>
           <iframe src="https://www.cnvrsnly.com/widget/booking/1RQQzveFefB7hCunO2cI" style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" />
           <Script src="https://www.cnvrsnly.com/js/form_embed.js" strategy="afterInteractive" />
         </div>
