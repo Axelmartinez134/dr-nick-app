@@ -73,7 +73,7 @@ async function copyUrlToBucket(
 
     const { error } = await supabase.storage
       .from(BUCKET)
-      .upload(destPath, new Uint8Array(buf), { contentType, upsert: false })
+      .upload(destPath, new Uint8Array(buf), { contentType, upsert: true })
 
     if (error) return null
 
@@ -144,11 +144,17 @@ export async function pinAssets(
   // Testing PDF
   let testingPdfUrl: string | null | undefined = null
   if (selected.testing?.pdfUrl) {
-    testingPdfUrl = await copyUrlToBucket(
+    const pdfPinned = await copyUrlToBucket(
       supabase,
       selected.testing.pdfUrl,
       `${slug}/testing/metabolic-cardio.pdf`
     )
+    if (pdfPinned) {
+      // Add cache-busting query to avoid stale CDN responses immediately after publish
+      testingPdfUrl = `${pdfPinned}?v=${Date.now()}`
+    } else {
+      testingPdfUrl = null
+    }
   }
 
   const media: SnapshotMedia = {

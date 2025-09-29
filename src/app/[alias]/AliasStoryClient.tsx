@@ -13,6 +13,7 @@ const MarketingWaistTrendChart = dynamic(() => import('@/app/components/health/m
 const MarketingSleepConsistencyChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingSleepConsistencyChart'), { ssr: false })
 const MarketingMorningFatBurnChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingMorningFatBurnChart'), { ssr: false })
 const MarketingBodyFatPercentageChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingBodyFatPercentageChart'), { ssr: false })
+const PdfJsInlineIOS = dynamic(() => import('@/app/components/health/marketing/PdfJsInlineIOS'), { ssr: false })
 
 type UnitSystem = 'imperial' | 'metric'
 
@@ -24,6 +25,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   const meta = snapshot.meta
   const ctaLabel = (meta as any)?.ctaLabel || 'Book a consult'
   const displayLabel = (meta as any)?.displayNameOverride || meta.patientLabel
+  const firstNameForTitle = String(displayLabel || 'Client').split(' ')[0]
   const slug = (shareSlug as any) || (snapshot?.meta as any)?.slug
   const chartsEnabled = {
     weightTrend: true,
@@ -576,14 +578,41 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Metabolic/Cardio Testing (PDF) */}
       <section id="testing" className="max-w-md mx-auto p-4">
         {((snapshot as any)?.media?.testing?.pdfUrl) ? (
-          <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-            <div className="text-sm text-gray-900 mb-2">Metabolic/Cardio Testing</div>
-            <object data={(snapshot as any).media.testing.pdfUrl} type="application/pdf" className="w-full" style={{ height: 700 }}>
-              <iframe src={(snapshot as any).media.testing.pdfUrl} className="w-full" style={{ height: 700 }} title="Metabolic/Cardio Testing" />
-            </object>
-            <div className="mt-2 text-right">
-              <a href={(snapshot as any).media.testing.pdfUrl} target="_blank" rel="noopener" className="text-sm text-blue-600 underline">Open PDF in a new tab</a>
-            </div>
+          <div className="rounded-lg border border-gray-200 p-3 shadow-sm min-w-0">
+            {(() => {
+              const pdfUrl = (snapshot as any).media.testing.pdfUrl as string
+              const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+              const isIOS = /iP(hone|od|ad)/.test(ua) || (/Macintosh/.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document)
+              return (
+                <>
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="text-sm text-gray-900">{firstNameForTitle}'s Metabolic/Cardio Testing</div>
+                    <a href={pdfUrl} target="_blank" rel="noopener" className="text-sm text-blue-600 underline">Open PDF in a new tab</a>
+                  </div>
+                  <div className="overflow-x-hidden">
+                    {isIOS ? (
+                      <PdfJsInlineIOS url={pdfUrl} className="block w-full max-w-full h-[65vh] md:h-[700px] overflow-auto" />
+                    ) : (
+                      <object
+                        key={pdfUrl}
+                        data={pdfUrl}
+                        type="application/pdf"
+                        className="block w-full max-w-full h-[65vh] md:h-[700px]"
+                      >
+                        <iframe
+                          key={pdfUrl}
+                          src={pdfUrl}
+                          className="block w-full max-w-full h-[65vh] md:h-[700px]"
+                          title="Metabolic/Cardio Testing"
+                          scrolling="yes"
+                          style={{ WebkitOverflowScrolling: 'touch' as any }}
+                        />
+                      </object>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
           </div>
         ) : null}
       </section>

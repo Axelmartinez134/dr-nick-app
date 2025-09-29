@@ -92,6 +92,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // testing.pdfUrl if provided must be pinned
+      if (sel?.testing && typeof sel.testing.pdfUrl === 'string' && sel.testing.pdfUrl.trim().length > 0) {
+        if (!nonEmpty(media?.testing?.pdfUrl)) failures.push('testing.pdfUrl')
+      }
+
       if (failures.length > 0) {
         console.warn('[publish] pinning validation failed', { alias, patientId, failures })
         return NextResponse.json({ error: 'Pinning failed', failures }, { status: 500 })
