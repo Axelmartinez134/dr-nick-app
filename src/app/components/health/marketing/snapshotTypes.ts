@@ -76,7 +76,7 @@ export interface SnapshotMedia {
     youtubeId?: string | null
   }
   testing?: {
-    docsendUrl?: string | null
+    pdfUrl?: string | null
     callouts?: {
       tdeeStart?: number | null
       tdeeEnd?: number | null

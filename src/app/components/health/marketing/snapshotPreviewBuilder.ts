@@ -20,7 +20,7 @@ export interface PreviewMedia {
   afterPhotoUrl?: string | null
   loopVideoUrl?: string | null
   fit3d?: { images?: string[]; youtubeId?: string | null }
-  testing?: { docsendUrl?: string | null; callouts?: any }
+  testing?: { pdfUrl?: string | null; callouts?: any }
   testimonialYoutubeId?: string | null
 }
 
@@ -138,7 +138,7 @@ export async function snapshotPreviewBuilder(
         youtubeId: media.fit3d?.youtubeId ?? null
       },
       testing: {
-        docsendUrl: media.testing?.docsendUrl ?? null,
+        pdfUrl: media.testing?.pdfUrl ?? null,
         callouts: media.testing?.callouts ?? {}
       },
       testimonialYoutubeId: media.testimonialYoutubeId ?? null

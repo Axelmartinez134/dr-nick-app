@@ -16,23 +16,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const form = await req.formData()
   const file = form.get('file') as File | null
-  const kind = String(form.get('kind') || '') // 'before' | 'after' | 'loop' | 'fit3d'
+  const kind = String(form.get('kind') || '') // 'before' | 'after' | 'loop' | 'fit3d' | 'testing'
   const idx = Number(form.get('index') || 0)
   if (!file || !kind) return NextResponse.json({ error: 'Missing file or kind' }, { status: 400 })
 
   const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
   const isImage = ['jpg', 'jpeg', 'png', 'webp'].includes(ext)
   const isMp4 = ext === 'mp4'
-  if (!(isImage || isMp4)) return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 })
+  const isPdf = ext === 'pdf'
+  if (!(isImage || isMp4 || isPdf)) return NextResponse.json({ error: 'Unsupported file type' }, { status: 400 })
 
   let dest = `${id}/`
   if (kind === 'before') dest += `photos/before.${ext}`
   else if (kind === 'after') dest += `photos/after.${ext}`
   else if (kind === 'loop') dest += `videos/loop.${ext}`
   else if (kind === 'fit3d') dest += `fit3d/${String(idx + 1).padStart(2, '0')}.${ext}`
+  else if (kind === 'testing') dest += `testing/metabolic-cardio.${ext}`
   else return NextResponse.json({ error: 'Invalid kind' }, { status: 400 })
 
-  const contentType = isMp4 ? 'video/mp4' : (ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg'))
+  const contentType = isMp4 ? 'video/mp4' : (isPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg')))
   const buffer = Buffer.from(await file.arrayBuffer())
 
   const { error: upErr } = await supabase.storage.from('marketing-assets').upload(`drafts/${dest}`, buffer, { contentType, upsert: true })

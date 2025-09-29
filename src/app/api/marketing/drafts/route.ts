@@ -44,7 +44,7 @@ export async function POST(req: NextRequest)
           nutritionCompliancePct: false
         }
       },
-      media: { beforePhotoUrl: null, afterPhotoUrl: null, loopVideoUrl: null, fit3d: { images: [], youtubeId: null }, testing: { docsendUrl: null } }
+      media: { beforePhotoUrl: null, afterPhotoUrl: null, loopVideoUrl: null, fit3d: { images: [], youtubeId: null }, testing: { pdfUrl: null } }
     }
 
     // Resolve created_by (admin) or fallback to patient

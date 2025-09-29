@@ -10,7 +10,7 @@ export interface SelectedMedia {
   afterPhotoUrl?: string | null
   loopVideoUrl?: string | null
   fit3d?: { images?: string[]; youtubeId?: string | null }
-  testing?: { docsendUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
+  testing?: { pdfUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
   testimonialYoutubeId?: string | null
 }
 
@@ -39,6 +39,8 @@ function contentTypeForExt(ext: string): string {
       return 'image/gif'
     case 'mp4':
       return 'video/mp4'
+    case 'pdf':
+      return 'application/pdf'
     default:
       return 'application/octet-stream'
   }
@@ -139,6 +141,16 @@ export async function pinAssets(
     }
   }
 
+  // Testing PDF
+  let testingPdfUrl: string | null | undefined = null
+  if (selected.testing?.pdfUrl) {
+    testingPdfUrl = await copyUrlToBucket(
+      supabase,
+      selected.testing.pdfUrl,
+      `${slug}/testing/metabolic-cardio.pdf`
+    )
+  }
+
   const media: SnapshotMedia = {
     beforePhotoUrl: beforePhotoUrl ?? null,
     afterPhotoUrl: afterPhotoUrl ?? null,
@@ -148,7 +160,7 @@ export async function pinAssets(
       youtubeId: selected.fit3d?.youtubeId ?? null
     },
     testing: {
-      docsendUrl: selected.testing?.docsendUrl ?? null,
+      pdfUrl: testingPdfUrl ?? null,
       callouts: selected.testing?.callouts ?? {}
     },
     testimonialYoutubeId: selected.testimonialYoutubeId ?? null

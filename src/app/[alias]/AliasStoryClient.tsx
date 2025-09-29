@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Script from 'next/script'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
-import { CTA_LABEL, TAGLINE, DOCSEND_URL } from '@/app/components/health/marketing/marketingConfig'
+import { CTA_LABEL, TAGLINE } from '@/app/components/health/marketing/marketingConfig'
 import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
 const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
@@ -49,10 +49,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         media?.loopVideoUrl as string | undefined
       ]
       const urls: string[] = heroCandidates.filter((u): u is string => !!u)
-      if (urls.length === 0) return
-      const host = new URL(urls[0]).origin
       const head = document.head
-      if (head) {
+      if (head && urls.length > 0) {
+        const host = new URL(urls[0]).origin
         const preconnect = document.createElement('link')
         preconnect.rel = 'preconnect'
         preconnect.href = host
@@ -76,6 +75,24 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           } catch {}
         })
       }
+
+      // Preconnect to PDF host if present
+      try {
+        const pdfUrl = (snapshot as any)?.media?.testing?.pdfUrl as string | undefined
+        if (pdfUrl && head) {
+          const pdfHost = new URL(pdfUrl).origin
+          const pc = document.createElement('link')
+          pc.rel = 'preconnect'
+          pc.href = pdfHost
+          pc.crossOrigin = 'anonymous'
+          head.appendChild(pc)
+
+          const dp = document.createElement('link')
+          dp.rel = 'dns-prefetch'
+          dp.href = pdfHost
+          head.appendChild(dp)
+        }
+      } catch {}
     } catch {}
   }, [snapshot])
   const reportClick = (ctaId: string) => {
@@ -556,14 +573,19 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       
 
-      {/* Testing (DocSend) */}
+      {/* Metabolic/Cardio Testing (PDF) */}
       <section id="testing" className="max-w-md mx-auto p-4">
-        <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-sm text-gray-900 mb-2">Metabolic/Cardio Testing</div>
-          <div className="w-full">
-            <iframe src={(snapshot as any)?.media?.testing?.docsendUrl || DOCSEND_URL} allow="fullscreen" width="640" height="480" className="w-full" />
+        {((snapshot as any)?.media?.testing?.pdfUrl) ? (
+          <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
+            <div className="text-sm text-gray-900 mb-2">Metabolic/Cardio Testing</div>
+            <object data={(snapshot as any).media.testing.pdfUrl} type="application/pdf" className="w-full" style={{ height: 700 }}>
+              <iframe src={(snapshot as any).media.testing.pdfUrl} className="w-full" style={{ height: 700 }} title="Metabolic/Cardio Testing" />
+            </object>
+            <div className="mt-2 text-right">
+              <a href={(snapshot as any).media.testing.pdfUrl} target="_blank" rel="noopener" className="text-sm text-blue-600 underline">Open PDF in a new tab</a>
+            </div>
           </div>
-        </div>
+        ) : null}
       </section>
 
       {/* Extra CTAs removed to keep two key placements */}
