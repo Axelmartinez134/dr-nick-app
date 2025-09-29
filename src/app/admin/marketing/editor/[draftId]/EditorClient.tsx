@@ -11,6 +11,10 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   const [fullAvailableMaxWeek, setFullAvailableMaxWeek] = useState<number>(0)
   const initializedRangeRef = useRef<boolean>(false)
   const fullMaxSetRef = useRef<boolean>(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
+  const [publishSteps, setPublishSteps] = useState<Array<{ id: string; label: string; status: 'pending' | 'in_progress' | 'done' | 'error' }>>([])
 
   // Debounced autosave
   useEffect(() => {
@@ -55,6 +59,23 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
 
   const setMedia = (patch: any) => setDraft((d: any) => ({ ...d, media: { ...(d?.media || {}), ...patch } }))
   const setMeta = (patch: any) => setDraft((d: any) => ({ ...d, meta: { ...(d?.meta || {}), ...patch } }))
+
+  function beginPublishUI() {
+    setPublishOpen(true)
+    setPublishError(null)
+    setPublishSteps([
+      { id: 'validate', label: 'Validate', status: 'in_progress' },
+      { id: 'pin', label: 'Pin media', status: 'pending' },
+      { id: 'build', label: 'Build snapshot', status: 'pending' },
+      { id: 'create', label: 'Create share', status: 'pending' },
+      { id: 'done', label: 'Done', status: 'pending' }
+    ])
+    setTimeout(() => setPublishSteps((s) => s.map((x) => x.id === 'validate' ? { ...x, status: 'done' } : x)), 150)
+  }
+
+  function setStep(id: string, status: 'pending' | 'in_progress' | 'done' | 'error') {
+    setPublishSteps((s) => s.map((x) => x.id === id ? { ...x, status } : x))
+  }
 
   async function upload(kind: 'before' | 'after' | 'loop' | 'fit3d', file: File, index = 0) {
     const fd = new FormData()
@@ -216,7 +237,15 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Client Testimonial */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Client Testimonial</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="mt-3">
+              <label className="text-sm text-gray-900 block mb-1">Text Testimonial</label>
+              <textarea value={draft?.meta?.testimonialQuote || ''} onChange={(e) => setMeta({ testimonialQuote: e.target.value })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" rows={3} placeholder="Short quote" />
+            </div>
+            <div className="mt-3">
+              <label className="text-sm text-gray-900 block mb-1">Testimonial YouTube Link</label>
+              <input type="text" value={draft?.media?.testimonial?.youtubeUrl || ''} onChange={(e) => setMedia({ testimonial: { ...(draft.media?.testimonial||{}), youtubeUrl: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="Paste a YouTube URL" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-3">
               {[0,1].map((idx) => {
                 const before = draft?.media?.testimonial?.beforeUrl || null
                 const after = draft?.media?.testimonial?.afterUrl || null
@@ -247,14 +276,6 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 )
               })}
             </div>
-            <div className="mt-3">
-              <label className="text-sm text-gray-900 block mb-1">Testimonial YouTube Link</label>
-              <input type="text" value={draft?.media?.testimonial?.youtubeUrl || ''} onChange={(e) => setMedia({ testimonial: { ...(draft.media?.testimonial||{}), youtubeUrl: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="Paste a YouTube URL" />
-            </div>
-            <div className="mt-3">
-              <label className="text-sm text-gray-900 block mb-1">Text Testimonial</label>
-              <textarea value={draft?.meta?.testimonialQuote || ''} onChange={(e) => setMeta({ testimonialQuote: e.target.value })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" rows={3} placeholder="Short quote" />
-            </div>
           </section>
 
           {/* Metabolic/Cardio Testing (PDF) */}
@@ -281,8 +302,12 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Publish */}
           <section className="bg-white rounded border p-4">
             <button
-              className="px-4 py-2 rounded bg-green-600 text-white"
+              className={`px-4 py-2 rounded text-white ${publishing ? 'bg-green-700/70 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+              aria-busy={publishing}
+              disabled={publishing}
               onClick={async () => {
+                beginPublishUI()
+                setPublishing(true)
                 const res = await fetch('/api/marketing/shares', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -296,6 +321,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       watermarkText: draft?.meta?.watermarkText || null,
                       ctaLabel: draft?.meta?.ctaLabel || null,
                       displayNameOverride: draft?.meta?.displayNameOverride || null,
+                      testimonialQuote: draft?.meta?.testimonialQuote || null,
                       chartsEnabled: draft?.meta?.chartsEnabled || {
                         weightTrend: true, projection: true, plateauWeight: true,
                         waistTrend: false, plateauWaist: false, nutritionCompliancePct: false,
@@ -308,14 +334,45 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 })
                 const json = await res.json()
                 if (!res.ok) {
-                  alert(json.error || 'Publish failed')
+                  setPublishError(json.error || 'Publish failed')
+                  setPublishing(false)
                 } else {
-                  alert(`Published ${json.alias} → ${json.slug}`)
+                  setPublishSteps((s) => s.map((x) => x.id === 'pin' || x.id === 'build' || x.id === 'create' ? { ...x, status: 'done' } : (x.id === 'done' ? { ...x, status: 'done' } : x)))
+                  setPublishing(false)
                 }
               }}
             >
-              Publish version
+              {publishing ? (
+                <span className="inline-flex items-center gap-2"><span className="inline-block h-4 w-4 rounded-full border-2 border-white/50 border-t-white animate-spin" /> Publishing…</span>
+              ) : (
+                'Publish version'
+              )}
             </button>
+            <div className="text-xs text-gray-600 mt-1">Usually ~5–10s</div>
+
+            {publishOpen ? (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+                <div className="bg-white rounded-lg shadow-lg border w-full max-w-md p-4">
+                  <div className="text-sm font-semibold text-gray-900 mb-2">Publishing</div>
+                  <ul className="space-y-2 text-sm">
+                    {publishSteps.map(s => (
+                      <li key={s.id} className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full ${s.status==='done'?'bg-green-600':s.status==='in_progress'?'bg-blue-600':'bg-gray-300'}`} />
+                        <span className="text-gray-900">{s.label}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {publishError ? (
+                    <div className="mt-3 text-xs text-red-600">{publishError}</div>
+                  ) : null}
+                  <div className="mt-4 flex justify-end gap-2">
+                    {(() => { const isDone = publishSteps.find(s => s.id==='done')?.status === 'done'; return (
+                      <button className={`px-3 py-1.5 rounded text-sm ${isDone ? 'bg-green-600 text-white hover:bg-green-700' : 'border'} `} onClick={() => setPublishOpen(false)} disabled={publishing && !isDone}>Close</button>
+                    )})()}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
 
