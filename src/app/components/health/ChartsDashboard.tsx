@@ -13,6 +13,8 @@ import { fetchUnitSystem, formatLength, formatWeight, getLengthUnitLabel, getWei
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
 import MorningFatBurnChart from './charts/MorningFatBurnChart'
 import NutritionComplianceChart from './charts/NutritionComplianceChart'
+import StrainGoalMetChart from './charts/StrainGoalMetChart'
+import WaistPlateauPreventionChart from './charts/WaistPlateauPreventionChart'
 import ComplianceMetricsTable from './ComplianceMetricsTable'
 import StickyNotes from './StickyNotes'
 import { kilogramsToPounds, poundsToKilograms } from './unitCore'
@@ -2084,7 +2086,9 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             <span className="text-sm text-gray-500">{openNewCharts ? 'Click to collapse' : 'Click to expand'}</span>
           </button>
           {openNewCharts && (
-            <div className="mt-4">
+            <div className="mt-4 space-y-6">
+              <WaistPlateauPreventionChart data={chartData} />
+              <StrainGoalMetChart data={chartData} />
               <NutritionComplianceChart data={chartData} />
             </div>
           )}
