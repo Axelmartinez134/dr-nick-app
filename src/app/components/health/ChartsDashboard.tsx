@@ -2087,7 +2087,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           </button>
           {openNewCharts && (
             <div className="mt-4 space-y-6">
-              <WaistPlateauPreventionChart data={chartData} />
+              {/* Make waist plateau chart half-width like the two-column waist trend layout */}
+              <div className="grid lg:grid-cols-2 gap-6">
+                <WaistPlateauPreventionChart data={chartData} />
+                <div aria-hidden="true"></div>
+              </div>
+              {/* Keep Strain and Nutrition exactly where they are */}
               <StrainGoalMetChart data={chartData} />
               <NutritionComplianceChart data={chartData} />
             </div>
