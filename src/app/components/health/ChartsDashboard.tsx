@@ -12,6 +12,7 @@ import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, formatLength, formatWeight, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
 import MorningFatBurnChart from './charts/MorningFatBurnChart'
+import NutritionComplianceChart from './charts/NutritionComplianceChart'
 import ComplianceMetricsTable from './ComplianceMetricsTable'
 import StickyNotes from './StickyNotes'
 import { kilogramsToPounds, poundsToKilograms } from './unitCore'
@@ -1383,6 +1384,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [openNewCharts, setOpenNewCharts] = useState<boolean>(false)
   
   // Metrics state (patient view only)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
@@ -2061,15 +2063,36 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           </div>
         )}
 
-        {/* Row 3: Sleep Chart (Full Width) */}
-        <div className="grid grid-cols-1">
-          <SleepConsistencyChart data={chartData} />
-        </div>
-
-        {/* Row 4: New Dr. Nick Charts */}
+        {/* Row 3: New Dr. Nick Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
           <MorningFatBurnChart data={chartData} />
           <BodyFatPercentageChart data={chartData} />
+        </div>
+
+        {/* New Charts Dropdown (closed by default) */}
+        <section className="bg-white rounded-lg shadow-md p-6">
+          <button
+            type="button"
+            onClick={() => setOpenNewCharts((v: boolean) => !v)}
+            className="w-full px-4 py-3 text-left font-medium text-gray-900 hover:bg-gray-50 focus:outline-none flex items-center justify-between rounded-t-lg"
+            aria-expanded={openNewCharts}
+          >
+            <span className="flex items-center gap-2">
+              <span>{openNewCharts ? '🔼' : '🔽'}</span>
+              <span className="text-lg font-semibold text-gray-900">New Charts</span>
+            </span>
+            <span className="text-sm text-gray-500">{openNewCharts ? 'Click to collapse' : 'Click to expand'}</span>
+          </button>
+          {openNewCharts && (
+            <div className="mt-4">
+              <NutritionComplianceChart data={chartData} />
+            </div>
+          )}
+        </section>
+
+        {/* Row 4: Sleep Chart (Full Width) */}
+        <div className="grid grid-cols-1">
+          <SleepConsistencyChart data={chartData} />
         </div>
 
         {/* Compliance Metrics Table */}
