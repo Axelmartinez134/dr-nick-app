@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 
@@ -65,20 +65,25 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
     return calculateLinearRegression(regressionData, minWeek, maxWeek)
   }, [chartData])
 
-  // Merge trend line data with chart data
+  // Build full week-range dataset and merge trend line so the trend renders reliably in AreaChart
   const enhancedChartData = useMemo(() => {
-    if (!regressionResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
-    
-    return chartData.map(point => {
-      // Only add trend line values for weeks where we have actual sleep data
-      const hasActualData = chartData.some(d => d.week === point.week && d.sleepScore !== null)
-      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
-      
-      return {
-        ...point,
-        trendLine: (hasActualData && trendPoint) ? trendPoint.value : null
-      }
-    })
+    if (chartData.length === 0) return [] as Array<{ week: number; sleepScore: number | null; date?: string; trendLine: number | null }>
+
+    const minWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+
+    const result: Array<{ week: number; sleepScore: number | null; date?: string; trendLine: number | null }> = []
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const actual = chartData.find(d => d.week === w)
+      const trendPoint = regressionResult.isValid ? regressionResult.trendPoints.find(tp => tp.week === w) : undefined
+      result.push({
+        week: w,
+        sleepScore: actual ? (actual.sleepScore as number) : null,
+        date: actual?.date,
+        trendLine: trendPoint ? trendPoint.value : null
+      })
+    }
+    return result
   }, [chartData, regressionResult])
 
   // Calculate Y-axis domain excluding trend line values to prevent skewing
@@ -201,14 +206,14 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <AreaChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
-            label={{ value: 'Sleep Consistency Score', angle: -90, position: 'insideLeft' }}
+            label={{ value: 'Sleep Consistency Score', angle: -90, position: 'insideLeft', dy: 80 }}
             domain={calculateYAxisDomain()}
             tickFormatter={(value) => `${Math.round(value)}`}
           />
@@ -219,12 +224,11 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
           
           <Tooltip content={<CustomTooltip />} />
           
-          {/* Main sleep score area */}
-          <Area 
+          {/* Main sleep score line */}
+          <Line 
             type="monotone" 
             dataKey="sleepScore" 
             stroke="#6366f1" 
-            fill="rgba(99, 102, 241, 0.2)"
             strokeWidth={3}
             dot={{ fill: '#6366f1', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
@@ -232,21 +236,21 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
             connectNulls={true}
           />
           
-          {/* Continuous regression trend line across full week range */}
+          {/* Continuous regression trend line across full week range (bound to main dataset) */}
           {regressionResult.isValid && (
             <Line 
               type="monotone" 
-              dataKey="value" 
-              data={regressionResult.trendPoints as any}
+              dataKey="trendLine" 
               stroke="#000000" 
               strokeWidth={2}
+              z={2}
               dot={false}
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
             />
           )}
-        </AreaChart>
+        </LineChart>
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">

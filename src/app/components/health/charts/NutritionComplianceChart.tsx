@@ -3,7 +3,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
 
@@ -60,10 +60,32 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
     return calculateLinearRegression(regressionData, minWeek, maxWeek)
   }, [chartData])
 
+  // Build full week-range dataset and merge trend line so the trend renders reliably in AreaChart
+  const enhancedChartData = useMemo(() => {
+    if (chartData.length === 0) return [] as Array<{ week: number; nutritionDays: number | null; date?: string; trendLine: number | null }>
+
+    const minDataWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+    const startWeek = Math.max(1, minDataWeek) // Nutrition chart should start at Week 1 (not Week 0)
+
+    const result: Array<{ week: number; nutritionDays: number | null; date?: string; trendLine: number | null }> = []
+    for (let w = startWeek; w <= maxWeek; w++) {
+      const actual = chartData.find(d => d.week === w)
+      const trendPoint = regressionResult.isValid ? regressionResult.trendPoints.find(tp => tp.week === w) : undefined
+      result.push({
+        week: w,
+        nutritionDays: actual ? (actual.nutritionDays as number) : null,
+        date: actual?.date,
+        trendLine: trendPoint ? trendPoint.value : null
+      })
+    }
+    return result
+  }, [chartData, regressionResult])
+
   // Y-axis domain with small padding, clamped to [0,7]
   const calculateYAxisDomain = () => {
     const values: number[] = []
-    chartData.forEach(d => {
+    enhancedChartData.forEach(d => {
       if (d.nutritionDays !== null && d.nutritionDays !== undefined && !isNaN(d.nutritionDays)) {
         values.push(d.nutritionDays)
       }
@@ -133,21 +155,20 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <AreaChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} />
           <YAxis
-            label={{ value: 'Nutrition Days Goal Met', angle: -90, position: 'insideLeft' }}
+            label={{ value: 'Nutrition Days Goal Met', angle: -90, position: 'insideLeft', dy: 80 }}
             domain={calculateYAxisDomain()}
             tickCount={8}
             tickFormatter={(v) => `${Math.round(v)}`}
           />
           <Tooltip content={<CustomTooltip />} />
-          <Area
+          <Line
             type="monotone"
             dataKey="nutritionDays"
             stroke="#6366f1"
-            fill="rgba(99, 102, 241, 0.2)"
             strokeWidth={3}
             dot={{ fill: '#6366f1', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
@@ -157,18 +178,25 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
           {regressionResult.isValid && (
             <Line
               type="monotone"
-              dataKey="value"
-              data={regressionResult.trendPoints as any}
+              dataKey="trendLine"
               stroke="#000000"
               strokeWidth={2}
+              z={2}
               dot={false}
               activeDot={false}
               name="Trend Line"
               connectNulls={true}
             />
           )}
-        </AreaChart>
+        </LineChart>
       </ResponsiveContainer>
+
+      <div className="mt-4 text-xs text-gray-500">
+        <p>• Weekly totals reflect how many days you met macro goals</p>
+        <p>• Dark black trend line shows your overall nutrition consistency direction</p>
+        <p>• More compliant days support steadier fat loss and better energy</p>
+        <p>• Aim for sustainable progress rather than perfection week-to-week</p>
+      </div>
     </div>
   )
 }
