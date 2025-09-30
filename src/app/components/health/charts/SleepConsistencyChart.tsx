@@ -4,7 +4,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 
@@ -201,7 +201,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
       </div>
 
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+        <AreaChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
@@ -219,11 +219,12 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
           
           <Tooltip content={<CustomTooltip />} />
           
-          {/* Main sleep score line */}
-          <Line 
+          {/* Main sleep score area */}
+          <Area 
             type="monotone" 
             dataKey="sleepScore" 
             stroke="#6366f1" 
+            fill="rgba(99, 102, 241, 0.2)"
             strokeWidth={3}
             dot={{ fill: '#6366f1', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
@@ -245,7 +246,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
               connectNulls={true}
             />
           )}
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
 
       <div className="mt-4 text-xs text-gray-500">
