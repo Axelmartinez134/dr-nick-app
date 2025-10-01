@@ -3,15 +3,17 @@
 
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 import { getLengthUnitLabel } from '../unitCore'
+import { supabase } from '../../auth/AuthContext'
 
 interface WaistTrendChartProps {
   data: WeeklyCheckin[]
   unitSystem?: 'imperial' | 'metric'
+  patientId?: string
 }
 
 // Chart Tooltip Component
@@ -42,7 +44,71 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 import { inchesToCentimeters } from '../unitCore'
 
-export default function WaistTrendChart({ data, unitSystem = 'imperial' }: WaistTrendChartProps) {
+export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId }: WaistTrendChartProps) {
+  const [waistGoalDistance, setWaistGoalDistance] = useState<number | null>(null)
+
+  // Local tooltip for the purple distance pill (mirrors metrics tooltip content)
+  function DistancePill({ distance }: { distance: number }) {
+    const [open, setOpen] = useState(false)
+    const valueText = distance >= 0 ? `+${distance.toFixed(3)}` : distance.toFixed(3)
+    return (
+      <div className="relative inline-block">
+        <div
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          className="cursor-help text-xs bg-purple-100 text-purple-800 rounded-full px-3 py-1 whitespace-nowrap"
+        >
+          DISTANCE FROM WAIST/HEIGHT GOAL • {valueText}
+        </div>
+        {open && (
+          <div className="absolute z-10 w-80 p-4 bg-gray-900 text-white text-sm rounded-lg shadow-lg bottom-full right-0 mb-2">
+            <div className="font-semibold text-purple-300 mb-2">Distance from Waist-to-Height Goal</div>
+            <div className="mb-2">
+              <div className="font-medium text-green-300 mb-1">Formula</div>
+              <div className="font-mono text-xs bg-gray-800 p-2 rounded">Goal = 0.5 | Current = (Waist ÷ Height) | Distance = Current − 0.5</div>
+            </div>
+            <div className="mb-2">
+              <div className="font-medium text-yellow-300 mb-1">What it measures</div>
+              <div className="text-gray-300">How close your waist-to-height ratio is to the 0.5 goal. It’s unitless and works with any units because both waist and height are in the same units.</div>
+            </div>
+            <div>
+              <div className="font-medium text-blue-300 mb-1">Why it matters</div>
+              <div className="text-gray-300">A ratio ≤ 0.5 is associated with optimal metabolic health. Values above 0.5 suggest increased risk; moving this distance toward 0 is the goal.</div>
+            </div>
+            <div className="absolute top-full right-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  useEffect(() => {
+    const computeDistance = async () => {
+      try {
+        let userId = patientId
+        if (!userId) {
+          const { data: { user } } = await supabase.auth.getUser()
+          userId = user?.id
+        }
+        if (!userId) return
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('height')
+          .eq('id', userId)
+          .single()
+        const height = profile?.height
+        if (!height || height <= 0) return
+        const latest = [...data]
+          .filter(d => d.waist !== null && d.waist !== undefined)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+        if (!latest || latest.waist === null || latest.waist === undefined) return
+        const currentRatio = (latest.waist as number) / height
+        const distance = currentRatio - 0.5
+        setWaistGoalDistance(Math.round(distance * 1000) / 1000)
+      } catch {}
+    }
+    computeDistance()
+  }, [data, patientId])
   // Process waist data only
   const chartDataImperial = data
     .filter(entry => entry.waist !== null)
@@ -146,7 +212,7 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial' }: Waist
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="mb-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Waist Trend" 
           description="Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress."
@@ -155,10 +221,11 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial' }: Waist
             📏 Waist Trend Analysis
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">
-          Weekly waist measurements showing body composition changes
-        </p>
+        {waistGoalDistance !== null && (
+          <DistancePill distance={waistGoalDistance} />
+        )}
       </div>
+      <p className="text-sm text-gray-600 mb-2">Weekly waist measurements showing body composition changes</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

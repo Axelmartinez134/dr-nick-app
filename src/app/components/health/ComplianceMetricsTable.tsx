@@ -5,6 +5,10 @@
 
 import { useState, useEffect } from 'react'
 import { getComplianceMetrics, ComplianceMetrics } from './complianceMetricsService'
+import NutritionComplianceChart from './charts/NutritionComplianceChart'
+import StrainGoalMetChart from './charts/StrainGoalMetChart'
+import SleepConsistencyChart from './charts/SleepConsistencyChart'
+import { getWeeklyDataForCharts, type WeeklyCheckin } from './healthService'
 import { supabase } from '../auth/AuthContext'
 
 interface ComplianceMetricsTableProps {
@@ -63,6 +67,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
   const [loading, setLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [proteinGoal, setProteinGoal] = useState<number | null>(null)
+  const [chartData, setChartData] = useState<WeeklyCheckin[]>([])
 
   // Determine if this is Dr. Nick's view
   const isDoctorView = !!patientId
@@ -107,6 +112,10 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
           setProteinGoal(profileData?.protein_goal_grams || 150)
         }
       }
+
+      // Load weekly data for embedded charts
+      const { data: weekly } = await getWeeklyDataForCharts(patientId)
+      setChartData(weekly || [])
     } catch (error) {
       console.error('Error loading compliance metrics:', error)
       setMetrics({
@@ -204,12 +213,9 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
         </div>
       ) : (
         <>
-          <h2 className="text-xl font-bold text-gray-800 mb-4">
-            📊 Your Compliance Metrics
-          </h2>
           
-          {/* Top Row - Nutrition Goal Met (Full Width) */}
-          <div className="grid grid-cols-1 gap-4 mb-4">
+          {/* Nutrition KPI + Chart (Full Width) */}
+          <div className="grid grid-cols-1 gap-3 mb-6">
             <MetricsTooltip
               title="Average Days Nutrition Goal Met"
               formula={`Daily Protein Goal: ${proteinGoal || 150}g (±3g) | Valid Range: ${(proteinGoal || 150) - 3}g - ${(proteinGoal || 150) + 3}g | Weekly Score: (Compliant Days ÷ 7) × 100`}
@@ -226,11 +232,11 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
                 </div>
               </div>
             </MetricsTooltip>
+            <NutritionComplianceChart data={chartData} />
           </div>
 
-          {/* Bottom Row - Other Metrics (3 Cards) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Strain Target Goal Met */}
+          {/* Strain KPI + Chart (Full Width) */}
+          <div className="grid grid-cols-1 gap-3 mb-6">
             <MetricsTooltip
               title="Average Days Strain Target Goal Met"
               formula="(Purposeful Exercise Days ÷ 7 Days per Week) × 100"
@@ -247,8 +253,11 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
                 </div>
               </div>
             </MetricsTooltip>
+            <StrainGoalMetChart data={chartData} />
+          </div>
 
-            {/* Poor Recovery Percentage */}
+          {/* Poor Recovery KPI + Chart (Full Width) */}
+          <div className="grid grid-cols-1 gap-3 mb-6">
             <MetricsTooltip
               title="Average Days Poor Recovery"
               formula="(Poor Recovery Days ÷ Total Days Tracked) × 100"
@@ -265,27 +274,10 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
                 </div>
               </div>
             </MetricsTooltip>
-
-            {/* Waist/Height Goal Distance */}
-                         <MetricsTooltip
-               title="Distance from Waist-to-Height Goal"
-               formula="Goal = 0.5 (unitless ratio) | Current: (Waist ÷ Height) | Distance: Current - 0.5"
-               explanation="This measures how close you are to the ideal waist-to-height ratio of 0.5. The goal of 0.5 is the universally recommended ratio for both men and women, calculated as waist measurement ÷ height measurement (works with any units since you're dividing the same units)."
-               interpretation="A ratio of 0.5 or below indicates optimal metabolic health. Values above 0.5 suggest increased health risks. This unitless measure is one of the strongest predictors of cardiovascular risk and metabolic health, regardless of your overall body size."
-             >
-              <div className="bg-purple-50 p-4 rounded-lg hover:bg-purple-100 transition-colors">
-                <h3 className="text-sm font-medium text-purple-700 mb-2">DISTANCE FROM WAIST/HEIGHT GOAL</h3>
-                <div className="text-2xl font-bold text-purple-900">
-                  {metrics.waistHeightGoalDistance !== null 
-                    ? (metrics.waistHeightGoalDistance >= 0 
-                        ? `+${metrics.waistHeightGoalDistance.toFixed(3)}` 
-                        : metrics.waistHeightGoalDistance.toFixed(3))
-                    : 'N/A'
-                  }
-                </div>
-              </div>
-            </MetricsTooltip>
+            <SleepConsistencyChart data={chartData} />
           </div>
+
+          {/* Waist/Height Goal KPI removed per request (now reflected in Waist Trend chart pill) */}
 
         </>
       )}

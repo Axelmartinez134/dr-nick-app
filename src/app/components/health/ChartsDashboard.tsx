@@ -1386,7 +1386,6 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [openNewCharts, setOpenNewCharts] = useState<boolean>(false)
   
   // Metrics state (patient view only)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
@@ -2051,10 +2050,15 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           <PlateauPreventionChart data={chartData} />
         </div>
 
-        {/* Row 2: Basic Trend Charts */}
-        <div className="grid lg:grid-cols-2 gap-6">
+        {/* Row 2A: Weight Trend (Full Width) */}
+        <div className="grid grid-cols-1">
           <WeightTrendChart data={chartData} unitSystem={unitSystem} />
+        </div>
+
+        {/* Row 2B: Waist Charts (Left: Waist Trend, Right: Plateau Prevention) */}
+        <div className="grid lg:grid-cols-2 gap-6">
           <WaistTrendChart data={chartData} unitSystem={unitSystem} />
+          <WaistPlateauPreventionChart data={chartData} />
         </div>
 
         {/* Row 2.5: Blood Pressure Charts (conditional) */}
@@ -2071,38 +2075,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           <BodyFatPercentageChart data={chartData} />
         </div>
 
-        {/* New Charts Dropdown (closed by default) */}
-        <section className="bg-white rounded-lg shadow-md p-6">
-          <button
-            type="button"
-            onClick={() => setOpenNewCharts((v: boolean) => !v)}
-            className="w-full px-4 py-3 text-left font-medium text-gray-900 hover:bg-gray-50 focus:outline-none flex items-center justify-between rounded-t-lg"
-            aria-expanded={openNewCharts}
-          >
-            <span className="flex items-center gap-2">
-              <span>{openNewCharts ? '🔼' : '🔽'}</span>
-              <span className="text-lg font-semibold text-gray-900">New Charts</span>
-            </span>
-            <span className="text-sm text-gray-500">{openNewCharts ? 'Click to collapse' : 'Click to expand'}</span>
-          </button>
-          {openNewCharts && (
-            <div className="mt-4 space-y-6">
-              {/* Make waist plateau chart half-width like the two-column waist trend layout */}
-              <div className="grid lg:grid-cols-2 gap-6">
-                <WaistPlateauPreventionChart data={chartData} />
-                <div aria-hidden="true"></div>
-              </div>
-              {/* Keep Strain and Nutrition exactly where they are */}
-              <StrainGoalMetChart data={chartData} />
-              <NutritionComplianceChart data={chartData} />
-            </div>
-          )}
-        </section>
-
-        {/* Row 4: Sleep Chart (Full Width) */}
-        <div className="grid grid-cols-1">
-          <SleepConsistencyChart data={chartData} />
-        </div>
+        {/* Removed Nutrition/Strain charts here – now rendered inside Compliance Metrics section */}
+        {/* Removed Sleep chart here – now rendered inside Compliance Metrics section */}
 
         {/* Compliance Metrics Table */}
         <div className="grid grid-cols-1">
