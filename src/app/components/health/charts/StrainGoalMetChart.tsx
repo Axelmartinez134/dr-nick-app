@@ -102,7 +102,7 @@ export default function StrainGoalMetChart({ data }: StrainGoalMetChartProps) {
 
   if (enhancedChartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip title="Days Strain Goal Met" description="Number of days this week you hit your personalized strain/effort target. Consistent training strain supports fitness gains without overreaching.">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">🏋️ Days Strain Goal Met</h3>
         </ChartTooltip>
@@ -115,7 +115,7 @@ export default function StrainGoalMetChart({ data }: StrainGoalMetChartProps) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip title="Days Strain Goal Met" description="Number of days this week you hit your personalized strain/effort target. Consistency builds capacity while reducing injury risk.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">🏋️ Days Strain Goal Met</h3>

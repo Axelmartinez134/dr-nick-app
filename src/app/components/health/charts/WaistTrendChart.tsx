@@ -193,7 +193,7 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Waist Trend" 
           description="Tracks waist circumference changes over time. Often more reliable for measuring visceral fat changes and body composition progress."
@@ -211,7 +211,7 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Waist Trend" 

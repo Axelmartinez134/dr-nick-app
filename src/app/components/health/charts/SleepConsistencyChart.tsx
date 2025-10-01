@@ -172,7 +172,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Sleep Consistency" 
           description="Sleep quality and recovery biometrics showing your rest patterns. Sleep consistency measures how similar your bed and wake times are over a 4-day period. It's scored on a 0-100% scale where 'low' is under 70%, 'moderate' is between 70% and 80%, and 'high' is 80%+. Consistent sleep-wake times regulate your internal clock, improving sleep quality, metabolism, and immune function."
@@ -190,7 +190,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip 
           title="Sleep Consistency" 

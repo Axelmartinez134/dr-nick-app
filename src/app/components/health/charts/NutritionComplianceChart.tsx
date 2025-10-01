@@ -123,7 +123,7 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip
           title="Nutrition Compliance"
           description="Number of days this week you hit your macronutrient targets. Consistent nutrition compliance improves metabolic health, supports fat loss, and stabilizes energy across the week."
@@ -141,7 +141,7 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip
           title="Nutrition Compliance"

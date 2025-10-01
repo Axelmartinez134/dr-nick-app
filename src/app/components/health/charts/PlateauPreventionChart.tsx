@@ -219,7 +219,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Plateau Prevention" 
           description="Tracks average weekly weight loss percentage using progressive averaging (weeks 1-4) then rolling 4-week averages (week 5+) to identify plateaus early. Declining trends may signal program adjustments are needed."
@@ -237,7 +237,7 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip 
           title="Plateau Prevention" 

@@ -128,7 +128,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Morning Fat Burn %" 
           description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
@@ -146,7 +146,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip 
           title="Morning Fat Burn %" 

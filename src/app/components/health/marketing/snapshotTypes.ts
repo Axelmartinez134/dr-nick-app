@@ -44,6 +44,7 @@ export interface SnapshotMeta {
     start: number
     end: number
     effectiveEnd?: number
+    availableMax?: number
   }
 }
 

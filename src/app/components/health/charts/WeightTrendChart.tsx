@@ -142,7 +142,7 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Weight Trend" 
           description="Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
@@ -160,7 +160,7 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip 
           title="Weight Trend" 

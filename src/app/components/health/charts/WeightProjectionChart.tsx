@@ -166,7 +166,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial' }:
   // NOW check for early return after ALL hooks are called
   if (!initialWeight) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Weight Loss Projections" 
           description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
@@ -211,7 +211,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial' }:
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip 
           title="Weight Loss Projections" 

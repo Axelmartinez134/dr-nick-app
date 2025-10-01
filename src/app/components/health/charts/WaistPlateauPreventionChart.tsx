@@ -143,7 +143,7 @@ export default function WaistPlateauPreventionChart({ data }: WaistPlateauPreven
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip title="Plateau Prevention (Waist)" description="Tracks average weekly waist loss percentage using progressive averaging (weeks 1–4) then rolling 4‑week averages (week 5+) to flag plateaus early.">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-orange-600 transition-colors">📉 Plateau Prevention (Waist Loss Rate)</h3>
         </ChartTooltip>
@@ -156,7 +156,7 @@ export default function WaistPlateauPreventionChart({ data }: WaistPlateauPreven
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip title="Plateau Prevention (Waist)" description="Tracks week‑to‑week waist loss % to identify plateaus early. Declining trends toward 0% may signal adjustments are needed.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors">📉 Plateau Prevention (Waist Loss Rate)</h3>

@@ -84,7 +84,7 @@ export default function DiastolicBloodPressureChart({ data }: DiastolicBloodPres
 
   if (chartData.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip title="Diastolic Blood Pressure (mmHg)" description="Bottom number — pressure between beats. Tracked weekly.">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-emerald-600 transition-colors">🩺 Diastolic Blood Pressure (mmHg)</h3>
         </ChartTooltip>
@@ -97,7 +97,7 @@ export default function DiastolicBloodPressureChart({ data }: DiastolicBloodPres
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-4">
         <ChartTooltip title="Diastolic Blood Pressure (mmHg)" description="Bottom number — pressure between beats. Tracked weekly.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-emerald-600 transition-colors">🩺 Diastolic Blood Pressure (mmHg)</h3>

@@ -70,10 +70,10 @@ export async function snapshotBuilder(
   // Apply optional global display range before computing
   let weeksRaw: SnapshotWeek[] = fullWeeks
   let effectiveEnd: number | undefined = undefined
+  const availableMax = fullWeeks.reduce((m, w) => Math.max(m, w.week_number), 0)
   if (settings.displayWeeks && typeof settings.displayWeeks.start === 'number' && typeof settings.displayWeeks.end === 'number') {
     const start = Math.max(1, Math.floor(settings.displayWeeks.start))
     const endRequested = Math.max(start, Math.floor(settings.displayWeeks.end))
-    const availableMax = fullWeeks.reduce((m, w) => Math.max(m, w.week_number), 0)
     const end = Math.min(endRequested, availableMax)
     effectiveEnd = end
     weeksRaw = fullWeeks.filter(w => (w.week_number === 0) || (w.week_number >= start && w.week_number <= end))
@@ -134,6 +134,11 @@ export async function snapshotBuilder(
         plateauWaist: false,
         nutritionCompliancePct: false,
         sleepTrend: false,
+        systolicTrend: false,
+        diastolicTrend: false,
+        strainTrend: false,
+        disciplineNutritionCompliancePct: false,
+        disciplineStrainTrend: false,
         morningFatBurnTrend: false,
         bodyFatTrend: false
       },
@@ -146,7 +151,7 @@ export async function snapshotBuilder(
       displayNameOverride: (settings as any)?.displayNameOverride ?? null,
       displayNameMode: settings.displayNameMode,
       testimonialQuote: (settings as any)?.testimonialQuote ?? null,
-      displayWeeks: settings.displayWeeks ? { start: settings.displayWeeks.start, end: settings.displayWeeks.end, effectiveEnd } : undefined
+      displayWeeks: settings.displayWeeks ? { start: settings.displayWeeks.start, end: settings.displayWeeks.end, effectiveEnd, availableMax } : { start: 1, end: availableMax, effectiveEnd: availableMax, availableMax }
     },
     metrics,
     weeksRaw,

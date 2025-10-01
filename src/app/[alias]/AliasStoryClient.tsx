@@ -7,13 +7,18 @@ import { CTA_LABEL, TAGLINE } from '@/app/components/health/marketing/marketingC
 import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
 import MarketingFooter from '@/app/components/health/marketing/MarketingFooter'
-const MarketingWeightTrendEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightTrendEChart'), { ssr: false })
-const MarketingWeightProjectionEChart = dynamic(() => import('@/app/components/health/marketing/echarts/MarketingWeightProjectionEChart'), { ssr: false })
+const WeightTrendChart = dynamic(() => import('@/app/components/health/charts/WeightTrendChart'), { ssr: false }) as any
+const WeightProjectionChart = dynamic(() => import('@/app/components/health/charts/WeightProjectionChart'), { ssr: false }) as any
 const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
-const MarketingWaistTrendChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingWaistTrendChart'), { ssr: false })
-const MarketingSleepConsistencyChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingSleepConsistencyChart'), { ssr: false })
-const MarketingMorningFatBurnChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingMorningFatBurnChart'), { ssr: false })
-const MarketingBodyFatPercentageChart = dynamic(() => import('@/app/components/health/marketing/charts/MarketingBodyFatPercentageChart'), { ssr: false })
+const WaistTrendChart = dynamic(() => import('@/app/components/health/charts/WaistTrendChart'), { ssr: false }) as any
+const WaistPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/WaistPlateauPreventionChart'), { ssr: false }) as any
+const SystolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/SystolicBloodPressureChart'), { ssr: false }) as any
+const DiastolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/DiastolicBloodPressureChart'), { ssr: false }) as any
+const StrainGoalMetChart = dynamic(() => import('@/app/components/health/charts/StrainGoalMetChart'), { ssr: false }) as any
+const NutritionComplianceChart = dynamic(() => import('@/app/components/health/charts/NutritionComplianceChart'), { ssr: false }) as any
+const SleepConsistencyChart = dynamic(() => import('@/app/components/health/charts/SleepConsistencyChart'), { ssr: false }) as any
+const MorningFatBurnChart = dynamic(() => import('@/app/components/health/charts/MorningFatBurnChart'), { ssr: false }) as any
+const BodyFatPercentageChart = dynamic(() => import('@/app/components/health/charts/BodyFatPercentageChart'), { ssr: false }) as any
 const PdfJsInlineIOS = dynamic(() => import('@/app/components/health/marketing/PdfJsInlineIOS'), { ssr: false })
 
 type UnitSystem = 'imperial' | 'metric'
@@ -36,6 +41,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     plateauWaist: false,
     nutritionCompliancePct: false,
     sleepTrend: false,
+    systolicTrend: false,
+    diastolicTrend: false,
+    strainTrend: false,
+    disciplineNutritionCompliancePct: false,
+    disciplineStrainTrend: false,
     morningFatBurnTrend: false,
     bodyFatTrend: false,
     ...(meta as any)?.chartsEnabled
@@ -344,60 +354,38 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🧪 Metabolic Health</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Build metabolic flexibility so your body prefers fat as a fuel and your rate of loss stays on track.</p>
-            {chartsEnabled.plateauWeight && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-              <div className="w-full">
-                <ClientPlateauPreventionChart
-                  data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                />
-              </div>
-            </div>
+            {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <ClientPlateauPreventionChart
+                data={(snapshot.weeksRaw || []).map((w: any) => ({
+                  week_number: w.week_number,
+                  date: '',
+                  weight: (w.fields?.weight ?? null)
+                })) as any}
+              />
             )}
 
-            {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.derived.morningFatBurnTrend) && (snapshot.derived.morningFatBurnTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-              <div className="p-2">
-                <div className="mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1">🔥 Morning Fat Oxidation %</h3>
-                  <p className="text-sm text-gray-700">Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.</p>
-                </div>
-                <MarketingMorningFatBurnChart
-                  data={(snapshot.derived.morningFatBurnTrend || []).map(([week, value]) => ({ date: '', week_number: week, morning_fat_burn_percent: value })) as any}
-                  isAnimating={false}
-                  animationDuration={0}
-                  onAnimationComplete={() => {}}
-                  hideTitles={true}
+            {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <MorningFatBurnChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: w.date || '',
+                    morning_fat_burn_percent: (w.fields?.morning_fat_burn_percent ?? null)
+                  })) as any}
                 />
-                <div className="mt-3 text-xs text-gray-500">
-                  <p>• Measured weekly through metabolic analysis</p>
-                  <p>• Higher percentages over time indicate your body is responding to Dr. Nick's program changes</p>
-                  <p>• Shows how well your body burns fat in a fasted state</p>
-                </div>
               </div>
-            </div>
             )}
 
-            {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.derived.bodyFatTrend) && (snapshot.derived.bodyFatTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 mt-4 shadow-sm">
-              <div className="p-2">
-                <div className="mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Body Fat Percentage</h3>
-                  <p className="text-sm text-gray-700">Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results.</p>
-                </div>
-                <MarketingBodyFatPercentageChart
-                  data={(snapshot.derived.bodyFatTrend || []).map(([week, value]) => ({ date: '', week_number: week, body_fat_percentage: value })) as any}
-                  isAnimating={false}
-                  animationDuration={0}
-                  onAnimationComplete={() => {}}
-                  hideTitles={true}
+            {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <BodyFatPercentageChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: w.date || '',
+                    body_fat_percentage: (w.fields?.body_fat_percentage ?? null)
+                  })) as any}
                 />
-                <div className="mt-3 text-xs text-gray-700">
-                  <p>• Measured using the most precise testing methodology Dr. Nick has determined available in your situation</p>
-                  <p>• Scheduled periodically based on your progress milestones</p>
-                  <p>• More accurate than weight alone for tracking fat loss</p>
-                </div>
               </div>
-            </div>
             )}
 
             <div className="mt-3">
@@ -411,54 +399,37 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🥗 Dietary Protocol</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Dialed-in macros and consistency keep your actual results aligned with projections.</p>
-            {chartsEnabled.projection && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-              <div className="mb-2">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">📊 Weight Loss Trend vs. Projections</h3>
-                <p className="text-sm text-gray-700">Compare actual progress against four projection rates.</p>
-              </div>
-              <div className="w-full" style={{ height: 300 }}>
-                <MarketingWeightProjectionEChart
-                  data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                  hideTitles={true}
+            {chartsEnabled.nutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <NutritionComplianceChart
+                data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
+              />
+            )}
+            {chartsEnabled.projection && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <WeightProjectionChart
+                data={(snapshot.weeksRaw || []).map((w: any) => ({
+                  week_number: w.week_number,
+                  date: '',
+                  weight: (w.fields?.weight ?? null),
+                  initial_weight: (w.fields?.initial_weight ?? null)
+                })) as any}
+                unitSystem={unitSystem}
+              />
+            )}
+
+            {chartsEnabled.weightTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <WeightTrendChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: '',
+                    weight: (w.fields?.weight ?? null)
+                  })) as any}
                   unitSystem={unitSystem}
                 />
               </div>
-              <div className="mt-2 text-xs text-gray-700 flex flex-wrap gap-4">
-                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-red-500" />Actual Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})</div>
-                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-emerald-500" />0.5% loss/wk</div>
-                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-blue-600" />1.0% loss/wk</div>
-                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-violet-600" />1.5% loss/wk</div>
-                <div className="flex items-center gap-2"><span className="inline-block w-4 h-1 bg-amber-500" />2.0% loss/wk</div>
-              </div>
-            </div>
             )}
 
-            {chartsEnabled.weightTrend && Array.isArray(snapshot.derived.weightTrend) && (snapshot.derived.weightTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 p-3 mt-4 shadow-sm">
-              <div className="mb-2">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">⚖️ Weight Trend Analysis</h3>
-                <p className="text-sm text-gray-700">Track weekly weight with a clear trend line indicating overall direction.</p>
-              </div>
-              <div className="w-full" style={{ height: 300 }}>
-                <MarketingWeightTrendEChart
-                  data={(snapshot.derived.weightTrend || []).map(([week, value]) => ({ date: '', week_number: week, weight: value })) as any}
-                  hideTitles={false}
-                  unitSystem={unitSystem}
-                />
-              </div>
-              <div className="mt-3 text-xs text-gray-600">
-                <p>• Weekly fluctuations are normal; follow the trend.</p>
-              </div>
-            </div>
-            )}
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-                <div className="text-xs text-gray-700">Avg Nutrition %</div>
-                <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? m.avgNutritionCompliancePct.toFixed(2) : '—'}</div>
-              </div>
-            </div>
+            
 
             <div className="mt-3">
               <button onClick={(e) => { e.preventDefault(); scrollToCTA('dietary_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
@@ -471,35 +442,44 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🏋️ Fitness Optimized</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Build capacity and protect lean mass while measurements reflect healthier body composition.</p>
-            {chartsEnabled.waistTrend && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 shadow-sm">
-              <div className="p-2">
-                <div className="mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1">📏 Waist Trend Analysis</h3>
-                  <p className="text-sm text-gray-700">Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress.</p>
-                </div>
-                <MarketingWaistTrendChart
-                  data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
-                  isAnimating={false}
-                  animationDuration={0}
-                  onAnimationComplete={() => {}}
-                  hideTitles={true}
-                />
-                <div className="mt-3 text-xs text-gray-700">
-                  <p>• Often more accurate than weight for fat loss tracking</p>
-                  <p>• Dark black trend line shows overall waist measurement change direction</p>
-                  <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
-                </div>
-              </div>
-            </div>
+            {chartsEnabled.waistTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <WaistTrendChart
+                data={(snapshot.weeksRaw || []).map((w: any) => ({
+                  week_number: w.week_number,
+                  date: '',
+                  waist: (w.fields?.waist ?? null)
+                })) as any}
+                unitSystem={unitSystem}
+              />
             )}
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-                <div className="text-xs text-gray-700">Exercise Compliance %</div>
-                <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(2)}%` : '—'}</div>
+            {chartsEnabled.plateauWaist && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
+              <div className="mt-4">
+                <WaistPlateauPreventionChart
+                  data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
+                />
               </div>
-            </div>
+            )}
+
+            {chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
+              </div>
+            )}
+
+            {chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
+              </div>
+            )}
+
+            {chartsEnabled.strainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} />
+              </div>
+            )}
+
+            
 
             <div className="mt-3">
               <button onClick={(e) => { e.preventDefault(); scrollToCTA('fitness_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
@@ -512,36 +492,33 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">⚡ Discipline</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Consistency compounds—better sleep and nutrition adherence accelerate results.</p>
-            {chartsEnabled.sleepTrend && Array.isArray(snapshot.derived.sleepTrend) && (snapshot.derived.sleepTrend as any[]).length > 0 && (
-            <div className="rounded-lg border border-gray-200 shadow-sm">
-              <div className="p-2">
-                <div className="mb-2">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-1">😴 Sleep Consistency & Recovery</h3>
-                  <p className="text-sm text-gray-700">Weekly sleep quality scores from biometric analysis (added by Dr. Nick)</p>
-                </div>
-                <MarketingSleepConsistencyChart
-                  data={(snapshot.derived.sleepTrend || []).map(([week, value]) => ({ date: '', week_number: week, sleep_consistency_score: value })) as any}
-                  isAnimating={false}
-                  animationDuration={0}
-                  onAnimationComplete={() => {}}
-                  hideTitles={true}
-                />
-                <div className="mt-3 text-xs text-gray-700">
-                  <p>• Data sourced from biometric analysis by Dr. Nick</p>
-                  <p>• Dark black trend line shows overall sleep consistency direction</p>
-                  <p>• Higher scores indicate better sleep consistency and recovery</p>
-                  <p>• Sleep consistency directly impacts weight loss and overall progress</p>
-                </div>
-              </div>
-            </div>
+            {chartsEnabled.sleepTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <SleepConsistencyChart
+                data={(snapshot.weeksRaw || []).map((w: any) => ({
+                  week_number: w.week_number,
+                  date: w.date || '',
+                  sleep_consistency_score: (w.fields?.sleep_consistency_score ?? null)
+                })) as any}
+              />
             )}
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-                <div className="text-xs text-gray-700">Avg Nutrition %</div>
-                <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? m.avgNutritionCompliancePct.toFixed(2) : '—'}</div>
+            {chartsEnabled.disciplineNutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <NutritionComplianceChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
+                />
               </div>
-            </div>
+            )}
+
+            {chartsEnabled.disciplineStrainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <StrainGoalMetChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}
+                />
+              </div>
+            )}
+
+            
 
             <div className="mt-3">
               <button onClick={(e) => { e.preventDefault(); scrollToCTA('discipline_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { supabase } from '@/app/components/auth/AuthContext'
 import PreviewClient from './PreviewClient'
 
 export default function EditorClient({ draftId, initialDraft }: { draftId: string; initialDraft: any }) {
@@ -15,6 +16,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   const [publishOpen, setPublishOpen] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [publishSteps, setPublishSteps] = useState<Array<{ id: string; label: string; status: 'pending' | 'in_progress' | 'done' | 'error' }>>([])
+  const [tracksBP, setTracksBP] = useState<boolean>(false)
 
   // Debounced autosave
   useEffect(() => {
@@ -42,7 +44,10 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   // Track available max week from preview and initialize range to [1..max]
   useEffect(() => {
     if (preview && Array.isArray(preview.weeksRaw)) {
-      const maxW = preview.weeksRaw.reduce((m: number, w: any) => Math.max(m, Number(w?.week_number || 0)), 0)
+      const fromMeta = Number((preview?.meta?.displayWeeks?.availableMax) || 0)
+      const maxW = fromMeta > 0
+        ? fromMeta
+        : preview.weeksRaw.reduce((m: number, w: any) => Math.max(m, Number(w?.week_number || 0)), 0)
       if (!fullMaxSetRef.current) {
         setFullAvailableMaxWeek(maxW)
         fullMaxSetRef.current = true
@@ -59,6 +64,22 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
 
   const setMedia = (patch: any) => setDraft((d: any) => ({ ...d, media: { ...(d?.media || {}), ...patch } }))
   const setMeta = (patch: any) => setDraft((d: any) => ({ ...d, meta: { ...(d?.meta || {}), ...patch } }))
+
+  // Load BP tracking flag to conditionally show BP toggles
+  useEffect(() => {
+    (async () => {
+      try {
+        const pid = (initialDraft as any)?.patient_id
+        if (!pid) return
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('track_blood_pressure')
+          .eq('id', pid)
+          .single()
+        if (!error) setTracksBP(Boolean(data?.track_blood_pressure))
+      } catch {}
+    })()
+  }, [initialDraft])
 
   function beginPublishUI() {
     setPublishOpen(true)
@@ -160,30 +181,64 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Charts toggles */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Charts</h3>
-            <div className="grid grid-cols-2 gap-2 text-sm text-gray-900">
-              {[
-                // Order to mirror public alias page rendering
-                ['weightTrend','Weight Trend Analysis'],
-                ['projection','Weight Loss Trend vs. Projections'],
-                ['plateauWeight','Plateau Prevention (Weight Loss Rate)'],
-                ['waistTrend','Waist Trend'],
-                ['sleepTrend','Sleep Consistency'],
-                ['morningFatBurnTrend','Morning Fat Burn %'],
-                ['bodyFatTrend','Body Fat %'],
-                // Additional toggles not currently shown on alias page
-                ['plateauWaist','Plateau Prevention — Waist'],
-                ['nutritionCompliancePct','Nutrition Compliance %'],
-              ].map(([key,label]) => (
-                <label key={key} className="flex items-center gap-2 text-gray-900">
+            {(() => {
+              const renderToggle = (metaKey: string, label: string, keySuffix: string = '') => (
+                <label key={`${metaKey}${keySuffix ? `-${keySuffix}` : ''}`} className="flex items-center gap-2 text-gray-900">
                   <input
                     type="checkbox"
-                    checked={draft?.meta?.chartsEnabled?.[key as any] ?? true}
-                    onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [key]: e.target.checked } })}
+                    checked={draft?.meta?.chartsEnabled?.[metaKey as any] ?? true}
+                    onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [metaKey]: e.target.checked } })}
                   />
                   <span>{label}</span>
                 </label>
-              ))}
-            </div>
+              )
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-900">
+                  {/* Metabolic Health */}
+                  <div className="space-y-2">
+                    <div className="font-medium text-gray-700">Metabolic Health</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {renderToggle('plateauWeight','Plateau Prevention (Weight Loss Rate)')}
+                      {renderToggle('morningFatBurnTrend','Morning Fat Burn %')}
+                      {renderToggle('bodyFatTrend','Body Fat %')}
+                    </div>
+                  </div>
+
+                  {/* Dietary Protocol */}
+                  <div className="space-y-2">
+                    <div className="font-medium text-gray-700">Dietary Protocol</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {renderToggle('nutritionCompliancePct','Nutrition Compliance %')}
+                      {renderToggle('projection','Weight Loss Trend vs. Projections')}
+                      {renderToggle('weightTrend','Weight Trend Analysis')}
+                    </div>
+                  </div>
+
+                  {/* Fitness Optimized */}
+                  <div className="space-y-2">
+                    <div className="font-medium text-gray-700">Fitness Optimized</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {renderToggle('waistTrend','Waist Trend')}
+                      {renderToggle('plateauWaist','Plateau Prevention — Waist')}
+                      {tracksBP ? renderToggle('systolicTrend','Systolic Blood Pressure') : null}
+                      {tracksBP ? renderToggle('diastolicTrend','Diastolic Blood Pressure') : null}
+                      {renderToggle('strainTrend','Exercise Compliance %')}
+                    </div>
+                  </div>
+
+                  {/* Discipline (includes mirrored toggles) */}
+                  <div className="space-y-2">
+                    <div className="font-medium text-gray-700">Discipline</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {renderToggle('sleepTrend','Sleep Consistency')}
+                      {renderToggle('disciplineNutritionCompliancePct','Nutrition Compliance %')}
+                      {renderToggle('disciplineStrainTrend','Exercise Compliance %')}
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </section>
 
           {/* Data Range */}
@@ -325,7 +380,9 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       chartsEnabled: draft?.meta?.chartsEnabled || {
                         weightTrend: true, projection: true, plateauWeight: true,
                         waistTrend: false, plateauWaist: false, nutritionCompliancePct: false,
-                        sleepTrend: false, morningFatBurnTrend: false, bodyFatTrend: false
+                        sleepTrend: false, systolicTrend: false, diastolicTrend: false,
+                        strainTrend: false,
+                        morningFatBurnTrend: false, bodyFatTrend: false
                       },
                       displayWeeks: draft?.meta?.displayWeeks || undefined,
                       selectedMedia: draft?.media || {}

@@ -54,10 +54,10 @@ export async function snapshotPreviewBuilder(
   // Apply optional global display range before computing metrics/derived
   let weeksRaw: SnapshotWeek[] = fullWeeks
   let effectiveEnd: number | undefined = undefined
+  const availableMax = fullWeeks.reduce((m, w) => Math.max(m, w.week_number), 0)
   if (meta.displayWeeks && typeof meta.displayWeeks.start === 'number' && typeof meta.displayWeeks.end === 'number') {
     const start = Math.max(1, Math.floor(meta.displayWeeks.start))
     const endRequested = Math.max(start, Math.floor(meta.displayWeeks.end))
-    const availableMax = fullWeeks.reduce((m, w) => Math.max(m, w.week_number), 0)
     const end = Math.min(endRequested, availableMax)
     effectiveEnd = end
     weeksRaw = fullWeeks.filter(w => (w.week_number === 0) || (w.week_number >= start && w.week_number <= end))
@@ -126,7 +126,7 @@ export async function snapshotPreviewBuilder(
       displayNameMode: meta.displayNameMode,
       testimonialQuote: (meta as any)?.testimonialQuote ?? null
       ,
-      displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd } : undefined
+      displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd, availableMax } : { start: 1, end: availableMax, effectiveEnd: availableMax, availableMax }
     },
     metrics,
     weeksRaw,
