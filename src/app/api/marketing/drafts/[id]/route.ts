@@ -28,8 +28,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!supabase) return NextResponse.json({ error: 'Server missing Supabase env' }, { status: 500 })
   const { id } = await params
   const body = await req.json()
-  const draft_json = body?.draft_json
+  let draft_json = body?.draft_json
   if (!draft_json || typeof draft_json !== 'object') return NextResponse.json({ error: 'Invalid draft_json' }, { status: 400 })
+  try {
+    // Auto-map legacy testimonial before/after to nested front.* if present
+    const media = (draft_json as any)?.media || {}
+    const t = media?.testimonial || {}
+    const hasLegacy = (t && (typeof t.beforeUrl === 'string' || t.beforeUrl === null || typeof t.afterUrl === 'string' || t.afterUrl === null))
+    if (hasLegacy) {
+      const nextTestimonial = {
+        front: {
+          beforeUrl: t.beforeUrl ?? null,
+          afterUrl: t.afterUrl ?? null
+        },
+        side: t.side || { beforeUrl: null, afterUrl: null },
+        rear: t.rear || { beforeUrl: null, afterUrl: null },
+        youtubeUrl: t.youtubeUrl ?? null
+      }
+      const nextMedia = { ...media, testimonial: nextTestimonial }
+      draft_json = { ...(draft_json as any), media: nextMedia }
+    }
+  } catch {}
   const { error } = await supabase
     .from('marketing_drafts')
     .update({ draft_json })

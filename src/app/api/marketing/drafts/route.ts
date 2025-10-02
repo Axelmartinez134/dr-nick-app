@@ -45,7 +45,19 @@ export async function POST(req: NextRequest)
         },
         totalFatLossLbs: null
       },
-      media: { beforePhotoUrl: null, afterPhotoUrl: null, loopVideoUrl: null, fit3d: { images: [], youtubeId: null }, testing: { pdfUrl: null }, testimonial: { beforeUrl: null, afterUrl: null, youtubeUrl: null } }
+      media: {
+        beforePhotoUrl: null,
+        afterPhotoUrl: null,
+        loopVideoUrl: null,
+        fit3d: { images: [], youtubeId: null },
+        testing: { pdfUrl: null },
+        testimonial: {
+          front: { beforeUrl: null, afterUrl: null },
+          side: { beforeUrl: null, afterUrl: null },
+          rear: { beforeUrl: null, afterUrl: null },
+          youtubeUrl: null
+        }
+      }
     }
 
     // Resolve created_by (admin) or fallback to patient

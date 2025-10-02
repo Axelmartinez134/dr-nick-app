@@ -63,6 +63,22 @@ export async function POST(request: NextRequest) {
       createdBy = adminRow?.id || null
     }
 
+    // Defensive mapping: allow legacy testimonial before/after and map to nested front.*
+    try {
+      const sel: any = (settings as any)?.selectedMedia || {}
+      const t = sel?.testimonial || {}
+      const hasLegacy = (t && (typeof t.beforeUrl === 'string' || typeof t.afterUrl === 'string'))
+      if (hasLegacy) {
+        sel.testimonial = {
+          front: { beforeUrl: t.beforeUrl ?? null, afterUrl: t.afterUrl ?? null },
+          side: t.side || { beforeUrl: null, afterUrl: null },
+          rear: t.rear || { beforeUrl: null, afterUrl: null },
+          youtubeUrl: t.youtubeUrl ?? null
+        }
+        ;(settings as any).selectedMedia = sel
+      }
+    } catch {}
+
     // Build snapshot (data load, derived, metrics, pin assets)
     const { slug, snapshotJson } = await snapshotBuilder(supabase, patientId, alias, settings)
 
@@ -96,6 +112,21 @@ export async function POST(request: NextRequest) {
       if (sel?.testing && typeof sel.testing.pdfUrl === 'string' && sel.testing.pdfUrl.trim().length > 0) {
         if (!nonEmpty(media?.testing?.pdfUrl)) failures.push('testing.pdfUrl')
       }
+
+      // Nested testimonial validation (if provided, must be pinned)
+      const nested = (sel?.testimonial || {}) as any
+      const pinnedNested = (media?.testimonial || {}) as any
+      const checkPair = (groupKey: 'front' | 'side' | 'rear', which: 'beforeUrl' | 'afterUrl') => {
+        const provided = nested?.[groupKey]?.[which]
+        if (typeof provided === 'string' && provided.trim().length > 0) {
+          const pinned = pinnedNested?.[groupKey]?.[which]
+          if (!nonEmpty(pinned)) failures.push(`testimonial.${groupKey}.${which}`)
+        }
+      }
+      ;(['front','side','rear'] as const).forEach((g) => {
+        checkPair(g, 'beforeUrl')
+        checkPair(g, 'afterUrl')
+      })
 
       if (failures.length > 0) {
         console.warn('[publish] pinning validation failed', { alias, patientId, failures })

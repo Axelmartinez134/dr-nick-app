@@ -591,10 +591,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             {(() => {
               const t = (snapshot as any)?.media?.testimonial
               if (!t) return null
-              const items: { label: string; url: string }[] = []
-              if (typeof t.beforeUrl === 'string' && t.beforeUrl) items.push({ label: 'Before', url: t.beforeUrl })
-              if (typeof t.afterUrl === 'string' && t.afterUrl) items.push({ label: 'After', url: t.afterUrl })
-              if (items.length === 0) return null
+              const groups: Array<{ key: 'front' | 'side' | 'rear'; heading: string }> = [
+                { key: 'front', heading: 'Front Body' },
+                { key: 'side', heading: 'Side Body' },
+                { key: 'rear', heading: 'Rear Body' }
+              ]
               // helpers for weight overlays
               const getWeightForWeek = (weekNum: number): number | null => {
                 const w = (weeksRawAny as any[])?.find((x: any) => Number(x?.week_number) === weekNum)
@@ -619,28 +620,47 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 }
                 return `${lbs.toFixed(1)} lbs`
               }
-              const listClass = items.length === 1 ? 'flex justify-center' : 'grid grid-cols-2 gap-3'
+              // Lazy render on open: rely on surrounding <details>; here we just build content
               return (
-                <div className={listClass}>
-                  {items.map(({ label, url }) => {
-                    const isBefore = label === 'Before'
-                    const weight = isBefore ? beforeWeightLbs : afterWeightLbs
+                <div className="space-y-3">
+                  {groups.map(({ key, heading }) => {
+                    const g = (t as any)?.[key] || {}
+                    const urls: { label: 'Before' | 'After'; url?: string | null }[] = [
+                      { label: 'Before', url: g?.beforeUrl },
+                      { label: 'After', url: g?.afterUrl }
+                    ]
+                    const anyPresent = urls.some(x => typeof x.url === 'string' && x.url)
+                    if (!anyPresent) return null
                     return (
-                      <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible">
-                        <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
-                          <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{label}</div>
+                      <div key={key}>
+                        <div className="text-sm font-medium text-gray-900 mb-1">{heading}</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {urls.map(({ label, url }) => {
+                            if (!url) return (
+                              <div key={label} />
+                            )
+                            const isBefore = label === 'Before'
+                            const weight = isBefore ? beforeWeightLbs : afterWeightLbs
+                            return (
+                              <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible">
+                                <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
+                                  <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{label}</div>
+                                </div>
+                                {typeof weight === 'number' ? (
+                                  <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
+                                    <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeightLocal(weight)}</div>
+                                  </div>
+                                ) : null}
+                                {/\.mp4($|\?)/i.test(url) ? (
+                                  <video src={url} muted loop playsInline autoPlay className="w-full h-auto rounded-lg" />
+                                ) : (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={url} alt={`${heading} ${label}`} className="w-full h-auto rounded-lg" />
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
-                        {typeof weight === 'number' ? (
-                          <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
-                            <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeightLocal(weight)}</div>
-                          </div>
-                        ) : null}
-                        {/\.mp4($|\?)/i.test(url) ? (
-                          <video src={url} muted loop playsInline autoPlay className="w-full h-auto rounded-lg" />
-                        ) : (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={url} alt={label} className="w-full h-auto rounded-lg" />
-                        )}
                       </div>
                     )
                   })}

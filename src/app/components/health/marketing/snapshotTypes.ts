@@ -90,8 +90,9 @@ export interface SnapshotMedia {
   }
   testimonialYoutubeId?: string | null
   testimonial?: {
-    beforeUrl?: string | null
-    afterUrl?: string | null
+    front?: { beforeUrl?: string | null; afterUrl?: string | null }
+    side?: { beforeUrl?: string | null; afterUrl?: string | null }
+    rear?: { beforeUrl?: string | null; afterUrl?: string | null }
     youtubeUrl?: string | null
   }
 }

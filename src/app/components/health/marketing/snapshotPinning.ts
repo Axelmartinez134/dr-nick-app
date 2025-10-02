@@ -12,7 +12,12 @@ export interface SelectedMedia {
   fit3d?: { images?: string[]; youtubeId?: string | null }
   testing?: { pdfUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
   testimonialYoutubeId?: string | null
-  testimonial?: { beforeUrl?: string | null; afterUrl?: string | null; youtubeUrl?: string | null }
+  testimonial?: {
+    front?: { beforeUrl?: string | null; afterUrl?: string | null }
+    side?: { beforeUrl?: string | null; afterUrl?: string | null }
+    rear?: { beforeUrl?: string | null; afterUrl?: string | null }
+    youtubeUrl?: string | null
+  }
 }
 
 function guessExtFromUrl(url: string | null | undefined, fallback: string): string {
@@ -158,25 +163,38 @@ export async function pinAssets(
     }
   }
 
-  // Testimonial before/after
-  let testimonialBefore: string | null | undefined = null
-  let testimonialAfter: string | null | undefined = null
-  if (selected.testimonial?.beforeUrl) {
-    const ext = guessExtFromUrl(selected.testimonial.beforeUrl, 'webp')
-    testimonialBefore = await copyUrlToBucket(
-      supabase,
-      selected.testimonial.beforeUrl,
-      `${slug}/testimonial/before.${ext}`
-    )
+  // Testimonial nested before/after (front/side/rear)
+  const pinTestimonialGroup = async (
+    groupKey: 'front' | 'side' | 'rear',
+    group: { beforeUrl?: string | null; afterUrl?: string | null } | undefined | null
+  ): Promise<{ beforeUrl?: string | null; afterUrl?: string | null }> => {
+    const out: { beforeUrl?: string | null; afterUrl?: string | null } = {}
+    if (group?.beforeUrl) {
+      const ext = guessExtFromUrl(group.beforeUrl, 'webp')
+      out.beforeUrl = await copyUrlToBucket(
+        supabase,
+        group.beforeUrl,
+        `${slug}/testimonial/${groupKey}/before.${ext}`
+      )
+    } else if (group?.beforeUrl === null) {
+      out.beforeUrl = null
+    }
+    if (group?.afterUrl) {
+      const ext = guessExtFromUrl(group.afterUrl, 'webp')
+      out.afterUrl = await copyUrlToBucket(
+        supabase,
+        group.afterUrl,
+        `${slug}/testimonial/${groupKey}/after.${ext}`
+      )
+    } else if (group?.afterUrl === null) {
+      out.afterUrl = null
+    }
+    return out
   }
-  if (selected.testimonial?.afterUrl) {
-    const ext = guessExtFromUrl(selected.testimonial.afterUrl, 'webp')
-    testimonialAfter = await copyUrlToBucket(
-      supabase,
-      selected.testimonial.afterUrl,
-      `${slug}/testimonial/after.${ext}`
-    )
-  }
+
+  const testimonialFront = await pinTestimonialGroup('front', selected.testimonial?.front)
+  const testimonialSide = await pinTestimonialGroup('side', selected.testimonial?.side)
+  const testimonialRear = await pinTestimonialGroup('rear', selected.testimonial?.rear)
 
   const media: SnapshotMedia = {
     beforePhotoUrl: beforePhotoUrl ?? null,
@@ -192,8 +210,9 @@ export async function pinAssets(
     },
     testimonialYoutubeId: selected.testimonialYoutubeId ?? null,
     testimonial: {
-      beforeUrl: testimonialBefore ?? null,
-      afterUrl: testimonialAfter ?? null,
+      front: testimonialFront,
+      side: testimonialSide,
+      rear: testimonialRear,
       youtubeUrl: selected.testimonial?.youtubeUrl ?? null
     }
   }

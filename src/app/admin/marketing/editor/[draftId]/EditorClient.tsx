@@ -310,48 +310,81 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
 
           {/* CTA removed by spec: centralized via marketingConfig */}
 
-          {/* Client Testimonial */}
+          {/* Client Testimonial (collapsed, lazy render) */}
           <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Client Testimonial</h3>
-            <div className="mt-3">
-              <label className="text-sm text-gray-900 block mb-1">Text Testimonial</label>
-              <textarea value={draft?.meta?.testimonialQuote || ''} onChange={(e) => setMeta({ testimonialQuote: e.target.value })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" rows={3} placeholder="Short quote" />
-            </div>
-            <div className="mt-3">
-              <label className="text-sm text-gray-900 block mb-1">Testimonial YouTube Link</label>
-              <input type="text" value={draft?.media?.testimonial?.youtubeUrl || ''} onChange={(e) => setMedia({ testimonial: { ...(draft.media?.testimonial||{}), youtubeUrl: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="Paste a YouTube URL" />
-            </div>
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              {[0,1].map((idx) => {
-                const before = draft?.media?.testimonial?.beforeUrl || null
-                const after = draft?.media?.testimonial?.afterUrl || null
-                const url = idx === 0 ? before : after
+            <details onToggle={(e) => { /* lazy-render gate via CSS-only summary; content renders below */ }}>
+              <summary className="cursor-pointer select-none">
+                <h3 className="font-semibold text-gray-900">Client Testimonial</h3>
+                <div className="text-xs text-gray-600">Click to expand and manage testimonial content</div>
+              </summary>
+
+              <div className="mt-3">
+                <label className="text-sm text-gray-900 block mb-1">Text Testimonial</label>
+                <textarea value={draft?.meta?.testimonialQuote || ''} onChange={(e) => setMeta({ testimonialQuote: e.target.value })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" rows={3} placeholder="Short quote" />
+              </div>
+              <div className="mt-3">
+                <label className="text-sm text-gray-900 block mb-1">Testimonial YouTube Link</label>
+                <input type="text" value={draft?.media?.testimonial?.youtubeUrl || ''} onChange={(e) => setMedia({ testimonial: { ...(draft.media?.testimonial||{}), youtubeUrl: e.target.value } })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" placeholder="Paste a YouTube URL" />
+              </div>
+
+              {(() => {
+                const groups: Array<{ key: 'front' | 'side' | 'rear'; heading: string }> = [
+                  { key: 'front', heading: 'Front Body' },
+                  { key: 'side', heading: 'Side Body' },
+                  { key: 'rear', heading: 'Rear Body' }
+                ]
+
+                const getNested = (k: 'front' | 'side' | 'rear') => (draft?.media?.testimonial as any)?.[k] || {}
+                const setNested = (k: 'front' | 'side' | 'rear', patch: any) => {
+                  const current = (draft?.media?.testimonial as any) || {}
+                  const next = { ...current, [k]: { ...(current[k] || {}), ...patch } }
+                  setMedia({ testimonial: next })
+                }
+
+                const uploadKindFor = (k: 'front' | 'side' | 'rear', which: 'before' | 'after') => `testimonial_${k}_${which}` as const
+
                 return (
-                  <div key={idx} className="border rounded p-3">
-                    <div className="text-xs text-gray-900 mb-2">{idx===0 ? 'Before' : 'After'}</div>
-                    {url ? (
-                      <div className="space-y-2">
-                        {/\.mp4($|\?)/i.test(url) ? (
-                          <video src={url} muted loop playsInline autoPlay className="w-full h-auto rounded" />
-                        ) : (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={url} alt={`testimonial-${idx===0?'before':'after'}`} className="w-full h-auto rounded" />
-                        )}
-                        <div className="flex gap-2">
-                          <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = idx===0 ? 'testimonial_before' : 'testimonial_after'; const url2 = await upload(kind as any, f); const next = { ...(draft.media?.testimonial||{}) }; if (idx===0) next.beforeUrl = url2; else next.afterUrl = url2; setMedia({ testimonial: next }) }} /></label>
-                          <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium" onClick={() => { const next = { ...(draft.media?.testimonial||{}) }; if (idx===0) next.beforeUrl = null; else next.afterUrl = null; setMedia({ testimonial: next }) }}>Remove</button>
+                  <div className="mt-4 space-y-4">
+                    {groups.map(({ key, heading }) => {
+                      const g = getNested(key)
+                      const beforeVal = g?.beforeUrl || null
+                      const afterVal = g?.afterUrl || null
+                      return (
+                        <div key={key} className="border rounded p-3">
+                          <div className="text-sm font-medium text-gray-900 mb-2">{heading}</div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[{ which: 'before', label: 'Before', val: beforeVal }, { which: 'after', label: 'After', val: afterVal }].map(({ which, label, val }) => (
+                              <div key={which} className="border rounded p-3">
+                                <div className="text-xs text-gray-900 mb-2">{label}</div>
+                                {val ? (
+                                  <div className="space-y-2">
+                                    {/\.mp4($|\?)/i.test(val) ? (
+                                      <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
+                                    ) : (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={val} alt={`${heading} ${label}`} className="w-full h-auto rounded" />
+                                    )}
+                                    <div className="flex gap-2">
+                                      <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = uploadKindFor(key, which as any); const url2 = await upload(kind as any, f); setNested(key, { [`${which}Url`]: url2 }) }} /></label>
+                                      <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium" onClick={() => setNested(key, { [`${which}Url`]: null })}>Remove</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
+                                    <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = uploadKindFor(key, which as any); const url2 = await upload(kind as any, f); setNested(key, { [`${which}Url`]: url2 }) }} />
+                                    {label}
+                                  </label>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
-                        <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = idx===0 ? 'testimonial_before' : 'testimonial_after'; const url2 = await upload(kind as any, f); const next = { ...(draft.media?.testimonial||{}) }; if (idx===0) next.beforeUrl = url2; else next.afterUrl = url2; setMedia({ testimonial: next }) }} />
-                        {idx===0 ? 'Before' : 'After'}
-                      </label>
-                    )}
+                      )
+                    })}
                   </div>
                 )
-              })}
-            </div>
+              })()}
+            </details>
           </section>
 
           {/* Metabolic/Cardio Testing (PDF) */}

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const form = await req.formData()
   const file = form.get('file') as File | null
-  const kind = String(form.get('kind') || '') // 'before' | 'after' | 'loop' | 'fit3d' | 'testing' | 'testimonial_before' | 'testimonial_after'
+  const kind = String(form.get('kind') || '') // 'before' | 'after' | 'loop' | 'fit3d' | 'testing' | 'testimonial_before' | 'testimonial_after' | 'testimonial_front_before' | 'testimonial_front_after' | 'testimonial_side_before' | 'testimonial_side_after' | 'testimonial_rear_before' | 'testimonial_rear_after'
   const idx = Number(form.get('index') || 0)
   if (!file || !kind) return NextResponse.json({ error: 'Missing file or kind' }, { status: 400 })
 
@@ -34,6 +34,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   else if (kind === 'testing') dest += `testing/metabolic-cardio.${ext}`
   else if (kind === 'testimonial_before') dest += `testimonial/before.${ext}`
   else if (kind === 'testimonial_after') dest += `testimonial/after.${ext}`
+  else if (kind === 'testimonial_front_before') dest += `testimonial/front/before.${ext}`
+  else if (kind === 'testimonial_front_after') dest += `testimonial/front/after.${ext}`
+  else if (kind === 'testimonial_side_before') dest += `testimonial/side/before.${ext}`
+  else if (kind === 'testimonial_side_after') dest += `testimonial/side/after.${ext}`
+  else if (kind === 'testimonial_rear_before') dest += `testimonial/rear/before.${ext}`
+  else if (kind === 'testimonial_rear_after') dest += `testimonial/rear/after.${ext}`
   else return NextResponse.json({ error: 'Invalid kind' }, { status: 400 })
 
   const contentType = isMp4 ? 'video/mp4' : (isPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : (ext === 'webp' ? 'image/webp' : 'image/jpeg')))

@@ -23,7 +23,15 @@ export interface PreviewMedia {
   fit3d?: { images?: string[]; youtubeId?: string | null }
   testing?: { pdfUrl?: string | null; callouts?: any }
   testimonialYoutubeId?: string | null
-  testimonial?: { beforeUrl?: string | null; afterUrl?: string | null; youtubeUrl?: string | null }
+  testimonial?: {
+    front?: { beforeUrl?: string | null; afterUrl?: string | null }
+    side?: { beforeUrl?: string | null; afterUrl?: string | null }
+    rear?: { beforeUrl?: string | null; afterUrl?: string | null }
+    youtubeUrl?: string | null
+    // Legacy support fields (will be mapped to front.* if present)
+    beforeUrl?: string | null
+    afterUrl?: string | null
+  }
 }
 
 export async function snapshotPreviewBuilder(
@@ -89,6 +97,16 @@ export async function snapshotPreviewBuilder(
     ? String(profile.full_name || 'Client').split(/\s+/)[0]
     : (meta as any)?.displayNameOverride || 'Client PREVIEW'
 
+  // Defensive mapping: if legacy testimonial.beforeUrl/afterUrl provided, map to nested front.*
+  const normalizeTestimonial = (t: any) => {
+    if (!t) return { front: { beforeUrl: null, afterUrl: null }, side: { beforeUrl: null, afterUrl: null }, rear: { beforeUrl: null, afterUrl: null }, youtubeUrl: null }
+    const hasLegacy = (typeof t.beforeUrl === 'string' || typeof t.afterUrl === 'string' || t.beforeUrl === null || t.afterUrl === null)
+    const front = t.front || { beforeUrl: hasLegacy ? (t.beforeUrl ?? null) : null, afterUrl: hasLegacy ? (t.afterUrl ?? null) : null }
+    const side = t.side || { beforeUrl: null, afterUrl: null }
+    const rear = t.rear || { beforeUrl: null, afterUrl: null }
+    return { front, side, rear, youtubeUrl: t.youtubeUrl ?? null }
+  }
+
   const snapshot: SnapshotJson = {
     schema_version: SNAPSHOT_SCHEMA_VERSION,
     meta: {
@@ -145,11 +163,7 @@ export async function snapshotPreviewBuilder(
         callouts: media.testing?.callouts ?? {}
       },
       testimonialYoutubeId: media.testimonialYoutubeId ?? null,
-      testimonial: {
-        beforeUrl: media.testimonial?.beforeUrl ?? null,
-        afterUrl: media.testimonial?.afterUrl ?? null,
-        youtubeUrl: media.testimonial?.youtubeUrl ?? null
-      }
+      testimonial: normalizeTestimonial(media.testimonial)
     }
   }
 
