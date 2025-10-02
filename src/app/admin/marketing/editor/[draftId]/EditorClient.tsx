@@ -460,12 +460,13 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 'Publish version'
               )}
             </button>
-            <div className="text-xs text-gray-600 mt-1">Usually ~5–10s</div>
+            <div className="text-xs text-gray-600 mt-1">This may take up to 30 seconds.</div>
 
             {publishOpen ? (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
                 <div className="bg-white rounded-lg shadow-lg border w-full max-w-md p-4">
-                  <div className="text-sm font-semibold text-gray-900 mb-2">Publishing</div>
+                  <div className="text-sm font-semibold text-gray-900 mb-1">Publishing</div>
+                  <div className="text-xs text-gray-600 mb-2">Please wait up to 30 seconds.</div>
                   <ul className="space-y-2 text-sm">
                     {publishSteps.map(s => (
                       <li key={s.id} className="flex items-center gap-2">
