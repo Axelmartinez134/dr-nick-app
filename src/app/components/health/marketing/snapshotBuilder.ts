@@ -19,6 +19,7 @@ export interface BuilderSettings {
   displayWeeks?: { start: number; end: number }
   selectedMedia: SelectedMedia
   testimonialQuote?: string | null
+  totalFatLossLbs?: number | null
 }
 
 function firstNameOnly(full: string | null | undefined): string {
@@ -151,6 +152,7 @@ export async function snapshotBuilder(
       displayNameOverride: (settings as any)?.displayNameOverride ?? null,
       displayNameMode: settings.displayNameMode,
       testimonialQuote: (settings as any)?.testimonialQuote ?? null,
+      totalFatLossLbs: typeof (settings as any)?.totalFatLossLbs === 'number' ? (settings as any).totalFatLossLbs : ((settings as any)?.totalFatLossLbs === null ? null : undefined),
       displayWeeks: settings.displayWeeks ? { start: settings.displayWeeks.start, end: settings.displayWeeks.end, effectiveEnd, availableMax } : { start: 1, end: availableMax, effectiveEnd: availableMax, availableMax }
     },
     metrics,

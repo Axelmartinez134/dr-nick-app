@@ -39,6 +39,8 @@ export interface SnapshotMeta {
   displayNameOverride?: string | null
   displayNameMode?: 'first_name' | 'anonymous'
   testimonialQuote?: string | null
+  // Absolute total fat loss in pounds (fixed story value)
+  totalFatLossLbs?: number | null
   // Optional global display range for charts/metrics
   displayWeeks?: {
     start: number
@@ -127,7 +129,8 @@ export function normalizeSnapshot(input: any): SnapshotJson {
       watermarkText: input.meta?.watermarkText ?? null,
       ctaLabel: input.meta?.ctaLabel ?? null,
       calendlyUrl: input.meta?.calendlyUrl ?? null,
-      displayNameOverride: input.meta?.displayNameOverride ?? null
+      displayNameOverride: input.meta?.displayNameOverride ?? null,
+      totalFatLossLbs: typeof input.meta?.totalFatLossLbs === 'number' ? input.meta.totalFatLossLbs : (input.meta?.totalFatLossLbs === null ? null : undefined)
     }
 
     const metrics: SnapshotMetrics = {
@@ -167,7 +170,8 @@ export function normalizeSnapshot(input: any): SnapshotJson {
       chartsEnabled: {},
       captionsEnabled: true,
       layout: 'stack',
-      watermarkText: null
+      watermarkText: null,
+      totalFatLossLbs: null
     },
     metrics: {
       totalLossPct: null,

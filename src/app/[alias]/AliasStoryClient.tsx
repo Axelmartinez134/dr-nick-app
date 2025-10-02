@@ -170,8 +170,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   // Total loss display with two decimals and inline weeks
   const totalLossPctNum = typeof m.totalLossPct === 'number' ? (m.totalLossPct as number) : null
   const totalLossDisplay = totalLossPctNum !== null
-    ? `${totalLossPctNum.toFixed(1)}%${weeksShown > 0 ? `\u00A0•\u00A0${weeksShown} weeks` : ''}`
+    ? `${totalLossPctNum.toFixed(1)}%`
     : '—'
+
+  // Average weekly fat loss % across the selected range: totalLossPct divided by weeks shown
+  const avgWeeklyLossPctNum = totalLossPctNum !== null && weeksShown > 0 ? (totalLossPctNum / weeksShown) : null
 
   return (
     <>
@@ -186,6 +189,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       <header className="max-w-md mx-auto p-4 text-center">
         <div className="text-xs text-gray-700">Board‑certified • 1:1 coaching • Science‑backed</div>
         <h1 className="text-2xl font-bold text-gray-900 mt-2">{displayLabel}</h1>
+        {weeksShown > 0 ? (
+          <div className="mt-1 text-sm text-gray-700">{weeksShown} weeks</div>
+        ) : null}
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">
           <button
             className={`px-3 py-1 rounded-md border ${unitSystem === 'imperial' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50'}`}
@@ -320,21 +326,31 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Compliance cards */}
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Total Fat Loss %</div>
+          <div className="text-xs text-gray-700">Total Fat Loss</div>
           <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">
-            {totalLossDisplay}
+            {(() => {
+              const base = totalLossDisplay
+              const lbs = (snapshot.meta as any)?.totalFatLossLbs
+              if (typeof lbs === 'number') {
+                const value = unitSystem === 'metric' ? poundsToKilograms(lbs) : lbs
+                const unit = unitSystem === 'metric' ? 'kg' : 'lbs'
+                const formatted = typeof value === 'number' ? value.toFixed(1) : String(value)
+                return `${base} / ${formatted} ${unit}`
+              }
+              return base
+            })()}
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Weekly Fat Loss %</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.weeklyLossPct === 'number' ? `${m.weeklyLossPct.toFixed(2)}%` : '—'}</div>
+          <div className="text-xs text-gray-700">Average Weekly Fat Loss %</div>
+          <div className="text-xl font-bold text-gray-900">{typeof avgWeeklyLossPctNum === 'number' ? `${avgWeeklyLossPctNum.toFixed(2)}%` : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Nutrition Compliance %</div>
+          <div className="text-xs text-gray-700">Average Nutrition Compliance %</div>
           <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? `${m.avgNutritionCompliancePct.toFixed(2)}%` : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Exercise Compliance %</div>
+          <div className="text-xs text-gray-700">Average Exercise Compliance %</div>
           <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(2)}%` : '—'}</div>
         </div>
       </section>
@@ -353,7 +369,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🧪 Metabolic Health</summary>
           <div className="p-2">
-            <p className="text-sm text-gray-700 mb-3">Build metabolic flexibility so your body prefers fat as a fuel and your rate of loss stays on track.</p>
+            <p className="text-sm text-gray-700 mb-3">Directly improve metabolic health so that your body prefers fat as a fuel and your rate of loss stays on track.</p>
             {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <ClientPlateauPreventionChart
                 data={(snapshot.weeksRaw || []).map((w: any) => ({
@@ -361,6 +377,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                   date: '',
                   weight: (w.fields?.weight ?? null)
                 })) as any}
+                hideIndividualWeekFormula
               />
             )}
 
@@ -450,6 +467,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                   waist: (w.fields?.waist ?? null)
                 })) as any}
                 unitSystem={unitSystem}
+                hideAlwaysMeasureNote
+                compactHeader
               />
             )}
 
@@ -457,6 +476,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               <div className="mt-4">
                 <WaistPlateauPreventionChart
                   data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
+                  hideIndividualWeekFormula
                 />
               </div>
             )}

@@ -50,7 +50,8 @@ export async function POST(req: NextRequest)
         displayNameMode: snap?.meta?.patientLabel ? 'first_name' : 'first_name',
         captionsEnabled: !!snap?.meta?.captionsEnabled,
         layout: snap?.meta?.layout === 'three_up' ? 'three_up' : 'stack',
-        chartsEnabled: snap?.meta?.chartsEnabled || {}
+        chartsEnabled: snap?.meta?.chartsEnabled || {},
+        totalFatLossLbs: typeof snap?.meta?.totalFatLossLbs === 'number' ? snap.meta.totalFatLossLbs : null
       },
       media: snap?.media || {}
     }

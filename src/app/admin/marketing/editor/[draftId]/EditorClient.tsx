@@ -285,6 +285,27 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             </div>
           </section>
 
+          {/* Total Fat Loss (lbs) */}
+          <section className="bg-white rounded border p-4">
+            <h3 className="font-semibold text-gray-900 mb-3">Total Fat Loss (lbs)</h3>
+            <div className="grid grid-cols-1 gap-3 text-sm text-gray-900">
+              <input
+                type="number"
+                step="0.1"
+                className="w-40 px-2 py-1 border rounded text-gray-900"
+                value={typeof draft?.meta?.totalFatLossLbs === 'number' ? draft.meta.totalFatLossLbs : ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (v === '') { setMeta({ totalFatLossLbs: null }); return }
+                  const num = Number(v)
+                  if (!Number.isNaN(num)) setMeta({ totalFatLossLbs: num })
+                }}
+                placeholder="e.g., 15.2"
+              />
+              <div className="text-xs text-gray-600">Fixed story value; does not change with displayed weeks.</div>
+            </div>
+          </section>
+
           {/* Branding removed by spec; tagline is centralized in marketingConfig */}
 
           {/* CTA removed by spec: centralized via marketingConfig */}
@@ -377,6 +398,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       ctaLabel: draft?.meta?.ctaLabel || null,
                       displayNameOverride: draft?.meta?.displayNameOverride || null,
                       testimonialQuote: draft?.meta?.testimonialQuote || null,
+                      totalFatLossLbs: typeof draft?.meta?.totalFatLossLbs === 'number' ? draft.meta.totalFatLossLbs : null,
                       chartsEnabled: draft?.meta?.chartsEnabled || {
                         weightTrend: true, projection: true, plateauWeight: true,
                         waistTrend: false, plateauWaist: false, nutritionCompliancePct: false,

@@ -39,6 +39,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) {
+  const description = "Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes and that metabolic adaptation is progressing accordingly."
   // Build calendar-complete series (weeks 0..max) with nulls for missing values
   const chartData = useMemo(() => {
     const allWeeksMap = new Map<number, WeeklyCheckin>(data.map(entry => [entry.week_number, entry]))
@@ -131,7 +132,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip 
           title="Morning Fat Burn %" 
-          description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
+          description={description}
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-orange-600 transition-colors">
             🔥 Morning Fat Oxidation %
@@ -150,15 +151,13 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       <div className="mb-4">
         <ChartTooltip 
           title="Morning Fat Burn %" 
-          description="Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly."
+          description={description}
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors">
             🔥 Morning Fat Oxidation %
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">
-          Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes, and that metabolic adaptation is progressing accordingly.
-        </p>
+        <p className="text-sm text-gray-600">{description}</p>
       </div>
 
       <ResponsiveContainer width="100%" height={300}>

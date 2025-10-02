@@ -42,7 +42,8 @@ export async function POST(req: NextRequest)
           // Not yet implemented on alias/preview pages
           plateauWaist: false,
           nutritionCompliancePct: false
-        }
+        },
+        totalFatLossLbs: null
       },
       media: { beforePhotoUrl: null, afterPhotoUrl: null, loopVideoUrl: null, fit3d: { images: [], youtubeId: null }, testing: { pdfUrl: null }, testimonial: { beforeUrl: null, afterUrl: null, youtubeUrl: null } }
     }

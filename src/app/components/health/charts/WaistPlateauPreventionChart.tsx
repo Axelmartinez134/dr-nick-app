@@ -8,6 +8,7 @@ import { WeeklyCheckin } from '../healthService'
 
 interface WaistPlateauPreventionChartProps {
   data: WeeklyCheckin[]
+  hideIndividualWeekFormula?: boolean
 }
 
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -28,7 +29,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function WaistPlateauPreventionChart({ data }: WaistPlateauPreventionChartProps) {
+export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFormula = false }: WaistPlateauPreventionChartProps) {
   // Build ordered waist data
   const allWeeks = useMemo(() => {
     return (data || [])
@@ -181,7 +182,9 @@ export default function WaistPlateauPreventionChart({ data }: WaistPlateauPreven
         <p>• Weeks 1–4: Progressive averaging; Week 5+: rolling 4‑week average</p>
         <p>• Dark black line shows average plateau prevention across all weeks</p>
         <p>• Points above the line indicate better than average progress</p>
-        <p>• Individual Week Formula: ((Previous Waist − Current Waist) ÷ Previous Waist) × 100</p>
+        {hideIndividualWeekFormula ? null : (
+          <p>• Individual Week Formula: ((Previous Waist − Current Waist) ÷ Previous Waist) × 100</p>
+        )}
       </div>
     </div>
   )

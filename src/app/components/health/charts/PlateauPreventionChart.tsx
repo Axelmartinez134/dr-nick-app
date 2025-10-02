@@ -10,6 +10,7 @@ import { calculateLinearRegression, mergeDataWithTrendLine } from '../regression
 
 interface PlateauPreventionChartProps {
   data: WeeklyCheckin[]
+  hideIndividualWeekFormula?: boolean
 }
 
 // Chart Tooltip Component
@@ -38,7 +39,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function PlateauPreventionChart({ data }: PlateauPreventionChartProps) {
+export default function PlateauPreventionChart({ data, hideIndividualWeekFormula = false }: PlateauPreventionChartProps) {
 
   // Process data to calculate plateau prevention using Dr. Nick's progressive averaging method
   const chartData = useMemo(() => {
@@ -297,7 +298,9 @@ export default function PlateauPreventionChart({ data }: PlateauPreventionChartP
         <p>• Week 5+: Rolling 4-week average of most recent weeks only</p>
         <p>• Dark black line shows average plateau prevention across all weeks</p>
         <p>• Points above the line indicate better than average performance</p>
-        <p>• Individual Week Formula: ((Previous Weight - Current Weight) ÷ Previous Weight) × 100</p>
+        {hideIndividualWeekFormula ? null : (
+          <p>• Individual Week Formula: ((Previous Weight - Current Weight) ÷ Previous Weight) × 100</p>
+        )}
       </div>
     </div>
   )

@@ -14,6 +14,9 @@ interface WaistTrendChartProps {
   data: WeeklyCheckin[]
   unitSystem?: 'imperial' | 'metric'
   patientId?: string
+  hideAlwaysMeasureNote?: boolean
+  hideHeaderTitle?: boolean
+  compactHeader?: boolean
 }
 
 // Chart Tooltip Component
@@ -44,7 +47,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 import { inchesToCentimeters } from '../unitCore'
 
-export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId }: WaistTrendChartProps) {
+export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId, hideAlwaysMeasureNote = false, hideHeaderTitle = false, compactHeader = false }: WaistTrendChartProps) {
   const [waistGoalDistance, setWaistGoalDistance] = useState<number | null>(null)
 
   // Local tooltip for the purple distance pill (mirrors metrics tooltip content)
@@ -198,9 +201,11 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
           title="Waist Trend" 
           description="Tracks waist circumference changes over time. Often more reliable for measuring visceral fat changes and body composition progress."
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-orange-600 transition-colors">
-            📏 Waist Trend Analysis
-          </h3>
+          {hideHeaderTitle ? null : (
+            <h3 className={`text-lg font-semibold text-gray-900 ${compactHeader ? 'mb-2' : 'mb-4'} hover:text-orange-600 transition-colors`}>
+              📏 Waist Trend Analysis
+            </h3>
+          )}
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
           <p>No waist measurements available yet</p>
@@ -212,20 +217,22 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className={`${compactHeader ? 'mb-1' : 'mb-4'} flex items-start justify-between gap-3`}>
         <ChartTooltip 
           title="Waist Trend" 
           description="Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress."
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors">
-            📏 Waist Trend Analysis
-          </h3>
+          {hideHeaderTitle ? null : (
+            <h3 className={`text-lg font-semibold text-gray-900 ${compactHeader ? 'mb-1' : 'mb-2'} hover:text-orange-600 transition-colors`}>
+              📏 Waist Trend Analysis
+            </h3>
+          )}
         </ChartTooltip>
         {waistGoalDistance !== null && (
           <DistancePill distance={waistGoalDistance} />
         )}
       </div>
-      <p className="text-sm text-gray-600 mb-2">Weekly waist measurements showing body composition changes</p>
+      <p className={`text-sm text-gray-600 ${compactHeader ? 'mb-1' : 'mb-2'}`}>Weekly waist measurements showing body composition changes</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -272,7 +279,9 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
       <div className="mt-4 text-xs text-gray-500">
         <p>• Often more accurate than weight for fat loss tracking</p>
         <p>• Dark black trend line shows overall waist measurement change direction</p>
-        <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
+        {hideAlwaysMeasureNote ? null : (
+          <p>• Always measure at the horizontal level of your belly button with your stomoch 100% relaxed.</p>
+        )}
         <p>• Consistent measurement location is important</p>
       </div>
     </div>
