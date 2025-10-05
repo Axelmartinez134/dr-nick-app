@@ -190,7 +190,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         <div className="text-xs text-gray-700">Board‑certified • 1:1 coaching • Science‑backed</div>
         <h1 className="text-2xl font-bold text-gray-900 mt-2">{displayLabel}</h1>
         {weeksShown > 0 ? (
-          <div className="mt-1 text-sm text-gray-700">{weeksShown} weeks</div>
+          <div className="mt-1 text-xl font-bold text-gray-900">{weeksShown} weeks</div>
         ) : null}
         <div className="mt-3 flex items-center justify-center gap-2 text-sm">
           <button
