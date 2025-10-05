@@ -10,7 +10,7 @@ export interface SelectedMedia {
   afterPhotoUrl?: string | null
   loopVideoUrl?: string | null
   fit3d?: { images?: string[]; youtubeId?: string | null }
-  testing?: { pdfUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
+  testing?: { pdfUrl?: string | null; linkUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
   testimonialYoutubeId?: string | null
   testimonial?: {
     front?: { beforeUrl?: string | null; afterUrl?: string | null }
@@ -147,7 +147,7 @@ export async function pinAssets(
     }
   }
 
-  // Testing PDF
+  // Testing link (no pinning); retain legacy pdf pinning if provided
   let testingPdfUrl: string | null | undefined = null
   if (selected.testing?.pdfUrl) {
     const pdfPinned = await copyUrlToBucket(
@@ -156,12 +156,12 @@ export async function pinAssets(
       `${slug}/testing/metabolic-cardio.pdf`
     )
     if (pdfPinned) {
-      // Add cache-busting query to avoid stale CDN responses immediately after publish
       testingPdfUrl = `${pdfPinned}?v=${Date.now()}`
     } else {
       testingPdfUrl = null
     }
   }
+  const testingLinkUrl: string | null = selected.testing?.linkUrl ?? selected.testing?.pdfUrl ?? null
 
   // Testimonial nested before/after (front/side/rear)
   const pinTestimonialGroup = async (
@@ -206,6 +206,7 @@ export async function pinAssets(
     },
     testing: {
       pdfUrl: testingPdfUrl ?? null,
+      linkUrl: testingLinkUrl ?? null,
       callouts: selected.testing?.callouts ?? {}
     },
     testimonialYoutubeId: selected.testimonialYoutubeId ?? null,

@@ -550,8 +550,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       </section>
 
       {/* Testimonial (moved directly below Discipline) */}
-      <section id="testimonial" className="max-w-md mx-auto px-4 pb-4 pt-0">
-        <details className="rounded-lg border border-gray-200 shadow-sm">
+      <section id="testimonial" className="max-w-md mx-auto px-4 py-0">
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s Testimonial`}</summary>
           <div className="p-2">
             {((snapshot as any)?.meta?.testimonialQuote) ? (
@@ -699,46 +699,27 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       
 
-      {/* Metabolic/Cardio Testing (PDF) */}
-      <section id="testing" className="max-w-md mx-auto p-4">
-        {((snapshot as any)?.media?.testing?.pdfUrl) ? (
-          <div className="rounded-lg border border-gray-200 p-3 shadow-sm min-w-0">
-            {(() => {
-              const pdfUrl = (snapshot as any).media.testing.pdfUrl as string
-              const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
-              const isIOS = /iP(hone|od|ad)/.test(ua) || (/Macintosh/.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document)
-              return (
-                <>
-                  <div className="mb-3 flex items-center justify-between rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
-                    <div className="text-sm md:text-base font-semibold text-gray-900">{firstNameForTitle}'s Metabolic/Cardio Testing</div>
-                    <a href={pdfUrl} target="_blank" rel="noopener" className="text-xs md:text-sm text-blue-600 hover:text-blue-700 underline underline-offset-2">Open PDF in a new tab</a>
-                  </div>
-                  <div className="overflow-x-hidden rounded-md p-1" style={{ border: '2px solid #d1d5db' }}>
-                    {isIOS ? (
-                      <PdfJsInlineIOS url={pdfUrl} className="block w-full max-w-full h-[65vh] md:h-[700px] overflow-auto" />
-                    ) : (
-                      <object
-                        key={pdfUrl}
-                        data={pdfUrl}
-                        type="application/pdf"
-                        className="block w-full max-w-full h-[65vh] md:h-[700px]"
-                      >
-                        <iframe
-                          key={pdfUrl}
-                          src={pdfUrl}
-                          className="block w-full max-w-full h-[65vh] md:h-[700px]"
-                          title="Metabolic/Cardio Testing"
-                          scrolling="yes"
-                          style={{ WebkitOverflowScrolling: 'touch' as any }}
-                        />
-                      </object>
-                    )}
-                  </div>
-                </>
-              )
-            })()}
-          </div>
-        ) : null}
+      {/* Metabolic/Cardio Testing */}
+      <section id="testing" className="max-w-md mx-auto px-4 py-0">
+        {(() => {
+          const linkUrl = (snapshot as any)?.media?.testing?.linkUrl as string | undefined
+          if (!linkUrl) return null
+          return (
+            <div className="rounded-lg border border-gray-200 p-3 shadow-sm min-w-0 mb-3">
+              <div className="mb-2 flex items-center justify-between rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
+                <div className="text-sm md:text-base font-semibold text-gray-900">{firstNameForTitle}'s Metabolic/Cardio Testing</div>
+              </div>
+              <a
+                href={linkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full text-center px-4 py-3 rounded-md bg-indigo-600 text-white font-semibold shadow hover:bg-indigo-700 transition-colors"
+              >
+                View {firstNameForTitle}'s Metabolic Testing
+              </a>
+            </div>
+          )
+        })()}
       </section>
 
       {/* Extra CTAs removed to keep two key placements */}
@@ -748,7 +729,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Extra CTAs removed */}
 
       {/* Booking Section */}
-      <section id="cta" className="lead-capture max-w-md mx-auto p-4">
+      <section id="cta" className="lead-capture max-w-md mx-auto px-4 pt-0 pb-4">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
           <div className="mb-3 rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
             <div className="text-sm md:text-base font-semibold text-gray-900">Schedule a consult</div>

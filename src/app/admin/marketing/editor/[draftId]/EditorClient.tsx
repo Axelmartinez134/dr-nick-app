@@ -387,23 +387,22 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
             </details>
           </section>
 
-          {/* Metabolic/Cardio Testing (PDF) */}
+          {/* Metabolic/Cardio Testing */}
           <section className="bg-white rounded border p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Metabolic/Cardio Testing (PDF)</h3>
-            <div className="border rounded p-3">
-              {draft?.media?.testing?.pdfUrl ? (
-                <div className="space-y-2">
-                  <div className="text-xs text-gray-900 break-all">{draft.media.testing.pdfUrl}</div>
-                  <div className="flex gap-2">
-                    <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="application/pdf" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('testing' as any, f); setMedia({ testing: { ...(draft.media?.testing||{}), pdfUrl: url } }) }} /></label>
-                    <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ testing: { ...(draft.media?.testing||{}), pdfUrl: null } })}>Remove</button>
-                  </div>
-                </div>
+            <h3 className="font-semibold text-gray-900 mb-3">Metabolic/Cardio Testing</h3>
+            <div className="border rounded p-3 space-y-2">
+              <label className="text-sm text-gray-900 block">Link to testing (DocSend, Dropbox, etc.)</label>
+              <input
+                type="url"
+                placeholder="https://..."
+                className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                value={draft?.media?.testing?.linkUrl || ''}
+                onChange={(e) => setMedia({ testing: { ...(draft.media?.testing||{}), linkUrl: e.target.value } })}
+              />
+              {draft?.media?.testing?.linkUrl ? (
+                <div className="text-xs text-gray-600">Saved link: <span className="break-all text-gray-900">{draft.media.testing.linkUrl}</span></div>
               ) : (
-                <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
-                  <input type="file" accept="application/pdf" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('testing' as any, f); setMedia({ testing: { ...(draft.media?.testing||{}), pdfUrl: url } }) }} />
-                  Drop PDF or click to upload (will embed inline)
-                </label>
+                <div className="text-xs text-gray-600">Enter a public link to display on the page</div>
               )}
             </div>
           </section>

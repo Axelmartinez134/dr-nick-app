@@ -81,6 +81,7 @@ export interface SnapshotMedia {
   }
   testing?: {
     pdfUrl?: string | null
+    linkUrl?: string | null
     callouts?: {
       tdeeStart?: number | null
       tdeeEnd?: number | null
