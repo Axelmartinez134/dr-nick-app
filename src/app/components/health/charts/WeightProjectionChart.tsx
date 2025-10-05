@@ -317,7 +317,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial' }:
       <div className="mt-4 text-xs text-gray-500">
         <p>• Red line shows actual progress (irregular pattern expected)</p>
         <p>• Dark black trend line shows actual weight trajectory</p>
-        <p>• Dotted lines show theoretical projections extending to match your current progress</p>
+        <p>• Dotted lines show theoretical projections at different rates of progress all originating from the same starting weight.</p>
         <p>• Projections help identify if progress is on track with expectations</p>
       </div>
     </div>

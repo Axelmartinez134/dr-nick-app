@@ -401,6 +401,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                     date: w.date || '',
                     body_fat_percentage: (w.fields?.body_fat_percentage ?? null)
                   })) as any}
+                  hideDateInTooltip
                 />
               </div>
             )}
@@ -469,6 +470,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 unitSystem={unitSystem}
                 hideAlwaysMeasureNote
                 compactHeader
+                hideDateInTooltip
               />
             )}
 

@@ -9,6 +9,7 @@ import { WeeklyCheckin } from '../healthService'
 
 interface BodyFatPercentageChartProps {
   data: WeeklyCheckin[]
+  hideDateInTooltip?: boolean
 }
 
 // Chart Tooltip Component
@@ -37,7 +38,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function BodyFatPercentageChart({ data }: BodyFatPercentageChartProps) {
+export default function BodyFatPercentageChart({ data, hideDateInTooltip = false }: BodyFatPercentageChartProps) {
   // Process body fat percentage data only (exclude null values for calculation, but keep for display)
   const chartData = useMemo(() => {
     return data
@@ -76,7 +77,7 @@ export default function BodyFatPercentageChart({ data }: BodyFatPercentageChartP
           <p className="text-blue-600">
             {`Body Fat: ${payload[0].value}%`}
           </p>
-          {payload[0].payload.date && (
+          {!hideDateInTooltip && payload[0].payload.date && (
             <p className="text-gray-600 text-sm">
               {`Date: ${payload[0].payload.date}`}
             </p>

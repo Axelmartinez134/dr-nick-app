@@ -17,6 +17,7 @@ interface WaistTrendChartProps {
   hideAlwaysMeasureNote?: boolean
   hideHeaderTitle?: boolean
   compactHeader?: boolean
+  hideDateInTooltip?: boolean
 }
 
 // Chart Tooltip Component
@@ -47,7 +48,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 import { inchesToCentimeters } from '../unitCore'
 
-export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId, hideAlwaysMeasureNote = false, hideHeaderTitle = false, compactHeader = false }: WaistTrendChartProps) {
+export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId, hideAlwaysMeasureNote = false, hideHeaderTitle = false, compactHeader = false, hideDateInTooltip = false }: WaistTrendChartProps) {
   const [waistGoalDistance, setWaistGoalDistance] = useState<number | null>(null)
 
   // Local tooltip for the purple distance pill (mirrors metrics tooltip content)
@@ -183,7 +184,7 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
           <p className="text-orange-600">
             {`Waist: ${payload[0].value} ${getLengthUnitLabel(unitSystem)}`}
           </p>
-          {payload[0].payload.date && (
+          {!hideDateInTooltip && payload[0].payload.date && (
             <p className="text-gray-600 text-sm">
               {`Date: ${payload[0].payload.date}`}
             </p>

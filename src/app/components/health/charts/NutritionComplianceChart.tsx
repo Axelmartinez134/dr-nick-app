@@ -193,7 +193,7 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
 
       <div className="mt-4 text-xs text-gray-500">
         <p>• Weekly totals reflect how many days you met macro goals</p>
-        <p>• Dark black trend line shows your overall nutrition consistency direction</p>
+        <p>• Dark black trend line shows your overall nutritional consistency direction.</p>
         <p>• More compliant days support steadier fat loss and better energy</p>
         <p>• Aim for sustainable progress rather than perfection week-to-week</p>
       </div>
