@@ -330,9 +330,25 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">
             {(() => {
               const base = totalLossDisplay
-              const lbs = (snapshot.meta as any)?.totalFatLossLbs
-              if (typeof lbs === 'number') {
-                const value = unitSystem === 'metric' ? poundsToKilograms(lbs) : lbs
+              // Compute dynamic loss: Week 0 baseline minus latest-in-range
+              const getWeightForWeek = (weekNum: number): number | null => {
+                const w = (weeksRawAny as any[])?.find((x: any) => Number(x?.week_number) === weekNum)
+                if (!w) return null
+                const wt = w?.fields?.weight
+                return typeof wt === 'number' ? wt : null
+              }
+              const getNearestWeightUpTo = (endWeek: number, startWeek: number): number | null => {
+                for (let i = endWeek; i >= Math.max(1, startWeek); i--) {
+                  const v = getWeightForWeek(i)
+                  if (typeof v === 'number') return v
+                }
+                return null
+              }
+              const baselineLbs = getWeightForWeek(0)
+              const latestLbs = weeksShown > 0 ? getNearestWeightUpTo(weeksShown, weeksStart) : null
+              if (typeof baselineLbs === 'number' && typeof latestLbs === 'number') {
+                const lossLbs = baselineLbs - latestLbs
+                const value = unitSystem === 'metric' ? poundsToKilograms(lossLbs) : lossLbs
                 const unit = unitSystem === 'metric' ? 'kg' : 'lbs'
                 const formatted = typeof value === 'number' ? value.toFixed(1) : String(value)
                 return `${base} / ${formatted} ${unit}`
