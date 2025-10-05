@@ -187,7 +187,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       </div>
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
-        <div className="text-xs text-gray-700">Board‑certified • 1:1 coaching • Science‑backed</div>
+        <div className="text-xs text-gray-700">Board‑Certified • 1:1 Coaching • Science‑Backed</div>
         <h1 className="text-2xl font-bold text-gray-900 mt-2">{displayLabel}</h1>
         {weeksShown > 0 ? (
           <div className="mt-1 text-xl font-bold text-gray-900">{weeksShown} weeks</div>
