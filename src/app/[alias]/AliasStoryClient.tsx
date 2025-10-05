@@ -326,7 +326,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Compliance cards */}
       <section className="max-w-md mx-auto p-4 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700 whitespace-nowrap overflow-hidden text-ellipsis">{unitSystem === 'metric' ? 'Total Fat Loss (Body Fat % / Kilos)' : 'Total Fat Loss (Body Fat % / Pounds)'}</div>
+          <div className="text-xs text-gray-700 whitespace-nowrap sm:overflow-hidden sm:text-ellipsis">{unitSystem === 'metric' ? 'Total Fat Loss (Body Fat % / Kg)' : 'Total Fat Loss (Body Fat % / lbs)'}</div>
           <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">
             {(() => {
               const base = totalLossDisplay
