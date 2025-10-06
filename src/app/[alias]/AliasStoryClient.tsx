@@ -422,6 +422,18 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
+            {chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
+              </div>
+            )}
+
+            {chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
+              </div>
+            )}
+
             <div className="mt-3">
               <button onClick={(e) => { e.preventDefault(); scrollToCTA('metabolic_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
             </div>
@@ -501,17 +513,6 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <div className="mt-4">
-                <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
-              </div>
-            )}
-
-            {chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <div className="mt-4">
-                <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
-              </div>
-            )}
 
             {chartsEnabled.strainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">

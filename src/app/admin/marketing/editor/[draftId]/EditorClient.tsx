@@ -213,6 +213,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       {renderToggle('plateauWeight','Plateau Prevention (Weight Loss Rate)')}
                       {renderToggle('morningFatBurnTrend','Morning Fat Burn %')}
                       {renderToggle('bodyFatTrend','Body Fat %')}
+                      {tracksBP ? renderToggle('systolicTrend','Systolic Blood Pressure') : null}
+                      {tracksBP ? renderToggle('diastolicTrend','Diastolic Blood Pressure') : null}
                     </div>
                   </div>
 
@@ -232,8 +234,6 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                     <div className="grid grid-cols-1 gap-2">
                       {renderToggle('waistTrend','Waist Trend')}
                       {renderToggle('plateauWaist','Plateau Prevention — Waist')}
-                      {tracksBP ? renderToggle('systolicTrend','Systolic Blood Pressure') : null}
-                      {tracksBP ? renderToggle('diastolicTrend','Diastolic Blood Pressure') : null}
                       {renderToggle('strainTrend','Exercise Compliance %')}
                     </div>
                   </div>
