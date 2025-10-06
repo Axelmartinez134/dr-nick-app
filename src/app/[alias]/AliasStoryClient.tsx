@@ -8,13 +8,17 @@ import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
 import MarketingFooter from '@/app/components/health/marketing/MarketingFooter'
 const WeightTrendChart = dynamic(() => import('@/app/components/health/charts/WeightTrendChart'), { ssr: false }) as any
+const AliasWeightTrendMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasWeightTrendMobilePill'), { ssr: false })
 const WeightProjectionChart = dynamic(() => import('@/app/components/health/charts/WeightProjectionChart'), { ssr: false }) as any
+const AliasWeightProjectionMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasWeightProjectionMobilePill'), { ssr: false })
 const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
 const AliasPlateauMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasPlateauMobilePill'), { ssr: false })
 const WaistTrendChart = dynamic(() => import('@/app/components/health/charts/WaistTrendChart'), { ssr: false }) as any
 const WaistPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/WaistPlateauPreventionChart'), { ssr: false }) as any
 const SystolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/SystolicBloodPressureChart'), { ssr: false }) as any
+const AliasSystolicMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasSystolicMobilePill'), { ssr: false })
 const DiastolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/DiastolicBloodPressureChart'), { ssr: false }) as any
+const AliasDiastolicMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasDiastolicMobilePill'), { ssr: false })
 const StrainGoalMetChart = dynamic(() => import('@/app/components/health/charts/StrainGoalMetChart'), { ssr: false }) as any
 const NutritionComplianceChart = dynamic(() => import('@/app/components/health/charts/NutritionComplianceChart'), { ssr: false }) as any
 const SleepConsistencyChart = dynamic(() => import('@/app/components/health/charts/SleepConsistencyChart'), { ssr: false }) as any
@@ -429,13 +433,17 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
             {chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
+                <AliasSystolicMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any}>
+                  <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
+                </AliasSystolicMobilePill>
               </div>
             )}
 
             {chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
+                <AliasDiastolicMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any}>
+                  <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
+                </AliasDiastolicMobilePill>
               </div>
             )}
 
@@ -457,28 +465,38 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             )}
             {chartsEnabled.projection && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <WeightProjectionChart
-                  data={(snapshot.weeksRaw || []).map((w: any) => ({
-                    week_number: w.week_number,
-                    date: '',
-                    weight: (w.fields?.weight ?? null),
-                    initial_weight: (w.fields?.initial_weight ?? null)
-                  })) as any}
+                <AliasWeightProjectionMobilePill
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', weight: (w.fields?.weight ?? null), initial_weight: (w.fields?.initial_weight ?? null) })) as any}
                   unitSystem={unitSystem}
-                />
+                >
+                  <WeightProjectionChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({
+                      week_number: w.week_number,
+                      date: '',
+                      weight: (w.fields?.weight ?? null),
+                      initial_weight: (w.fields?.initial_weight ?? null)
+                    })) as any}
+                    unitSystem={unitSystem}
+                  />
+                </AliasWeightProjectionMobilePill>
               </div>
             )}
 
             {chartsEnabled.weightTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <WeightTrendChart
-                  data={(snapshot.weeksRaw || []).map((w: any) => ({
-                    week_number: w.week_number,
-                    date: '',
-                    weight: (w.fields?.weight ?? null)
-                  })) as any}
+                <AliasWeightTrendMobilePill
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', weight: (w.fields?.weight ?? null) })) as any}
                   unitSystem={unitSystem}
-                />
+                >
+                  <WeightTrendChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({
+                      week_number: w.week_number,
+                      date: '',
+                      weight: (w.fields?.weight ?? null)
+                    })) as any}
+                    unitSystem={unitSystem}
+                  />
+                </AliasWeightTrendMobilePill>
               </div>
             )}
 
