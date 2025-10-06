@@ -10,6 +10,10 @@ export default function LinkManager() {
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const pageSize = 20
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [aliasToDelete, setAliasToDelete] = useState<string>('')
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   async function load() {
     const params = new URLSearchParams({ q, sort, page: String(page), pageSize: String(pageSize) })
@@ -92,22 +96,12 @@ export default function LinkManager() {
                           if (!res.ok) { alert(json.error || 'Failed to create draft'); return }
                           window.location.href = `/admin/marketing/editor/${json.draftId}`
                         }}>Continue editing</button>
-                        <a className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" href={`/version/${r.currentSlug}`} target="_blank">Open Version</a>
-                        <button className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/${r.alias}`)}>Copy Alias URL</button>
-                        <button className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" onClick={() => navigator.clipboard.writeText(`${window.location.origin}/version/${r.currentSlug}`)}>Copy Version URL</button>
-                        <button className="px-2 py-1 border border-gray-300 rounded text-xs text-gray-800 hover:bg-gray-50" onClick={async () => {
-                          const res = await fetch(`/api/marketing/drafts/from-latest`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patientId: r.patient.id, alias: r.alias }) })
-                          const json = await res.json()
-                          if (!res.ok) { alert(json.error || 'Failed'); return }
-                          window.location.href = `/admin/marketing/editor/${json.draftId}`
-                        }}>Change Display Label</button>
-                        <button className="px-2 py-1 border border-red-300 text-red-700 rounded text-xs hover:bg-red-50" onClick={async () => {
-                          if (!confirm('Revoke this version?')) return
-                          const res = await fetch(`/api/marketing/shares/${encodeURIComponent(r.currentSlug)}/revoke`, { method: 'POST' })
-                          const j = await res.json()
-                          if (!res.ok) { alert(j.error || 'Failed to revoke'); return }
-                          load()
-                        }}>Revoke current version</button>
+                      <button
+                        className="px-2 py-1 border border-red-300 text-red-700 rounded text-xs hover:bg-red-50"
+                        onClick={() => { setAliasToDelete(r.alias); setDeleteConfirm(''); setShowDeleteModal(true) }}
+                      >
+                        Delete Alias
+                      </button>
                       </div>
                     </td>
                   </tr>
@@ -123,6 +117,49 @@ export default function LinkManager() {
             <div className="flex gap-2">
               <button className="px-2 py-1 border rounded" disabled={page<=1} onClick={() => setPage(p => Math.max(1, p-1))}>Prev</button>
               <button className="px-2 py-1 border rounded" disabled={page*pageSize>=total} onClick={() => setPage(p => p+1)}>Next</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-lg shadow-lg border w-full max-w-md p-4">
+            <div className="text-sm font-semibold text-gray-900 mb-1">Delete alias "/{aliasToDelete}"</div>
+            <div className="text-xs text-gray-600 mb-3">This will delete the alias, all drafts for this alias, and all marketing shares for the same patient. Profiles/health data will not be touched.</div>
+            <input
+              value={deleteConfirm}
+              onChange={(e) => setDeleteConfirm(e.target.value)}
+              placeholder="Type DELETE to confirm"
+              className="w-full px-3 py-2 border border-gray-300 rounded text-gray-900 placeholder-gray-500 mb-3"
+            />
+            <div className="flex justify-end gap-2">
+              <button className="px-3 py-1.5 border rounded text-sm" onClick={() => { setShowDeleteModal(false); setDeleteConfirm(''); }}>Cancel</button>
+              <button
+                className={`px-3 py-1.5 rounded text-sm text-white ${deleteConfirm === 'DELETE' && !deleting ? 'bg-red-600 hover:bg-red-700' : 'bg-red-400 cursor-not-allowed'}`}
+                disabled={deleteConfirm !== 'DELETE' || deleting}
+                onClick={async () => {
+                  if (deleteConfirm !== 'DELETE') return
+                  try {
+                    setDeleting(true)
+                    const res = await fetch(`/api/marketing/aliases/${encodeURIComponent(aliasToDelete)}/delete`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ confirm: 'DELETE' })
+                    })
+                    const j = await res.json()
+                    if (!res.ok) { alert(j.error || 'Failed to delete alias'); setDeleting(false); return }
+                    setDeleting(false)
+                    setShowDeleteModal(false)
+                    setDeleteConfirm('')
+                    load()
+                  } catch (e) {
+                    setDeleting(false)
+                    alert('Failed to delete alias')
+                  }
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>
