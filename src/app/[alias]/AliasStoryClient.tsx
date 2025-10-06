@@ -14,7 +14,9 @@ const AliasWeightProjectionMobilePill = dynamic(() => import('@/app/components/h
 const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
 const AliasPlateauMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasPlateauMobilePill'), { ssr: false })
 const WaistTrendChart = dynamic(() => import('@/app/components/health/charts/WaistTrendChart'), { ssr: false }) as any
+const AliasWaistTrendMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasWaistTrendMobilePill'), { ssr: false })
 const WaistPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/WaistPlateauPreventionChart'), { ssr: false }) as any
+const AliasWaistPlateauMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasWaistPlateauMobilePill'), { ssr: false })
 const SystolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/SystolicBloodPressureChart'), { ssr: false }) as any
 const AliasSystolicMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasSystolicMobilePill'), { ssr: false })
 const DiastolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/DiastolicBloodPressureChart'), { ssr: false }) as any
@@ -24,6 +26,7 @@ const NutritionComplianceChart = dynamic(() => import('@/app/components/health/c
 const SleepConsistencyChart = dynamic(() => import('@/app/components/health/charts/SleepConsistencyChart'), { ssr: false }) as any
 const MorningFatBurnChart = dynamic(() => import('@/app/components/health/charts/MorningFatBurnChart'), { ssr: false }) as any
 const BodyFatPercentageChart = dynamic(() => import('@/app/components/health/charts/BodyFatPercentageChart'), { ssr: false }) as any
+const AliasBodyFatMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasBodyFatMobilePill'), { ssr: false })
 const PdfJsInlineIOS = dynamic(() => import('@/app/components/health/marketing/PdfJsInlineIOS'), { ssr: false })
 
 type UnitSystem = 'imperial' | 'metric'
@@ -420,14 +423,18 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
             {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <BodyFatPercentageChart
-                  data={(snapshot.weeksRaw || []).map((w: any) => ({
-                    week_number: w.week_number,
-                    date: w.date || '',
-                    body_fat_percentage: (w.fields?.body_fat_percentage ?? null)
-                  })) as any}
-                  hideDateInTooltip
-                />
+                <AliasBodyFatMobilePill
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: w.date || '', body_fat_percentage: (w.fields?.body_fat_percentage ?? null) })) as any}
+                >
+                  <BodyFatPercentageChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({
+                      week_number: w.week_number,
+                      date: w.date || '',
+                      body_fat_percentage: (w.fields?.body_fat_percentage ?? null)
+                    })) as any}
+                    hideDateInTooltip
+                  />
+                </AliasBodyFatMobilePill>
               </div>
             )}
 
@@ -514,25 +521,34 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Build capacity and protect lean mass while measurements reflect healthier body composition.</p>
             {chartsEnabled.waistTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <WaistTrendChart
-                data={(snapshot.weeksRaw || []).map((w: any) => ({
-                  week_number: w.week_number,
-                  date: '',
-                  waist: (w.fields?.waist ?? null)
-                })) as any}
+              <AliasWaistTrendMobilePill
+                data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', waist: (w.fields?.waist ?? null) })) as any}
                 unitSystem={unitSystem}
-                hideAlwaysMeasureNote
-                compactHeader
-                hideDateInTooltip
-              />
+              >
+                <WaistTrendChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: '',
+                    waist: (w.fields?.waist ?? null)
+                  })) as any}
+                  unitSystem={unitSystem}
+                  hideAlwaysMeasureNote
+                  compactHeader
+                  hideDateInTooltip
+                />
+              </AliasWaistTrendMobilePill>
             )}
 
             {chartsEnabled.plateauWaist && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
               <div className="mt-4">
-                <WaistPlateauPreventionChart
+                <AliasWaistPlateauMobilePill
                   data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
-                  hideIndividualWeekFormula
-                />
+                >
+                  <WaistPlateauPreventionChart
+                    data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
+                    hideIndividualWeekFormula
+                  />
+                </AliasWaistPlateauMobilePill>
               </div>
             )}
 
