@@ -76,7 +76,18 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           .select('track_blood_pressure')
           .eq('id', pid)
           .single()
-        if (!error) setTracksBP(Boolean(data?.track_blood_pressure))
+        if (!error) {
+          const isTracking = Boolean(data?.track_blood_pressure)
+          setTracksBP(isTracking)
+          // Backfill missing BP flags to true when tracking BP (preserve explicit false)
+          if (isTracking) {
+            const ce = (draft?.meta?.chartsEnabled || {}) as any
+            const needsUpdate = (ce.systolicTrend === undefined) || (ce.diastolicTrend === undefined)
+            if (needsUpdate) {
+              setMeta({ chartsEnabled: { ...ce, systolicTrend: (ce.systolicTrend ?? true), diastolicTrend: (ce.diastolicTrend ?? true) } })
+            }
+          }
+        }
       } catch {}
     })()
   }, [initialDraft])

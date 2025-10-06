@@ -131,6 +131,11 @@ export async function snapshotPreviewBuilder(
         plateauWaist: false,
         nutritionCompliancePct: false,
         sleepTrend: false,
+        systolicTrend: false,
+        diastolicTrend: false,
+        strainTrend: false,
+        disciplineNutritionCompliancePct: false,
+        disciplineStrainTrend: false,
         morningFatBurnTrend: false,
         bodyFatTrend: false
       },
