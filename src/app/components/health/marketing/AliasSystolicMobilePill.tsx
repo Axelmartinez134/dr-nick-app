@@ -46,6 +46,8 @@ export default function AliasSystolicMobilePill({ data, children }: AliasSystoli
       leftMargin={leftMargin}
       rightMargin={rightMargin}
       enableDesktop
+      numericXAxis
+      xAccessor={(p) => p.week}
     >
       {children}
     </AliasMobileValuePill>

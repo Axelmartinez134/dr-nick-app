@@ -118,11 +118,15 @@ export default function AliasMobileValuePill<T>({ data, deriveSeries, renderCont
     const insideX = clientX >= cRect.left && clientX <= cRect.right
     const insideY = typeof clientY === 'number' ? (clientY >= cRect.top && clientY <= cRect.bottom) : true
     if (!(insideX && insideY)) return
-    const xLocal = clientX - cRect.left
-    const width = cRect.width
-    const innerWidth = Math.max(1, width - (leftMargin + rightMargin))
-    const clamped = Math.max(leftMargin, Math.min(width - rightMargin, xLocal))
-    const ratio = (clamped - leftMargin) / innerWidth
+    // Prefer the actual plot area (cartesian grid) to compute inner bounds
+    const gridEl = chartEl.querySelector('.recharts-cartesian-grid') as HTMLElement | null
+    const pRect = gridEl ? gridEl.getBoundingClientRect() : null
+    const plotLeft = pRect ? pRect.left : (cRect.left + leftMargin)
+    const plotRight = pRect ? pRect.right : (cRect.right - rightMargin)
+    const plotWidth = Math.max(1, plotRight - plotLeft)
+    const xLocal = clientX - plotLeft
+    const clampedX = Math.max(0, Math.min(plotWidth, xLocal))
+    const ratio = clampedX / plotWidth
     if (numericXAxis && typeof xAccessor === 'function') {
       let minX = Number.POSITIVE_INFINITY
       let maxX = Number.NEGATIVE_INFINITY

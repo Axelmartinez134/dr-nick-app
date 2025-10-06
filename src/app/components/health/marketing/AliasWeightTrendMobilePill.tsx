@@ -48,6 +48,8 @@ export default function AliasWeightTrendMobilePill({ data, unitSystem, children 
       leftMargin={leftMargin}
       rightMargin={rightMargin}
       enableDesktop
+      numericXAxis
+      xAccessor={(p) => p.week}
     >
       {children}
     </AliasMobileValuePill>

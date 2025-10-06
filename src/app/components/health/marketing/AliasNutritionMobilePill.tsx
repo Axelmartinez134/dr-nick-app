@@ -42,6 +42,8 @@ export default function AliasNutritionMobilePill({ data, children }: AliasNutrit
       leftMargin={leftMargin}
       rightMargin={rightMargin}
       enableDesktop
+      numericXAxis
+      xAccessor={(p) => p.week}
     >
       {children}
     </AliasMobileValuePill>

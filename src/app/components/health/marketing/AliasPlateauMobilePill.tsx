@@ -99,6 +99,8 @@ export default function AliasPlateauMobilePill({ data, children }: AliasPlateauM
       leftMargin={leftMargin}
       rightMargin={rightMargin}
       enableDesktop
+      numericXAxis
+      xAccessor={(p) => (p as any).week}
     >
       {children}
     </AliasMobileValuePill>
