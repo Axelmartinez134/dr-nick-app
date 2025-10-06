@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
       .insert({
         slug,
         patient_id: patientId,
+        alias,
         snapshot_json: snapshotJson,
         schema_version: snapshotJson.schema_version,
         created_by: createdBy || patientId

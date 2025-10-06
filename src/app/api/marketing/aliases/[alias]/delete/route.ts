@@ -40,11 +40,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ali
       .delete()
       .ilike('alias', alias)
 
-    // Delete all shares for this patient
+    // Delete all shares for this alias (precise, uses new alias column)
     await supabase
       .from('marketing_shares')
       .delete()
-      .eq('patient_id', patientId)
+      .ilike('alias', alias)
 
     // Finally delete alias row
     const { error: delAliasErr } = await supabase

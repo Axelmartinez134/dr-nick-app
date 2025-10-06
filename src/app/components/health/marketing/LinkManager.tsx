@@ -125,7 +125,7 @@ export default function LinkManager() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div className="bg-white rounded-lg shadow-lg border w-full max-w-md p-4">
             <div className="text-sm font-semibold text-gray-900 mb-1">Delete alias "/{aliasToDelete}"</div>
-            <div className="text-xs text-gray-600 mb-3">This will delete the alias, all drafts for this alias, and all marketing shares for the same patient. Profiles/health data will not be touched.</div>
+            <div className="text-xs text-gray-600 mb-3">This will delete the alias, all drafts for this alias, and all marketing shares for this alias only. Profiles/health data will not be touched.</div>
             <input
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
