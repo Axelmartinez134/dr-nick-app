@@ -36,28 +36,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ali
 
     const patientId = aliasRow.patient_id as string
 
-    // Delete all drafts for this alias (case-insensitive match on alias field in drafts)
+    // 1) Delete all drafts for this alias (case-insensitive match on alias field in drafts)
     await supabase
       .from('marketing_drafts')
       .delete()
       .ilike('alias', requestedAlias)
 
-    // Delete all shares for this alias (robust: select slugs by normalized alias, then delete by slug)
-    const normalized = sanitizeAlias(String(aliasRow.alias || requestedAlias))
-    const { data: shareRows } = await supabase
-      .from('marketing_shares')
-      .select('slug')
-      .eq('alias', normalized)
-
-    if (Array.isArray(shareRows) && shareRows.length > 0) {
-      const slugs = shareRows.map(r => r.slug)
-      await supabase
-        .from('marketing_shares')
-        .delete()
-        .in('slug', slugs)
-    }
-
-    // Finally delete alias row
+    // 2) Delete alias row FIRST to avoid FK RESTRICT blocking share deletes
     const { error: delAliasErr } = await supabase
       .from('marketing_aliases')
       .delete()
@@ -65,6 +50,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ ali
 
     if (delAliasErr) {
       return NextResponse.json({ error: delAliasErr.message }, { status: 400 })
+    }
+
+    // 3) Delete all shares for this alias (robust: select slugs by normalized alias, then delete by slug)
+    const normalized = sanitizeAlias(String(aliasRow.alias || requestedAlias))
+    const { data: shareRows, error: selectErr } = await supabase
+      .from('marketing_shares')
+      .select('slug')
+      .eq('alias', normalized)
+
+    if (selectErr) {
+      return NextResponse.json({ error: selectErr.message }, { status: 400 })
+    }
+
+    if (Array.isArray(shareRows) && shareRows.length > 0) {
+      const slugs = shareRows.map(r => r.slug)
+      const { error: delSharesErr } = await supabase
+        .from('marketing_shares')
+        .delete()
+        .in('slug', slugs)
+
+      if (delSharesErr) {
+        return NextResponse.json({ error: delSharesErr.message }, { status: 400 })
+      }
     }
 
     return NextResponse.json({ success: true, deletedSlugs: (Array.isArray(shareRows) ? shareRows.map(r => r.slug) : []) })
