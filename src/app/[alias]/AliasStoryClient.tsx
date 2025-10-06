@@ -22,9 +22,13 @@ const AliasSystolicMobilePill = dynamic(() => import('@/app/components/health/ma
 const DiastolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/DiastolicBloodPressureChart'), { ssr: false }) as any
 const AliasDiastolicMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasDiastolicMobilePill'), { ssr: false })
 const StrainGoalMetChart = dynamic(() => import('@/app/components/health/charts/StrainGoalMetChart'), { ssr: false }) as any
+const AliasStrainMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasStrainMobilePill'), { ssr: false })
 const NutritionComplianceChart = dynamic(() => import('@/app/components/health/charts/NutritionComplianceChart'), { ssr: false }) as any
+const AliasNutritionMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasNutritionMobilePill'), { ssr: false })
 const SleepConsistencyChart = dynamic(() => import('@/app/components/health/charts/SleepConsistencyChart'), { ssr: false }) as any
+const AliasSleepMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasSleepMobilePill'), { ssr: false })
 const MorningFatBurnChart = dynamic(() => import('@/app/components/health/charts/MorningFatBurnChart'), { ssr: false }) as any
+const AliasMorningFatBurnMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasMorningFatBurnMobilePill'), { ssr: false })
 const BodyFatPercentageChart = dynamic(() => import('@/app/components/health/charts/BodyFatPercentageChart'), { ssr: false }) as any
 const AliasBodyFatMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasBodyFatMobilePill'), { ssr: false })
 const PdfJsInlineIOS = dynamic(() => import('@/app/components/health/marketing/PdfJsInlineIOS'), { ssr: false })
@@ -411,13 +415,17 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
             {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <MorningFatBurnChart
-                  data={(snapshot.weeksRaw || []).map((w: any) => ({
-                    week_number: w.week_number,
-                    date: w.date || '',
-                    morning_fat_burn_percent: (w.fields?.morning_fat_burn_percent ?? null)
-                  })) as any}
-                />
+                <AliasMorningFatBurnMobilePill
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: w.date || '', morning_fat_burn_percent: (w.fields?.morning_fat_burn_percent ?? null) })) as any}
+                >
+                  <MorningFatBurnChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({
+                      week_number: w.week_number,
+                      date: w.date || '',
+                      morning_fat_burn_percent: (w.fields?.morning_fat_burn_percent ?? null)
+                    })) as any}
+                  />
+                </AliasMorningFatBurnMobilePill>
               </div>
             )}
 
@@ -466,9 +474,13 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Dialed-in macros and consistency keep your actual results aligned with projections.</p>
             {chartsEnabled.nutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <NutritionComplianceChart
+              <AliasNutritionMobilePill
                 data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
-              />
+              >
+                <NutritionComplianceChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
+                />
+              </AliasNutritionMobilePill>
             )}
             {chartsEnabled.projection && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
@@ -555,7 +567,9 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
             {chartsEnabled.strainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} />
+                <AliasStrainMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}>
+                  <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} />
+                </AliasStrainMobilePill>
               </div>
             )}
 
@@ -573,13 +587,17 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Consistency compounds—better sleep and nutrition adherence accelerate results.</p>
             {chartsEnabled.sleepTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <SleepConsistencyChart
-                data={(snapshot.weeksRaw || []).map((w: any) => ({
-                  week_number: w.week_number,
-                  date: w.date || '',
-                  sleep_consistency_score: (w.fields?.sleep_consistency_score ?? null)
-                })) as any}
-              />
+              <AliasSleepMobilePill
+                data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: w.date || '', sleep_consistency_score: (w.fields?.sleep_consistency_score ?? null) })) as any}
+              >
+                <SleepConsistencyChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: w.date || '',
+                    sleep_consistency_score: (w.fields?.sleep_consistency_score ?? null)
+                  })) as any}
+                />
+              </AliasSleepMobilePill>
             )}
 
             {chartsEnabled.disciplineNutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
