@@ -108,9 +108,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // testing.pdfUrl if provided must be pinned
-      if (sel?.testing && typeof sel.testing.pdfUrl === 'string' && sel.testing.pdfUrl.trim().length > 0) {
-        if (!nonEmpty(media?.testing?.pdfUrl)) failures.push('testing.pdfUrl')
+      // testing baseline/followup images if provided must be pinned
+      if (sel?.testing && typeof sel.testing.baselineImageUrl === 'string' && sel.testing.baselineImageUrl.trim().length > 0) {
+        if (!nonEmpty(media?.testing?.baselineImageUrl)) failures.push('testing.baselineImageUrl')
+      }
+      if (sel?.testing && typeof sel.testing.followupImageUrl === 'string' && sel.testing.followupImageUrl.trim().length > 0) {
+        if (!nonEmpty(media?.testing?.followupImageUrl)) failures.push('testing.followupImageUrl')
       }
 
       // Nested testimonial validation (if provided, must be pinned)

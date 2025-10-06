@@ -439,15 +439,17 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               />
             )}
             {chartsEnabled.projection && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <WeightProjectionChart
-                data={(snapshot.weeksRaw || []).map((w: any) => ({
-                  week_number: w.week_number,
-                  date: '',
-                  weight: (w.fields?.weight ?? null),
-                  initial_weight: (w.fields?.initial_weight ?? null)
-                })) as any}
-                unitSystem={unitSystem}
-              />
+              <div className="mt-4">
+                <WeightProjectionChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: '',
+                    weight: (w.fields?.weight ?? null),
+                    initial_weight: (w.fields?.initial_weight ?? null)
+                  })) as any}
+                  unitSystem={unitSystem}
+                />
+              </div>
             )}
 
             {chartsEnabled.weightTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
@@ -718,21 +720,57 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Metabolic/Cardio Testing */}
       <section id="testing" className="max-w-md mx-auto px-4 py-0">
         {(() => {
-          const linkUrl = (snapshot as any)?.media?.testing?.linkUrl as string | undefined
-          if (!linkUrl) return null
+          const testing = (snapshot as any)?.media?.testing || {}
+          const baselineImg = testing?.baselineImageUrl as string | undefined
+          const followupImg = testing?.followupImageUrl as string | undefined
+          const baselineLink = testing?.baselineReportUrl as string | undefined
+          const followupLink = testing?.followupReportUrl as string | undefined
+
+          // If nothing to show, hide section
+          if (!baselineImg && !followupImg && !baselineLink && !followupLink) return null
+
+          const isMp4 = (u?: string) => {
+            if (!u) return false
+            try { return /\.mp4($|\?)/i.test(new URL(u).pathname) } catch { return false }
+          }
+
+          const ImageBox = ({ label, url, link }: { label: 'Baseline' | 'Follow-up'; url?: string; link?: string }) => {
+            if (!url && !link) return null
+            return (
+              <div className="mb-3">
+                {url ? (
+                  <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                    {isMp4(url) ? (
+                      <video src={url} muted loop playsInline autoPlay preload="auto" controls={false} className="w-full h-auto pointer-events-none" />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={url} alt={label} className="w-full h-auto" />
+                    )}
+                  </div>
+                ) : null}
+                {link ? (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center mt-2 px-4 py-3 rounded-md bg-indigo-600 text-white font-semibold shadow hover:bg-indigo-700 transition-colors"
+                  >
+                    {label === 'Baseline' ? 'View Baseline Metabolic Testing Report' : 'View Follow-Up Metabolic Testing Report'}
+                  </a>
+                ) : null}
+              </div>
+            )
+          }
+
           return (
             <div className="rounded-lg border border-gray-200 p-3 shadow-sm min-w-0 mb-3">
               <div className="mb-2 flex items-center justify-between rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
                 <div className="text-sm md:text-base font-semibold text-gray-900">{firstNameForTitle}'s Metabolic/Cardio Testing</div>
               </div>
-              <a
-                href={linkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full text-center px-4 py-3 rounded-md bg-indigo-600 text-white font-semibold shadow hover:bg-indigo-700 transition-colors"
-              >
-                View {firstNameForTitle}'s Metabolic Testing
-              </a>
+              <div>
+                <ImageBox label="Baseline" url={baselineImg} link={baselineLink} />
+                <ImageBox label="Follow-up" url={followupImg} link={followupLink} />
+              </div>
             </div>
           )
         })()}

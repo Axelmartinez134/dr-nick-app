@@ -21,7 +21,7 @@ export interface PreviewMedia {
   afterPhotoUrl?: string | null
   loopVideoUrl?: string | null
   fit3d?: { images?: string[]; youtubeId?: string | null }
-  testing?: { pdfUrl?: string | null; linkUrl?: string | null; callouts?: any }
+  testing?: { baselineImageUrl?: string | null; followupImageUrl?: string | null; baselineReportUrl?: string | null; followupReportUrl?: string | null }
   testimonialYoutubeId?: string | null
   testimonial?: {
     front?: { beforeUrl?: string | null; afterUrl?: string | null }
@@ -159,9 +159,10 @@ export async function snapshotPreviewBuilder(
         youtubeId: media.fit3d?.youtubeId ?? null
       },
       testing: {
-        pdfUrl: media.testing?.pdfUrl ?? null,
-        linkUrl: (media.testing?.linkUrl ?? (media.testing?.pdfUrl ?? null)),
-        callouts: media.testing?.callouts ?? {}
+        baselineImageUrl: media.testing?.baselineImageUrl ?? null,
+        followupImageUrl: media.testing?.followupImageUrl ?? null,
+        baselineReportUrl: media.testing?.baselineReportUrl ?? null,
+        followupReportUrl: media.testing?.followupReportUrl ?? null
       },
       testimonialYoutubeId: media.testimonialYoutubeId ?? null,
       testimonial: normalizeTestimonial(media.testimonial)

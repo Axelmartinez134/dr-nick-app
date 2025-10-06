@@ -10,7 +10,7 @@ export interface SelectedMedia {
   afterPhotoUrl?: string | null
   loopVideoUrl?: string | null
   fit3d?: { images?: string[]; youtubeId?: string | null }
-  testing?: { pdfUrl?: string | null; linkUrl?: string | null; callouts?: { tdeeStart?: number | null; tdeeEnd?: number | null; bfStart?: number | null; bfEnd?: number | null } }
+  testing?: { baselineImageUrl?: string | null; followupImageUrl?: string | null; baselineReportUrl?: string | null; followupReportUrl?: string | null }
   testimonialYoutubeId?: string | null
   testimonial?: {
     front?: { beforeUrl?: string | null; afterUrl?: string | null }
@@ -147,21 +147,25 @@ export async function pinAssets(
     }
   }
 
-  // Testing link (no pinning); retain legacy pdf pinning if provided
-  let testingPdfUrl: string | null | undefined = null
-  if (selected.testing?.pdfUrl) {
-    const pdfPinned = await copyUrlToBucket(
+  // Testing images (baseline/followup) and external report URLs (no pinning for URLs)
+  let baselineImagePinned: string | null | undefined = null
+  if (selected.testing?.baselineImageUrl) {
+    const ext = guessExtFromUrl(selected.testing.baselineImageUrl, 'webp')
+    baselineImagePinned = await copyUrlToBucket(
       supabase,
-      selected.testing.pdfUrl,
-      `${slug}/testing/metabolic-cardio.pdf`
+      selected.testing.baselineImageUrl,
+      `${slug}/testing/baseline.${ext}`
     )
-    if (pdfPinned) {
-      testingPdfUrl = `${pdfPinned}?v=${Date.now()}`
-    } else {
-      testingPdfUrl = null
-    }
   }
-  const testingLinkUrl: string | null = selected.testing?.linkUrl ?? selected.testing?.pdfUrl ?? null
+  let followupImagePinned: string | null | undefined = null
+  if (selected.testing?.followupImageUrl) {
+    const ext = guessExtFromUrl(selected.testing.followupImageUrl, 'webp')
+    followupImagePinned = await copyUrlToBucket(
+      supabase,
+      selected.testing.followupImageUrl,
+      `${slug}/testing/followup.${ext}`
+    )
+  }
 
   // Testimonial nested before/after (front/side/rear)
   const pinTestimonialGroup = async (
@@ -205,9 +209,10 @@ export async function pinAssets(
       youtubeId: selected.fit3d?.youtubeId ?? null
     },
     testing: {
-      pdfUrl: testingPdfUrl ?? null,
-      linkUrl: testingLinkUrl ?? null,
-      callouts: selected.testing?.callouts ?? {}
+      baselineImageUrl: baselineImagePinned ?? null,
+      followupImageUrl: followupImagePinned ?? null,
+      baselineReportUrl: selected.testing?.baselineReportUrl ?? null,
+      followupReportUrl: selected.testing?.followupReportUrl ?? null
     },
     testimonialYoutubeId: selected.testimonialYoutubeId ?? null,
     testimonial: {

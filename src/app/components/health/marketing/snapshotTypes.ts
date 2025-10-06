@@ -80,14 +80,10 @@ export interface SnapshotMedia {
     youtubeId?: string | null
   }
   testing?: {
-    pdfUrl?: string | null
-    linkUrl?: string | null
-    callouts?: {
-      tdeeStart?: number | null
-      tdeeEnd?: number | null
-      bfStart?: number | null
-      bfEnd?: number | null
-    }
+    baselineImageUrl?: string | null
+    followupImageUrl?: string | null
+    baselineReportUrl?: string | null
+    followupReportUrl?: string | null
   }
   testimonialYoutubeId?: string | null
   testimonial?: {

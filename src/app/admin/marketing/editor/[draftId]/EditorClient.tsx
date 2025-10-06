@@ -98,7 +98,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
     setPublishSteps((s) => s.map((x) => x.id === id ? { ...x, status } : x))
   }
 
-  async function upload(kind: 'before' | 'after' | 'loop' | 'fit3d', file: File, index = 0) {
+  async function upload(kind: 'before' | 'after' | 'loop' | 'fit3d' | 'testing_baseline' | 'testing_followup', file: File, index = 0) {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('kind', kind)
@@ -390,20 +390,94 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Metabolic/Cardio Testing */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Metabolic/Cardio Testing</h3>
-            <div className="border rounded p-3 space-y-2">
-              <label className="text-sm text-gray-900 block">Link to testing (DocSend, Dropbox, etc.)</label>
-              <input
-                type="url"
-                placeholder="https://..."
-                className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
-                value={draft?.media?.testing?.linkUrl || ''}
-                onChange={(e) => setMedia({ testing: { ...(draft.media?.testing||{}), linkUrl: e.target.value } })}
-              />
-              {draft?.media?.testing?.linkUrl ? (
-                <div className="text-xs text-gray-600">Saved link: <span className="break-all text-gray-900">{draft.media.testing.linkUrl}</span></div>
-              ) : (
-                <div className="text-xs text-gray-600">Enter a public link to display on the page</div>
-              )}
+            <div className="space-y-4">
+              {/* Baseline block */}
+              <div className="border rounded p-3">
+                <div className="text-sm font-medium text-gray-900 mb-2">Baseline</div>
+                {(() => {
+                  const val = (draft?.media?.testing as any)?.baselineImageUrl || null
+                  return (
+                    <div className="space-y-2">
+                      {val ? (
+                        <div className="space-y-2">
+                          {/\.mp4($|\?)/i.test(val) ? (
+                            <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={val} alt="Baseline" className="w-full h-auto rounded" />
+                          )}
+                          <div className="flex gap-2">
+                            <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('testing_baseline', f); setMedia({ testing: { ...(draft.media?.testing||{}), baselineImageUrl: url } }) }} /></label>
+                            <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ testing: { ...(draft.media?.testing||{}), baselineImageUrl: null } })}>Remove</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
+                            <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('testing_baseline', f); setMedia({ testing: { ...(draft.media?.testing||{}), baselineImageUrl: url } }) }} />
+                            Drop image/MP4 or click to upload
+                          </label>
+                          <div className="text-xs text-gray-600 mt-1">Recommended: PNG for best quality and transparency.</div>
+                        </>
+                      )}
+                      <div>
+                        <label className="text-sm text-gray-900 block mb-1">Baseline report link</label>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                          value={(draft?.media?.testing as any)?.baselineReportUrl || ''}
+                          onChange={(e) => setMedia({ testing: { ...(draft.media?.testing||{}), baselineReportUrl: e.target.value } })}
+                        />
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Follow-up block */}
+              <div className="border rounded p-3">
+                <div className="text-sm font-medium text-gray-900 mb-2">Follow-up</div>
+                {(() => {
+                  const val = (draft?.media?.testing as any)?.followupImageUrl || null
+                  return (
+                    <div className="space-y-2">
+                      {val ? (
+                        <div className="space-y-2">
+                          {/\.mp4($|\?)/i.test(val) ? (
+                            <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={val} alt="Follow-up" className="w-full h-auto rounded" />
+                          )}
+                          <div className="flex gap-2">
+                            <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">Replace<input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('testing_followup', f); setMedia({ testing: { ...(draft.media?.testing||{}), followupImageUrl: url } }) }} /></label>
+                            <button className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 font-medium hover:bg-gray-50" onClick={() => setMedia({ testing: { ...(draft.media?.testing||{}), followupImageUrl: null } })}>Remove</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <label className="flex items-center justify-center h-28 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
+                            <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload('testing_followup', f); setMedia({ testing: { ...(draft.media?.testing||{}), followupImageUrl: url } }) }} />
+                            Drop image/MP4 or click to upload
+                          </label>
+                          <div className="text-xs text-gray-600 mt-1">Recommended: PNG for best quality and transparency.</div>
+                        </>
+                      )}
+                      <div>
+                        <label className="text-sm text-gray-900 block mb-1">Follow-up report link</label>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                          value={(draft?.media?.testing as any)?.followupReportUrl || ''}
+                          onChange={(e) => setMedia({ testing: { ...(draft.media?.testing||{}), followupReportUrl: e.target.value } })}
+                        />
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
             </div>
           </section>
 

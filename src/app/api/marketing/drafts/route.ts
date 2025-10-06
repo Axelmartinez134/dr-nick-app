@@ -50,7 +50,7 @@ export async function POST(req: NextRequest)
         afterPhotoUrl: null,
         loopVideoUrl: null,
         fit3d: { images: [], youtubeId: null },
-        testing: { pdfUrl: null },
+        testing: { baselineImageUrl: null, followupImageUrl: null, baselineReportUrl: null, followupReportUrl: null },
         testimonial: {
           front: { beforeUrl: null, afterUrl: null },
           side: { beforeUrl: null, afterUrl: null },

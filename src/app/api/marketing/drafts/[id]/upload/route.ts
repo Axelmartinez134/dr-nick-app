@@ -31,7 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   else if (kind === 'after') dest += `photos/after.${ext}`
   else if (kind === 'loop') dest += `videos/loop.${ext}`
   else if (kind === 'fit3d') dest += `fit3d/${String(idx + 1).padStart(2, '0')}.${ext}`
-  else if (kind === 'testing') dest += `testing/metabolic-cardio.${ext}`
+  else if (kind === 'testing_baseline') dest += `testing/baseline.${ext}`
+  else if (kind === 'testing_followup') dest += `testing/followup.${ext}`
   else if (kind === 'testimonial_before') dest += `testimonial/before.${ext}`
   else if (kind === 'testimonial_after') dest += `testimonial/after.${ext}`
   else if (kind === 'testimonial_front_before') dest += `testimonial/front/before.${ext}`
