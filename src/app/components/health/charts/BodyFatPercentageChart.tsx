@@ -42,11 +42,11 @@ export default function BodyFatPercentageChart({ data, hideDateInTooltip = false
   // Process body fat percentage data only (exclude null values for calculation, but keep for display)
   const chartData = useMemo(() => {
     return data
-      .filter(entry => entry.body_fat_percentage !== null)
+      .filter(entry => typeof entry.body_fat_percentage === 'number' && entry.body_fat_percentage !== null && !Number.isNaN(entry.body_fat_percentage as any))
       .sort((a, b) => a.week_number - b.week_number)
       .map(entry => ({
         week: entry.week_number,
-        bodyFat: entry.body_fat_percentage,
+        bodyFat: entry.body_fat_percentage as number,
         date: new Date(entry.date).toLocaleDateString()
       }))
   }, [data])

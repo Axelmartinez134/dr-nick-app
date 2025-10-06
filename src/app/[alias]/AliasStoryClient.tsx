@@ -398,21 +398,6 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🧪 Metabolic Health</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Directly improve metabolic health so that your body prefers fat as a fuel and your rate of loss stays on track.</p>
-            {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <AliasPlateauMobilePill
-                data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, weight: (w.fields?.weight ?? null), date: '' }))}
-              >
-                <ClientPlateauPreventionChart
-                  data={(snapshot.weeksRaw || []).map((w: any) => ({
-                    week_number: w.week_number,
-                    date: '',
-                    weight: (w.fields?.weight ?? null)
-                  })) as any}
-                  hideIndividualWeekFormula
-                />
-              </AliasPlateauMobilePill>
-            )}
-
             {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasMorningFatBurnMobilePill
@@ -426,6 +411,23 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                     })) as any}
                   />
                 </AliasMorningFatBurnMobilePill>
+              </div>
+            )}
+
+            {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <AliasPlateauMobilePill
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, weight: (w.fields?.weight ?? null), date: '' }))}
+                >
+                  <ClientPlateauPreventionChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({
+                      week_number: w.week_number,
+                      date: '',
+                      weight: (w.fields?.weight ?? null)
+                    })) as any}
+                    hideIndividualWeekFormula
+                  />
+                </AliasPlateauMobilePill>
               </div>
             )}
 

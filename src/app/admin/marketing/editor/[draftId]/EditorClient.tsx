@@ -210,8 +210,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                   <div className="space-y-2">
                     <div className="font-medium text-gray-700">Metabolic Health</div>
                     <div className="grid grid-cols-1 gap-2">
-                      {renderToggle('plateauWeight','Plateau Prevention (Weight Loss Rate)')}
                       {renderToggle('morningFatBurnTrend','Morning Fat Burn %')}
+                      {renderToggle('plateauWeight','Plateau Prevention (Weight Loss Rate)')}
                       {renderToggle('bodyFatTrend','Body Fat %')}
                       {tracksBP ? renderToggle('systolicTrend','Systolic Blood Pressure') : null}
                       {tracksBP ? renderToggle('diastolicTrend','Diastolic Blood Pressure') : null}

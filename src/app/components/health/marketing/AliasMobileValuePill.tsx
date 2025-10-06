@@ -17,10 +17,12 @@ interface AliasMobileValuePillProps<T> {
   enableDesktop?: boolean
   pillOffsetY?: number
   pillAbsoluteTop?: number | null
+  numericXAxis?: boolean
+  xAccessor?: (point: AliasMobileValuePillPoint) => number
   children: React.ReactNode
 }
 
-export default function AliasMobileValuePill<T>({ data, deriveSeries, renderContent, leftMargin = 20, rightMargin = 30, enableDesktop = false, pillOffsetY = 4, pillAbsoluteTop = null, children }: AliasMobileValuePillProps<T>) {
+export default function AliasMobileValuePill<T>({ data, deriveSeries, renderContent, leftMargin = 20, rightMargin = 30, enableDesktop = false, pillOffsetY = 4, pillAbsoluteTop = null, numericXAxis = false, xAccessor, children }: AliasMobileValuePillProps<T>) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const pillRef = useRef<HTMLDivElement | null>(null)
   const [isMobile, setIsMobile] = useState(false)
@@ -121,8 +123,35 @@ export default function AliasMobileValuePill<T>({ data, deriveSeries, renderCont
     const innerWidth = Math.max(1, width - (leftMargin + rightMargin))
     const clamped = Math.max(leftMargin, Math.min(width - rightMargin, xLocal))
     const ratio = (clamped - leftMargin) / innerWidth
-    const idx = Math.round(ratio * (series.length - 1))
-    setActiveIdx(Math.max(0, Math.min(series.length - 1, idx)))
+    if (numericXAxis && typeof xAccessor === 'function') {
+      let minX = Number.POSITIVE_INFINITY
+      let maxX = Number.NEGATIVE_INFINITY
+      for (let i = 0; i < series.length; i++) {
+        const xv = xAccessor(series[i])
+        if (Number.isFinite(xv)) {
+          if (xv < minX) minX = xv
+          if (xv > maxX) maxX = xv
+        }
+      }
+      if (Number.isFinite(minX) && Number.isFinite(maxX) && maxX > minX) {
+        const targetX = minX + ratio * (maxX - minX)
+        let nearestIdx = 0
+        let bestDist = Number.POSITIVE_INFINITY
+        for (let i = 0; i < series.length; i++) {
+          const xv = xAccessor(series[i])
+          if (!Number.isFinite(xv)) continue
+          const d = Math.abs(xv - targetX)
+          if (d < bestDist) { bestDist = d; nearestIdx = i }
+        }
+        setActiveIdx(nearestIdx)
+      } else {
+        const idx = Math.round(ratio * (series.length - 1))
+        setActiveIdx(Math.max(0, Math.min(series.length - 1, idx)))
+      }
+    } else {
+      const idx = Math.round(ratio * (series.length - 1))
+      setActiveIdx(Math.max(0, Math.min(series.length - 1, idx)))
+    }
     setPillOpen(true)
   }
 

@@ -16,10 +16,14 @@ export default function AliasBodyFatMobilePill({ data, children }: AliasBodyFatM
 
   const deriveSeries = useMemo(() => {
     return (rows: WeeklyLike[]): AliasMobileValuePillPoint[] => {
-      const sorted = (rows || []).slice().sort((a, b) => a.week_number - b.week_number)
-      return sorted.map((r) => ({
+      // Align with chart data: include only rows with actual body fat values
+      const filtered = (rows || [])
+        .filter(r => typeof r.body_fat_percentage === 'number' && !Number.isNaN(r.body_fat_percentage as any))
+        .slice()
+        .sort((a, b) => a.week_number - b.week_number)
+      return filtered.map((r) => ({
         week: r.week_number,
-        value: (typeof r.body_fat_percentage === 'number' && !Number.isNaN(r.body_fat_percentage) ? Math.round(r.body_fat_percentage * 10) / 10 : null),
+        value: Math.round((r.body_fat_percentage as number) * 10) / 10,
         extra: { date: r.date }
       }))
     }
@@ -43,6 +47,8 @@ export default function AliasBodyFatMobilePill({ data, children }: AliasBodyFatM
       leftMargin={leftMargin}
       rightMargin={rightMargin}
       enableDesktop
+      numericXAxis
+      xAccessor={(p) => p.week}
     >
       {children}
     </AliasMobileValuePill>
