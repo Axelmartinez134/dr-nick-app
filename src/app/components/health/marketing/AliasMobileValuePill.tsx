@@ -34,9 +34,17 @@ export default function AliasMobileValuePill<T>({ data, deriveSeries, renderCont
     const mq = window.matchMedia('(max-width: 768px)')
     const handler = () => setIsMobile(mq.matches)
     handler()
-    mq.addEventListener ? mq.addEventListener('change', handler) : mq.addListener(handler as any)
+    if (mq.addEventListener) {
+      mq.addEventListener('change', handler)
+    } else {
+      mq.addListener(handler as any)
+    }
     return () => {
-      mq.removeEventListener ? mq.removeEventListener('change', handler) : mq.removeListener(handler as any)
+      if (mq.removeEventListener) {
+        mq.removeEventListener('change', handler)
+      } else {
+        mq.removeListener(handler as any)
+      }
     }
   }, [])
 
