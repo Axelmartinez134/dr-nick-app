@@ -10,6 +10,7 @@ import MarketingFooter from '@/app/components/health/marketing/MarketingFooter'
 const WeightTrendChart = dynamic(() => import('@/app/components/health/charts/WeightTrendChart'), { ssr: false }) as any
 const WeightProjectionChart = dynamic(() => import('@/app/components/health/charts/WeightProjectionChart'), { ssr: false }) as any
 const ClientPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/PlateauPreventionChart'), { ssr: false })
+const AliasPlateauMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasPlateauMobilePill'), { ssr: false })
 const WaistTrendChart = dynamic(() => import('@/app/components/health/charts/WaistTrendChart'), { ssr: false }) as any
 const WaistPlateauPreventionChart = dynamic(() => import('@/app/components/health/charts/WaistPlateauPreventionChart'), { ssr: false }) as any
 const SystolicBloodPressureChart = dynamic(() => import('@/app/components/health/charts/SystolicBloodPressureChart'), { ssr: false }) as any
@@ -387,14 +388,18 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Directly improve metabolic health so that your body prefers fat as a fuel and your rate of loss stays on track.</p>
             {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <ClientPlateauPreventionChart
-                data={(snapshot.weeksRaw || []).map((w: any) => ({
-                  week_number: w.week_number,
-                  date: '',
-                  weight: (w.fields?.weight ?? null)
-                })) as any}
-                hideIndividualWeekFormula
-              />
+              <AliasPlateauMobilePill
+                data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, weight: (w.fields?.weight ?? null), date: '' }))}
+              >
+                <ClientPlateauPreventionChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: '',
+                    weight: (w.fields?.weight ?? null)
+                  })) as any}
+                  hideIndividualWeekFormula
+                />
+              </AliasPlateauMobilePill>
             )}
 
             {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
