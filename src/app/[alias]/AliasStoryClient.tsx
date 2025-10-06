@@ -602,17 +602,25 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
             {chartsEnabled.disciplineNutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <NutritionComplianceChart
+                <AliasNutritionMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
-                />
+                >
+                  <NutritionComplianceChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
+                  />
+                </AliasNutritionMobilePill>
               </div>
             )}
 
             {chartsEnabled.disciplineStrainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
-                <StrainGoalMetChart
+                <AliasStrainMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}
-                />
+                >
+                  <StrainGoalMetChart
+                    data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}
+                  />
+                </AliasStrainMobilePill>
               </div>
             )}
 
