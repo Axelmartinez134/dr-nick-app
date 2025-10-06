@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export default function LinkManager() {
   const [open, setOpen] = useState(false)
@@ -10,16 +10,42 @@ export default function LinkManager() {
   const [rows, setRows] = useState<any[]>([])
   const [total, setTotal] = useState(0)
   const pageSize = 20
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [aliasToDelete, setAliasToDelete] = useState<string>('')
   const [deleteConfirm, setDeleteConfirm] = useState('')
   const [deleting, setDeleting] = useState(false)
 
   async function load() {
-    const params = new URLSearchParams({ q, sort, page: String(page), pageSize: String(pageSize) })
-    const res = await fetch(`/api/marketing/links?${params.toString()}`, { cache: 'no-store' })
-    const json = await res.json()
-    if (res.ok) { setRows(json.items || []); setTotal(json.total || 0) }
+    try {
+      // cancel previous in-flight request
+      if (abortRef.current) abortRef.current.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      setLoading(true)
+      setError(null)
+      const params = new URLSearchParams({ q, sort, page: String(page), pageSize: String(pageSize) })
+      const res = await fetch(`/api/marketing/links?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setRows([])
+        setTotal(0)
+        setError(json?.error || 'Failed to load links')
+      } else {
+        setRows(json.items || [])
+        setTotal(json.total || 0)
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        setRows([])
+        setTotal(0)
+        setError('Failed to load links')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { if (open) load() }, [open, q, sort, page])
@@ -72,7 +98,13 @@ export default function LinkManager() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {loading ? (
+                  <tr><td colSpan={7} className="py-6 text-center text-gray-500">Loading links…</td></tr>
+                ) : error ? (
+                  <tr><td colSpan={7} className="py-6 text-center text-red-600">{error}</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={7} className="py-6 text-center text-gray-500">No active links found.</td></tr>
+                ) : rows.map((r) => (
                   <tr key={`${r.alias}-${r.currentSlug}`} className="border-t">
                     <td className="py-2 pr-3 text-gray-900">
                       <div className="font-medium">{r.patient.name}</div>
@@ -106,17 +138,14 @@ export default function LinkManager() {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
-                  <tr><td colSpan={7} className="py-6 text-center text-gray-500">No active links found.</td></tr>
-                )}
               </tbody>
             </table>
           </div>
           <div className="mt-3 flex items-center justify-between text-sm">
-            <div>Showing {(rows.length && (page-1)*pageSize+1) || 0}-{Math.min(page*pageSize, total)} of {total}</div>
+            <div className="text-gray-900 font-medium">{loading ? 'Loading…' : `Showing ${(rows.length && (page-1)*pageSize+1) || 0}-${Math.min(page*pageSize, total)} of ${total}`}</div>
             <div className="flex gap-2">
-              <button className="px-2 py-1 border rounded" disabled={page<=1} onClick={() => setPage(p => Math.max(1, p-1))}>Prev</button>
-              <button className="px-2 py-1 border rounded" disabled={page*pageSize>=total} onClick={() => setPage(p => p+1)}>Next</button>
+              <button className="px-2 py-1 border rounded border-gray-900 text-gray-900 hover:bg-gray-50 disabled:opacity-60" disabled={loading || page<=1} onClick={() => setPage(p => Math.max(1, p-1))}>Prev</button>
+              <button className="px-2 py-1 border rounded border-gray-900 text-gray-900 hover:bg-gray-50 disabled:opacity-60" disabled={loading || page*pageSize>=total} onClick={() => setPage(p => p+1)}>Next</button>
             </div>
           </div>
         </div>
