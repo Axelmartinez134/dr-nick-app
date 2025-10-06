@@ -39,18 +39,21 @@ export default function AliasWaistTrendMobilePill({ data, unitSystem, children }
   }
 
   return (
-    <AliasMobileValuePill
-      data={data}
-      deriveSeries={deriveSeries}
-      renderContent={renderContent}
-      leftMargin={leftMargin}
-      rightMargin={rightMargin}
-      enableDesktop
-      numericXAxis
-      xAccessor={(p) => p.week}
-    >
-      {children}
-    </AliasMobileValuePill>
+    <div className="alias-waist-hide-distance">
+      <style>{`.alias-waist-hide-distance .bg-purple-100.text-purple-800.rounded-full.whitespace-nowrap{ display:none !important; }`}</style>
+      <AliasMobileValuePill
+        data={data}
+        deriveSeries={deriveSeries}
+        renderContent={renderContent}
+        leftMargin={leftMargin}
+        rightMargin={rightMargin}
+        enableDesktop
+        numericXAxis
+        xAccessor={(p) => p.week}
+      >
+        {children}
+      </AliasMobileValuePill>
+    </div>
   )
 }
 
