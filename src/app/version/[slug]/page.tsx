@@ -3,6 +3,7 @@ import { headers } from 'next/headers'
 import Link from 'next/link'
 import { normalizeSnapshot } from '@/app/components/health/marketing/snapshotTypes'
 import AliasStoryClient from '@/app/[alias]/AliasStoryClient'
+import MarketingFooter from '@/app/components/health/marketing/MarketingFooter'
 
 export const dynamic = 'force-dynamic'
 export const metadata = {
@@ -61,7 +62,12 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     )
   }
 
-  return <AliasStoryClient snapshot={snapshot} shareSlug={slug} pageType="version" />
+  return (
+    <>
+      <AliasStoryClient snapshot={snapshot} shareSlug={slug} pageType="version" />
+      <MarketingFooter year={2025} />
+    </>
+  )
 }
 
 

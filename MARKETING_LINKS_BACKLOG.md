@@ -397,3 +397,13 @@ Format: Title; Description; Acceptance; Dependencies
 - Assets bucket: `marketing-assets`
 - Tagline: "Become the Fittest Version of Yourself."
 
+<!-- Audit log entries (append one line per step) -->
+- 2025-10-06: Bundle analysis (prod build) — alias First Load JS 154 KB (shared 102 KB; alias ~52 KB). Next focus: lazy-mount charts behind <details>, lazy YouTube, Supabase preconnect `https://pobkamvdnbxhmyfwbnsj.supabase.co`, and remove unused PdfJsInlineIOS import.
+ - 2025-10-06: Removed unused PdfJsInlineIOS import from `src/app/[alias]/AliasStoryClient.tsx` to trim initial JS; no runtime behavior change.
+ - 2025-10-06: Moved `MarketingFooter` rendering from client `AliasStoryClient.tsx` to server pages (`/[alias]`, `/version/[slug]`) to reduce client JS without changing UI.
+ - 2025-10-06: Gated all charts to mount only when their section `<details>` is opened; added prefetch-on-intent (hover/touchstart) for each section to warm dynamic chunks.
+ - 2025-10-06: Added preconnect/dns-prefetch for Supabase `https://pobkamvdnbxhmyfwbnsj.supabase.co` and YouTube origins in `src/app/layout.tsx` to speed asset negotiation.
+ - 2025-10-06: Deferred non-hero `<img>` width/height/decoding/lazy tweaks due to IG flicker; revisit post-hardening.
+ - 2025-10-06: Strengthened caching for read-only endpoints: `GET /api/marketing/shares/[slug]` and `GET /api/marketing/aliases/[alias]` now send long-lived Cache-Control + Surrogate-Control and weak ETag with 304 support.
+ - 2025-10-06: Respected prefers-reduced-motion for MP4s on alias pages (disable autoplay/loop, switch to metadata preload when user prefers reduced motion).
+ - 2025-10-06: Rebuild measurement — alias First Load JS 154 KB (shared 102 KB; alias ~52 KB); charts gated on open; caching/ETag added; preconnects in place.

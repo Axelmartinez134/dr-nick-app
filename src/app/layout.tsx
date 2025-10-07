@@ -32,6 +32,18 @@ export default function RootLayout({
         {/* Booking widget perf hints */}
         <link rel="dns-prefetch" href="https://www.cnvrsnly.com" />
         <link rel="preconnect" href="https://www.cnvrsnly.com" crossOrigin="anonymous" />
+        {/* Supabase Storage/CDN perf hints */}
+        <link rel="dns-prefetch" href="https://pobkamvdnbxhmyfwbnsj.supabase.co" />
+        <link rel="preconnect" href="https://pobkamvdnbxhmyfwbnsj.supabase.co" crossOrigin="anonymous" />
+        {/* YouTube perf hints (poster/iframe assets) */}
+        <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
+        <link rel="preconnect" href="https://www.youtube-nocookie.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://www.youtube.com" />
+        <link rel="preconnect" href="https://www.youtube.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://i.ytimg.com" />
+        <link rel="dns-prefetch" href="https://i9.ytimg.com" />
+        <link rel="dns-prefetch" href="https://s.ytimg.com" />
+        <link rel="dns-prefetch" href="https://www.google.com" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

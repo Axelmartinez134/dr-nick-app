@@ -14,7 +14,7 @@ function getServiceClient() {
 }
 
 // Case-insensitive alias lookup
-export async function GET(_req: Request, { params }: { params: Promise<{ alias: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ alias: string }> }) {
   try {
     const supabase = getServiceClient()
     if (!supabase) {
@@ -34,7 +34,37 @@ export async function GET(_req: Request, { params }: { params: Promise<{ alias: 
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ slug: row.current_slug }, { status: 200 })
+    const payload = { slug: row.current_slug }
+    // Weak ETag based on payload
+    let etag = ''
+    try {
+      const jsonStr = JSON.stringify(payload)
+      let h = 5381
+      for (let i = 0; i < jsonStr.length; i++) {
+        h = (h * 33) ^ jsonStr.charCodeAt(i)
+      }
+      const hash = (h >>> 0).toString(16)
+      etag = `W/"${hash}-${jsonStr.length}"`
+    } catch {}
+    const ifNoneMatch = req.headers.get('if-none-match') || ''
+    if (etag && ifNoneMatch === etag) {
+      return new NextResponse(null, {
+        status: 304,
+        headers: {
+          'Cache-Control': 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400',
+          'Surrogate-Control': 'max-age=86400',
+          ETag: etag,
+          Vary: 'Accept'
+        }
+      })
+    }
+    const headers: HeadersInit = {
+      'Cache-Control': 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400',
+      'Surrogate-Control': 'max-age=86400',
+      Vary: 'Accept'
+    }
+    if (etag) (headers as Record<string, string>).ETag = etag
+    return NextResponse.json(payload, { status: 200, headers })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }

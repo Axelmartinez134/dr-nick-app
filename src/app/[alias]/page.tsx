@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { normalizeSnapshot } from '@/app/components/health/marketing/snapshotTypes'
 import Link from 'next/link'
 import AliasStoryClient from './AliasStoryClient'
+import MarketingFooter from '@/app/components/health/marketing/MarketingFooter'
 import { headers } from 'next/headers'
 
 export const dynamic = 'force-dynamic'
@@ -86,7 +87,12 @@ export default async function Page({ params }: { params: Promise<{ alias: string
   const aliasJson = aliasRes.ok ? await aliasRes.json() : null
   const shareSlug = aliasJson?.slug || null
 
-  return <AliasStoryClient snapshot={snapshot} shareSlug={shareSlug || undefined} />
+  return (
+    <>
+      <AliasStoryClient snapshot={snapshot} shareSlug={shareSlug || undefined} />
+      <MarketingFooter year={2025} />
+    </>
+  )
 }
 
 
