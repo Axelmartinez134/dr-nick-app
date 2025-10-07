@@ -408,3 +408,6 @@ Format: Title; Description; Acceptance; Dependencies
  - 2025-10-06: Respected prefers-reduced-motion for MP4s on alias pages (disable autoplay/loop, switch to metadata preload when user prefers reduced motion).
  - 2025-10-06: Rebuild measurement — alias First Load JS 154 KB (shared 102 KB; alias ~52 KB); charts gated on open; caching/ETag added; preconnects in place.
  - 2025-10-07: Reverted chart gating/prefetch-on-intent to restore snappier open UX; First Load JS unchanged (charts were already split).
+ - 2025-10-07: Preload hero images at TTFB via `app/[alias]/head.tsx` and set loop MP4 to `preload="metadata"` so photos win bandwidth; improves perceived LCP/hero paint.
+ - 2025-10-07: UI polish — applied "bleed" label/value classes to Average Nutrition Compliance % card to match Total Fat Loss card.
+ - 2025-10-07: UI polish — applied "bleed" label/value classes to Average Exercise Compliance % card as well.

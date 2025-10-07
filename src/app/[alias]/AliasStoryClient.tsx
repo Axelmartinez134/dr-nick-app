@@ -392,12 +392,12 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="text-xl font-bold text-gray-900">{typeof avgWeeklyLossPctNum === 'number' ? `${avgWeeklyLossPctNum.toFixed(2)}%` : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Average Nutrition Compliance %</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.avgNutritionCompliancePct === 'number' ? `${m.avgNutritionCompliancePct.toFixed(2)}%` : '—'}</div>
+          <div className="text-xs text-gray-700 whitespace-nowrap sm:overflow-hidden sm:text-ellipsis">Average Nutrition Compliance %</div>
+          <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">{typeof m.avgNutritionCompliancePct === 'number' ? `${m.avgNutritionCompliancePct.toFixed(2)}%` : '—'}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-3 shadow-sm">
-          <div className="text-xs text-gray-700">Average Exercise Compliance %</div>
-          <div className="text-xl font-bold text-gray-900">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(2)}%` : '—'}</div>
+          <div className="text-xs text-gray-700 whitespace-nowrap sm:overflow-hidden sm:text-ellipsis">Average Exercise Compliance %</div>
+          <div className="text-xl font-bold text-gray-900 whitespace-nowrap overflow-visible">{typeof m.avgPurposefulExerciseDays === 'number' ? `${((m.avgPurposefulExerciseDays / 7) * 100).toFixed(2)}%` : '—'}</div>
         </div>
       </section>
 
