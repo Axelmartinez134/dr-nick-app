@@ -36,11 +36,7 @@ type UnitSystem = 'imperial' | 'metric'
 export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
-  const [isMetabolicOpen, setIsMetabolicOpen] = useState(false)
-  const [isDietaryOpen, setIsDietaryOpen] = useState(false)
-  const [isFitnessOpen, setIsFitnessOpen] = useState(false)
-  const [isDisciplineOpen, setIsDisciplineOpen] = useState(false)
-  const prefetchedRef = useRef<{ metabolic: boolean; dietary: boolean; fitness: boolean; discipline: boolean }>({ metabolic: false, dietary: false, fitness: false, discipline: false })
+  
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
 
   const m = snapshot.metrics
@@ -208,70 +204,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     } catch {}
   }, [])
 
-  // Prefetch helpers: warm dynamic chunks on hover/touchstart
-  const prefetchMetabolic = () => {
-    if (prefetchedRef.current.metabolic) return
-    prefetchedRef.current.metabolic = true
-    try {
-      void Promise.all([
-        import('@/app/components/health/marketing/AliasMorningFatBurnMobilePill'),
-        import('@/app/components/health/charts/MorningFatBurnChart'),
-        import('@/app/components/health/marketing/AliasPlateauMobilePill'),
-        import('@/app/components/health/charts/PlateauPreventionChart'),
-        import('@/app/components/health/marketing/AliasBodyFatMobilePill'),
-        import('@/app/components/health/charts/BodyFatPercentageChart'),
-        import('@/app/components/health/marketing/AliasSystolicMobilePill'),
-        import('@/app/components/health/charts/SystolicBloodPressureChart'),
-        import('@/app/components/health/marketing/AliasDiastolicMobilePill'),
-        import('@/app/components/health/charts/DiastolicBloodPressureChart')
-      ])
-    } catch {}
-  }
-
-  const prefetchDietary = () => {
-    if (prefetchedRef.current.dietary) return
-    prefetchedRef.current.dietary = true
-    try {
-      void Promise.all([
-        import('@/app/components/health/marketing/AliasNutritionMobilePill'),
-        import('@/app/components/health/charts/NutritionComplianceChart'),
-        import('@/app/components/health/marketing/AliasWeightProjectionMobilePill'),
-        import('@/app/components/health/charts/WeightProjectionChart'),
-        import('@/app/components/health/marketing/AliasWeightTrendMobilePill'),
-        import('@/app/components/health/charts/WeightTrendChart')
-      ])
-    } catch {}
-  }
-
-  const prefetchFitness = () => {
-    if (prefetchedRef.current.fitness) return
-    prefetchedRef.current.fitness = true
-    try {
-      void Promise.all([
-        import('@/app/components/health/marketing/AliasWaistTrendMobilePill'),
-        import('@/app/components/health/charts/WaistTrendChart'),
-        import('@/app/components/health/marketing/AliasWaistPlateauMobilePill'),
-        import('@/app/components/health/charts/WaistPlateauPreventionChart'),
-        import('@/app/components/health/marketing/AliasStrainMobilePill'),
-        import('@/app/components/health/charts/StrainGoalMetChart')
-      ])
-    } catch {}
-  }
-
-  const prefetchDiscipline = () => {
-    if (prefetchedRef.current.discipline) return
-    prefetchedRef.current.discipline = true
-    try {
-      void Promise.all([
-        import('@/app/components/health/marketing/AliasSleepMobilePill'),
-        import('@/app/components/health/charts/SleepConsistencyChart'),
-        import('@/app/components/health/marketing/AliasNutritionMobilePill'),
-        import('@/app/components/health/charts/NutritionComplianceChart'),
-        import('@/app/components/health/marketing/AliasStrainMobilePill'),
-        import('@/app/components/health/charts/StrainGoalMetChart')
-      ])
-    } catch {}
-  }
+  
 
   return (
     <>
@@ -479,11 +412,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Pillar Modules (collapsible) */}
       <section id="charts" className="max-w-md mx-auto p-4">
         {/* 🧪 Metabolic Health */}
-        <details className="rounded-lg border border-gray-200 shadow-sm mb-3" onToggle={(e) => setIsMetabolicOpen((e.currentTarget as any).open)}>
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold" onMouseEnter={prefetchMetabolic} onTouchStart={prefetchMetabolic} onFocus={prefetchMetabolic}>🧪 Metabolic Health</summary>
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🧪 Metabolic Health</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Directly improve metabolic health so that your body prefers fat as a fuel and your rate of loss stays on track.</p>
-            {isMetabolicOpen && chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.morningFatBurnTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasMorningFatBurnMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: w.date || '', morning_fat_burn_percent: (w.fields?.morning_fat_burn_percent ?? null) })) as any}
@@ -499,7 +432,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {isMetabolicOpen && chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasPlateauMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, weight: (w.fields?.weight ?? null), date: '' }))}
@@ -516,7 +449,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {isMetabolicOpen && chartsEnabled.bodyFatTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.bodyFatTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasBodyFatMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: w.date || '', body_fat_percentage: (w.fields?.body_fat_percentage ?? null) })) as any}
@@ -533,7 +466,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {isMetabolicOpen && chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasSystolicMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any}>
                   <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
@@ -541,7 +474,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {isMetabolicOpen && chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasDiastolicMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any}>
                   <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
@@ -556,11 +489,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </details>
 
         {/* 🥗 Dietary Protocol */}
-        <details className="rounded-lg border border-gray-200 shadow-sm mb-3" onToggle={(e) => setIsDietaryOpen((e.currentTarget as any).open)}>
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold" onMouseEnter={prefetchDietary} onTouchStart={prefetchDietary} onFocus={prefetchDietary}>🥗 Dietary Protocol</summary>
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🥗 Dietary Protocol</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Dialed-in macros and consistency keep your actual results aligned with projections.</p>
-            {isDietaryOpen && chartsEnabled.nutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.nutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <AliasNutritionMobilePill
                 data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
               >
@@ -569,7 +502,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 />
               </AliasNutritionMobilePill>
             )}
-            {isDietaryOpen && chartsEnabled.projection && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.projection && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasWeightProjectionMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', weight: (w.fields?.weight ?? null), initial_weight: (w.fields?.initial_weight ?? null) })) as any}
@@ -588,7 +521,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {isDietaryOpen && chartsEnabled.weightTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.weightTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasWeightTrendMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', weight: (w.fields?.weight ?? null) })) as any}
@@ -615,11 +548,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </details>
 
         {/* 🏋️ Fitness Optimized */}
-        <details className="rounded-lg border border-gray-200 shadow-sm mb-3" onToggle={(e) => setIsFitnessOpen((e.currentTarget as any).open)}>
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold" onMouseEnter={prefetchFitness} onTouchStart={prefetchFitness} onFocus={prefetchFitness}>🏋️ Fitness Optimized</summary>
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🏋️ Fitness Optimized</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Build capacity and protect lean mass while measurements reflect healthier body composition.</p>
-            {isFitnessOpen && chartsEnabled.waistTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.waistTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <AliasWaistTrendMobilePill
                 data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', waist: (w.fields?.waist ?? null) })) as any}
                 unitSystem={unitSystem}
@@ -638,7 +571,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </AliasWaistTrendMobilePill>
             )}
 
-            {isFitnessOpen && chartsEnabled.plateauWaist && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
+            {chartsEnabled.plateauWaist && Array.isArray(snapshot.derived.waistTrend) && (snapshot.derived.waistTrend as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasWaistPlateauMobilePill
                   data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
@@ -652,7 +585,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             )}
 
 
-            {isFitnessOpen && chartsEnabled.strainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.strainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasStrainMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}>
                   <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} />
@@ -669,11 +602,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         </details>
 
         {/* ⚡ Discipline */}
-        <details className="rounded-lg border border-gray-200 shadow-sm" onToggle={(e) => setIsDisciplineOpen((e.currentTarget as any).open)}>
-          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold" onMouseEnter={prefetchDiscipline} onTouchStart={prefetchDiscipline} onFocus={prefetchDiscipline}>⚡ Discipline</summary>
+        <details className="rounded-lg border border-gray-200 shadow-sm">
+          <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">⚡ Discipline</summary>
           <div className="p-2">
             <p className="text-sm text-gray-700 mb-3">Consistency compounds—better sleep and nutrition adherence accelerate results.</p>
-            {isDisciplineOpen && chartsEnabled.sleepTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.sleepTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <AliasSleepMobilePill
                 data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: w.date || '', sleep_consistency_score: (w.fields?.sleep_consistency_score ?? null) })) as any}
               >
@@ -687,7 +620,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </AliasSleepMobilePill>
             )}
 
-            {isDisciplineOpen && chartsEnabled.disciplineNutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.disciplineNutritionCompliancePct && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasNutritionMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
@@ -699,7 +632,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {isDisciplineOpen && chartsEnabled.disciplineStrainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+            {chartsEnabled.disciplineStrainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasStrainMobilePill
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}

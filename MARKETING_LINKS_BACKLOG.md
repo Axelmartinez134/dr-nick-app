@@ -407,3 +407,4 @@ Format: Title; Description; Acceptance; Dependencies
  - 2025-10-06: Strengthened caching for read-only endpoints: `GET /api/marketing/shares/[slug]` and `GET /api/marketing/aliases/[alias]` now send long-lived Cache-Control + Surrogate-Control and weak ETag with 304 support.
  - 2025-10-06: Respected prefers-reduced-motion for MP4s on alias pages (disable autoplay/loop, switch to metadata preload when user prefers reduced motion).
  - 2025-10-06: Rebuild measurement — alias First Load JS 154 KB (shared 102 KB; alias ~52 KB); charts gated on open; caching/ETag added; preconnects in place.
+ - 2025-10-07: Reverted chart gating/prefetch-on-intent to restore snappier open UX; First Load JS unchanged (charts were already split).
