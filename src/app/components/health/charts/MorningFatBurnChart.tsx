@@ -58,8 +58,8 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
       }
     })
 
-    // Keep week 0 even if null, filter other completely missing weeks only by presence of value
-    return fullChartData.filter(d => d.fatBurn !== null || d.week === 0)
+    // Do not filter out null weeks — preserve full calendar weeks to avoid x-axis compression
+    return fullChartData
   }, [data])
 
   // Calculate regression for trend line (Week 0 to latest week)
