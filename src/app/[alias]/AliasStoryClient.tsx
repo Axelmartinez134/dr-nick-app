@@ -36,8 +36,7 @@ type UnitSystem = 'imperial' | 'metric'
 export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
-  
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+
 
   const m = snapshot.metrics
   const meta = snapshot.meta
@@ -188,21 +187,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   // Average weekly fat loss % across the selected range: totalLossPct divided by weeks shown
   const avgWeeklyLossPctNum = totalLossPctNum !== null && weeksShown > 0 ? (totalLossPctNum / weeksShown) : null
 
-  // Respect prefers-reduced-motion: disable autoplay/loop on videos
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-      const apply = () => setPrefersReducedMotion(!!mq.matches)
-      apply()
-      if (mq.addEventListener) mq.addEventListener('change', apply)
-      else (mq as any).addListener(apply)
-      return () => {
-        if (mq.removeEventListener) mq.removeEventListener('change', apply)
-        else (mq as any).removeListener(apply)
-      }
-    } catch {}
-  }, [])
+  // Reduce Motion removed: always autoplay/loop videos
 
   
 
@@ -280,7 +265,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         const render = (u: string) => (
           <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             {isMp4(u) ? (
-              <video src={u} muted playsInline controls={false} className="w-full h-auto pointer-events-none" loop={!prefersReducedMotion} autoPlay={!prefersReducedMotion} preload={prefersReducedMotion ? 'metadata' : 'auto'} />
+              <video src={u} muted playsInline controls={false} className="w-full h-auto pointer-events-none" loop autoPlay preload="auto" />
             ) : (
               <img src={u} alt="Hero" loading="eager" fetchPriority="high" className="w-full h-auto" />
             )}
@@ -758,7 +743,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                                   </div>
                                 ) : null}
                                 {/\.mp4($|\?)/i.test(url) ? (
-                                  <video src={url} muted playsInline className="w-full h-auto rounded-lg" loop={!prefersReducedMotion} autoPlay={!prefersReducedMotion} preload={prefersReducedMotion ? 'metadata' : 'auto'} />
+                                  <video src={url} muted playsInline className="w-full h-auto rounded-lg pointer-events-none" controls={false} loop autoPlay preload="auto" />
                                 ) : (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img src={url} alt={`${heading} ${label}`} className="w-full h-auto rounded-lg" />
@@ -827,7 +812,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 {url ? (
                   <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                     {isMp4(url) ? (
-                      <video src={url} muted playsInline controls={false} className="w-full h-auto pointer-events-none" loop={!prefersReducedMotion} autoPlay={!prefersReducedMotion} preload={prefersReducedMotion ? 'metadata' : 'auto'} />
+                      <video src={url} muted playsInline controls={false} className="w-full h-auto pointer-events-none" loop autoPlay preload="auto" />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={url} alt={label} className="w-full h-auto" />
