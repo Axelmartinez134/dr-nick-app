@@ -36,6 +36,7 @@ type UnitSystem = 'imperial' | 'metric'
 export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
+  const [aliasForTracking, setAliasForTracking] = useState<string>('')
 
 
   const m = snapshot.metrics
@@ -188,6 +189,16 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   const avgWeeklyLossPctNum = totalLossPctNum !== null && weeksShown > 0 ? (totalLossPctNum / weeksShown) : null
 
   // Reduce Motion removed: always autoplay/loop videos
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      if (pageType === 'alias') {
+        const path = window.location.pathname || ''
+        const maybeAlias = (path.split('/')[1] || '').trim()
+        if (maybeAlias) setAliasForTracking(maybeAlias)
+      }
+    } catch {}
+  }, [pageType])
 
   
 
@@ -859,7 +870,13 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           <div className="mb-3 rounded-md bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 px-3 py-2 shadow-sm">
             <div className="text-sm md:text-base font-semibold text-gray-900">Schedule a consult</div>
           </div>
-          <iframe src="https://www.cnvrsnly.com/widget/booking/1RQQzveFefB7hCunO2cI" style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" />
+          {(() => {
+            const base = 'https://www.cnvrsnly.com/widget/booking/1RQQzveFefB7hCunO2cI'
+            const src = aliasForTracking ? `${base}${base.includes('?') ? '&' : '?'}alias=${encodeURIComponent(aliasForTracking)}` : base
+            return (
+              <iframe src={src} style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" />
+            )
+          })()}
           <Script src="https://www.cnvrsnly.com/js/form_embed.js" strategy="afterInteractive" />
         </div>
       </section>
