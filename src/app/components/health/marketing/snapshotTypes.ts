@@ -128,6 +128,7 @@ export function normalizeSnapshot(input: any): SnapshotJson {
       ctaLabel: input.meta?.ctaLabel ?? null,
       calendlyUrl: input.meta?.calendlyUrl ?? null,
       displayNameOverride: input.meta?.displayNameOverride ?? null,
+      testimonialQuote: input.meta?.testimonialQuote ?? null,
       totalFatLossLbs: typeof input.meta?.totalFatLossLbs === 'number' ? input.meta.totalFatLossLbs : (input.meta?.totalFatLossLbs === null ? null : undefined)
     }
 
