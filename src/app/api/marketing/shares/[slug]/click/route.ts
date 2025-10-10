@@ -42,7 +42,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
       return NextResponse.json({ error: updErr.message || 'Failed to count' }, { status: 500 })
     }
 
-    return NextResponse.json({ counted: true }, { status: 200 })
+    // Disable caching for click responses
+    const headers: HeadersInit = { 'Cache-Control': 'no-store', Vary: 'Accept' }
+    return NextResponse.json({ counted: true }, { status: 200, headers })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }

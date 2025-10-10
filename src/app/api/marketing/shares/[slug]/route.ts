@@ -14,7 +14,7 @@ function getSupabaseService()
   return createClient(url, key)
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
     const supabase = getSupabaseService()
     if (!supabase) {
@@ -47,39 +47,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       ? { ...row.snapshot_json, schema_version: (row as any).schema_version ?? (row.snapshot_json as any)?.schema_version ?? 1 }
       : row.snapshot_json
 
-    // Compute weak ETag based on snapshot payload only (ignore view_count changes)
-    let etag = ''
-    try {
-      const jsonStr = typeof payload === 'string' ? payload : JSON.stringify(payload)
-      let h = 5381
-      for (let i = 0; i < jsonStr.length; i++) {
-        h = (h * 33) ^ jsonStr.charCodeAt(i)
-      }
-      const hash = (h >>> 0).toString(16)
-      etag = `W/"${hash}-${jsonStr.length}"`
-    } catch {}
-
-    const ifNoneMatch = req.headers.get('if-none-match') || ''
-    if (etag && ifNoneMatch === etag) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: {
-          'Cache-Control': 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400',
-          'Surrogate-Control': 'max-age=86400',
-          ETag: etag,
-          Vary: 'Accept'
-        }
-      })
-    }
-
+    // Disable caching so view_count increments and latest content are reflected immediately
     const headers: HeadersInit = {
-      'Cache-Control': 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400',
-      'Surrogate-Control': 'max-age=86400',
+      'Cache-Control': 'no-store',
       Vary: 'Accept'
     }
-    if (etag) (headers as Record<string, string>).ETag = etag
-    const res = NextResponse.json(payload, { status: 200, headers })
-    return res
+    return NextResponse.json(payload, { status: 200, headers })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
