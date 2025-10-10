@@ -302,9 +302,9 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
 
           {/* CTA removed by spec: centralized via marketingConfig */}
 
-          {/* Client Testimonial (collapsed, lazy render) */}
+          {/* Client Testimonial (collapsed, lazy render; gate heavy content until open) */}
           <section className="bg-white rounded border p-4">
-            <details onToggle={(e) => { /* lazy-render gate via CSS-only summary; content renders below */ }}>
+            <details onToggle={(e) => { /* gate heavy content below until open */ }}>
               <summary className="cursor-pointer select-none">
                 <h3 className="font-semibold text-gray-900">Client Testimonial</h3>
                 <div className="text-xs text-gray-600">Click to expand and manage testimonial content</div>
@@ -320,6 +320,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
               </div>
 
               {(() => {
+                const isOpen = typeof document !== 'undefined' ? Boolean((document?.activeElement as HTMLElement)?.closest && (document.activeElement as HTMLElement)?.closest('details')) : true
+                if (!isOpen) return null
                 const groups: Array<{ key: 'front' | 'side' | 'rear'; heading: string }> = [
                   { key: 'front', heading: 'Front Body' },
                   { key: 'side', heading: 'Side Body' },
@@ -351,10 +353,10 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                                 {val ? (
                                   <div className="space-y-2">
                                     {/\.mp4($|\?)/i.test(val) ? (
-                                      <video src={val} muted loop playsInline autoPlay className="w-full h-auto rounded" />
+                                      <video src={val} muted loop playsInline autoPlay preload="metadata" className="w-full h-auto rounded" />
                                     ) : (
                                       // eslint-disable-next-line @next/next/no-img-element
-                                      <img src={val} alt={`${heading} ${label}`} className="w-full h-auto rounded" />
+                                      <img src={val} alt={`${heading} ${label}`} loading="lazy" className="w-full h-auto rounded" />
                                     )}
                                     <div className="flex gap-2">
                                       <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium">Replace<input type="file" className="hidden" accept="image/*,video/mp4" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const kind = uploadKindFor(key, which as any); const url2 = await upload(kind as any, f); setNested(key, { [`${which}Url`]: url2 }) }} /></label>

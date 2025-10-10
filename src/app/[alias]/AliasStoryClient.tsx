@@ -37,6 +37,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
   const [aliasForTracking, setAliasForTracking] = useState<string>('')
+  const [testimonialMediaOpen, setTestimonialMediaOpen] = useState(false)
 
 
   const m = snapshot.metrics
@@ -651,7 +652,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
       {/* Testimonial (moved directly below Discipline) */}
       <section id="testimonial" className="max-w-md mx-auto px-4 py-0">
-        <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+        <details className="rounded-lg border border-gray-200 shadow-sm mb-3" onToggle={(e) => setTestimonialMediaOpen((e.currentTarget as HTMLDetailsElement).open)}>
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s Testimonial`}</summary>
           <div className="p-2">
             {((snapshot as any)?.meta?.testimonialQuote) ? (
@@ -692,6 +693,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             })()}
             {(() => {
               const t = (snapshot as any)?.media?.testimonial
+              if (!testimonialMediaOpen) return null
               if (!t) return null
               const groups: Array<{ key: 'front' | 'side' | 'rear'; heading: string }> = [
                 { key: 'front', heading: 'Front Body' },
@@ -754,10 +756,10 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                                   </div>
                                 ) : null}
                                 {/\.mp4($|\?)/i.test(url) ? (
-                                  <video src={url} muted playsInline className="w-full h-auto rounded-lg pointer-events-none" controls={false} loop autoPlay preload="auto" />
+                                  <video src={url} muted playsInline className="w-full h-auto rounded-lg pointer-events-none" controls={false} loop autoPlay preload="metadata" />
                                 ) : (
                                   // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={url} alt={`${heading} ${label}`} className="w-full h-auto rounded-lg" />
+                                  <img src={url} alt={`${heading} ${label}`} className="w-full h-auto rounded-lg" loading="lazy" />
                                 )}
                               </div>
                             )
