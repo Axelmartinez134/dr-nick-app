@@ -197,7 +197,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 <label key={`${metaKey}${keySuffix ? `-${keySuffix}` : ''}`} className="flex items-center gap-2 text-gray-900">
                   <input
                     type="checkbox"
-                    checked={draft?.meta?.chartsEnabled?.[metaKey as any] ?? true}
+                    checked={Boolean(draft?.meta?.chartsEnabled?.[metaKey as any])}
                     onChange={(e) => setMeta({ chartsEnabled: { ...(draft?.meta?.chartsEnabled||{}), [metaKey]: e.target.checked } })}
                   />
                   <span>{label}</span>
@@ -497,13 +497,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       displayNameOverride: draft?.meta?.displayNameOverride || null,
                       testimonialQuote: draft?.meta?.testimonialQuote || null,
                       totalFatLossLbs: typeof draft?.meta?.totalFatLossLbs === 'number' ? draft.meta.totalFatLossLbs : null,
-                      chartsEnabled: draft?.meta?.chartsEnabled || {
-                        weightTrend: true, projection: true, plateauWeight: true,
-                        waistTrend: false, plateauWaist: false, nutritionCompliancePct: false,
-                        sleepTrend: false, systolicTrend: false, diastolicTrend: false,
-                        strainTrend: false,
-                        morningFatBurnTrend: false, bodyFatTrend: false
-                      },
+                      // Send only persisted user choices; if undefined, server will compute full defaults
+                      chartsEnabled: (draft?.meta?.chartsEnabled ?? undefined),
                       displayWeeks: draft?.meta?.displayWeeks || undefined,
                       selectedMedia: draft?.media || {}
                     }

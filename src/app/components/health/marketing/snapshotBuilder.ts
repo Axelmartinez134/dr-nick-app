@@ -8,6 +8,7 @@ import { buildDerived } from './snapshotDerived'
 import { computeSummaryMetrics } from './snapshotSummary'
 import { pinAssets, type SelectedMedia } from './snapshotPinning'
 import { sanitizeAlias, makeSnapshotSlug } from './aliasUtils'
+import { backfillChartsEnabled, defaultChartsOrder } from './chartDefaults'
 
 export interface BuilderSettings {
   displayNameMode: 'first_name' | 'anonymous'
@@ -116,33 +117,8 @@ export async function snapshotBuilder(
     meta: {
       patientLabel,
       unitSystemLocked: 'imperial',
-      chartsOrder: settings.chartsOrder || [
-        'weightTrend',
-        'projection',
-        'plateauWeight',
-        'waistTrend',
-        'plateauWaist',
-        'nutritionCompliancePct',
-        'sleepTrend',
-        'morningFatBurnTrend',
-        'bodyFatTrend'
-      ],
-      chartsEnabled: settings.chartsEnabled || {
-        weightTrend: true,
-        projection: true,
-        plateauWeight: true,
-        waistTrend: false,
-        plateauWaist: false,
-        nutritionCompliancePct: false,
-        sleepTrend: false,
-        systolicTrend: false,
-        diastolicTrend: false,
-        strainTrend: false,
-        disciplineNutritionCompliancePct: false,
-        disciplineStrainTrend: false,
-        morningFatBurnTrend: false,
-        bodyFatTrend: false
-      },
+      chartsOrder: Array.isArray(settings.chartsOrder) && settings.chartsOrder.length > 0 ? settings.chartsOrder : defaultChartsOrder(),
+      chartsEnabled: backfillChartsEnabled(settings.chartsEnabled, { trackBloodPressure: !!profile.track_blood_pressure }),
       captionsEnabled: settings.captionsEnabled,
       layout: settings.layout,
       // Watermark centralized via marketingConfig; do not persist per snapshot

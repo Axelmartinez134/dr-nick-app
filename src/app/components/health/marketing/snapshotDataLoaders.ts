@@ -9,6 +9,7 @@ export interface ProfileRow {
   unit_system: 'imperial' | 'metric' | null
   weight_change_goal_percent: number | null
   notes_preferences?: any
+  track_blood_pressure?: boolean | null
 }
 
 export interface HealthDataRow {
@@ -38,7 +39,7 @@ function toNum(val: any): number | null {
 export async function loadPatientProfile(supabase: any, patientId: string): Promise<ProfileRow> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, full_name, email, unit_system, weight_change_goal_percent, notes_preferences')
+    .select('id, full_name, email, unit_system, weight_change_goal_percent, notes_preferences, track_blood_pressure')
     .eq('id', patientId)
     .single()
 
@@ -52,7 +53,8 @@ export async function loadPatientProfile(supabase: any, patientId: string): Prom
     email: data.email ?? null,
     unit_system: (data.unit_system === 'metric' ? 'metric' : data.unit_system === 'imperial' ? 'imperial' : null),
     weight_change_goal_percent: toNum(data.weight_change_goal_percent),
-    notes_preferences: data.notes_preferences
+    notes_preferences: data.notes_preferences,
+    track_blood_pressure: typeof data.track_blood_pressure === 'boolean' ? data.track_blood_pressure : null
   }
 }
 

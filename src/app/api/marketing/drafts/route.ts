@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sanitizeAlias, isAliasValidFormat } from '@/app/components/health/marketing/aliasUtils'
+import { computeChartsEnabledDefaults } from '@/app/components/health/marketing/chartDefaults'
+import { loadPatientProfile } from '@/app/components/health/marketing/snapshotDataLoaders'
 
 function getServiceClient()
 {
@@ -24,25 +26,18 @@ export async function POST(req: NextRequest)
     const alias = sanitizeAlias(String(inputAlias))
     if (!isAliasValidFormat(alias)) return NextResponse.json({ error: 'Invalid alias' }, { status: 400 })
 
-    // Create an empty draft
+    // Load profile to set BP-conditional defaults
+    const profile = await (async () => {
+      try { return await loadPatientProfile(supabase, patientId) } catch { return null }
+    })()
+
+    // Create a draft with full chartsEnabled defaults (14 flags; BP conditional)
     const draft = {
       meta: {
         displayNameMode: 'first_name',
         captionsEnabled: true,
         layout: 'stack',
-        // Defaults: turn ON all implemented charts; defer missing ones to OFF for now
-        chartsEnabled: {
-          weightTrend: true,
-          projection: true,
-          plateauWeight: true,
-          waistTrend: true,
-          sleepTrend: true,
-          morningFatBurnTrend: true,
-          bodyFatTrend: true,
-          // Not yet implemented on alias/preview pages
-          plateauWaist: false,
-          nutritionCompliancePct: false
-        },
+        chartsEnabled: computeChartsEnabledDefaults({ trackBloodPressure: !!(profile as any)?.track_blood_pressure }),
         totalFatLossLbs: null
       },
       media: {

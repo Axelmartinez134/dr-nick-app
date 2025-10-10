@@ -81,17 +81,7 @@ export default function MarketingTab() {
             displayNameMode: 'first_name',
             captionsEnabled: true,
             layout: 'stack',
-            chartsEnabled: {
-              weightTrend: true,
-              projection: true,
-              plateauWeight: true,
-              waistTrend: false,
-              plateauWaist: false,
-              nutritionCompliancePct: false,
-              sleepTrend: false,
-              morningFatBurnTrend: false,
-              bodyFatTrend: false
-            },
+            // Let server compute full chartsEnabled defaults (14 flags, BP conditional)
             selectedMedia: {}
           }
         })
@@ -121,17 +111,7 @@ export default function MarketingTab() {
             displayNameMode: 'first_name',
             captionsEnabled: true,
             layout: 'stack',
-            chartsEnabled: {
-              weightTrend: true,
-              projection: true,
-              plateauWeight: true,
-              waistTrend: false,
-              plateauWaist: false,
-              nutritionCompliancePct: false,
-              sleepTrend: false,
-              morningFatBurnTrend: false,
-              bodyFatTrend: false
-            },
+            // Let server compute full chartsEnabled defaults (14 flags, BP conditional)
             selectedMedia: {}
           }
         })

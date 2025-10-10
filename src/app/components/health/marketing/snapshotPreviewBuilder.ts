@@ -2,6 +2,7 @@
 // Builds a SnapshotJson from patient data and draft media/settings without copying assets
 
 import { SNAPSHOT_SCHEMA_VERSION, SnapshotJson, SnapshotWeek } from './snapshotTypes'
+import { backfillChartsEnabled, defaultChartsOrder } from './chartDefaults'
 import { loadPatientProfile, loadPatientWeeklyRows } from './snapshotDataLoaders'
 import { buildDerived } from './snapshotDerived'
 import { computeSummaryMetrics } from './snapshotSummary'
@@ -112,33 +113,8 @@ export async function snapshotPreviewBuilder(
     meta: {
       patientLabel,
       unitSystemLocked: 'imperial',
-      chartsOrder: meta.chartsOrder || [
-        'weightTrend',
-        'projection',
-        'plateauWeight',
-        'waistTrend',
-        'plateauWaist',
-        'nutritionCompliancePct',
-        'sleepTrend',
-        'morningFatBurnTrend',
-        'bodyFatTrend'
-      ],
-      chartsEnabled: meta.chartsEnabled || {
-        weightTrend: true,
-        projection: true,
-        plateauWeight: true,
-        waistTrend: false,
-        plateauWaist: false,
-        nutritionCompliancePct: false,
-        sleepTrend: false,
-        systolicTrend: false,
-        diastolicTrend: false,
-        strainTrend: false,
-        disciplineNutritionCompliancePct: false,
-        disciplineStrainTrend: false,
-        morningFatBurnTrend: false,
-        bodyFatTrend: false
-      },
+      chartsOrder: Array.isArray(meta.chartsOrder) && meta.chartsOrder.length > 0 ? meta.chartsOrder : defaultChartsOrder(),
+      chartsEnabled: backfillChartsEnabled(meta.chartsEnabled, { trackBloodPressure: !!profile.track_blood_pressure }),
       captionsEnabled: meta.captionsEnabled,
       layout: meta.layout,
       // Watermark centralized via marketingConfig
