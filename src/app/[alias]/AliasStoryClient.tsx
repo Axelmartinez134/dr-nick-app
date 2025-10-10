@@ -220,7 +220,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           {(() => {
             const age = (snapshot?.meta as any)?.age
             if (typeof age === 'number') {
-              return <span className="ml-2 text-gray-800 font-normal">{`, ${age} Years Old`}</span>
+              return <span className="text-gray-800 font-normal">{`, ${age} Years Old`}</span>
             }
             return null
           })()}
