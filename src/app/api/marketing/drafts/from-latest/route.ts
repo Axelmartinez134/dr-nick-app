@@ -45,13 +45,21 @@ export async function POST(req: NextRequest)
       .single()
 
     const snap = share?.snapshot_json || {}
+    const meta = snap?.meta || {}
     const draft = {
       meta: {
-        displayNameMode: snap?.meta?.patientLabel ? 'first_name' : 'first_name',
-        captionsEnabled: !!snap?.meta?.captionsEnabled,
-        layout: snap?.meta?.layout === 'three_up' ? 'three_up' : 'stack',
-        chartsEnabled: snap?.meta?.chartsEnabled || {},
-        totalFatLossLbs: typeof snap?.meta?.totalFatLossLbs === 'number' ? snap.meta.totalFatLossLbs : null
+        // Preserve original name mode if present; default to first_name
+        displayNameMode: (typeof meta?.displayNameMode === 'string' ? meta.displayNameMode : 'first_name'),
+        displayNameOverride: meta?.displayNameOverride ?? null,
+        captionsEnabled: !!meta?.captionsEnabled,
+        layout: meta?.layout === 'three_up' ? 'three_up' : 'stack',
+        chartsEnabled: meta?.chartsEnabled || {},
+        // Preserve display range if present
+        displayWeeks: meta?.displayWeeks ? meta.displayWeeks : undefined,
+        // Preserve testimonial quote and age (versioned fields)
+        testimonialQuote: typeof meta?.testimonialQuote === 'string' ? meta.testimonialQuote : (meta?.testimonialQuote === null ? null : null),
+        age: (typeof meta?.age === 'number') ? meta.age : (meta?.age === null ? null : null),
+        totalFatLossLbs: typeof meta?.totalFatLossLbs === 'number' ? meta.totalFatLossLbs : null
       },
       media: snap?.media || {}
     }

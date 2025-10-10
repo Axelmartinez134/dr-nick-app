@@ -511,7 +511,9 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       watermarkText: draft?.meta?.watermarkText || null,
                       ctaLabel: draft?.meta?.ctaLabel || null,
                       displayNameOverride: draft?.meta?.displayNameOverride || null,
-                      testimonialQuote: draft?.meta?.testimonialQuote || null,
+                      testimonialQuote: (typeof draft?.meta?.testimonialQuote === 'string'
+                        ? (draft.meta.testimonialQuote.trim() === '' ? null : draft.meta.testimonialQuote.trim())
+                        : (draft?.meta?.testimonialQuote === null ? null : undefined)),
                       age: (typeof draft?.meta?.age === 'number') ? draft.meta.age : (draft?.meta?.age === null ? null : undefined),
                       totalFatLossLbs: typeof draft?.meta?.totalFatLossLbs === 'number' ? draft.meta.totalFatLossLbs : null,
                       // Send only persisted user choices; if undefined, server will compute full defaults
