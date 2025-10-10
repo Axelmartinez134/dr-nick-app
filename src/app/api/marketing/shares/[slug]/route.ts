@@ -24,7 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     const { slug } = await params
     const { data: row, error } = await supabase
       .from('marketing_shares')
-      .select('snapshot_json, schema_version, revoked_at, view_count')
+      .select('snapshot_json, schema_version, revoked_at, view_count, alias')
       .eq('slug', slug)
       .single()
 
@@ -42,6 +42,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
       .from('marketing_shares')
       .update({ view_count: nextCount })
       .eq('slug', slug)
+
+    // Also increment lifetime alias total views (best-effort; ignore if column missing)
+    try {
+      const aliasVal = (row as any)?.alias
+      if (aliasVal) {
+        const { data: arow } = await supabase
+          .from('marketing_aliases')
+          .select('total_view_count')
+          .ilike('alias', aliasVal)
+          .single()
+        const current = (arow as any)?.total_view_count ?? 0
+        await supabase
+          .from('marketing_aliases')
+          .update({ total_view_count: current + 1 })
+          .ilike('alias', aliasVal)
+      }
+    } catch {}
 
     const payload = typeof row.snapshot_json === 'object' && row.snapshot_json
       ? { ...row.snapshot_json, schema_version: (row as any).schema_version ?? (row.snapshot_json as any)?.schema_version ?? 1 }

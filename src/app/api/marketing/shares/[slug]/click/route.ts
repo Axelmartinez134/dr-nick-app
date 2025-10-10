@@ -26,7 +26,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
     // Validate slug exists and is not revoked
     const { data: share, error: fetchErr } = await supabase
       .from('marketing_shares')
-      .select('slug, revoked_at')
+      .select('slug, revoked_at, alias')
       .eq('slug', slug)
       .single()
 
@@ -41,6 +41,23 @@ export async function POST(_req: Request, { params }: { params: Promise<{ slug: 
     if (updErr) {
       return NextResponse.json({ error: updErr.message || 'Failed to count' }, { status: 500 })
     }
+
+    // Also increment lifetime alias total ctas (best-effort; ignore if column missing)
+    try {
+      const aliasVal = (share as any)?.alias
+      if (aliasVal) {
+        const { data: arow } = await supabase
+          .from('marketing_aliases')
+          .select('total_cta_count')
+          .ilike('alias', aliasVal)
+          .single()
+        const current = (arow as any)?.total_cta_count ?? 0
+        await supabase
+          .from('marketing_aliases')
+          .update({ total_cta_count: current + 1 })
+          .ilike('alias', aliasVal)
+      }
+    } catch {}
 
     // Disable caching for click responses
     const headers: HeadersInit = { 'Cache-Control': 'no-store', Vary: 'Accept' }
