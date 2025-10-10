@@ -43,7 +43,7 @@ export async function GET(req: NextRequest)
     // Load patient info for display
     const items: any[] = []
     for (const a of aliases || []) {
-      let patient = { id: a.patient_id, name: '', email: '' }
+      const patient = { id: a.patient_id, name: '', email: '' }
       try {
         const { data: p } = await supabase
           .from('profiles')
