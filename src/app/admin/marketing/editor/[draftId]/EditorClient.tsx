@@ -316,9 +316,9 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
 
           {/* CTA removed by spec: centralized via marketingConfig */}
 
-          {/* Client Testimonial (collapsed, lazy render; gate heavy content until open) */}
+          {/* Client Testimonial (editor loads immediately; no lazy gating) */}
           <section className="bg-white rounded border p-4">
-            <details onToggle={(e) => { /* gate heavy content below until open */ }}>
+            <details>
               <summary className="cursor-pointer select-none">
                 <h3 className="font-semibold text-gray-900">Client Testimonial</h3>
                 <div className="text-xs text-gray-600">Click to expand and manage testimonial content</div>
@@ -334,8 +334,6 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
               </div>
 
               {(() => {
-                const isOpen = typeof document !== 'undefined' ? Boolean((document?.activeElement as HTMLElement)?.closest && (document.activeElement as HTMLElement)?.closest('details')) : true
-                if (!isOpen) return null
                 const groups: Array<{ key: 'front' | 'side' | 'rear'; heading: string }> = [
                   { key: 'front', heading: 'Front Body' },
                   { key: 'side', heading: 'Side Body' },
