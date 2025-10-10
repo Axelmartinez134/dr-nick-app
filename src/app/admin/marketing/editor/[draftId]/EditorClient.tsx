@@ -152,6 +152,20 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                 <input className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" value={draft?.meta?.displayNameOverride || ''} onChange={(e) => setMeta({ displayNameOverride: e.target.value })} placeholder="Custom label (optional)" />
               </>
             )}
+            <div className="mt-3">
+              <label className="text-sm text-gray-900 block mb-1">Age</label>
+              <input
+                type="number"
+                className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                placeholder="e.g., 36"
+                value={(draft?.meta?.age ?? '') as any}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const num = v === '' ? null : Number(v)
+                  setMeta({ age: (v === '' || Number.isNaN(num)) ? null : num })
+                }}
+              />
+            </div>
           </section>
 
           {/* Hero before/after */}
@@ -498,6 +512,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       ctaLabel: draft?.meta?.ctaLabel || null,
                       displayNameOverride: draft?.meta?.displayNameOverride || null,
                       testimonialQuote: draft?.meta?.testimonialQuote || null,
+                      age: (typeof draft?.meta?.age === 'number') ? draft.meta.age : (draft?.meta?.age === null ? null : undefined),
                       totalFatLossLbs: typeof draft?.meta?.totalFatLossLbs === 'number' ? draft.meta.totalFatLossLbs : null,
                       // Send only persisted user choices; if undefined, server will compute full defaults
                       chartsEnabled: (draft?.meta?.chartsEnabled ?? undefined),

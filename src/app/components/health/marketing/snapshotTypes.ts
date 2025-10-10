@@ -39,6 +39,8 @@ export interface SnapshotMeta {
   displayNameOverride?: string | null
   displayNameMode?: 'first_name' | 'anonymous'
   testimonialQuote?: string | null
+  // Snapshot-scoped age display (versioned)
+  age?: number | null
   // Absolute total fat loss in pounds (fixed story value)
   totalFatLossLbs?: number | null
   // Optional global display range for charts/metrics
@@ -129,6 +131,7 @@ export function normalizeSnapshot(input: any): SnapshotJson {
       calendlyUrl: input.meta?.calendlyUrl ?? null,
       displayNameOverride: input.meta?.displayNameOverride ?? null,
       testimonialQuote: input.meta?.testimonialQuote ?? null,
+      age: typeof input.meta?.age === 'number' ? input.meta.age : (input.meta?.age === null ? null : undefined),
       totalFatLossLbs: typeof input.meta?.totalFatLossLbs === 'number' ? input.meta.totalFatLossLbs : (input.meta?.totalFatLossLbs === null ? null : undefined)
     }
 

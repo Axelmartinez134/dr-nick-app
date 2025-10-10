@@ -215,7 +215,16 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       {/* Header */}
       <header className="max-w-md mx-auto p-4 text-center">
         <div className="text-xs text-gray-700">Board‑Certified • 1:1 Coaching • Science‑Backed</div>
-        <h1 className="text-2xl font-bold text-gray-900 mt-2">{displayLabel}</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mt-2">
+          {displayLabel}
+          {(() => {
+            const age = (snapshot?.meta as any)?.age
+            if (typeof age === 'number') {
+              return <span className="ml-2 text-gray-800 font-normal">{`, ${age} Years Old`}</span>
+            }
+            return null
+          })()}
+        </h1>
         {weeksShown > 0 ? (
           <div className="mt-1 text-xl font-bold text-gray-900">{weeksShown} weeks</div>
         ) : null}
