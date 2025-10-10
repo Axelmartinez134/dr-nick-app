@@ -35,35 +35,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ alias: s
     }
 
     const payload = { slug: row.current_slug }
-    // Weak ETag based on payload
-    let etag = ''
-    try {
-      const jsonStr = JSON.stringify(payload)
-      let h = 5381
-      for (let i = 0; i < jsonStr.length; i++) {
-        h = (h * 33) ^ jsonStr.charCodeAt(i)
-      }
-      const hash = (h >>> 0).toString(16)
-      etag = `W/"${hash}-${jsonStr.length}"`
-    } catch {}
-    const ifNoneMatch = req.headers.get('if-none-match') || ''
-    if (etag && ifNoneMatch === etag) {
-      return new NextResponse(null, {
-        status: 304,
-        headers: {
-          'Cache-Control': 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400',
-          'Surrogate-Control': 'max-age=86400',
-          ETag: etag,
-          Vary: 'Accept'
-        }
-      })
-    }
+    // Minimal fix: disable caching entirely so alias → slug updates are immediate
     const headers: HeadersInit = {
-      'Cache-Control': 'public, max-age=600, s-maxage=86400, stale-while-revalidate=86400',
-      'Surrogate-Control': 'max-age=86400',
+      'Cache-Control': 'no-store',
       Vary: 'Accept'
     }
-    if (etag) (headers as Record<string, string>).ETag = etag
     return NextResponse.json(payload, { status: 200, headers })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
