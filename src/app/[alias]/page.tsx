@@ -89,7 +89,7 @@ export default async function Page({ params }: { params: Promise<{ alias: string
 
   return (
     <>
-      <AliasStoryClient snapshot={snapshot} shareSlug={shareSlug || undefined} />
+      <AliasStoryClient snapshot={snapshot} shareSlug={shareSlug || undefined} pageAlias={alias} />
       <MarketingFooter year={2025} />
     </>
   )

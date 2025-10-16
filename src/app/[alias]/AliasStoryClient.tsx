@@ -33,10 +33,10 @@ const AliasBodyFatMobilePill = dynamic(() => import('@/app/components/health/mar
 
 type UnitSystem = 'imperial' | 'metric'
 
-export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias' }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version' }) {
+export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alias', pageAlias }: { snapshot: SnapshotJson; shareSlug?: string; pageType?: 'alias' | 'version'; pageAlias?: string }) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [showStickyCTA, setShowStickyCTA] = useState(false)
-  const [aliasForTracking, setAliasForTracking] = useState<string>('')
+  const [aliasForTracking, setAliasForTracking] = useState<string>(pageAlias || '')
   const [testimonialMediaOpen, setTestimonialMediaOpen] = useState(false)
 
 
@@ -190,16 +190,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   const avgWeeklyLossPctNum = totalLossPctNum !== null && weeksShown > 0 ? (totalLossPctNum / weeksShown) : null
 
   // Reduce Motion removed: always autoplay/loop videos
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      if (pageType === 'alias') {
-        const path = window.location.pathname || ''
-        const maybeAlias = (path.split('/')[1] || '').trim()
-        if (maybeAlias) setAliasForTracking(maybeAlias)
-      }
-    } catch {}
-  }, [pageType])
+  // alias provided from server ensures first-render param available to embed
 
   
 
@@ -883,11 +874,189 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           </div>
           {(() => {
             const base = 'https://www.cnvrsnly.com/widget/booking/1RQQzveFefB7hCunO2cI'
-            const src = aliasForTracking ? `${base}${base.includes('?') ? '&' : '?'}alias=${encodeURIComponent(aliasForTracking)}` : base
+            const params = aliasForTracking
+              ? `utm_source=${encodeURIComponent(aliasForTracking)}`
+              : ''
+            const src = params ? `${base}${base.includes('?') ? '&' : '?'}${params}` : base
             return (
-              <iframe src={src} style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" />
+              <iframe src={src} style={{ width: '100%', border: 'none', overflow: 'hidden', height: 700 }} scrolling="no" id="vswnIbVqg5No2YU4nxqn_1759108244711" data-alias={aliasForTracking || ''} />
             )
           })()}
+          {/* Guard: ensure params persist if widget rewrites iframe src */}
+          <Script
+            id="cnvrsnly-param-guard"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `
+(function(){
+  var alias = ${JSON.stringify(aliasForTracking || '')};
+  // Prefer alias from inline state via data attr if present
+  try {
+    var holder = document.getElementById('vswnIbVqg5No2YU4nxqn_1759108244711');
+    if (holder && holder.getAttribute) {
+      var a = holder.getAttribute('data-alias');
+      if (!alias && a) alias = a;
+    }
+  } catch(e) {}
+
+  function withParams(u){
+    try{
+      var url = new URL(u, document.baseURI);
+      var changed = false;
+      if(alias){
+        if(!url.searchParams.has('utm_source')){ url.searchParams.set('utm_source', alias); changed = true; }
+      }
+      return changed ? url.toString() : u;
+    }catch(e){ return u; }
+  }
+
+  var desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+  if(desc && desc.set){
+    var origSet = desc.set;
+    Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+      set: function(v){
+        if (typeof v === 'string' && v.indexOf('cnvrsnly.com/widget/booking/') !== -1) {
+          var before = v;
+          v = withParams(v);
+          if (before !== v) { try { console.log('[BookingDiag] setter adjusted iframe src', { before: before, after: v }); } catch(e) {} }
+        }
+        return origSet.call(this, v);
+      },
+      get: desc.get,
+      configurable: true
+    });
+  }
+
+  var ensure = function(){
+    try{
+      var ifr = document.querySelector('iframe[src*="cnvrsnly.com/widget/booking/"]');
+      if (ifr && ifr.src) {
+        var fixed = withParams(ifr.src);
+        if (fixed !== ifr.src) { try { console.log('[BookingDiag] guard re-appending params to iframe src', { before: ifr.src, after: fixed }); } catch(e) {} ifr.src = fixed; }
+      }
+    }catch(e){}
+  };
+  new MutationObserver(ensure).observe(document.documentElement, {childList:true, subtree:true, attributes:true, attributeFilter:['src']});
+  window.addEventListener('load', ensure);
+  setTimeout(ensure, 0); setTimeout(ensure, 500); setTimeout(ensure, 2000);
+})();
+`
+            }}
+          />
+          {/* Ensure UTMs exist on parent URL and respond to fetch-query-params with our UTMs */}
+          <Script
+            id="booking-parent-utms-and-responder"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `
+  (function(){
+    try {
+      var alias = ${JSON.stringify(aliasForTracking || '')};
+      function ensureParentUTMs(){
+        try {
+          if (!alias) return;
+          var url = new URL(window.location.href);
+          var changed = false;
+          if (!url.searchParams.has('utm_source')) { url.searchParams.set('utm_source', alias); changed = true; }
+          if (changed && window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', url.toString());
+            try { console.log('[BookingDiag] parent URL updated with UTMs:', url.toString()); } catch(e) {}
+          }
+        } catch(e) {}
+      }
+      function buildParamsFromParent(){
+        var obj = {};
+        if (alias) obj['utm_source'] = alias;
+        return obj;
+      }
+      function postParamsToIframe(){
+        try {
+          var ifr = document.getElementById('vswnIbVqg5No2YU4nxqn_1759108244711');
+          if (!ifr || !ifr.contentWindow) return;
+          var params = buildParamsFromParent();
+          if (!params || !params.utm_source) return;
+          var parentUrl = window.location.href;
+          var ref = document.referrer || '';
+          var msg = ['query-params', params, parentUrl, ref, ifr.id];
+          ifr.contentWindow.postMessage(msg, '*');
+          try { console.log('[BookingDiag] explicit parent->iframe query-params sent:', params); } catch(e) {}
+        } catch(e) {}
+      }
+      ensureParentUTMs();
+      // Respond to iframe asking for params
+      window.addEventListener('message', function(e){
+        try {
+          if (Array.isArray(e.data) && e.data[0] === 'fetch-query-params') {
+            ensureParentUTMs();
+            postParamsToIframe();
+          }
+        } catch(err) {}
+      });
+      // Also send once shortly after load to cover timing races
+      setTimeout(postParamsToIframe, 300);
+      setTimeout(postParamsToIframe, 1200);
+    } catch(e) {}
+  })();
+  `
+            }}
+          />
+          {/* Diagnostics: log postMessage traffic and iframe src changes (temporary) */}
+          <Script
+            id="booking-diagnostics-logger"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: `
+  (function(){
+    try {
+      function logInitial(){
+        try {
+          var ifr = document.querySelector('iframe[src*="cnvrsnly.com/widget/booking/"]');
+          if (ifr) { console.log('[BookingDiag] iframe initial src:', ifr.src); }
+        } catch(e) {}
+      }
+      function watchSrc(){
+        try {
+          var ifr = document.querySelector('iframe[src*="cnvrsnly.com/widget/booking/"]');
+          if (!ifr) return;
+          var last = ifr.getAttribute('src') || '';
+          var mo = new MutationObserver(function(muts){
+            try {
+              muts.forEach(function(m){
+                if (m.type === 'attributes' && m.attributeName === 'src') {
+                  var now = ifr.getAttribute('src') || '';
+                  if (now !== last) { console.log('[BookingDiag] iframe src changed:', now); last = now; }
+                }
+              });
+            } catch(e) {}
+          });
+          mo.observe(ifr, { attributes: true, attributeFilter: ['src'] });
+        } catch(e) {}
+      }
+      if (typeof Window !== 'undefined' && Window.prototype && !Window.prototype.__bookingDiagPatched) {
+        var _origPM = Window.prototype.postMessage;
+        Window.prototype.postMessage = function(message, targetOrigin, transfer){
+          try {
+            if (Array.isArray(message) && message[0] === 'query-params') {
+              console.log('[BookingDiag] parent->iframe postMessage query-params:', message[1], message[2]);
+            }
+          } catch(e) {}
+          return _origPM.apply(this, arguments);
+        };
+        Window.prototype.__bookingDiagPatched = true;
+      }
+      window.addEventListener('message', function(e){
+        try {
+          if (Array.isArray(e.data) && (e.data[0] === 'fetch-query-params' || e.data[0] === 'iframeLoaded' || e.data[0] === 'sticky-contacts')) {
+            console.log('[BookingDiag] iframe->parent message:', e.data[0], e.data.slice(1));
+          }
+        } catch(e) {}
+      });
+      setTimeout(function(){ logInitial(); watchSrc(); }, 0);
+    } catch(e) {}
+  })();
+  `
+            }}
+          />
           <Script src="https://www.cnvrsnly.com/js/form_embed.js" strategy="afterInteractive" />
         </div>
       </section>
