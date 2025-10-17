@@ -287,6 +287,8 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
         // Decide where labels should render (only on actual before/after images)
         const showBeforeLabelOnLeft = !!beforeUrl && !!left && left === beforeUrl
         const showAfterLabelOnRight = !!afterUrl && !!right && right === afterUrl
+        const beforeLabel = ((meta as any)?.beforeLabel || '').trim() || 'Before'
+        const afterLabel = ((meta as any)?.afterLabel || '').trim() || 'After'
 
         // Helpers to format weight with units
         const formatWeight = (lbs: number): string => {
@@ -322,7 +324,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               <div className="relative">
                 {showBeforeLabelOnLeft ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
-                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">Before</div>
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{beforeLabel}</div>
                   </div>
                 ) : null}
                 {showBeforeLabelOnLeft && typeof leftWeightLbs === 'number' ? (
@@ -335,7 +337,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               <div className="relative">
                 {showAfterLabelOnRight ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
-                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">After</div>
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{afterLabel}</div>
                   </div>
                 ) : null}
                 {showAfterLabelOnRight && typeof rightWeightLbs === 'number' ? (
@@ -729,9 +731,11 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 <div className="space-y-3">
                   {groups.map(({ key, heading }) => {
                     const g = (t as any)?.[key] || {}
-                    const urls: { label: 'Before' | 'After'; url?: string | null }[] = [
-                      { label: 'Before', url: g?.beforeUrl },
-                      { label: 'After', url: g?.afterUrl }
+                const bl = ((meta as any)?.beforeLabel || '').trim() || 'Before'
+                const al = ((meta as any)?.afterLabel || '').trim() || 'After'
+                const urls: { label: string; url?: string | null }[] = [
+                      { label: bl, url: g?.beforeUrl },
+                      { label: al, url: g?.afterUrl }
                     ]
                     const anyPresent = urls.some(x => typeof x.url === 'string' && x.url)
                     if (!anyPresent) return null
@@ -743,7 +747,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                             if (!url) return (
                               <div key={label} />
                             )
-                            const isBefore = label === 'Before'
+                            const isBefore = label === bl
                             const weight = isBefore ? beforeWeightLbs : afterWeightLbs
                             return (
                               <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible">
@@ -916,9 +920,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
       set: function(v){
         if (typeof v === 'string' && v.indexOf('cnvrsnly.com/widget/booking/') !== -1) {
-          var before = v;
           v = withParams(v);
-          if (before !== v) { try { console.log('[BookingDiag] setter adjusted iframe src', { before: before, after: v }); } catch(e) {} }
         }
         return origSet.call(this, v);
       },
@@ -932,7 +934,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       var ifr = document.querySelector('iframe[src*="cnvrsnly.com/widget/booking/"]');
       if (ifr && ifr.src) {
         var fixed = withParams(ifr.src);
-        if (fixed !== ifr.src) { try { console.log('[BookingDiag] guard re-appending params to iframe src', { before: ifr.src, after: fixed }); } catch(e) {} ifr.src = fixed; }
+        if (fixed !== ifr.src) ifr.src = fixed;
       }
     }catch(e){}
   };
@@ -995,63 +997,6 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       // Also send once shortly after load to cover timing races
       setTimeout(postParamsToIframe, 300);
       setTimeout(postParamsToIframe, 1200);
-    } catch(e) {}
-  })();
-  `
-            }}
-          />
-          {/* Diagnostics: log postMessage traffic and iframe src changes (temporary) */}
-          <Script
-            id="booking-diagnostics-logger"
-            strategy="afterInteractive"
-            dangerouslySetInnerHTML={{
-              __html: `
-  (function(){
-    try {
-      function logInitial(){
-        try {
-          var ifr = document.querySelector('iframe[src*="cnvrsnly.com/widget/booking/"]');
-          if (ifr) { console.log('[BookingDiag] iframe initial src:', ifr.src); }
-        } catch(e) {}
-      }
-      function watchSrc(){
-        try {
-          var ifr = document.querySelector('iframe[src*="cnvrsnly.com/widget/booking/"]');
-          if (!ifr) return;
-          var last = ifr.getAttribute('src') || '';
-          var mo = new MutationObserver(function(muts){
-            try {
-              muts.forEach(function(m){
-                if (m.type === 'attributes' && m.attributeName === 'src') {
-                  var now = ifr.getAttribute('src') || '';
-                  if (now !== last) { console.log('[BookingDiag] iframe src changed:', now); last = now; }
-                }
-              });
-            } catch(e) {}
-          });
-          mo.observe(ifr, { attributes: true, attributeFilter: ['src'] });
-        } catch(e) {}
-      }
-      if (typeof Window !== 'undefined' && Window.prototype && !Window.prototype.__bookingDiagPatched) {
-        var _origPM = Window.prototype.postMessage;
-        Window.prototype.postMessage = function(message, targetOrigin, transfer){
-          try {
-            if (Array.isArray(message) && message[0] === 'query-params') {
-              console.log('[BookingDiag] parent->iframe postMessage query-params:', message[1], message[2]);
-            }
-          } catch(e) {}
-          return _origPM.apply(this, arguments);
-        };
-        Window.prototype.__bookingDiagPatched = true;
-      }
-      window.addEventListener('message', function(e){
-        try {
-          if (Array.isArray(e.data) && (e.data[0] === 'fetch-query-params' || e.data[0] === 'iframeLoaded' || e.data[0] === 'sticky-contacts')) {
-            console.log('[BookingDiag] iframe->parent message:', e.data[0], e.data.slice(1));
-          }
-        } catch(e) {}
-      });
-      setTimeout(function(){ logInitial(); watchSrc(); }, 0);
     } catch(e) {}
   })();
   `

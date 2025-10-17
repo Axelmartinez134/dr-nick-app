@@ -171,13 +171,35 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           {/* Hero before/after */}
           <section className="bg-white rounded border p-4">
             <h3 className="font-semibold text-gray-900 mb-3">Hero — Before / After</h3>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-sm text-gray-900 block mb-1">Before label</label>
+                <input
+                  className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                  placeholder="Before"
+                  value={(draft?.meta?.beforeLabel ?? '') as any}
+                  onChange={(e) => setMeta({ beforeLabel: e.target.value })}
+                />
+                <div className="text-xs text-gray-600 mt-1">Applies globally to all before/after badges.</div>
+              </div>
+              <div>
+                <label className="text-sm text-gray-900 block mb-1">After label</label>
+                <input
+                  className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                  placeholder="After"
+                  value={(draft?.meta?.afterLabel ?? '') as any}
+                  onChange={(e) => setMeta({ afterLabel: e.target.value })}
+                />
+                <div className="text-xs text-gray-600 mt-1">Updates all badges immediately in preview.</div>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {['before','after'].map((slot, i) => {
                 const key = slot === 'before' ? 'beforePhotoUrl' : 'afterPhotoUrl'
                 const val = draft?.media?.[key] || null
                 return (
                   <div key={slot} className="border rounded p-3">
-                    <div className="text-xs text-gray-900 mb-2">{slot === 'before' ? 'Before' : 'After'}</div>
+                    <div className="text-xs text-gray-900 mb-2">{slot === 'before' ? ((draft?.meta?.beforeLabel || '').trim() || 'Before') : ((draft?.meta?.afterLabel || '').trim() || 'After')}</div>
                     {val ? (
                       <div className="space-y-2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -194,7 +216,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                     ) : (
                       <label className="flex items-center justify-center h-32 border-2 border-dashed rounded cursor-pointer text-sm text-gray-900">
                         <input type="file" accept="image/*,video/mp4" className="hidden" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const url = await upload(slot as any, f); setMedia({ [key]: url }) }} />
-                        Drop image/MP4 or click to upload
+                        {slot === 'before' ? ((draft?.meta?.beforeLabel || '').trim() || 'Before') : ((draft?.meta?.afterLabel || '').trim() || 'After')} — Drop image/MP4 or click to upload
                       </label>
                     )}
                   </div>
@@ -359,7 +381,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                         <div key={key} className="border rounded p-3">
                           <div className="text-sm font-medium text-gray-900 mb-2">{heading}</div>
                           <div className="grid grid-cols-2 gap-3">
-                            {[{ which: 'before', label: 'Before', val: beforeVal }, { which: 'after', label: 'After', val: afterVal }].map(({ which, label, val }) => (
+                    {[{ which: 'before', label: ((draft?.meta?.beforeLabel || '').trim() || 'Before'), val: beforeVal }, { which: 'after', label: ((draft?.meta?.afterLabel || '').trim() || 'After'), val: afterVal }].map(({ which, label, val }) => (
                               <div key={which} className="border rounded p-3">
                                 <div className="text-xs text-gray-900 mb-2">{label}</div>
                                 {val ? (
@@ -514,6 +536,8 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                         : (draft?.meta?.testimonialQuote === null ? null : undefined)),
                       age: (typeof draft?.meta?.age === 'number') ? draft.meta.age : (draft?.meta?.age === null ? null : undefined),
                       totalFatLossLbs: typeof draft?.meta?.totalFatLossLbs === 'number' ? draft.meta.totalFatLossLbs : null,
+                      beforeLabel: (draft?.meta?.beforeLabel ?? undefined),
+                      afterLabel: (draft?.meta?.afterLabel ?? undefined),
                       // Send only persisted user choices; if undefined, server will compute full defaults
                       chartsEnabled: (draft?.meta?.chartsEnabled ?? undefined),
                       displayWeeks: draft?.meta?.displayWeeks || undefined,

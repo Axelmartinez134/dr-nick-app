@@ -15,6 +15,8 @@ export interface PreviewMetaSettings {
   chartsOrder?: string[]
   displayWeeks?: { start: number; end: number }
   totalFatLossLbs?: number | null
+  beforeLabel?: string | null
+  afterLabel?: string | null
 }
 
 export interface PreviewMedia {
@@ -127,6 +129,8 @@ export async function snapshotPreviewBuilder(
       testimonialQuote: (meta as any)?.testimonialQuote ?? null,
       age: typeof (meta as any)?.age === 'number' ? (meta as any).age : ((meta as any)?.age === null ? null : undefined),
       totalFatLossLbs: typeof (meta as any)?.totalFatLossLbs === 'number' ? (meta as any).totalFatLossLbs : ((meta as any)?.totalFatLossLbs === null ? null : undefined),
+      beforeLabel: (meta as any)?.beforeLabel ?? undefined,
+      afterLabel: (meta as any)?.afterLabel ?? undefined,
       displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd, availableMax } : { start: 1, end: availableMax, effectiveEnd: availableMax, availableMax }
     },
     metrics,

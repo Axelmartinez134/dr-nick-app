@@ -35,6 +35,9 @@ export interface SnapshotMeta {
   watermarkText?: string | null
   // New optional fields for marketing UI
   ctaLabel?: string | null
+  // Global labels for Before/After badges (fallback to 'Before'/'After')
+  beforeLabel?: string | null
+  afterLabel?: string | null
   calendlyUrl?: string | null
   displayNameOverride?: string | null
   displayNameMode?: 'first_name' | 'anonymous'
