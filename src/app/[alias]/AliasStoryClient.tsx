@@ -398,7 +398,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               <div className="relative h-full" ref={heroLeftRef}>
                 {true ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
-                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{beforeLabel}</div>
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{beforeLabel}</div>
                   </div>
                 ) : null}
                 {typeof leftWeightLbs === 'number' ? (
@@ -411,7 +411,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               <div className="relative h-full" ref={heroRightRef}>
                 {true ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
-                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{afterLabel}</div>
+                    <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{afterLabel}</div>
                   </div>
                 ) : null}
                 {typeof rightWeightLbs === 'number' ? (
@@ -827,7 +827,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                             return (
                               <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible h-full" {...refProp}>
                                 <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
-                                  <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{label}</div>
+                                  <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900 whitespace-nowrap">{label}</div>
                                 </div>
                                 {typeof weight === 'number' ? (
                                   <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
