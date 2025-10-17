@@ -39,6 +39,69 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
   const [aliasForTracking, setAliasForTracking] = useState<string>(pageAlias || '')
   const [testimonialMediaOpen, setTestimonialMediaOpen] = useState(false)
 
+  // Placeholder sizing: hero and testimonial pairs
+  const heroLeftRef = useRef<HTMLDivElement | null>(null)
+  const heroRightRef = useRef<HTMLDivElement | null>(null)
+  const [heroHeights, setHeroHeights] = useState<{ left: number; right: number }>({ left: 0, right: 0 })
+
+  const frontBeforeRef = useRef<HTMLDivElement | null>(null)
+  const frontAfterRef = useRef<HTMLDivElement | null>(null)
+  const sideBeforeRef = useRef<HTMLDivElement | null>(null)
+  const sideAfterRef = useRef<HTMLDivElement | null>(null)
+  const rearBeforeRef = useRef<HTMLDivElement | null>(null)
+  const rearAfterRef = useRef<HTMLDivElement | null>(null)
+  const [testimonialHeights, setTestimonialHeights] = useState<Record<'front' | 'side' | 'rear', { before: number; after: number }>>({ front: { before: 0, after: 0 }, side: { before: 0, after: 0 }, rear: { before: 0, after: 0 } })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const measureHero = () => {
+      try {
+        const leftEl = heroLeftRef.current || null
+        const rightEl = heroRightRef.current || null
+        const lMedia = leftEl ? (leftEl.querySelector('img,video') as HTMLElement | null) : null
+        const rMedia = rightEl ? (rightEl.querySelector('img,video') as HTMLElement | null) : null
+        const lPh = leftEl ? (leftEl.querySelector('[data-ph="hero-left"]') as HTMLElement | null) : null
+        const rPh = rightEl ? (rightEl.querySelector('[data-ph="hero-right"]') as HTMLElement | null) : null
+        const lh = (lMedia?.clientHeight || lPh?.clientHeight || 0)
+        const rh = (rMedia?.clientHeight || rPh?.clientHeight || 0)
+        setHeroHeights({ left: lh, right: rh })
+      } catch {}
+    }
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureHero) : null
+    if (heroLeftRef.current) ro?.observe(heroLeftRef.current)
+    if (heroRightRef.current) ro?.observe(heroRightRef.current)
+    window.addEventListener('resize', measureHero)
+    setTimeout(measureHero, 0)
+    setTimeout(measureHero, 300)
+    return () => {
+      try { ro?.disconnect() } catch {}
+      window.removeEventListener('resize', measureHero)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const measureTestimonials = () => {
+      try {
+        setTestimonialHeights({
+          front: { before: frontBeforeRef.current?.clientHeight || 0, after: frontAfterRef.current?.clientHeight || 0 },
+          side: { before: sideBeforeRef.current?.clientHeight || 0, after: sideAfterRef.current?.clientHeight || 0 },
+          rear: { before: rearBeforeRef.current?.clientHeight || 0, after: rearAfterRef.current?.clientHeight || 0 }
+        })
+      } catch {}
+    }
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measureTestimonials) : null
+    ;[frontBeforeRef, frontAfterRef, sideBeforeRef, sideAfterRef, rearBeforeRef, rearAfterRef].forEach(r => { if (r.current) ro?.observe(r.current!) })
+    window.addEventListener('resize', measureTestimonials)
+    // Measure when testimonial section toggles open
+    setTimeout(measureTestimonials, 0)
+    setTimeout(measureTestimonials, 300)
+    return () => {
+      try { ro?.disconnect() } catch {}
+      window.removeEventListener('resize', measureTestimonials)
+    }
+  }, [testimonialMediaOpen])
+
 
   const m = snapshot.metrics
   const meta = snapshot.meta
@@ -272,14 +335,25 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           left = loop || null
         }
 
-        if (!left && !right) return null
+        // Always render two frames; fallback to placeholders when media is missing
 
-        const render = (u: string) => (
-          <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            {isMp4(u) ? (
-              <video src={u} muted playsInline controls={false} className="w-full h-auto pointer-events-none" loop autoPlay preload="auto" />
+        const renderBox = (u: string | null | undefined, heightPx?: number, phKey?: 'hero-left' | 'hero-right' | 't-front-before' | 't-front-after' | 't-side-before' | 't-side-after' | 't-rear-before' | 't-rear-after') => (
+          <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden bg-white">
+            {typeof u === 'string' && u ? (
+              isMp4(u) ? (
+                <video src={u} muted playsInline controls={false} className="w-full h-auto pointer-events-none" loop autoPlay preload="auto" />
+              ) : (
+                <img src={u} alt="Hero" loading="eager" fetchPriority="high" className="w-full h-auto" />
+              )
             ) : (
-              <img src={u} alt="Hero" loading="eager" fetchPriority="high" className="w-full h-auto" />
+              <div
+                className="w-full flex items-center justify-center bg-gray-100"
+                style={heightPx && heightPx > 0 ? { height: heightPx, minHeight: '160px' } : { aspectRatio: '9 / 18' }}
+                data-ph={phKey || ''}
+                aria-label="Coming soon"
+              >
+                <div className="text-gray-900 text-sm font-medium">Coming Soon!</div>
+              </div>
             )}
           </div>
         )
@@ -320,32 +394,32 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
         return (
           <section className="max-w-md mx-auto px-4">
-            <div className="grid grid-cols-2 gap-3 items-start">
-              <div className="relative">
-                {showBeforeLabelOnLeft ? (
+            <div className="grid grid-cols-2 gap-3 items-stretch">
+              <div className="relative h-full" ref={heroLeftRef}>
+                {true ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
                     <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{beforeLabel}</div>
                   </div>
                 ) : null}
-                {showBeforeLabelOnLeft && typeof leftWeightLbs === 'number' ? (
+                {typeof leftWeightLbs === 'number' ? (
                   <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
                     <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeight(leftWeightLbs)}</div>
                   </div>
                 ) : null}
-                {left ? render(left) : null}
+                {renderBox(left, !left && heroHeights.right > 0 ? heroHeights.right : undefined, 'hero-left')}
               </div>
-              <div className="relative">
-                {showAfterLabelOnRight ? (
+              <div className="relative h-full" ref={heroRightRef}>
+                {true ? (
                   <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
                     <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{afterLabel}</div>
                   </div>
                 ) : null}
-                {showAfterLabelOnRight && typeof rightWeightLbs === 'number' ? (
+                {typeof rightWeightLbs === 'number' ? (
                   <div className="absolute z-10 -bottom-3 left-1/2 -translate-x-1/2">
                     <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeight(rightWeightLbs)}</div>
                   </div>
                 ) : null}
-                {right ? render(right) : null}
+                {renderBox(right, !right && heroHeights.left > 0 ? heroHeights.left : undefined, 'hero-right')}
               </div>
             </div>
           </section>
@@ -731,26 +805,27 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 <div className="space-y-3">
                   {groups.map(({ key, heading }) => {
                     const g = (t as any)?.[key] || {}
-                const bl = ((meta as any)?.beforeLabel || '').trim() || 'Before'
-                const al = ((meta as any)?.afterLabel || '').trim() || 'After'
-                const urls: { label: string; url?: string | null }[] = [
-                      { label: bl, url: g?.beforeUrl },
-                      { label: al, url: g?.afterUrl }
+                    const bl = ((meta as any)?.beforeLabel || '').trim() || 'Before'
+                    const al = ((meta as any)?.afterLabel || '').trim() || 'After'
+                    const urls: { label: string; which: 'before' | 'after'; url?: string | null }[] = [
+                      { label: bl, which: 'before', url: g?.beforeUrl },
+                      { label: al, which: 'after', url: g?.afterUrl }
                     ]
-                    const anyPresent = urls.some(x => typeof x.url === 'string' && x.url)
-                    if (!anyPresent) return null
+                    const bothMissing = !g?.beforeUrl && !g?.afterUrl
                     return (
                       <div key={key}>
                         <div className="text-sm font-medium text-gray-900 mb-1">{heading}</div>
-                        <div className="grid grid-cols-2 gap-3">
-                          {urls.map(({ label, url }) => {
-                            if (!url) return (
-                              <div key={label} />
-                            )
-                            const isBefore = label === bl
+                        <div className="grid grid-cols-2 gap-3 items-stretch">
+                          {urls.map(({ label, which, url }) => {
+                            const isBefore = which === 'before'
                             const weight = isBefore ? beforeWeightLbs : afterWeightLbs
+                            const refKey = `${key}-${which}` as const
+                            const pairRef = `${key}-${isBefore ? 'after' : 'before'}` as const
+                            const refProp = isBefore
+                              ? (key === 'front' ? { ref: frontBeforeRef } : key === 'side' ? { ref: sideBeforeRef } : { ref: rearBeforeRef })
+                              : (key === 'front' ? { ref: frontAfterRef } : key === 'side' ? { ref: sideAfterRef } : { ref: rearAfterRef })
                             return (
-                              <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible">
+                              <div key={label} className="relative rounded-lg border border-gray-200 shadow-sm overflow-visible h-full" {...refProp}>
                                 <div className="absolute z-10 -top-3 left-1/2 -translate-x-1/2">
                                   <div className="px-3 py-1 rounded-full bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-xs text-gray-900">{label}</div>
                                 </div>
@@ -759,11 +834,17 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                                     <div className="px-2 py-0.5 rounded-md bg-white/90 backdrop-blur border border-gray-200 shadow-sm text-sm font-semibold leading-tight text-gray-900 whitespace-nowrap">{formatWeightLocal(weight)}</div>
                                   </div>
                                 ) : null}
-                                {/\.mp4($|\?)/i.test(url) ? (
-                                  <video src={url} muted playsInline className="w-full h-auto rounded-lg pointer-events-none" controls={false} loop autoPlay preload="metadata" />
+                                {url ? (
+                                  (/\.mp4($|\?)/i.test(url) ? (
+                                    <video src={url} muted playsInline className="w-full h-auto rounded-lg pointer-events-none" controls={false} loop autoPlay preload="metadata" />
+                                  ) : (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={url} alt={`${heading} ${label}`} className="w-full h-auto rounded-lg" loading="lazy" />
+                                  ))
                                 ) : (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={url} alt={`${heading} ${label}`} className="w-full h-auto rounded-lg" loading="lazy" />
+                                  <div className="w-full flex items-center justify-center bg-gray-100" style={bothMissing ? { aspectRatio: '9 / 18' } : { height: '100%' }} aria-label="Coming soon" data-ph={`t-${key}-${which}`}>
+                                    <div className="text-gray-900 text-sm font-medium">Coming Soon!</div>
+                                  </div>
                                 )}
                               </div>
                             )
