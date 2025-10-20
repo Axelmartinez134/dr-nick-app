@@ -116,7 +116,7 @@ export async function snapshotPreviewBuilder(
       patientLabel,
       unitSystemLocked: 'imperial',
       chartsOrder: Array.isArray(meta.chartsOrder) && meta.chartsOrder.length > 0 ? meta.chartsOrder : defaultChartsOrder(),
-      chartsEnabled: backfillChartsEnabled(meta.chartsEnabled, { trackBloodPressure: !!profile.track_blood_pressure }),
+      chartsEnabled: backfillChartsEnabled(meta.chartsEnabled, { trackBloodPressure: !!profile.track_blood_pressure, trackBodyComposition: !!(profile as any).track_body_composition }),
       captionsEnabled: meta.captionsEnabled,
       layout: meta.layout,
       // Watermark centralized via marketingConfig

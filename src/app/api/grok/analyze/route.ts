@@ -227,7 +227,12 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
         energetic_constraints_reduction_ok: submissionData.energetic_constraints_reduction_ok || null,
         patient_notes: submissionData.notes || null,
         systolic_bp: submissionData.systolic_bp || null,
-        diastolic_bp: submissionData.diastolic_bp || null
+        diastolic_bp: submissionData.diastolic_bp || null,
+        visceral_fat_level: (submissionData as any)?.visceral_fat_level || null,
+        subcutaneous_fat_level: (submissionData as any)?.subcutaneous_fat_level || null,
+        belly_fat_percent: (submissionData as any)?.belly_fat_percent || null,
+        resting_heart_rate: (submissionData as any)?.resting_heart_rate || null,
+        total_muscle_mass_percent: (submissionData as any)?.total_muscle_mass_percent || null
       },
       historical_data: (historicalData || []).map((entry: HealthDataRecord) => ({
         week_number: entry.week_number,
@@ -242,7 +247,12 @@ async function buildGrokDataPackageAPI(submissionId: string, userId: string, sub
         nutrition_compliance_days: entry.nutrition_compliance_days || null,
         patient_notes: entry.notes || null,
         systolic_bp: entry.systolic_bp || null,
-        diastolic_bp: entry.diastolic_bp || null
+        diastolic_bp: entry.diastolic_bp || null,
+        visceral_fat_level: (entry as any)?.visceral_fat_level || null,
+        subcutaneous_fat_level: (entry as any)?.subcutaneous_fat_level || null,
+        belly_fat_percent: (entry as any)?.belly_fat_percent || null,
+        resting_heart_rate: (entry as any)?.resting_heart_rate || null,
+        total_muscle_mass_percent: (entry as any)?.total_muscle_mass_percent || null
       })),
       current_week_analysis: {
         weekly_whoop_analysis: submissionData.weekly_whoop_analysis || null,

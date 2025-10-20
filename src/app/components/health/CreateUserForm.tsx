@@ -26,7 +26,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
     resistanceTrainingGoal: '0',
     clientStatus: 'Current',
     unitSystem: 'imperial' as UnitSystem,
-    trackBloodPressure: false
+    trackBloodPressure: false,
+    trackBodyComposition: false
   })
 
   const [loading, setLoading] = useState(false)
@@ -131,7 +132,8 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
       drNickCoachingNotes: formData.initialNotes.trim() || undefined,
       clientStatus: formData.clientStatus,
       unitSystem: formData.unitSystem,
-      trackBloodPressure: formData.trackBloodPressure
+      trackBloodPressure: formData.trackBloodPressure,
+      trackBodyComposition: formData.trackBodyComposition
     }
 
     const result = await createPatientAccount(patientData)
@@ -345,7 +347,33 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
               </button>
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              Enables two blood pressure charts (systolic and diastolic) on the client dashboard and lets you record weekly readings during review. This setting is only set at creation and cannot be changed later.
+              Enables two blood pressure charts (systolic and diastolic) and weekly BP inputs during reviews. You can change this later in the admin panel.
+            </p>
+          </div>
+
+          {/* Track Body Composition Toggle */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Track Body Composition?
+            </label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleInputChange('trackBodyComposition', true)}
+                className={`px-3 py-2 rounded border ${formData.trackBodyComposition ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInputChange('trackBodyComposition', false)}
+                className={`px-3 py-2 rounded border ${!formData.trackBodyComposition ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                No
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Enables 5 body composition charts and weekly inputs during reviews. You can change this later in the admin panel.
             </p>
           </div>
         </div>

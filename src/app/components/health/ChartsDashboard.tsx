@@ -11,6 +11,11 @@ import { getPatientMetrics, type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, formatLength, formatWeight, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
+import VisceralFatLevelChart from './charts/VisceralFatLevelChart'
+import SubcutaneousFatLevelChart from './charts/SubcutaneousFatLevelChart'
+import BellyFatPercentChart from './charts/BellyFatPercentChart'
+import RestingHeartRateChart from './charts/RestingHeartRateChart'
+import TotalMuscleMassPercentChart from './charts/TotalMuscleMassPercentChart'
 import MorningFatBurnChart from './charts/MorningFatBurnChart'
 import NutritionComplianceChart from './charts/NutritionComplianceChart'
 import StrainGoalMetChart from './charts/StrainGoalMetChart'
@@ -24,6 +29,7 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
   const [currentStatus, setCurrentStatus] = useState<string>('Current')
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [tracksBP, setTracksBP] = useState<boolean>(false)
+  const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
@@ -40,7 +46,7 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('client_status, unit_system, track_blood_pressure')
+          .select('client_status, unit_system, track_blood_pressure, track_body_composition')
           .eq('id', patientId)
           .single()
 
@@ -48,6 +54,7 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
         setCurrentStatus(data?.client_status || 'Current')
         setUnitSystem((data?.unit_system as UnitSystem) || 'imperial')
         setTracksBP(Boolean(data?.track_blood_pressure))
+        setTracksBodyComp(Boolean((data as any)?.track_body_composition))
       } catch (error) {
         console.error('Error loading patient status:', error)
         setCurrentStatus('Current')
@@ -160,6 +167,34 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
     }, 3000)
   }
 
+  const handleBodyCompTrackingChange = async (enabled: boolean) => {
+    if (!patientId || enabled === tracksBodyComp) return
+    setTracksBodyComp(enabled)
+    setSaving(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/admin/update-patient-body-composition-tracking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId, trackBodyComposition: enabled })
+      })
+      const result = await response.json()
+      if (!result.success) throw new Error(result.error)
+      setMessage(`✅ Body composition tracking ${enabled ? 'enabled' : 'disabled'}`)
+      setMessageType('success')
+    } catch (error) {
+      setTracksBodyComp(!enabled)
+      setMessage('❌ Failed to update Body Composition tracking')
+      setMessageType('error')
+      console.error('Body Composition tracking update error:', error)
+    }
+    setSaving(false)
+    setTimeout(() => {
+      setMessage('')
+      setMessageType('')
+    }, 3000)
+  }
+
   if (!patientId) return null
 
   return (
@@ -239,6 +274,34 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
               onClick={() => handleBpTrackingChange(false)}
               disabled={saving}
               className={`px-3 py-2 rounded border ${!tracksBP ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            >
+              Off
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Body Composition Tracking Toggle */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium text-gray-700">Track Body Composition</label>
+            <p className="text-xs text-gray-500">Show Body Composition charts and enable weekly inputs in reviews. You can turn this off anytime; existing data stays saved.</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleBodyCompTrackingChange(true)}
+              disabled={saving}
+              className={`px-3 py-2 rounded border ${tracksBodyComp ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
+            >
+              On
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBodyCompTrackingChange(false)}
+              disabled={saving}
+              className={`px-3 py-2 rounded border ${!tracksBodyComp ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-gray-700 border-gray-300'}`}
             >
               Off
             </button>
@@ -435,14 +498,15 @@ function InitialWeightEditor({ chartData, unitSystem, onSaved }: { chartData: We
 }
 
   // Data Table Component - Different versions for Client vs Dr. Nick
-function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP }: { 
+function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP, tracksBodyComp }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
   onDataUpdate?: () => void,
   patientId?: string,
   onSubmissionSelect?: (submission: QueueSubmission) => void,
   unitSystem: UnitSystem,
-  tracksBP: boolean
+  tracksBP: boolean,
+  tracksBodyComp: boolean
 }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -465,6 +529,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
     waist: string
     systolic_bp: string
     diastolic_bp: string
+    visceral_fat_level: string
+    subcutaneous_fat_level: string
+    belly_fat_percent: string
+    resting_heart_rate: string
+    total_muscle_mass_percent: string
     symptom_tracking_days: string
     detailed_symptom_notes: string
     purposeful_exercise_days: string
@@ -482,6 +551,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
     waist: '',
     systolic_bp: '',
     diastolic_bp: '',
+    visceral_fat_level: '',
+    subcutaneous_fat_level: '',
+    belly_fat_percent: '',
+    resting_heart_rate: '',
+    total_muscle_mass_percent: '',
     symptom_tracking_days: '',
     detailed_symptom_notes: '',
     purposeful_exercise_days: '',
@@ -922,6 +996,15 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Diastolic (mmHg)</th>
                 </>
               )}
+              {tracksBodyComp && (
+                <>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Visceral Fat Level</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Subcutaneous Fat Level</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Belly Fat (%)</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resting HR (bpm)</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Total Muscle Mass (%)</th>
+                </>
+              )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
@@ -979,6 +1062,27 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">
                       {renderCell(record, 'diastolic_bp', (record as any).diastolic_bp)}
+                    </td>
+                  </>
+                )}
+
+                {/* Body Composition columns - client view shows read-only, admin can edit */}
+                {tracksBodyComp && (
+                  <>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'visceral_fat_level', (record as any).visceral_fat_level)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'subcutaneous_fat_level', (record as any).subcutaneous_fat_level)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'belly_fat_percent', (record as any).belly_fat_percent)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'resting_heart_rate', (record as any).resting_heart_rate)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'total_muscle_mass_percent', (record as any).total_muscle_mass_percent)}
                     </td>
                   </>
                 )}
@@ -1203,6 +1307,76 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 </>
               )}
 
+              {tracksBodyComp && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Visceral Fat Level</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      placeholder="e.g., 10.50"
+                      value={newWeekForm.visceral_fat_level}
+                      onChange={(e) => setNewWeekForm(prev => ({ ...prev, visceral_fat_level: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subcutaneous Fat Level</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      placeholder="e.g., 20.00"
+                      value={newWeekForm.subcutaneous_fat_level}
+                      onChange={(e) => setNewWeekForm(prev => ({ ...prev, subcutaneous_fat_level: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Belly Fat % (0-100)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      placeholder="e.g., 32.25"
+                      value={newWeekForm.belly_fat_percent}
+                      onChange={(e) => setNewWeekForm(prev => ({ ...prev, belly_fat_percent: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Total Muscle Mass % (0-100)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      placeholder="e.g., 41.75"
+                      value={newWeekForm.total_muscle_mass_percent}
+                      onChange={(e) => setNewWeekForm(prev => ({ ...prev, total_muscle_mass_percent: e.target.value }))}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* RHR field is independent and always visible */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Resting Heart Rate (20-120 bpm)</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="20"
+                  max="120"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                  placeholder="e.g., 58"
+                  value={newWeekForm.resting_heart_rate}
+                  onChange={(e) => setNewWeekForm(prev => ({ ...prev, resting_heart_rate: e.target.value }))}
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Days of Low EA Symptoms (0-7)</label>
                 <input
@@ -1343,6 +1517,11 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                       waist: newWeekForm.waist === '' ? undefined : parseFloat(newWeekForm.waist),
                       systolic_bp: newWeekForm.systolic_bp === '' ? undefined : parseInt(newWeekForm.systolic_bp),
                       diastolic_bp: newWeekForm.diastolic_bp === '' ? undefined : parseInt(newWeekForm.diastolic_bp),
+                      visceral_fat_level: newWeekForm.visceral_fat_level === '' ? undefined : parseFloat(newWeekForm.visceral_fat_level),
+                      subcutaneous_fat_level: newWeekForm.subcutaneous_fat_level === '' ? undefined : parseFloat(newWeekForm.subcutaneous_fat_level),
+                      belly_fat_percent: newWeekForm.belly_fat_percent === '' ? undefined : parseFloat(newWeekForm.belly_fat_percent),
+                      total_muscle_mass_percent: newWeekForm.total_muscle_mass_percent === '' ? undefined : parseFloat(newWeekForm.total_muscle_mass_percent),
+                      resting_heart_rate: newWeekForm.resting_heart_rate === '' ? undefined : parseInt(newWeekForm.resting_heart_rate),
                       symptom_tracking_days: newWeekForm.symptom_tracking_days === '' ? undefined : parseInt(newWeekForm.symptom_tracking_days),
                       detailed_symptom_notes: newWeekForm.detailed_symptom_notes || undefined,
                       purposeful_exercise_days: newWeekForm.purposeful_exercise_days === '' ? undefined : parseInt(newWeekForm.purposeful_exercise_days),
@@ -1404,6 +1583,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const [patientName, setPatientName] = useState<string>('')
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [tracksBP, setTracksBP] = useState<boolean>(false)
+  const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
@@ -1427,16 +1607,17 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         const u = await fetchUnitSystem(patientId)
         setUnitSystem(u)
       })()
-      // Load BP tracking flag
+      // Load BP and Body Composition tracking flags
       ;(async () => {
         try {
           if (isDoctorView && patientId) {
             const { data } = await supabase
               .from('profiles')
-              .select('track_blood_pressure')
+              .select('track_blood_pressure, track_body_composition')
               .eq('id', patientId)
               .single()
             setTracksBP(Boolean(data?.track_blood_pressure))
+            setTracksBodyComp(Boolean((data as any)?.track_body_composition))
           } else {
             // current user
             const { data: userData } = await supabase.auth.getUser()
@@ -1444,10 +1625,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             if (uid) {
               const { data } = await supabase
                 .from('profiles')
-                .select('track_blood_pressure')
+                .select('track_blood_pressure, track_body_composition')
                 .eq('id', uid)
                 .single()
               setTracksBP(Boolean(data?.track_blood_pressure))
+              setTracksBodyComp(Boolean((data as any)?.track_body_composition))
             }
           }
         } catch {}
@@ -2036,6 +2218,105 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                   </div>
                 </div>
               )}
+
+              {/* Body Composition inline editor for selected week (doctor view only) */}
+              {tracksBodyComp && typeof selectedWeekNumber === 'number' && selectedWeekNumber >= 0 && isDoctorView && (
+                <div className="mt-4 flex flex-wrap items-end gap-4 border-t pt-4">
+                  {/* Visceral Fat Level */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Visceral Fat Level</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.visceral_fat_level ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { visceral_fat_level: e.target.value === '' ? null : parseFloat(e.target.value) } as any)
+                        await loadChartData()
+                      }}
+                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 10.50"
+                    />
+                  </div>
+                  {/* Subcutaneous Fat Level */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Subcutaneous Fat Level</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.subcutaneous_fat_level ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { subcutaneous_fat_level: e.target.value === '' ? null : parseFloat(e.target.value) } as any)
+                        await loadChartData()
+                      }}
+                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 20.00"
+                    />
+                  </div>
+                  {/* Belly Fat % */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Belly Fat %</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.belly_fat_percent ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { belly_fat_percent: e.target.value === '' ? null : parseFloat(e.target.value) } as any)
+                        await loadChartData()
+                      }}
+                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 32.25"
+                    />
+                  </div>
+                  {/* Resting Heart Rate */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Resting HR (bpm)</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min="20"
+                      max="120"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.resting_heart_rate ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { resting_heart_rate: e.target.value === '' ? null : parseInt(e.target.value) } as any)
+                        await loadChartData()
+                      }}
+                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 58"
+                    />
+                  </div>
+                  {/* Total Muscle Mass % */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Total Muscle Mass %</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={(chartData.find(d => d.week_number === (selectedWeekNumber ?? -1)) as any)?.total_muscle_mass_percent ?? ''}
+                      onChange={async (e) => {
+                        const rec = chartData.find(d => d.week_number === (selectedWeekNumber ?? -1))
+                        if (!rec?.id) return
+                        await updateHealthRecord(rec.id, { total_muscle_mass_percent: e.target.value === '' ? null : parseFloat(e.target.value) } as any)
+                        await loadChartData()
+                      }}
+                      className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                      placeholder="e.g., 41.75"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2075,6 +2356,25 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           <BodyFatPercentageChart data={chartData} />
         </div>
 
+        {/* Row 3.5: Body Composition Section (conditional charts, excluding RHR) */}
+        {tracksBodyComp && (
+          <div className="space-y-6">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <VisceralFatLevelChart data={chartData} />
+              <SubcutaneousFatLevelChart data={chartData} />
+            </div>
+            <div className="grid lg:grid-cols-2 gap-6">
+              <BellyFatPercentChart data={chartData} />
+              <TotalMuscleMassPercentChart data={chartData} />
+            </div>
+          </div>
+        )}
+
+        {/* RHR chart belongs with Metabolic Health and is always independent */}
+        <div className="grid grid-cols-1">
+          <RestingHeartRateChart data={chartData} />
+        </div>
+
         {/* Removed Nutrition/Strain charts here – now rendered inside Compliance Metrics section */}
         {/* Removed Sleep chart here – now rendered inside Compliance Metrics section */}
 
@@ -2092,6 +2392,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           onSubmissionSelect={onSubmissionSelect}
           unitSystem={unitSystem}
           tracksBP={tracksBP}
+          tracksBodyComp={tracksBodyComp}
         />
 
         {/* Removed duplicate bottom missed-checkins note: now rendered inside DataTable header */}

@@ -65,6 +65,11 @@ export async function snapshotBuilder(
       sleep_consistency_score: w.sleep_consistency_score ?? null,
       morning_fat_burn_percent: w.morning_fat_burn_percent ?? null,
       body_fat_percentage: w.body_fat_percentage ?? null,
+      visceral_fat_level: (w as any)?.visceral_fat_level ?? null,
+      subcutaneous_fat_level: (w as any)?.subcutaneous_fat_level ?? null,
+      belly_fat_percent: (w as any)?.belly_fat_percent ?? null,
+      resting_heart_rate: (w as any)?.resting_heart_rate ?? null,
+      total_muscle_mass_percent: (w as any)?.total_muscle_mass_percent ?? null,
       nutrition_compliance_days: w.nutrition_compliance_days ?? null,
       purposeful_exercise_days: w.purposeful_exercise_days ?? null,
       symptom_tracking_days: w.symptom_tracking_days ?? null
@@ -120,7 +125,7 @@ export async function snapshotBuilder(
       patientLabel,
       unitSystemLocked: 'imperial',
       chartsOrder: Array.isArray(settings.chartsOrder) && settings.chartsOrder.length > 0 ? settings.chartsOrder : defaultChartsOrder(),
-      chartsEnabled: backfillChartsEnabled(settings.chartsEnabled, { trackBloodPressure: !!profile.track_blood_pressure }),
+      chartsEnabled: backfillChartsEnabled(settings.chartsEnabled, { trackBloodPressure: !!profile.track_blood_pressure, trackBodyComposition: !!(profile as any).track_body_composition }),
       captionsEnabled: settings.captionsEnabled,
       layout: settings.layout,
       // Watermark centralized via marketingConfig; do not persist per snapshot

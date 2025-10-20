@@ -4,6 +4,7 @@ export type ChartsEnabled = Record<string, boolean>
 
 export interface ChartsDefaultsOptions {
   trackBloodPressure?: boolean
+  trackBodyComposition?: boolean
 }
 
 // Full list of chart keys the marketing app supports (14 total)
@@ -21,7 +22,13 @@ export const ALL_CHART_KEYS: string[] = [
   'disciplineNutritionCompliancePct',
   'disciplineStrainTrend',
   'morningFatBurnTrend',
-  'bodyFatTrend'
+  'bodyFatTrend',
+  // Body Composition
+  'visceralFatLevel',
+  'subcutaneousFatLevel',
+  'bellyFatPercent',
+  'restingHeartRate',
+  'totalMuscleMassPercent'
 ]
 
 // Default display order across sections (includes all 14)
@@ -40,17 +47,32 @@ export function defaultChartsOrder(): string[] {
     'disciplineNutritionCompliancePct',
     'disciplineStrainTrend',
     'morningFatBurnTrend',
-    'bodyFatTrend'
+    'bodyFatTrend',
+    // RHR belongs with Metabolic Health
+    'restingHeartRate',
+    // Body Composition section (order within group)
+    'visceralFatLevel',
+    'subcutaneousFatLevel',
+    'bellyFatPercent',
+    'totalMuscleMassPercent'
   ]
 }
 
 // Compute defaults: all charts ON by default, except BP charts depend on trackBloodPressure
 export function computeChartsEnabledDefaults(opts: ChartsDefaultsOptions = {}): ChartsEnabled {
   const trackBP = !!opts.trackBloodPressure
+  const trackBC = !!opts.trackBodyComposition
   const base: ChartsEnabled = {}
   for (const key of ALL_CHART_KEYS) base[key] = true
   base.systolicTrend = trackBP
   base.diastolicTrend = trackBP
+  // Body Composition defaults respect track flag
+  base.visceralFatLevel = trackBC
+  base.subcutaneousFatLevel = trackBC
+  base.bellyFatPercent = trackBC
+  // RHR is independent of Body Composition and defaults ON
+  base.restingHeartRate = true
+  base.totalMuscleMassPercent = trackBC
   return base
 }
 

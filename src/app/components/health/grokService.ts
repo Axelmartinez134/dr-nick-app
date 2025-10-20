@@ -40,6 +40,11 @@ export interface GrokDataPackage {
     patient_notes: string | null
     systolic_bp?: number | null
     diastolic_bp?: number | null
+    visceral_fat_level?: number | null
+    subcutaneous_fat_level?: number | null
+    belly_fat_percent?: number | null
+    resting_heart_rate?: number | null
+    total_muscle_mass_percent?: number | null
   }
   historical_data: Array<{
     week_number: number
@@ -55,6 +60,11 @@ export interface GrokDataPackage {
     patient_notes: string | null
     systolic_bp?: number | null
     diastolic_bp?: number | null
+    visceral_fat_level?: number | null
+    subcutaneous_fat_level?: number | null
+    belly_fat_percent?: number | null
+    resting_heart_rate?: number | null
+    total_muscle_mass_percent?: number | null
   }>
   current_week_analysis: {
     weekly_whoop_analysis: string | null
@@ -426,7 +436,12 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         energetic_constraints_reduction_ok: currentSubmission.energetic_constraints_reduction_ok,
         patient_notes: currentSubmission.notes,
         systolic_bp: currentSubmission.systolic_bp,
-        diastolic_bp: currentSubmission.diastolic_bp
+        diastolic_bp: currentSubmission.diastolic_bp,
+        visceral_fat_level: (currentSubmission as any)?.visceral_fat_level,
+        subcutaneous_fat_level: (currentSubmission as any)?.subcutaneous_fat_level,
+        belly_fat_percent: (currentSubmission as any)?.belly_fat_percent,
+        resting_heart_rate: (currentSubmission as any)?.resting_heart_rate,
+        total_muscle_mass_percent: (currentSubmission as any)?.total_muscle_mass_percent
       },
       historical_data: (historicalData || []).map(entry => ({
         week_number: entry.week_number,
@@ -441,7 +456,12 @@ export async function buildGrokDataPackage(submissionId: string, userId: string,
         nutrition_compliance_days: entry.nutrition_compliance_days,
         patient_notes: entry.notes,
         systolic_bp: entry.systolic_bp,
-        diastolic_bp: entry.diastolic_bp
+        diastolic_bp: entry.diastolic_bp,
+        visceral_fat_level: (entry as any)?.visceral_fat_level,
+        subcutaneous_fat_level: (entry as any)?.subcutaneous_fat_level,
+        belly_fat_percent: (entry as any)?.belly_fat_percent,
+        resting_heart_rate: (entry as any)?.resting_heart_rate,
+        total_muscle_mass_percent: (entry as any)?.total_muscle_mass_percent
       })),
       current_week_analysis: {
         weekly_whoop_analysis: currentSubmission.weekly_whoop_analysis,
@@ -510,12 +530,17 @@ Patient Notes: ${data.current_week.patient_notes || 'None'}
 Detailed Symptom Notes: ${data.current_week.detailed_symptom_notes || 'None'}
 Systolic BP: ${formatNumber(data.current_week.systolic_bp || null)} mmHg
 Diastolic BP: ${formatNumber(data.current_week.diastolic_bp || null)} mmHg
+Visceral Fat Level: ${formatNumber((data.current_week as any).visceral_fat_level || null)}
+Subcutaneous Fat Level: ${formatNumber((data.current_week as any).subcutaneous_fat_level || null)}
+Belly Fat: ${formatNumber((data.current_week as any).belly_fat_percent || null)}%
+Resting Heart Rate: ${formatNumber((data.current_week as any).resting_heart_rate || null)} bpm
+Total Muscle Mass: ${formatNumber((data.current_week as any).total_muscle_mass_percent || null)}%
 
 === HISTORICAL PROGRESSION ===
 ${data.historical_data
   .sort((a, b) => a.week_number - b.week_number)
   .map(entry => 
-    `Week ${entry.week_number}: Weight ${formatWeightVal(entry.weight)}, Waist ${formatLengthVal(entry.waist)}, Exercise ${formatNumber(entry.purposeful_exercise_days)}/7, Symptoms ${formatNumber(entry.symptom_tracking_days)}/7, Sleep Score ${formatNumber(entry.sleep_consistency_score)}, Nutrition ${formatNumber(entry.nutrition_compliance_days)}/7, Systolic ${formatNumber(entry.systolic_bp || null)} mmHg, Diastolic ${formatNumber(entry.diastolic_bp || null)} mmHg`
+    `Week ${entry.week_number}: Weight ${formatWeightVal(entry.weight)}, Waist ${formatLengthVal(entry.waist)}, Exercise ${formatNumber(entry.purposeful_exercise_days)}/7, Symptoms ${formatNumber(entry.symptom_tracking_days)}/7, Sleep Score ${formatNumber(entry.sleep_consistency_score)}, Nutrition ${formatNumber(entry.nutrition_compliance_days)}/7, Systolic ${formatNumber(entry.systolic_bp || null)} mmHg, Diastolic ${formatNumber(entry.diastolic_bp || null)} mmHg, Visceral ${formatNumber((entry as any).visceral_fat_level || null)}, Subcutaneous ${formatNumber((entry as any).subcutaneous_fat_level || null)}, Belly Fat ${formatNumber((entry as any).belly_fat_percent || null)}%, RHR ${formatNumber((entry as any).resting_heart_rate || null)} bpm, Muscle ${formatNumber((entry as any).total_muscle_mass_percent || null)}%`
   ).join('\n')}
 
 === DR. NICK'S CURRENT ANALYSIS ===

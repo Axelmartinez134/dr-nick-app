@@ -807,7 +807,7 @@ export default function DrNickSubmissionReview({
           <label className="block text-sm font-medium text-blue-700">🩺 Blood Pressure (mmHg)</label>
           <span className="text-xs text-gray-500 cursor-help" title="Systolic = top number; Diastolic = bottom number">ℹ️</span>
         </div>
-        <p className="text-xs text-gray-600 mb-3">Enter this week’s readings</p>
+        <p className="text-xs text-gray-600 mb-3">Enter this week's readings</p>
 
         <div className="flex items-end gap-3">
           {/* Systolic input with unit suffix */}
@@ -843,7 +843,7 @@ export default function DrNickSubmissionReview({
           <button
             onClick={save}
             disabled={saving}
-            className={`flex-1 px-3 py-1 rounded text-sm text-white transition-colors ${saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+            className={`w-full px-4 py-2 h-10 rounded-md text-sm text-white transition-colors ${saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
             {saving ? 'Saving…' : 'Update'}
           </button>
@@ -853,6 +853,157 @@ export default function DrNickSubmissionReview({
           {saveState === 'error' && (
             <span className="text-red-600 text-xs">Failed</span>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // Body Composition top-row editor (appears above Client Profile Goals when tracking is enabled)
+  function BodyCompTopRow({ submission }: { submission: QueueSubmission }) {
+    const [enabled, setEnabled] = useState(false)
+    const [visceral, setVisceral] = useState('')
+    const [subcut, setSubcut] = useState('')
+    const [bellyPct, setBellyPct] = useState('')
+    const [rhr, setRhr] = useState('')
+    const [musclePct, setMusclePct] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [saveState, setSaveState] = useState<'idle' | 'success' | 'error'>('idle')
+
+    useEffect(() => {
+      const load = async () => {
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('track_body_composition')
+            .eq('id', submission.user_id)
+            .single()
+          const isOn = Boolean((data as any)?.track_body_composition)
+          setEnabled(isOn)
+          setVisceral((submission as any)?.visceral_fat_level != null ? String((submission as any).visceral_fat_level) : '')
+          setSubcut((submission as any)?.subcutaneous_fat_level != null ? String((submission as any).subcutaneous_fat_level) : '')
+          setBellyPct((submission as any)?.belly_fat_percent != null ? String((submission as any).belly_fat_percent) : '')
+          setRhr((submission as any)?.resting_heart_rate != null ? String((submission as any).resting_heart_rate) : '')
+          setMusclePct((submission as any)?.total_muscle_mass_percent != null ? String((submission as any).total_muscle_mass_percent) : '')
+        } catch {}
+      }
+      load()
+    }, [submission])
+
+    if (!enabled) return null
+
+    const save = async () => {
+      setSaving(true)
+      setSaveState('idle')
+      try {
+        const updates: any = {
+          visceral_fat_level: visceral === '' ? null : parseFloat(visceral),
+          subcutaneous_fat_level: subcut === '' ? null : parseFloat(subcut),
+          belly_fat_percent: bellyPct === '' ? null : parseFloat(bellyPct),
+          resting_heart_rate: rhr === '' ? null : parseInt(rhr),
+          total_muscle_mass_percent: musclePct === '' ? null : parseFloat(musclePct)
+        }
+        const { error } = await updateHealthRecord(submission.id, updates)
+        if (error) throw error
+        setSaveState('success')
+        setTimeout(() => setSaveState('idle'), 1500)
+      } catch (e) {
+        console.error(e)
+        setSaveState('error')
+        setTimeout(() => setSaveState('idle'), 2000)
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    return (
+      <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg shadow-sm">
+        <label className="block text-sm font-medium text-blue-700 mb-2">🧬 Body Composition</label>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div>
+            <label className="block text-xs text-gray-700 mb-1">Visceral</label>
+            <input className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900" type="number" step="0.01" min="0" value={visceral} onChange={(e) => setVisceral(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-700 mb-1">Subcutaneous</label>
+            <input className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900" type="number" step="0.01" min="0" value={subcut} onChange={(e) => setSubcut(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-700 mb-1">Belly Fat %</label>
+            <input className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900" type="number" step="0.01" min="0" max="100" value={bellyPct} onChange={(e) => setBellyPct(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-700 mb-1">Muscle %</label>
+            <input className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900" type="number" step="0.01" min="0" max="100" value={musclePct} onChange={(e) => setMusclePct(e.target.value)} />
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-end gap-2">
+          {saveState === 'success' && (
+            <span className="text-green-600 text-xs">Saved ✓</span>
+          )}
+          {saveState === 'error' && (
+            <span className="text-red-600 text-xs">Failed</span>
+          )}
+          <button onClick={save} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:bg-gray-400">{saving ? 'Updating...' : 'Update'}</button>
+        </div>
+      </div>
+    )
+  }
+
+  // Resting Heart Rate top-row editor (independent of Body Composition)
+  function RhrTopRow({ submission }: { submission: QueueSubmission }) {
+    const [rhr, setRhr] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [saveState, setSaveState] = useState<'idle' | 'success' | 'error'>('idle')
+
+    useEffect(() => {
+      setRhr((submission as any)?.resting_heart_rate != null ? String((submission as any).resting_heart_rate) : '')
+    }, [submission])
+
+    const save = async () => {
+      setSaving(true)
+      setSaveState('idle')
+      try {
+        const updates: any = {
+          resting_heart_rate: rhr === '' ? null : parseInt(rhr)
+        }
+        const { error } = await updateHealthRecord(submission.id, updates)
+        if (error) throw error
+        setSaveState('success')
+        setTimeout(() => setSaveState('idle'), 1500)
+      } catch (e) {
+        console.error(e)
+        setSaveState('error')
+        setTimeout(() => setSaveState('idle'), 2000)
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    return (
+      <div className="bg-rose-50 border border-rose-200 p-4 rounded-lg shadow-sm min-w-[220px]">
+        <label className="block text-sm font-medium text-rose-700 mb-2">❤️ Resting Heart Rate</label>
+        <div className="grid grid-cols-1 gap-2">
+          <div>
+            <label className="block text-xs text-gray-700 mb-1">RHR (bpm)</label>
+            <input
+              className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-gray-900"
+              type="number"
+              min={20}
+              max={120}
+              value={rhr}
+              onChange={(e) => setRhr(e.target.value)}
+              placeholder="e.g., 58"
+            />
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-end gap-2">
+          {saveState === 'success' && (
+            <span className="text-green-600 text-xs">Saved ✓</span>
+          )}
+          {saveState === 'error' && (
+            <span className="text-red-600 text-xs">Failed</span>
+          )}
+          <button onClick={save} disabled={saving} className="w-full px-4 py-2 h-10 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:bg-gray-400">{saving ? 'Updating...' : 'Update'}</button>
         </div>
       </div>
     )
@@ -1312,107 +1463,132 @@ export default function DrNickSubmissionReview({
         </div>
         </div>
 
+        {/* Top row: Body Composition (if enabled) */}
+        <div className="mt-6">
+          <div className="flex justify-center gap-6 items-start">
+            <BodyCompTopRow submission={submission} />
+          </div>
+        </div>
+
         {/* Client Profile Goals Section */}
         <div className="mt-8 mb-6">
-          <div className="text-center mb-4">
-            <h4 className="text-lg font-semibold text-gray-800 mb-1">🎯 Client Profile Goals</h4>
-            <p className="text-sm text-gray-600">These goals persist throughout the entire program and apply to all weekly submissions</p>
-          </div>
-          
-          <div className="flex justify-center gap-6 items-start">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <label className="block text-sm font-medium text-blue-700">Daily Protein Goal (grams)</label>
-              <p className="text-xs text-blue-600 mb-2">Target daily protein intake in grams</p>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    value={proteinGoalGrams}
-                    onChange={(e) => setProteinGoalGrams(e.target.value)}
-                    className="w-24 px-2 py-1 border border-blue-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="150"
-                  />
-                  <span className="text-sm text-blue-700">g</span>
+          <div className="flex justify-between gap-4 items-start flex-wrap w-full">
+            {/* Left: Goals rectangle */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4 flex-1 min-w-[480px] max-w-[860px]">
+              <div className="mb-4 text-center md:min-h-[56px] flex flex-col justify-center">
+                <h4 className="text-lg font-semibold text-gray-800 mb-1">🎯 Client Profile Goals</h4>
+                <p className="text-sm text-gray-600">These goals persist throughout the entire program and apply to all weekly submissions</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Daily Protein Goal */}
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <label className="block text-sm font-medium text-blue-700">Daily Protein Goal (grams)</label>
+                  <p className="text-xs text-blue-600 mb-2">Target daily protein intake in grams</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={proteinGoalGrams}
+                        onChange={(e) => setProteinGoalGrams(e.target.value)}
+                        className="w-24 px-2 py-1 border border-blue-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="150"
+                      />
+                      <span className="text-sm text-blue-700">g</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const rounded = Math.round(parseFloat(proteinGoalGrams))
+                        setProteinGoalGrams(String(isNaN(rounded) ? 150 : rounded))
+                        await (async () => {
+                          try {
+                            const val = isNaN(rounded) ? 150 : rounded
+                            const { error } = await supabase
+                              .from('profiles')
+                              .update({ protein_goal_grams: val })
+                              .eq('id', submission.user_id)
+                            if (error) {
+                              console.error('Error updating protein goal:', error)
+                              alert('Failed to update protein goal')
+                              return
+                            }
+                            alert('Protein goal updated successfully!')
+                          } catch (err) {
+                            console.error('Failed to update protein goal:', err)
+                            alert('Failed to update protein goal')
+                          }
+                        })()
+                      }}
+                    className="w-full px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
+                      title="Update daily protein goal"
+                    >
+                      Update
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={async () => {
-                    const rounded = Math.round(parseFloat(proteinGoalGrams))
-                    setProteinGoalGrams(String(isNaN(rounded) ? 150 : rounded))
-                    await (async () => {
-                      try {
-                        const val = isNaN(rounded) ? 150 : rounded
-                        const { error } = await supabase
-                          .from('profiles')
-                          .update({ protein_goal_grams: val })
-                          .eq('id', submission.user_id)
-                        if (error) {
-                          console.error('Error updating protein goal:', error)
-                          alert('Failed to update protein goal')
-                          return
-                        }
-                        alert('Protein goal updated successfully!')
-                      } catch (err) {
-                        console.error('Failed to update protein goal:', err)
-                        alert('Failed to update protein goal')
-                      }
-                    })()
-                  }}
-                  className="w-full px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
-                  title="Update daily protein goal"
-                >
-                  Update
-                </button>
-              </div>
-            </div>
-            <div className="bg-pink-50 p-4 rounded-lg">
-              <label className="block text-sm font-medium text-pink-700">Week-over-Week Weight Loss %</label>
-              <p className="text-xs text-pink-600 mb-2">Target percentage for weekly weight reduction</p>
-              <div className="space-y-2">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.10"
-                  max="5.00"
-                  value={weightChangeGoal}
-                  onChange={(e) => setWeightChangeGoal(e.target.value)}
-                  className="w-20 px-2 py-1 border border-pink-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500"
-                />
-                <button
-                  onClick={handleGoalUpdate}
-                  className="w-full px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
-                  title="Update weight change goal"
-                >
-                  Update
-                </button>
-              </div>
-            </div>
-            <div className="bg-purple-50 p-4 rounded-lg">
-              <label className="block text-sm font-medium text-purple-700">Training Days Per Week Goal</label>
-              <p className="text-xs text-purple-600 mb-2">Target resistance training days for this client</p>
-              <div className="space-y-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="7"
-                  value={resistanceTrainingGoal}
-                  onChange={(e) => setResistanceTrainingGoal(parseInt(e.target.value) || 0)}
-                  className="w-16 px-2 py-1 border border-purple-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                <button
-                  onClick={handleResistanceGoalUpdate}
-                  className="w-full px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 transition-colors"
-                  title="Update resistance training goal"
-                >
-                  Update
-                </button>
+
+                {/* Week-over-Week Weight Loss % */}
+                <div className="bg-pink-50 p-3 rounded-lg">
+                  <label className="block text-sm font-medium text-pink-700">Week-over-Week Weight Loss %</label>
+                  <p className="text-xs text-pink-600 mb-2">Target percentage for weekly weight reduction</p>
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.10"
+                      max="5.00"
+                      value={weightChangeGoal}
+                      onChange={(e) => setWeightChangeGoal(e.target.value)}
+                      className="w-20 px-2 py-1 border border-pink-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-pink-500"
+                    />
+                    <button
+                      onClick={handleGoalUpdate}
+                    className="w-full px-3 py-1 bg-pink-600 text-white rounded text-sm hover:bg-pink-700 transition-colors"
+                      title="Update weight change goal"
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
+
+                {/* Training Days Per Week Goal */}
+                <div className="bg-purple-50 p-3 rounded-lg">
+                  <label className="block text-sm font-medium text-purple-700">Training Days Per Week Goal</label>
+                  <p className="text-xs text-purple-600 mb-2">Target resistance training days for this client</p>
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="7"
+                      value={resistanceTrainingGoal}
+                      onChange={(e) => setResistanceTrainingGoal(parseInt(e.target.value) || 0)}
+                      className="w-16 px-2 py-1 border border-purple-300 rounded text-center text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <button
+                      onClick={handleResistanceGoalUpdate}
+                      className="w-full px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 transition-colors"
+                      title="Update resistance training goal"
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* BP inputs to the right when tracking is enabled */}
-            {Boolean((submission as any)?.profiles?.id) && (
-              <BPInlineEditor submission={submission} />
-            )}
+            {/* Right: Heart Health wrapper containing RHR + BP */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4 flex-none min-w-[520px]">
+              <div className="mb-4 text-center md:min-h-[56px] flex flex-col justify-center">
+                <h4 className="text-lg font-semibold text-gray-800 mb-1">❤️ Heart Health</h4>
+                <p className="text-sm text-gray-600">Weekly cardiovascular metrics for review</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <RhrTopRow submission={submission} />
+                {Boolean((submission as any)?.profiles?.id) && (
+                  <BPInlineEditor submission={submission} />
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

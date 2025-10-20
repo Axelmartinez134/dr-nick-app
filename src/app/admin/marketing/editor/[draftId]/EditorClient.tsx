@@ -17,6 +17,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   const [publishError, setPublishError] = useState<string | null>(null)
   const [publishSteps, setPublishSteps] = useState<Array<{ id: string; label: string; status: 'pending' | 'in_progress' | 'done' | 'error' }>>([])
   const [tracksBP, setTracksBP] = useState<boolean>(false)
+  const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
 
   // Debounced autosave
   useEffect(() => {
@@ -73,18 +74,41 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
         if (!pid) return
         const { data, error } = await supabase
           .from('profiles')
-          .select('track_blood_pressure')
+          .select('track_blood_pressure, track_body_composition')
           .eq('id', pid)
           .single()
         if (!error) {
           const isTracking = Boolean(data?.track_blood_pressure)
           setTracksBP(isTracking)
+          const isBC = Boolean((data as any)?.track_body_composition)
+          setTracksBodyComp(isBC)
           // Backfill missing BP flags to true when tracking BP (preserve explicit false)
           if (isTracking) {
             const ce = (draft?.meta?.chartsEnabled || {}) as any
             const needsUpdate = (ce.systolicTrend === undefined) || (ce.diastolicTrend === undefined)
             if (needsUpdate) {
               setMeta({ chartsEnabled: { ...ce, systolicTrend: (ce.systolicTrend ?? true), diastolicTrend: (ce.diastolicTrend ?? true) } })
+            }
+          }
+          // Backfill missing Body Composition flags to true when tracking (preserve explicit false)
+          if (isBC) {
+            const ce = (draft?.meta?.chartsEnabled || {}) as any
+            const needBC = (
+              ce.visceralFatLevel === undefined ||
+              ce.subcutaneousFatLevel === undefined ||
+              ce.bellyFatPercent === undefined ||
+              ce.restingHeartRate === undefined ||
+              ce.totalMuscleMassPercent === undefined
+            )
+            if (needBC) {
+              setMeta({ chartsEnabled: {
+                ...ce,
+                visceralFatLevel: (ce.visceralFatLevel ?? true),
+                subcutaneousFatLevel: (ce.subcutaneousFatLevel ?? true),
+                bellyFatPercent: (ce.bellyFatPercent ?? true),
+                restingHeartRate: (ce.restingHeartRate ?? true),
+                totalMuscleMassPercent: (ce.totalMuscleMassPercent ?? true)
+              } })
             }
           }
         }
@@ -251,8 +275,22 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       {renderToggle('bodyFatTrend','Body Fat %')}
                       {tracksBP ? renderToggle('systolicTrend','Systolic Blood Pressure') : null}
                       {tracksBP ? renderToggle('diastolicTrend','Diastolic Blood Pressure') : null}
+                      {renderToggle('restingHeartRate','Resting Heart Rate')}
                     </div>
                   </div>
+
+                  {/* Body Composition (dropdown, visible only when tracking) */}
+                  {tracksBodyComp ? (
+                    <details className="space-y-2" open>
+                      <summary className="cursor-pointer select-none font-medium text-gray-700">Body Composition</summary>
+                      <div className="grid grid-cols-1 gap-2 mt-1">
+                        {renderToggle('visceralFatLevel','Visceral Fat Level')}
+                        {renderToggle('subcutaneousFatLevel','Subcutaneous Fat Level')}
+                        {renderToggle('bellyFatPercent','Belly Fat %')}
+                        {renderToggle('totalMuscleMassPercent','Total Muscle Mass %')}
+                      </div>
+                    </details>
+                  ) : null}
 
                   {/* Dietary Protocol */}
                   <div className="space-y-2">
@@ -607,5 +645,6 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
     </main>
   )
 }
+
 
 

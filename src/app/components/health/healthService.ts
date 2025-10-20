@@ -24,6 +24,11 @@ export interface WeeklyCheckin {
   initial_weight?: number | null
   morning_fat_burn_percent?: number | null
   body_fat_percentage?: number | null
+  visceral_fat_level?: number | null
+  subcutaneous_fat_level?: number | null
+  belly_fat_percent?: number | null
+  resting_heart_rate?: number | null
+  total_muscle_mass_percent?: number | null
   nutrition_compliance_days?: number | null
   systolic_bp?: number | null
   diastolic_bp?: number | null
@@ -42,6 +47,11 @@ export interface CheckinFormData {
   waist?: string
   systolic_bp?: string
   diastolic_bp?: string
+  visceral_fat_level?: string
+  subcutaneous_fat_level?: string
+  belly_fat_percent?: string
+  resting_heart_rate?: string
+  total_muscle_mass_percent?: string
   resistance_training_days?: string
   symptom_tracking_days?: string
   detailed_symptom_notes?: string
@@ -126,6 +136,11 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       waist: toTwo(waistInches),
       systolic_bp: data.systolic_bp ? Math.round(parseFloat(data.systolic_bp)) : null,
       diastolic_bp: data.diastolic_bp ? Math.round(parseFloat(data.diastolic_bp)) : null,
+      visceral_fat_level: data.visceral_fat_level !== undefined && data.visceral_fat_level !== null && data.visceral_fat_level !== '' ? parseFloat(String(data.visceral_fat_level)) : null,
+      subcutaneous_fat_level: data.subcutaneous_fat_level !== undefined && data.subcutaneous_fat_level !== null && data.subcutaneous_fat_level !== '' ? parseFloat(String(data.subcutaneous_fat_level)) : null,
+      belly_fat_percent: data.belly_fat_percent !== undefined && data.belly_fat_percent !== null && data.belly_fat_percent !== '' ? parseFloat(String(data.belly_fat_percent)) : null,
+      resting_heart_rate: data.resting_heart_rate !== undefined && data.resting_heart_rate !== null && data.resting_heart_rate !== '' ? parseInt(String(data.resting_heart_rate)) : null,
+      total_muscle_mass_percent: data.total_muscle_mass_percent !== undefined && data.total_muscle_mass_percent !== null && data.total_muscle_mass_percent !== '' ? parseFloat(String(data.total_muscle_mass_percent)) : null,
       resistance_training_days: data.resistance_training_days ? parseInt(data.resistance_training_days) : null,
       symptom_tracking_days: data.symptom_tracking_days ? parseInt(data.symptom_tracking_days) : null,
       detailed_symptom_notes: data.detailed_symptom_notes || null,
@@ -468,6 +483,11 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.sleep_consistency_score !== undefined) updateData.sleep_consistency_score = updates.sleep_consistency_score ? parseInt(String(updates.sleep_consistency_score)) : null
     if (updates.morning_fat_burn_percent !== undefined) updateData.morning_fat_burn_percent = updates.morning_fat_burn_percent ? parseFloat(String(updates.morning_fat_burn_percent)) : null
     if (updates.body_fat_percentage !== undefined) updateData.body_fat_percentage = updates.body_fat_percentage ? parseFloat(String(updates.body_fat_percentage)) : null
+  if (updates.visceral_fat_level !== undefined) updateData.visceral_fat_level = updates.visceral_fat_level !== null && updates.visceral_fat_level !== ('' as any) ? parseFloat(String(updates.visceral_fat_level)) : null
+  if (updates.subcutaneous_fat_level !== undefined) updateData.subcutaneous_fat_level = updates.subcutaneous_fat_level !== null && updates.subcutaneous_fat_level !== ('' as any) ? parseFloat(String(updates.subcutaneous_fat_level)) : null
+  if (updates.belly_fat_percent !== undefined) updateData.belly_fat_percent = updates.belly_fat_percent !== null && updates.belly_fat_percent !== ('' as any) ? parseFloat(String(updates.belly_fat_percent)) : null
+  if (updates.resting_heart_rate !== undefined) updateData.resting_heart_rate = updates.resting_heart_rate !== null && updates.resting_heart_rate !== ('' as any) ? parseInt(String(updates.resting_heart_rate)) : null
+  if (updates.total_muscle_mass_percent !== undefined) updateData.total_muscle_mass_percent = updates.total_muscle_mass_percent !== null && updates.total_muscle_mass_percent !== ('' as any) ? parseFloat(String(updates.total_muscle_mass_percent)) : null
     if (updates.systolic_bp !== undefined) updateData.systolic_bp = updates.systolic_bp ? parseInt(String(updates.systolic_bp)) : null
     if (updates.diastolic_bp !== undefined) updateData.diastolic_bp = updates.diastolic_bp ? parseInt(String(updates.diastolic_bp)) : null
     if (updates.energetic_constraints_reduction_ok !== undefined) updateData.energetic_constraints_reduction_ok = Boolean(updates.energetic_constraints_reduction_ok)
@@ -565,6 +585,16 @@ export async function createHealthRecordForPatient(
         ? parseFloat(String(values.morning_fat_burn_percent)) : null,
       body_fat_percentage: values.body_fat_percentage !== undefined && values.body_fat_percentage !== null && values.body_fat_percentage !== ('' as any)
         ? parseFloat(String(values.body_fat_percentage)) : null,
+    visceral_fat_level: values.visceral_fat_level !== undefined && values.visceral_fat_level !== null && values.visceral_fat_level !== ('' as any)
+      ? parseFloat(String(values.visceral_fat_level)) : null,
+    subcutaneous_fat_level: values.subcutaneous_fat_level !== undefined && values.subcutaneous_fat_level !== null && values.subcutaneous_fat_level !== ('' as any)
+      ? parseFloat(String(values.subcutaneous_fat_level)) : null,
+    belly_fat_percent: values.belly_fat_percent !== undefined && values.belly_fat_percent !== null && values.belly_fat_percent !== ('' as any)
+      ? parseFloat(String(values.belly_fat_percent)) : null,
+    resting_heart_rate: values.resting_heart_rate !== undefined && values.resting_heart_rate !== null && values.resting_heart_rate !== ('' as any)
+      ? parseInt(String(values.resting_heart_rate)) : null,
+    total_muscle_mass_percent: values.total_muscle_mass_percent !== undefined && values.total_muscle_mass_percent !== null && values.total_muscle_mass_percent !== ('' as any)
+      ? parseFloat(String(values.total_muscle_mass_percent)) : null,
       nutrition_compliance_days: values.nutrition_compliance_days !== undefined && values.nutrition_compliance_days !== null && values.nutrition_compliance_days !== ('' as any)
         ? parseInt(String(values.nutrition_compliance_days)) : null,
       systolic_bp: values.systolic_bp !== undefined && values.systolic_bp !== null && values.systolic_bp !== ('' as any)

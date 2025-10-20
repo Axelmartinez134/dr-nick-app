@@ -31,13 +31,16 @@ export async function POST(req: NextRequest)
       try { return await loadPatientProfile(supabase, patientId) } catch { return null }
     })()
 
-    // Create a draft with full chartsEnabled defaults (14 flags; BP conditional)
+    // Create a draft with full chartsEnabled defaults (flags; BP/BodyComp conditional)
     const draft = {
       meta: {
         displayNameMode: 'first_name',
         captionsEnabled: true,
         layout: 'stack',
-        chartsEnabled: computeChartsEnabledDefaults({ trackBloodPressure: !!(profile as any)?.track_blood_pressure }),
+        chartsEnabled: computeChartsEnabledDefaults({
+          trackBloodPressure: !!(profile as any)?.track_blood_pressure,
+          trackBodyComposition: !!(profile as any)?.track_body_composition
+        }),
         totalFatLossLbs: null
       },
       media: {

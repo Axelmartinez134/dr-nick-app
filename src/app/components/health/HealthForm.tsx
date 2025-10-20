@@ -246,6 +246,7 @@ export default function HealthForm() {
   const [resistanceTrainingGoal, setResistanceTrainingGoal] = useState<number>(0)
   const [isTestAccount, setIsTestAccount] = useState<boolean>(false)
   const [tracksBP, setTracksBP] = useState<boolean>(false)
+  const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -298,7 +299,7 @@ export default function HealthForm() {
 
       const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('resistance_training_days_goal, client_status, track_blood_pressure')
+        .select('resistance_training_days_goal, client_status, track_blood_pressure, track_body_composition')
         .eq('id', user.id)
         .single()
 
@@ -310,6 +311,7 @@ export default function HealthForm() {
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
       setIsTestAccount((profileData as any)?.client_status === 'Test')
       setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
+      setTracksBodyComp(Boolean((profileData as any)?.track_body_composition))
     } catch (error) {
       console.error('Error loading resistance training goal:', error)
     }
@@ -1555,6 +1557,101 @@ export default function HealthForm() {
           </div>
         </div>
 
+        {/* Blood Pressure (mmHg) - Only when tracking is enabled */}
+        {/* Body Composition - Only when tracking is enabled (without RHR) */}
+        {tracksBodyComp && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🧬 Body Composition</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="visceral_fat_level" className="block text-sm font-medium text-gray-700 mb-1">
+                Visceral Fat Level
+              </label>
+              <input
+                type="number"
+                id="visceral_fat_level"
+                step="0.01"
+                min="0"
+                value={(formData as any).visceral_fat_level || ''}
+                onChange={(e) => handleInputChange('visceral_fat_level' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 12.34"
+              />
+            </div>
+            <div>
+              <label htmlFor="subcutaneous_fat_level" className="block text-sm font-medium text-gray-700 mb-1">
+                Subcutaneous Fat Level
+              </label>
+              <input
+                type="number"
+                id="subcutaneous_fat_level"
+                step="0.01"
+                min="0"
+                value={(formData as any).subcutaneous_fat_level || ''}
+                onChange={(e) => handleInputChange('subcutaneous_fat_level' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 10.50"
+              />
+            </div>
+            <div>
+              <label htmlFor="belly_fat_percent" className="block text-sm font-medium text-gray-700 mb-1">
+                Belly Fat (%)
+              </label>
+              <input
+                type="number"
+                id="belly_fat_percent"
+                step="0.01"
+                min="0"
+                max="100"
+                value={(formData as any).belly_fat_percent || ''}
+                onChange={(e) => handleInputChange('belly_fat_percent' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 24.25"
+              />
+            </div>
+            <div>
+              <label htmlFor="total_muscle_mass_percent" className="block text-sm font-medium text-gray-700 mb-1">
+                Total Muscle Mass (%)
+              </label>
+              <input
+                type="number"
+                id="total_muscle_mass_percent"
+                step="0.01"
+                min="0"
+                max="100"
+                value={(formData as any).total_muscle_mass_percent || ''}
+                onChange={(e) => handleInputChange('total_muscle_mass_percent' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 42.10"
+              />
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Resting Heart Rate - Always visible, independent of Body Composition */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">❤️ Resting Heart Rate</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="resting_heart_rate" className="block text-sm font-medium text-gray-700 mb-1">
+                Resting Heart Rate (bpm)
+              </label>
+              <input
+                type="number"
+                id="resting_heart_rate"
+                min="20"
+                max="120"
+                step="1"
+                value={(formData as any).resting_heart_rate || ''}
+                onChange={(e) => handleInputChange('resting_heart_rate' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 62"
+              />
+            </div>
+          </div>
+        </div>
+        
         {/* Blood Pressure (mmHg) - Only when tracking is enabled */}
         {tracksBP && (
         <div className="space-y-4">

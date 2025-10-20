@@ -30,6 +30,11 @@ const MorningFatBurnChart = dynamic(() => import('@/app/components/health/charts
 const AliasMorningFatBurnMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasMorningFatBurnMobilePill'), { ssr: false })
 const BodyFatPercentageChart = dynamic(() => import('@/app/components/health/charts/BodyFatPercentageChart'), { ssr: false }) as any
 const AliasBodyFatMobilePill = dynamic(() => import('@/app/components/health/marketing/AliasBodyFatMobilePill'), { ssr: false })
+const VisceralFatLevelChart = dynamic(() => import('@/app/components/health/charts/VisceralFatLevelChart'), { ssr: false }) as any
+const SubcutaneousFatLevelChart = dynamic(() => import('@/app/components/health/charts/SubcutaneousFatLevelChart'), { ssr: false }) as any
+const BellyFatPercentChart = dynamic(() => import('@/app/components/health/charts/BellyFatPercentChart'), { ssr: false }) as any
+const RestingHeartRateChart = dynamic(() => import('@/app/components/health/charts/RestingHeartRateChart'), { ssr: false }) as any
+const TotalMuscleMassPercentChart = dynamic(() => import('@/app/components/health/charts/TotalMuscleMassPercentChart'), { ssr: false }) as any
 
 type UnitSystem = 'imperial' | 'metric'
 
@@ -124,6 +129,12 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
     disciplineStrainTrend: false,
     morningFatBurnTrend: false,
     bodyFatTrend: false,
+    // Body Composition chart toggles (default off; snapshot meta may override)
+    visceralFatLevel: false,
+    subcutaneousFatLevel: false,
+    bellyFatPercent: false,
+    restingHeartRate: false,
+    totalMuscleMassPercent: false,
     ...(meta as any)?.chartsEnabled
   } as Record<string, boolean>
 
@@ -505,6 +516,18 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
+            {chartsEnabled.restingHeartRate && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <RestingHeartRateChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: w.date || '',
+                    resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
+                  })) as any}
+                />
+              </div>
+            )}
+
             {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasPlateauMobilePill
@@ -560,6 +583,80 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             </div>
           </div>
         </details>
+
+        {/* 🧬 Body Composition */}
+        {(() => {
+          const anyBC = chartsEnabled.visceralFatLevel || chartsEnabled.subcutaneousFatLevel || chartsEnabled.bellyFatPercent || chartsEnabled.restingHeartRate || chartsEnabled.totalMuscleMassPercent
+          if (!anyBC) return null
+          const weeks = (snapshot.weeksRaw || []) as any[]
+          const hasWeeks = Array.isArray(weeks) && weeks.length > 0
+          if (!hasWeeks) return null
+          return (
+            <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
+              <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">🧬 Body Composition</summary>
+              <div className="p-2 space-y-4">
+                {chartsEnabled.visceralFatLevel && (
+                  <div className="mt-2">
+                    <VisceralFatLevelChart
+                      data={weeks.map((w: any) => ({
+                        week_number: w.week_number,
+                        date: w.date || '',
+                        visceral_fat_level: (w.fields?.visceral_fat_level ?? null)
+                      })) as any}
+                    />
+                  </div>
+                )}
+                {chartsEnabled.subcutaneousFatLevel && (
+                  <div className="mt-2">
+                    <SubcutaneousFatLevelChart
+                      data={weeks.map((w: any) => ({
+                        week_number: w.week_number,
+                        date: w.date || '',
+                        subcutaneous_fat_level: (w.fields?.subcutaneous_fat_level ?? null)
+                      })) as any}
+                    />
+                  </div>
+                )}
+                {chartsEnabled.bellyFatPercent && (
+                  <div className="mt-2">
+                    <BellyFatPercentChart
+                      data={weeks.map((w: any) => ({
+                        week_number: w.week_number,
+                        date: w.date || '',
+                        belly_fat_percent: (w.fields?.belly_fat_percent ?? null)
+                      })) as any}
+                    />
+                  </div>
+                )}
+                {chartsEnabled.restingHeartRate && (
+                  <div className="mt-2">
+                    <RestingHeartRateChart
+                      data={weeks.map((w: any) => ({
+                        week_number: w.week_number,
+                        date: w.date || '',
+                        resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
+                      })) as any}
+                    />
+                  </div>
+                )}
+                {chartsEnabled.totalMuscleMassPercent && (
+                  <div className="mt-2">
+                    <TotalMuscleMassPercentChart
+                      data={weeks.map((w: any) => ({
+                        week_number: w.week_number,
+                        date: w.date || '',
+                        total_muscle_mass_percent: (w.fields?.total_muscle_mass_percent ?? null)
+                      })) as any}
+                    />
+                  </div>
+                )}
+                <div className="mt-3">
+                  <button onClick={(e) => { e.preventDefault(); scrollToCTA('body_comp_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
+                </div>
+              </div>
+            </details>
+          )
+        })()}
 
         {/* 🥗 Dietary Protocol */}
         <details className="rounded-lg border border-gray-200 shadow-sm mb-3">
