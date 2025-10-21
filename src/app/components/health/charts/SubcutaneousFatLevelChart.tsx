@@ -92,10 +92,8 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
     return null
   }
 
-  const projectionWeeks = 16
   const xMin = Math.min(...chartData.map(d => d.week))
   const xMax = Math.max(...chartData.map(d => d.week))
-  const xMaxProj = xMax + projectionWeeks
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
@@ -108,7 +106,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMaxProj]} type="number" />
+          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" />
           <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={yAxisDomain as any} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="level" stroke="#059669" strokeWidth={3} dot={{ fill: '#059669', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Level" connectNulls={true} />
@@ -118,7 +116,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
             const regression = calculateLinearRegression(
               valid.map(d => ({ week: d.week, value: d.level as number })),
               xMin,
-              xMaxProj
+              xMax
             )
             return (
               <Line type="monotone" dataKey="value" data={regression.trendPoints as any} stroke="#000000" strokeWidth={2} dot={false} activeDot={false} name="" connectNulls={true} />
