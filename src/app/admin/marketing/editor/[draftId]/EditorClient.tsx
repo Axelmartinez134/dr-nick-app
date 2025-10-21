@@ -309,6 +309,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       {renderToggle('waistTrend','Waist Trend')}
                       {renderToggle('plateauWaist','Plateau Prevention — Waist')}
                       {renderToggle('strainTrend','Exercise Compliance %')}
+                      {renderToggle('restingHeartRateFitness','Resting Heart Rate')}
                     </div>
                   </div>
 

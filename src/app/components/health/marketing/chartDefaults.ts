@@ -23,6 +23,8 @@ export const ALL_CHART_KEYS: string[] = [
   'disciplineStrainTrend',
   'morningFatBurnTrend',
   'bodyFatTrend',
+  // Fitness duplicate for RHR (alias-only)
+  'restingHeartRateFitness',
   // Body Composition
   'visceralFatLevel',
   'subcutaneousFatLevel',
@@ -50,6 +52,8 @@ export function defaultChartsOrder(): string[] {
     'bodyFatTrend',
     // RHR belongs with Metabolic Health
     'restingHeartRate',
+    // Fitness duplicate RHR (renders in Fitness Optimized)
+    'restingHeartRateFitness',
     // Body Composition section (order within group)
     'visceralFatLevel',
     'subcutaneousFatLevel',
@@ -72,6 +76,7 @@ export function computeChartsEnabledDefaults(opts: ChartsDefaultsOptions = {}): 
   base.bellyFatPercent = trackBC
   // RHR is independent of Body Composition and defaults ON
   base.restingHeartRate = true
+  base.restingHeartRateFitness = true
   base.totalMuscleMassPercent = trackBC
   return base
 }

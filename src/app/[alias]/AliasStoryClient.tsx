@@ -516,17 +516,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
-            {chartsEnabled.restingHeartRate && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
-              <div className="mt-4">
-                <RestingHeartRateChart
-                  data={(snapshot.weeksRaw || []).map((w: any) => ({
-                    week_number: w.week_number,
-                    date: w.date || '',
-                    resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
-                  })) as any}
-                />
-              </div>
-            )}
+            
 
             {chartsEnabled.plateauWeight && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
@@ -578,6 +568,18 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               </div>
             )}
 
+            {chartsEnabled.restingHeartRate && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <RestingHeartRateChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: w.date || '',
+                    resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
+                  })) as any}
+                />
+              </div>
+            )}
+
             <div className="mt-3">
               <button onClick={(e) => { e.preventDefault(); scrollToCTA('metabolic_section') }} className="block w-full text-center px-4 py-3 rounded bg-blue-600 text-white font-medium transform transition duration-200 hover:scale-105 active:scale-95">{CTA_LABEL}</button>
             </div>
@@ -586,7 +588,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
 
         {/* 🧬 Body Composition */}
         {(() => {
-          const anyBC = chartsEnabled.visceralFatLevel || chartsEnabled.subcutaneousFatLevel || chartsEnabled.bellyFatPercent || chartsEnabled.restingHeartRate || chartsEnabled.totalMuscleMassPercent
+          const anyBC = chartsEnabled.visceralFatLevel || chartsEnabled.subcutaneousFatLevel || chartsEnabled.bellyFatPercent || chartsEnabled.totalMuscleMassPercent
           if (!anyBC) return null
           const weeks = (snapshot.weeksRaw || []) as any[]
           const hasWeeks = Array.isArray(weeks) && weeks.length > 0
@@ -624,17 +626,6 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                         week_number: w.week_number,
                         date: w.date || '',
                         belly_fat_percent: (w.fields?.belly_fat_percent ?? null)
-                      })) as any}
-                    />
-                  </div>
-                )}
-                {chartsEnabled.restingHeartRate && (
-                  <div className="mt-2">
-                    <RestingHeartRateChart
-                      data={weeks.map((w: any) => ({
-                        week_number: w.week_number,
-                        date: w.date || '',
-                        resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
                       })) as any}
                     />
                   </div>
@@ -760,6 +751,19 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 <AliasStrainMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}>
                   <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} />
                 </AliasStrainMobilePill>
+              </div>
+            )}
+
+
+            {chartsEnabled.restingHeartRateFitness && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
+              <div className="mt-4">
+                <RestingHeartRateChart
+                  data={(snapshot.weeksRaw || []).map((w: any) => ({
+                    week_number: w.week_number,
+                    date: w.date || '',
+                    resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
+                  })) as any}
+                />
               </div>
             )}
 
