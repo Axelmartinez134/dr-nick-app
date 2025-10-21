@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
@@ -59,7 +59,7 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
     chartData.push({ week: w, bpm: rec.bpm, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
   }
 
-  const calculateYAxisDomain = useMemo(() => {
+  const yAxisDomain = (() => {
     const values = chartData
       .map(d => (typeof d.bpm === 'number' ? d.bpm : null))
       .filter((v): v is number => v !== null && !isNaN(v))
@@ -68,7 +68,7 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
     const maxValue = Math.max(...values)
     const padding = Math.max(1, (maxValue - minValue) * 0.1)
     return [Math.max(20, minValue - padding), Math.min(120, maxValue + padding)]
-  }, [chartData])
+  })()
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -102,7 +102,7 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMaxProj]} type="number" />
-          <YAxis label={{ value: 'bpm', angle: -90, position: 'insideLeft' }} domain={calculateYAxisDomain as any} />
+          <YAxis label={{ value: 'bpm', angle: -90, position: 'insideLeft' }} domain={yAxisDomain as any} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="bpm" stroke="#e11d48" strokeWidth={3} dot={{ fill: '#e11d48', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Resting HR" connectNulls={true} />
           {(() => {

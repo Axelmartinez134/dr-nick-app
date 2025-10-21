@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
@@ -64,7 +64,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
     })
   }
 
-  const calculateYAxisDomain = useMemo(() => {
+  const yAxisDomain = (() => {
     const values = chartData
       .map(d => (typeof d.level === 'number' ? d.level : null))
       .filter((v): v is number => v !== null && !isNaN(v))
@@ -75,7 +75,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
     const maxValue = Math.max(...values)
     const padding = Math.max(1, (maxValue - minValue) * 0.1)
     return [Math.max(0, minValue - padding), maxValue + padding]
-  }, [chartData])
+  })()
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -109,7 +109,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMaxProj]} type="number" />
-          <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={calculateYAxisDomain as any} />
+          <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={yAxisDomain as any} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="level" stroke="#059669" strokeWidth={3} dot={{ fill: '#059669', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Level" connectNulls={true} />
           {(() => {
