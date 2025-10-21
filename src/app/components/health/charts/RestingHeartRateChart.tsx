@@ -67,7 +67,12 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
     const minValue = Math.min(...values)
     const maxValue = Math.max(...values)
     const padding = Math.max(1, (maxValue - minValue) * 0.1)
-    return [Math.max(20, minValue - padding), Math.min(120, maxValue + padding)]
+    const minRaw = Math.max(20, minValue - padding)
+    const maxRaw = Math.min(120, maxValue + padding)
+    // Round to cleaner 5-bpm steps to avoid fractional tick labels
+    const minRounded = Math.floor(minRaw / 5) * 5
+    const maxRounded = Math.ceil(maxRaw / 5) * 5
+    return [minRounded, maxRounded]
   })()
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -102,7 +107,12 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMaxProj]} type="number" />
-          <YAxis label={{ value: 'bpm', angle: -90, position: 'insideLeft' }} domain={yAxisDomain as any} />
+          <YAxis
+            label={{ value: 'bpm', angle: -90, position: 'insideLeft' }}
+            domain={yAxisDomain as any}
+            allowDecimals={false}
+            tickFormatter={(v) => String(Math.round(v as number))}
+          />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="bpm" stroke="#e11d48" strokeWidth={3} dot={{ fill: '#e11d48', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Resting HR" connectNulls={true} />
           {(() => {
