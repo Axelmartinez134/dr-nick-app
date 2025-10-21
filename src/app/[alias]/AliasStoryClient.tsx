@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Script from 'next/script'
 import type { SnapshotJson } from '@/app/components/health/marketing/snapshotTypes'
-import { CTA_LABEL, TAGLINE } from '@/app/components/health/marketing/marketingConfig'
+import { CTA_LABEL, TAGLINE, getBrandingAssetUrl } from '@/app/components/health/marketing/marketingConfig'
 import { poundsToKilograms } from '@/app/components/health/unitUtils'
 import dynamic from 'next/dynamic'
 const WeightTrendChart = dynamic(() => import('@/app/components/health/charts/WeightTrendChart'), { ssr: false }) as any
@@ -828,6 +828,10 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
       </section>
 
       {/* Testimonial (moved directly below Discipline) */}
+      {(() => {
+        const showTestimonial = typeof (snapshot?.meta as any)?.testimonialEnabled === 'boolean' ? (snapshot?.meta as any).testimonialEnabled : true
+        if (!showTestimonial) return null
+        return (
       <section id="testimonial" className="max-w-md mx-auto px-4 py-0">
         <details className="rounded-lg border border-gray-200 shadow-sm mb-3" onToggle={(e) => setTestimonialMediaOpen((e.currentTarget as HTMLDetailsElement).open)}>
           <summary className="p-3 cursor-pointer select-none text-gray-900 font-semibold">{`${displayLabel}'s Testimonial`}</summary>
@@ -963,6 +967,34 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
           </div>
         </details>
       </section>
+        )
+      })()}
+
+      {/* MyFitnessPal: below Testimonial, above Testing */}
+      {(() => {
+        const enabled = (snapshot?.meta as any)?.mfpEnabled === true
+        const url = String((snapshot?.meta as any)?.mfpUrl || '').trim()
+        if (!enabled || !url) return null
+        const logo = getBrandingAssetUrl('mfp-logo.png')
+        return (
+          <section className="max-w-md mx-auto px-4 py-0">
+            <div className="rounded-lg border border-gray-200 p-3 shadow-sm min-w-0 mb-3">
+              <div className="rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={logo} alt="MyFitnessPal" className="w-full h-auto" />
+              </div>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full text-center mt-2 px-4 py-3 rounded-md bg-indigo-600 text-white font-semibold shadow hover:bg-indigo-700 transition-colors"
+              >
+                View MyFitnessPal
+              </a>
+            </div>
+          </section>
+        )
+      })()}
 
       {/* Inline CTA after Charts */}
       <section className="max-w-md mx-auto px-4">

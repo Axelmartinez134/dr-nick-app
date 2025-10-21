@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/app/components/auth/AuthContext'
+import { getBrandingAssetUrl } from '@/app/components/health/marketing/marketingConfig'
 import PreviewClient from './PreviewClient'
 
 export default function EditorClient({ draftId, initialDraft }: { draftId: string; initialDraft: any }) {
@@ -141,6 +142,15 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
     const res = await fetch(`/api/marketing/drafts/${encodeURIComponent(draftId)}/upload`, { method: 'POST', body: fd })
     const json = await res.json()
     if (!res.ok) throw new Error(json.error || 'Upload failed')
+    return json.url as string
+  }
+
+  async function uploadBrandingPng(file: File) {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/marketing/branding/upload', { method: 'POST', body: fd })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error || 'Branding upload failed')
     return json.url as string
   }
 
@@ -381,10 +391,17 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
           <section className="bg-white rounded border p-4">
             <details>
               <summary className="cursor-pointer select-none">
-                <h3 className="font-semibold text-gray-900">Client Testimonial</h3>
+                <span className="font-semibold text-gray-900 inline-block">Client Testimonial</span>
                 <div className="text-xs text-gray-600">Click to expand and manage testimonial content</div>
               </summary>
 
+              <div className="mt-3">
+                <label className="flex items-center gap-2 text-sm text-gray-900">
+                  <input type="checkbox" checked={typeof draft?.meta?.testimonialEnabled === 'boolean' ? draft.meta.testimonialEnabled : true} onChange={(e) => setMeta({ testimonialEnabled: e.target.checked })} />
+                  <span>Show Client Testimonial</span>
+                </label>
+                <div className="text-xs text-gray-600 mt-1">Toggle visibility of the entire testimonial section. Defaults ON for new drafts.</div>
+              </div>
               <div className="mt-3">
                 <label className="text-sm text-gray-900 block mb-1">Text Testimonial</label>
                 <textarea value={draft?.meta?.testimonialQuote || ''} onChange={(e) => setMeta({ testimonialQuote: e.target.value })} className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700" rows={3} placeholder="Short quote" />
@@ -451,6 +468,78 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                   </div>
                 )
               })()}
+            </details>
+          </section>
+
+          {/* MyFitnessPal (collapsible editor panel) */}
+          <section className="bg-white rounded border p-4">
+            <details>
+              <summary className="cursor-pointer select-none">
+                <span className="font-semibold text-gray-900 inline-block">MyFitnessPal</span>
+                <div className="text-xs text-gray-600">Global logo + per-alias URL; toggle controls visibility</div>
+              </summary>
+
+              <div className="mt-3 space-y-3">
+                {(() => {
+                  const enabled = Boolean(draft?.meta?.mfpEnabled)
+                  const hasUrl = typeof (draft?.meta?.mfpUrl) === 'string' && (draft?.meta?.mfpUrl as string).trim().length > 0
+                  if (enabled && !hasUrl) {
+                    return (
+                      <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Section is enabled but no link is set. Add a MyFitnessPal URL; otherwise it won’t appear in preview or on the public page.
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="text-xs text-gray-600">
+                      Note: This section appears only when enabled and a valid URL is provided.
+                    </div>
+                  )
+                })()}
+
+                <label className="flex items-center gap-2 text-sm text-gray-900">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draft?.meta?.mfpEnabled)}
+                    onChange={(e) => setMeta({ mfpEnabled: e.target.checked })}
+                  />
+                  <span>Show MyFitnessPal section</span>
+                </label>
+
+                <div>
+                  <label className="text-sm text-gray-900 block mb-1">MyFitnessPal URL</label>
+                  <input
+                    type="url"
+                    className="w-full px-3 py-2 border rounded text-gray-900 placeholder-gray-700"
+                    placeholder="https://www.myfitnesspal.com/..."
+                    value={(draft?.meta?.mfpUrl || '') as any}
+                    onChange={(e) => setMeta({ mfpUrl: e.target.value })}
+                  />
+                  <div className="text-xs text-gray-600 mt-1">Used on publish; section renders only if toggle is ON and URL is present.</div>
+                </div>
+
+                <div className="border rounded p-3">
+                  <div className="text-sm font-medium text-gray-900 mb-2">Global logo (PNG)</div>
+                  <div className="flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={getBrandingAssetUrl('mfp-logo.png')} alt="MyFitnessPal Logo" className="h-10 w-auto" />
+                    <label className="px-2 py-1 border border-gray-300 rounded cursor-pointer text-sm text-gray-900 font-medium hover:bg-gray-50">
+                      Replace
+                      <input
+                        type="file"
+                        accept="image/png"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0]
+                          if (!f) return
+                          await uploadBrandingPng(f)
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-1">Affects all pages and versions. PNG only.</div>
+                </div>
+              </div>
             </details>
           </section>
 
@@ -580,7 +669,12 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                       // Send only persisted user choices; if undefined, server will compute full defaults
                       chartsEnabled: (draft?.meta?.chartsEnabled ?? undefined),
                       displayWeeks: draft?.meta?.displayWeeks || undefined,
-                      selectedMedia: draft?.media || {}
+                      selectedMedia: draft?.media || {},
+                      // MyFitnessPal: include per-alias settings in snapshot
+                      mfpEnabled: typeof draft?.meta?.mfpEnabled === 'boolean' ? draft.meta.mfpEnabled : undefined,
+                      mfpUrl: (draft?.meta?.mfpUrl ?? null),
+                      // Testimonial toggle
+                      testimonialEnabled: typeof draft?.meta?.testimonialEnabled === 'boolean' ? draft.meta.testimonialEnabled : undefined
                     }
                   })
                 })

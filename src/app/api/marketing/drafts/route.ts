@@ -41,7 +41,12 @@ export async function POST(req: NextRequest)
           trackBloodPressure: !!(profile as any)?.track_blood_pressure,
           trackBodyComposition: !!(profile as any)?.track_body_composition
         }),
-        totalFatLossLbs: null
+        totalFatLossLbs: null,
+        // MyFitnessPal defaults
+        mfpEnabled: false,
+        mfpUrl: null,
+        // Testimonial toggle default ON (back-compat)
+        testimonialEnabled: true
       },
       media: {
         beforePhotoUrl: null,

@@ -23,6 +23,11 @@ export interface BuilderSettings {
   totalFatLossLbs?: number | null
   beforeLabel?: string | null
   afterLabel?: string | null
+  // MyFitnessPal
+  mfpEnabled?: boolean
+  mfpUrl?: string | null
+  // Testimonial toggle (freeze at publish for version pages)
+  testimonialEnabled?: boolean
 }
 
 function firstNameOnly(full: string | null | undefined): string {
@@ -135,10 +140,14 @@ export async function snapshotBuilder(
       displayNameOverride: (settings as any)?.displayNameOverride ?? null,
       displayNameMode: settings.displayNameMode,
       testimonialQuote: (settings as any)?.testimonialQuote ?? null,
+      testimonialEnabled: typeof (settings as any)?.testimonialEnabled === 'boolean' ? (settings as any).testimonialEnabled : undefined,
       age: typeof (settings as any)?.age === 'number' ? (settings as any).age : ((settings as any)?.age === null ? null : undefined),
       totalFatLossLbs: typeof (settings as any)?.totalFatLossLbs === 'number' ? (settings as any).totalFatLossLbs : ((settings as any)?.totalFatLossLbs === null ? null : undefined),
       beforeLabel: (settings as any)?.beforeLabel ?? undefined,
       afterLabel: (settings as any)?.afterLabel ?? undefined,
+      // MyFitnessPal: freeze URL/toggle in snapshot
+      mfpEnabled: typeof (settings as any)?.mfpEnabled === 'boolean' ? (settings as any).mfpEnabled : undefined,
+      mfpUrl: (settings as any)?.mfpUrl ?? null,
       displayWeeks: settings.displayWeeks ? { start: settings.displayWeeks.start, end: settings.displayWeeks.end, effectiveEnd, availableMax } : { start: 1, end: availableMax, effectiveEnd: availableMax, availableMax }
     },
     metrics,

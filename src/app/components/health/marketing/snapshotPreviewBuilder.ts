@@ -17,6 +17,11 @@ export interface PreviewMetaSettings {
   totalFatLossLbs?: number | null
   beforeLabel?: string | null
   afterLabel?: string | null
+  // MyFitnessPal
+  mfpEnabled?: boolean
+  mfpUrl?: string | null
+  // Testimonial toggle (preview reflects current value; alias page should reflect latest)
+  testimonialEnabled?: boolean
 }
 
 export interface PreviewMedia {
@@ -127,10 +132,14 @@ export async function snapshotPreviewBuilder(
       displayNameOverride: (meta as any)?.displayNameOverride ?? null,
       displayNameMode: meta.displayNameMode,
       testimonialQuote: (meta as any)?.testimonialQuote ?? null,
+      testimonialEnabled: typeof (meta as any)?.testimonialEnabled === 'boolean' ? (meta as any).testimonialEnabled : undefined,
       age: typeof (meta as any)?.age === 'number' ? (meta as any).age : ((meta as any)?.age === null ? null : undefined),
       totalFatLossLbs: typeof (meta as any)?.totalFatLossLbs === 'number' ? (meta as any).totalFatLossLbs : ((meta as any)?.totalFatLossLbs === null ? null : undefined),
       beforeLabel: (meta as any)?.beforeLabel ?? undefined,
       afterLabel: (meta as any)?.afterLabel ?? undefined,
+      // MyFitnessPal: passthrough into preview
+      mfpEnabled: typeof (meta as any)?.mfpEnabled === 'boolean' ? (meta as any).mfpEnabled : undefined,
+      mfpUrl: (meta as any)?.mfpUrl ?? null,
       displayWeeks: meta.displayWeeks ? { start: meta.displayWeeks.start, end: meta.displayWeeks.end, effectiveEnd, availableMax } : { start: 1, end: availableMax, effectiveEnd: availableMax, availableMax }
     },
     metrics,

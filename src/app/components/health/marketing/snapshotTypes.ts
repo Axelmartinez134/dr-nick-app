@@ -42,10 +42,15 @@ export interface SnapshotMeta {
   displayNameOverride?: string | null
   displayNameMode?: 'first_name' | 'anonymous'
   testimonialQuote?: string | null
+  // Enable/disable Client Testimonial section
+  testimonialEnabled?: boolean
   // Snapshot-scoped age display (versioned)
   age?: number | null
   // Absolute total fat loss in pounds (fixed story value)
   totalFatLossLbs?: number | null
+  // MyFitnessPal section controls
+  mfpEnabled?: boolean
+  mfpUrl?: string | null
   // Optional global display range for charts/metrics
   displayWeeks?: {
     start: number
@@ -135,7 +140,9 @@ export function normalizeSnapshot(input: any): SnapshotJson {
       displayNameOverride: input.meta?.displayNameOverride ?? null,
       testimonialQuote: input.meta?.testimonialQuote ?? null,
       age: typeof input.meta?.age === 'number' ? input.meta.age : (input.meta?.age === null ? null : undefined),
-      totalFatLossLbs: typeof input.meta?.totalFatLossLbs === 'number' ? input.meta.totalFatLossLbs : (input.meta?.totalFatLossLbs === null ? null : undefined)
+      totalFatLossLbs: typeof input.meta?.totalFatLossLbs === 'number' ? input.meta.totalFatLossLbs : (input.meta?.totalFatLossLbs === null ? null : undefined),
+      mfpEnabled: typeof (input.meta as any)?.mfpEnabled === 'boolean' ? (input.meta as any).mfpEnabled : undefined,
+      mfpUrl: (input.meta as any)?.mfpUrl ?? undefined
     }
 
     const metrics: SnapshotMetrics = {
