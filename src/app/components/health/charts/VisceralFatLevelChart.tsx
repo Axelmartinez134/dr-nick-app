@@ -38,6 +38,14 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
         <div className="text-center py-8 text-gray-500">
           <p>No visceral fat data yet</p>
         </div>
+        <div className="mt-4">
+          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
+            <li>Tracks hidden visceral fat around internal organs linked to metabolic risk.</li>
+            <li>A decreasing trend indicates lower risk of metabolic syndrome and chronic disease.</li>
+            <li>Provides an actionable score to monitor and maintain internal health.</li>
+            <li>Scale of 0–10 where lower is better.</li>
+          </ul>
+        </div>
       </div>
     )
   }
@@ -139,7 +147,7 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} />
+          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} interval={0} tickMargin={2} />
           <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={[yTicks[0], yTicks[yTicks.length-1]] as any} ticks={yTicks as any} allowDecimals tickFormatter={(v: number) => Number(v).toFixed(1)} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="level" stroke="#2563eb" strokeWidth={3} dot={{ fill: '#2563eb', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Level" connectNulls={true} />
@@ -162,6 +170,7 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
           <li>Tracks hidden visceral fat around internal organs linked to metabolic risk.</li>
           <li>A decreasing trend indicates lower risk of metabolic syndrome and chronic disease.</li>
           <li>Provides an actionable score to monitor and maintain internal health.</li>
+          <li>Scale of 0–10 where lower is better.</li>
         </ul>
       </div>
     </div>

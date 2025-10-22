@@ -38,6 +38,14 @@ export default function BellyFatPercentChart({ data }: BellyFatPercentChartProps
         <div className="text-center py-8 text-gray-500">
           <p>No belly fat percentage data yet</p>
         </div>
+        <div className="mt-4">
+          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
+            <li>Measures abdominal fat density — a key indicator of metabolic health.</li>
+            <li>Targets progress in a primary area of concern for many clients.</li>
+            <li>More precise than total body fat for tracking abdominal-specific change.</li>
+            <li>Scale of 0–100% where lower is better.</li>
+          </ul>
+        </div>
       </div>
     )
   }
@@ -118,7 +126,7 @@ export default function BellyFatPercentChart({ data }: BellyFatPercentChartProps
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 56, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} />
+          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} interval={0} tickMargin={2} />
           <YAxis label={{ value: 'Percent', angle: -90, position: 'left', offset: 10 }} domain={[yTicks[0], yTicks[yTicks.length-1]] as any} ticks={yTicks as any} tickFormatter={(v) => `${Number(v).toFixed(1)}%`} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="percent" stroke="#ca8a04" strokeWidth={3} dot={{ fill: '#ca8a04', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Belly Fat %" connectNulls={true} />
@@ -141,6 +149,7 @@ export default function BellyFatPercentChart({ data }: BellyFatPercentChartProps
           <li>Measures abdominal fat density — a key indicator of metabolic health.</li>
           <li>Targets progress in a primary area of concern for many clients.</li>
           <li>More precise than total body fat for tracking abdominal-specific change.</li>
+          <li>Scale of 0–100% where lower is better.</li>
         </ul>
       </div>
     </div>

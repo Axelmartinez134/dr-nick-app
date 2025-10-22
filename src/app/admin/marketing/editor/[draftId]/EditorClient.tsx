@@ -22,7 +22,13 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
 
   // Debounced autosave
+  const skipDebounceRef = useRef<boolean>(false)
   useEffect(() => {
+    if (skipDebounceRef.current) {
+      // An immediate save just happened; skip one debounced cycle
+      skipDebounceRef.current = false
+      return
+    }
     const t = setTimeout(async () => {
       try {
         setSaving(true)
@@ -66,13 +72,15 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   }, [preview])
 
   // One-time self-heal for older drafts: ensure new meta fields exist
+  const mfpMissingRef = useRef<boolean>(false)
+  const mfpUrlMissingRef = useRef<boolean>(false)
   useEffect(() => {
     if (backfillRef.current) return
     try {
       const meta: any = (draft && (draft as any).meta) ? (draft as any).meta : {}
       const patch: any = {}
-      if (typeof meta.mfpEnabled !== 'boolean') patch.mfpEnabled = false
-      if (meta.mfpUrl === undefined) patch.mfpUrl = null
+      if (typeof meta.mfpEnabled !== 'boolean') { patch.mfpEnabled = false; mfpMissingRef.current = true }
+      if (meta.mfpUrl === undefined) { patch.mfpUrl = null; mfpUrlMissingRef.current = true }
       if (typeof meta.testimonialEnabled !== 'boolean') patch.testimonialEnabled = true
       if (Object.keys(patch).length > 0) {
         setMeta(patch)
@@ -80,6 +88,60 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
     } catch {}
     backfillRef.current = true
   }, [])
+
+  // Helper to immediately persist a draft and refresh preview
+  const saveDraftImmediate = async (nextDraft: any) => {
+    try {
+      skipDebounceRef.current = true
+      setSaving(true)
+      setSaveError(null)
+      await fetch(`/api/marketing/drafts/${encodeURIComponent(draftId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draft_json: nextDraft })
+      })
+      setSaving(false)
+      const res = await fetch(`/api/marketing/drafts/${encodeURIComponent(draftId)}/preview`, { cache: 'no-store' })
+      if (res.ok) setPreview(await res.json())
+    } catch (e: any) {
+      setSaving(false)
+      setSaveError(e?.message || 'Save failed')
+    }
+  }
+
+  // Seed MyFitnessPal fields from latest published snapshot if this draft was missing them
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!initialDraft?.alias) return
+        const shouldSeed = mfpMissingRef.current || mfpUrlMissingRef.current
+        if (!shouldSeed) return
+        // Resolve alias → slug
+        const aliasRes = await fetch(`/api/marketing/aliases/${encodeURIComponent(initialDraft.alias)}`, { cache: 'no-store' })
+        if (!aliasRes.ok) return
+        const aliasJson = await aliasRes.json()
+        const slug = aliasJson?.slug
+        if (!slug) return
+        // Fetch snapshot
+        const snapRes = await fetch(`/api/marketing/shares/${encodeURIComponent(slug)}`, { cache: 'no-store' })
+        if (!snapRes.ok) return
+        const snap = await snapRes.json()
+        const mfpEnabled = (snap?.meta as any)?.mfpEnabled
+        const mfpUrl = (snap?.meta as any)?.mfpUrl
+        if (mfpEnabled === undefined && mfpUrl === undefined) return
+        const next = {
+          ...draft,
+          meta: { ...(draft?.meta || {}),
+            mfpEnabled: (mfpMissingRef.current && typeof mfpEnabled === 'boolean') ? mfpEnabled : (draft?.meta?.mfpEnabled ?? false),
+            mfpUrl: (mfpUrlMissingRef.current ? (mfpUrl ?? null) : (draft?.meta?.mfpUrl ?? null))
+          }
+        }
+        setDraft(next)
+        await saveDraftImmediate(next)
+      } catch {}
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDraft?.alias])
 
   const setMedia = (patch: any) => setDraft((d: any) => ({ ...d, media: { ...(d?.media || {}), ...patch } }))
   const setMeta = (patch: any) => setDraft((d: any) => ({ ...d, meta: { ...(d?.meta || {}), ...patch } }))
@@ -518,7 +580,11 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                   <input
                     type="checkbox"
                     checked={Boolean(draft?.meta?.mfpEnabled)}
-                    onChange={(e) => setMeta({ mfpEnabled: e.target.checked })}
+                    onChange={async (e) => {
+                      const next = { ...draft, meta: { ...(draft?.meta || {}), mfpEnabled: e.target.checked } }
+                      setDraft(next)
+                      await saveDraftImmediate(next)
+                    }}
                   />
                   <span>Show MyFitnessPal section</span>
                 </label>
@@ -531,6 +597,11 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
                     placeholder="https://www.myfitnesspal.com/..."
                     value={(draft?.meta?.mfpUrl || '') as any}
                     onChange={(e) => setMeta({ mfpUrl: e.target.value })}
+                    onBlur={async (e) => {
+                      const next = { ...draft, meta: { ...(draft?.meta || {}), mfpUrl: e.target.value } }
+                      setDraft(next)
+                      await saveDraftImmediate(next)
+                    }}
                   />
                   <div className="text-xs text-gray-600 mt-1">Used on publish; section renders only if toggle is ON and URL is present.</div>
                 </div>

@@ -37,6 +37,14 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
         <div className="text-center py-8 text-gray-500">
           <p>No subcutaneous fat data yet</p>
         </div>
+        <div className="mt-4">
+          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
+            <li>Measures the fat layer beneath your skin to complete your composition picture.</li>
+            <li>Compares abdominal subcutaneous fat relative to typical population averages.</li>
+            <li>Helps track visible changes not always reflected by scale weight.</li>
+            <li>Scale of 0–10 where lower is better.</li>
+          </ul>
+        </div>
       </div>
     )
   }
@@ -125,7 +133,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} />
+          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} interval={0} tickMargin={2} />
           <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={[yTicks[0], yTicks[yTicks.length-1]] as any} ticks={yTicks as any} allowDecimals tickFormatter={(v: number) => Number(v).toFixed(1)} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="level" stroke="#059669" strokeWidth={3} dot={{ fill: '#059669', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Level" connectNulls={true} />
@@ -148,6 +156,7 @@ export default function SubcutaneousFatLevelChart({ data }: SubcutaneousFatLevel
           <li>Measures the fat layer beneath your skin to complete your composition picture.</li>
           <li>Compares abdominal subcutaneous fat relative to typical population averages.</li>
           <li>Helps track visible changes not always reflected by scale weight.</li>
+          <li>Scale of 0–10 where lower is better.</li>
         </ul>
       </div>
     </div>

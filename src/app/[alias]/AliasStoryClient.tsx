@@ -989,7 +989,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 rel="noopener noreferrer"
                 className="block w-full text-center mt-2 px-4 py-3 rounded-md bg-indigo-600 text-white font-semibold shadow hover:bg-indigo-700 transition-colors"
               >
-                View MyFitnessPal
+                View Digital Food Diary
               </a>
             </div>
           </section>
