@@ -74,8 +74,26 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
 
     const minValue = Math.min(...values)
     const maxValue = Math.max(...values)
-    const padding = Math.max(1, (maxValue - minValue) * 0.1)
+    const padding = Math.max(0.05, (maxValue - minValue) * 0.1)
     return [Math.max(0, minValue - padding), maxValue + padding]
+  })()
+
+  // Compute nice ticks for readable axis labels
+  const yTicks = (() => {
+    const [yMin, yMax] = yAxisDomain as [number, number]
+    const span = yMax - yMin
+    if (!isFinite(span) || span <= 0) return [Number(yMin.toFixed(2))]
+    const desired = 5
+    const step0 = span / (desired - 1)
+    const pow10 = Math.pow(10, Math.floor(Math.log10(step0)))
+    const err = step0 / pow10
+    const factor = err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1
+    const step = factor * pow10
+    const niceMin = Math.floor(yMin / step) * step
+    const niceMax = Math.ceil(yMax / step) * step
+    const ticks: number[] = []
+    for (let v = niceMin; v <= niceMax + step / 2; v += step) ticks.push(+v.toFixed(10))
+    return ticks
   })()
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -108,6 +126,7 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
 
   const xMin = Math.min(...chartData.map(d => d.week))
   const xMax = Math.max(...chartData.map(d => d.week))
+  const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
@@ -120,8 +139,8 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" />
-          <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={yAxisDomain as any} />
+          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} />
+          <YAxis label={{ value: 'Level', angle: -90, position: 'insideLeft' }} domain={[yTicks[0], yTicks[yTicks.length-1]] as any} ticks={yTicks as any} allowDecimals tickFormatter={(v: number) => Number(v).toFixed(1)} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="level" stroke="#2563eb" strokeWidth={3} dot={{ fill: '#2563eb', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Level" connectNulls={true} />
           {(() => {

@@ -67,12 +67,20 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
     const minValue = Math.min(...values)
     const maxValue = Math.max(...values)
     const padding = Math.max(1, (maxValue - minValue) * 0.1)
-    const minRaw = Math.max(20, minValue - padding)
-    const maxRaw = Math.min(120, maxValue + padding)
-    // Round to cleaner 5-bpm steps to avoid fractional tick labels
-    const minRounded = Math.floor(minRaw / 5) * 5
-    const maxRounded = Math.ceil(maxRaw / 5) * 5
+    const minRaw = minValue - padding
+    const maxRaw = maxValue + padding
+    // Round to 1‑bpm steps (tighter padding)
+    const minRounded = Math.floor(minRaw)
+    const maxRounded = Math.ceil(maxRaw)
     return [minRounded, maxRounded]
+  })()
+
+  const yTicks = (() => {
+    const [yMin, yMax] = yAxisDomain as [number, number]
+    const ticks: number[] = []
+    const step = 1
+    for (let v = yMin; v <= yMax; v += step) ticks.push(v)
+    return ticks
   })()
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -92,6 +100,7 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
 
   const xMin = Math.min(...chartData.map(d => d.week))
   const xMax = Math.max(...chartData.map(d => d.week))
+  const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
@@ -104,13 +113,8 @@ export default function RestingHeartRateChart({ data }: RestingHeartRateChartPro
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" />
-          <YAxis
-            label={{ value: 'bpm', angle: -90, position: 'insideLeft' }}
-            domain={yAxisDomain as any}
-            allowDecimals={false}
-            tickFormatter={(v) => String(Math.round(v as number))}
-          />
+          <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} domain={[xMin, xMax]} type="number" ticks={xTicks as any} allowDecimals={false} tickFormatter={(v) => String(v)} />
+          <YAxis label={{ value: 'bpm', angle: -90, position: 'left', offset: 10 }} domain={[yTicks[0], yTicks[yTicks.length-1]] as any} ticks={yTicks as any} allowDecimals={false} tickFormatter={(v) => String(Math.round(v as number))} />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="bpm" stroke="#e11d48" strokeWidth={3} dot={{ fill: '#e11d48', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Resting HR" connectNulls={true} />
           {(() => {

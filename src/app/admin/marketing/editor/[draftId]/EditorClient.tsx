@@ -13,6 +13,7 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
   const [fullAvailableMaxWeek, setFullAvailableMaxWeek] = useState<number>(0)
   const initializedRangeRef = useRef<boolean>(false)
   const fullMaxSetRef = useRef<boolean>(false)
+  const backfillRef = useRef<boolean>(false)
   const [publishing, setPublishing] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
@@ -63,6 +64,22 @@ export default function EditorClient({ draftId, initialDraft }: { draftId: strin
       }
     }
   }, [preview])
+
+  // One-time self-heal for older drafts: ensure new meta fields exist
+  useEffect(() => {
+    if (backfillRef.current) return
+    try {
+      const meta: any = (draft && (draft as any).meta) ? (draft as any).meta : {}
+      const patch: any = {}
+      if (typeof meta.mfpEnabled !== 'boolean') patch.mfpEnabled = false
+      if (meta.mfpUrl === undefined) patch.mfpUrl = null
+      if (typeof meta.testimonialEnabled !== 'boolean') patch.testimonialEnabled = true
+      if (Object.keys(patch).length > 0) {
+        setMeta(patch)
+      }
+    } catch {}
+    backfillRef.current = true
+  }, [])
 
   const setMedia = (patch: any) => setDraft((d: any) => ({ ...d, media: { ...(d?.media || {}), ...patch } }))
   const setMeta = (patch: any) => setDraft((d: any) => ({ ...d, meta: { ...(d?.meta || {}), ...patch } }))
