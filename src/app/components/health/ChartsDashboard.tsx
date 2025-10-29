@@ -2218,7 +2218,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                       className="relative flex-1 h-8 select-none"
                       onPointerDownCapture={(e) => {
                         const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-                        const x = (e as PointerEvent).clientX - rect.left
+                        const x = e.clientX - rect.left
                         const pct = Math.max(0, Math.min(100, (x / Math.max(1, rect.width)) * 100))
                         const dStart = Math.abs(pct - startPct)
                         const dEnd = Math.abs(pct - endPct)
