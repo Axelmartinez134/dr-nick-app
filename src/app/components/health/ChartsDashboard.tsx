@@ -1868,15 +1868,15 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   // Range helpers and effects MUST be declared before any early return to keep hooks order stable
   const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
   const handleStartChange = (val: number) => {
-    const maxW = stats.currentWeek || 1
+    const maxW = stats.currentWeek || 0
     const end = rangeEnd ?? maxW
-    const next = clamp(val, 1, end)
+    const next = clamp(val, 0, end)
     setRangeStart(next)
     rangeStartRef.current = next
   }
   const handleEndChange = (val: number) => {
-    const maxW = stats.currentWeek || 1
-    const start = rangeStart ?? 1
+    const maxW = stats.currentWeek || 0
+    const start = rangeStart ?? 0
     const next = clamp(val, start, maxW)
     setRangeEnd(next)
     rangeEndRef.current = next
@@ -1885,8 +1885,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   // Initialize range only AFTER persisted prefs have been attempted (prioritize persisted over default)
   useEffect(() => {
     if (!rangePrefsLoaded) return
-    if (stats.currentWeek > 0) {
-      setRangeStart(prev => (prev === null ? 1 : prev))
+    if (stats.currentWeek >= 0) {
+      setRangeStart(prev => (prev === null ? 0 : prev))
       setRangeEnd(prev => (prev === null ? stats.currentWeek : Math.min(prev, stats.currentWeek)))
     }
   }, [stats.currentWeek, rangePrefsLoaded])
@@ -1916,8 +1916,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           const dp: any = (data as any).dashboard_preferences
           const cw = dp?.chart_display_weeks
           if (cw && typeof cw.start === 'number' && typeof cw.end === 'number') {
-            const maxW = stats.currentWeek || 1
-            const startClamped = clamp(Math.floor(cw.start), 1, Math.max(1, Math.floor(cw.end)))
+            const maxW = stats.currentWeek || 0
+            const startClamped = clamp(Math.floor(cw.start), 0, Math.max(0, Math.floor(cw.end)))
             const endClamped = clamp(Math.floor(cw.end), startClamped, maxW)
             setRangeStart(startClamped)
             setRangeEnd(endClamped)
@@ -1929,8 +1929,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             if (saved) {
               const cw = JSON.parse(saved)
               if (cw && typeof cw.start === 'number' && typeof cw.end === 'number') {
-                const maxW = stats.currentWeek || 1
-                const startClamped = clamp(Math.floor(cw.start), 1, Math.max(1, Math.floor(cw.end)))
+                const maxW = stats.currentWeek || 0
+                const startClamped = clamp(Math.floor(cw.start), 0, Math.max(0, Math.floor(cw.end)))
                 const endClamped = clamp(Math.floor(cw.end), startClamped, maxW)
                 setRangeStart(startClamped)
                 setRangeEnd(endClamped)
@@ -1948,8 +1948,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             if (saved) {
               const cw = JSON.parse(saved)
               if (cw && typeof cw.start === 'number' && typeof cw.end === 'number') {
-                const maxW = stats.currentWeek || 1
-                const startClamped = clamp(Math.floor(cw.start), 1, Math.max(1, Math.floor(cw.end)))
+                const maxW = stats.currentWeek || 0
+                const startClamped = clamp(Math.floor(cw.start), 0, Math.max(0, Math.floor(cw.end)))
                 const endClamped = clamp(Math.floor(cw.end), startClamped, maxW)
                 setRangeStart(startClamped)
                 setRangeEnd(endClamped)
@@ -2209,12 +2209,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
               <p className="text-sm text-gray-600">Applies to all charts below</p>
             </div>
             {(() => {
-              const maxW = stats.currentWeek || 1
-              const start = rangeStart ?? 1
+              const maxW = stats.currentWeek || 0
+              const start = rangeStart ?? 0
               const end = rangeEnd ?? maxW
-              const denom = Math.max(1, (maxW - 1))
-              const startPct = Math.max(0, Math.min(100, ((start - 1) / denom) * 100))
-              const endPct = Math.max(0, Math.min(100, ((end - 1) / denom) * 100))
+              const denom = Math.max(1, maxW)
+              const startPct = Math.max(0, Math.min(100, (start / denom) * 100))
+              const endPct = Math.max(0, Math.min(100, (end / denom) * 100))
               return (
                 <div className="w-full md:w-[520px]">
                   <div className="flex items-center gap-3">
@@ -2222,10 +2222,10 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                     <input
                       type="number"
                       className="w-20 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                      min={1}
+                      min={0}
                       max={end}
                       value={start}
-                      onChange={(e) => handleStartChange(parseInt(e.target.value || '1', 10))}
+                      onChange={(e) => handleStartChange(parseInt(e.target.value || '0', 10))}
                     />
                     {/* Combined slider */}
                     <div
@@ -2248,9 +2248,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                           const x = e.clientX - rect.left
                           const width = Math.max(1, rect.width)
                           const pct = Math.max(0, Math.min(100, (x / width) * 100))
-                          const maxW = stats.currentWeek || 1
-                          const denom = Math.max(1, (maxW - 1))
-                          const clickedWeek = Math.max(1, Math.min(maxW, Math.round(1 + (pct / 100) * denom)))
+                          const maxW = stats.currentWeek || 0
+                          const clickedWeek = maxW <= 0 ? 0 : Math.max(0, Math.min(maxW, Math.round((pct / 100) * maxW)))
                           const startPos = (startPct / 100) * width
                           const endPos = (endPct / 100) * width
                           const HIT = 14
@@ -2273,7 +2272,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                           const startNow = rangeStartRef.current
                           const endNow = rangeEndRef.current
                           if (chosen === 'start') {
-                            const newStart = Math.max(1, Math.min(clickedWeek, endNow))
+                            const newStart = Math.max(0, Math.min(clickedWeek, endNow))
                             handleStartChange(newStart)
                           } else {
                             const newEnd = Math.max(startNow, Math.min(clickedWeek, maxW))
@@ -2290,13 +2289,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                           const x = e.clientX - rect.left
                           const width = Math.max(1, rect.width)
                           const pct = Math.max(0, Math.min(100, (x / width) * 100))
-                          const maxW = stats.currentWeek || 1
-                          const denom = Math.max(1, (maxW - 1))
-                          const draggedWeek = Math.max(1, Math.min(maxW, Math.round(1 + (pct / 100) * denom)))
+                          const maxW = stats.currentWeek || 0
+                          const draggedWeek = maxW <= 0 ? 0 : Math.max(0, Math.min(maxW, Math.round((pct / 100) * maxW)))
                           const startNow = rangeStartRef.current
                           const endNow = rangeEndRef.current
                           if (chosen === 'start') {
-                            const newStart = Math.max(1, Math.min(draggedWeek, endNow))
+                            const newStart = Math.max(0, Math.min(draggedWeek, endNow))
                             handleStartChange(newStart)
                           } else if (chosen === 'end') {
                             const newEnd = Math.max(startNow, Math.min(draggedWeek, maxW))
@@ -2319,11 +2317,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                       {/* Start thumb (full width; gated by pointer-events) */}
                       <input
                         type="range"
-                        min={1}
+                        min={0}
                         max={maxW}
                         step={1}
                         value={start}
-                        onChange={(e) => handleStartChange(parseInt(e.target.value || '1', 10))}
+                        onChange={(e) => handleStartChange(parseInt(e.target.value || '0', 10))}
                         onKeyDown={(e) => {
                           const key = e.key
                           const big = e.shiftKey || (e as any).metaKey
@@ -2342,7 +2340,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                       {/* End thumb (full width; gated by pointer-events) */}
                       <input
                         type="range"
-                        min={1}
+                        min={0}
                         max={maxW}
                         step={1}
                         value={end}
