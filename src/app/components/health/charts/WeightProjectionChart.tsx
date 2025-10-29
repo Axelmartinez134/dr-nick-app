@@ -170,6 +170,12 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
     return [minValue - padding, maxValue + padding]
   }, [actualWeightData, chartData])
 
+  // Force X axis to start at Week 0; choose max from prop or data
+  const xMaxAxis = useMemo(() => {
+    if (typeof maxWeek === 'number' && maxWeek !== null) return maxWeek
+    return chartData.length > 0 ? Math.max(...chartData.map(p => p.week)) : 0
+  }, [maxWeek, chartData])
+
   // NOW check for early return after ALL hooks are called
   if (!initialWeight) {
     return (
@@ -241,6 +247,9 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis 
             dataKey="week" 
+            type="number"
+            domain={[0, xMaxAxis] as any}
+            allowDecimals={false}
             label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }}
           />
           <YAxis 
