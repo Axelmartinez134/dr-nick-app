@@ -279,7 +279,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
           
           {/* Projection lines - dotted opaque lines in different colors */}
           <Line 
-            type="monotone" 
+            type="linear" 
             dataKey="projection0" 
             stroke="#10b981" 
             strokeWidth={2}
@@ -289,7 +289,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
             opacity={0.7}
           />
           <Line 
-            type="monotone" 
+            type="linear" 
             dataKey="projection1" 
             stroke="#3b82f6" 
             strokeWidth={2}
@@ -299,7 +299,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
             opacity={0.7}
           />
           <Line 
-            type="monotone" 
+            type="linear" 
             dataKey="projection2" 
             stroke="#8b5cf6" 
             strokeWidth={2}
@@ -309,7 +309,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
             opacity={0.7}
           />
           <Line 
-            type="monotone" 
+            type="linear" 
             dataKey="projection3" 
             stroke="#f59e0b" 
             strokeWidth={2}
