@@ -11,6 +11,9 @@ import { calculateLinearRegression, mergeDataWithTrendLine } from '../regression
 interface WeightProjectionChartProps {
   data: WeeklyCheckin[]
   unitSystem?: 'imperial' | 'metric'
+  // Anchors for static projection lines and fixed X range
+  initialWeek0Weight?: number | null
+  maxWeek?: number | null
 }
 
 // Chart Tooltip Component
@@ -41,7 +44,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 import { poundsToKilograms } from '../unitCore'
 
-export default function WeightProjectionChart({ data, unitSystem = 'imperial' }: WeightProjectionChartProps) {
+export default function WeightProjectionChart({ data, unitSystem = 'imperial', initialWeek0Weight, maxWeek }: WeightProjectionChartProps) {
   // MOVE ALL HOOKS TO THE TOP - Fix React Rules of Hooks violation
   
   // Process actual weight data - using useMemo to fix dependency warning
@@ -57,28 +60,32 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial' }:
 
   // Calculate chart data and projections - using useMemo  
   const { initialWeight, chartData } = useMemo(() => {
-  // Find initial weight from Week 0 or first available weight
+  // Prefer anchored Week 0 weight if provided; else derive from given data
   const initialWeightEntry = data.find(entry => 
     entry.week_number === 0 && (entry.initial_weight || entry.weight)
   )
-  
-  const initialWeight = initialWeightEntry?.initial_weight || 
-                       initialWeightEntry?.weight || 
-                       data.find(entry => entry.weight)?.weight
+  const derivedInitial = initialWeightEntry?.initial_weight || 
+                        initialWeightEntry?.weight || 
+                        data.find(entry => entry.weight)?.weight
+  const baselineInitial = (typeof initialWeek0Weight === 'number' && !Number.isNaN(initialWeek0Weight))
+    ? initialWeek0Weight
+    : derivedInitial
 
-  if (!initialWeight) {
+  if (!baselineInitial) {
       return { initialWeight: null, chartData: [] }
     }
 
-    // Calculate max week needed (latest actual data, minimum 16 weeks)
+    // Calculate fixed X extent: prefer anchored maxWeek, else fall back to latest actual (min 16)
     const latestActualWeek = actualWeightData.length > 0 ? Math.max(...actualWeightData.map(d => d.week)) : 0
-    const maxWeek = Math.max(16, latestActualWeek)
+    const xMax = (typeof maxWeek === 'number' && maxWeek !== null)
+      ? maxWeek
+      : Math.max(16, latestActualWeek)
 
-    // Generate projection data to match actual data length
-    const projections = generateWeightProjections(initialWeight, maxWeek)
+    // Generate projection data over fixed X extent
+    const projections = generateWeightProjections(baselineInitial, xMax)
     const chartData: any[] = []
 
-  for (let week = 0; week <= maxWeek; week++) {
+  for (let week = 0; week <= xMax; week++) {
     const dataPoint: any = { week }
     
     // Add actual weight if available
@@ -98,8 +105,8 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial' }:
     chartData.push(dataPoint)
     }
 
-    return { initialWeight, chartData }
-  }, [data, actualWeightData])
+    return { initialWeight: baselineInitial, chartData }
+  }, [data, actualWeightData, initialWeek0Weight, maxWeek])
 
   // Calculate regression for actual weight trend line
   const regressionResult = useMemo(() => {
