@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { getWeeklyDataForCharts, updateHealthRecord, getHistoricalSubmissionDetails, createHealthRecordForPatient, type WeeklyCheckin } from './healthService'
 import { type QueueSubmission } from './DrNickQueue'
@@ -216,6 +216,7 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
               className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 disabled:bg-gray-100"
             >
               <option value="Current">Current</option>
+              <option value="Maintenance">Maintenance</option>
               <option value="Past">Past</option>
               <option value="Onboarding">Onboarding</option>
               <option value="Test">Test</option>
@@ -953,7 +954,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       </p>
       {isDoctorView && (
         <p className="text-xs text-gray-500 mb-3">
-          This sets the start point for “📊 Weight Loss Trend vs. Projections”. If incorrect, the chart will look misconfigured.
+          This sets the start point for "📊 Weight Loss Trend vs. Projections". If incorrect, the chart will look misconfigured.
         </p>
       )}
       {isDoctorView && patientId && (
@@ -1565,6 +1566,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  // Global time range UI state (Step 5: UI only; Step 6: persistence)
+  const [rangeStart, setRangeStart] = useState<number | null>(null)
+  const [rangeEnd, setRangeEnd] = useState<number | null>(null)
+  const [rangePrefsLoaded, setRangePrefsLoaded] = useState<boolean>(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [activeThumb, setActiveThumb] = useState<'start' | 'end' | null>(null)
   
   // Metrics state (patient view only)
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
@@ -1818,19 +1825,6 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     }
   }
 
-  // Don't render until mounted (avoids SSR mismatch)
-  if (!mounted) {
-    return (
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="text-center py-8">
-            <div className="text-gray-600">Loading dashboard...</div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   // Calculate summary statistics
   const stats = {
     totalWeeks: chartData.length,
@@ -1860,6 +1854,150 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     })(),
     totalWeightLoss: 0,
 
+  }
+
+  // Calculate total weight loss
+  if (stats.initialWeight && stats.currentWeight) {
+    stats.totalWeightLoss = Math.round((stats.initialWeight - stats.currentWeight) * 10) / 10
+  }
+
+  // Range helpers and effects MUST be declared before any early return to keep hooks order stable
+  const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
+  const handleStartChange = (val: number) => {
+    const maxW = stats.currentWeek || 1
+    const end = rangeEnd ?? maxW
+    const next = clamp(val, 1, end)
+    setRangeStart(next)
+  }
+  const handleEndChange = (val: number) => {
+    const maxW = stats.currentWeek || 1
+    const start = rangeStart ?? 1
+    const next = clamp(val, start, maxW)
+    setRangeEnd(next)
+  }
+
+  // Initialize range only AFTER persisted prefs have been attempted (prioritize persisted over default)
+  useEffect(() => {
+    if (!rangePrefsLoaded) return
+    if (stats.currentWeek > 0) {
+      setRangeStart(prev => (prev === null ? 1 : prev))
+      setRangeEnd(prev => (prev === null ? stats.currentWeek : Math.min(prev, stats.currentWeek)))
+    }
+  }, [stats.currentWeek, rangePrefsLoaded])
+
+  // Load persisted range preferences (per account)
+  useEffect(() => {
+    if (!mounted || rangePrefsLoaded || stats.currentWeek <= 0) return
+    ;(async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser()
+        const uid = auth?.user?.id
+        if (!uid) { setRangePrefsLoaded(true); return }
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('dashboard_preferences')
+          .eq('id', uid)
+          .single()
+        if (!error && data && (data as any).dashboard_preferences) {
+          const dp: any = (data as any).dashboard_preferences
+          const cw = dp?.chart_display_weeks
+          if (cw && typeof cw.start === 'number' && typeof cw.end === 'number') {
+            const maxW = stats.currentWeek || 1
+            const startClamped = clamp(Math.floor(cw.start), 1, Math.max(1, Math.floor(cw.end)))
+            const endClamped = clamp(Math.floor(cw.end), startClamped, maxW)
+            setRangeStart(startClamped)
+            setRangeEnd(endClamped)
+          }
+        } else {
+          // Fallback: load from localStorage if server has no prefs or errors
+          try {
+            const saved = localStorage.getItem(`cdw:${uid}`)
+            if (saved) {
+              const cw = JSON.parse(saved)
+              if (cw && typeof cw.start === 'number' && typeof cw.end === 'number') {
+                const maxW = stats.currentWeek || 1
+                const startClamped = clamp(Math.floor(cw.start), 1, Math.max(1, Math.floor(cw.end)))
+                const endClamped = clamp(Math.floor(cw.end), startClamped, maxW)
+                setRangeStart(startClamped)
+                setRangeEnd(endClamped)
+              }
+            }
+          } catch {}
+        }
+      } catch (e) {
+        // Fallback: try localStorage on any error
+        try {
+          const { data: auth } = await supabase.auth.getUser()
+          const uid = auth?.user?.id
+          if (uid) {
+            const saved = localStorage.getItem(`cdw:${uid}`)
+            if (saved) {
+              const cw = JSON.parse(saved)
+              if (cw && typeof cw.start === 'number' && typeof cw.end === 'number') {
+                const maxW = stats.currentWeek || 1
+                const startClamped = clamp(Math.floor(cw.start), 1, Math.max(1, Math.floor(cw.end)))
+                const endClamped = clamp(Math.floor(cw.end), startClamped, maxW)
+                setRangeStart(startClamped)
+                setRangeEnd(endClamped)
+              }
+            }
+          }
+        } catch {}
+      } finally {
+        setRangePrefsLoaded(true)
+      }
+    })()
+  }, [mounted, rangePrefsLoaded, stats.currentWeek])
+
+  // Debounced save of range preferences
+  useEffect(() => {
+    if (!mounted) return
+    if (stats.currentWeek <= 0) return
+    if (rangeStart === null || rangeEnd === null) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const { data: auth } = await supabase.auth.getUser()
+        const uid = auth?.user?.id
+        if (!uid) return
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('dashboard_preferences')
+          .eq('id', uid)
+          .single()
+        const existing = (prof as any)?.dashboard_preferences || {}
+        const nextPrefs = { ...existing, chart_display_weeks: { start: rangeStart, end: rangeEnd } }
+        await supabase
+          .from('profiles')
+          .update({ dashboard_preferences: nextPrefs })
+          .eq('id', uid)
+        // Also store locally for fast load/fallback
+        try {
+          localStorage.setItem(`cdw:${uid}`, JSON.stringify({ start: rangeStart, end: rangeEnd }))
+        } catch {}
+      } catch (e) {
+        // On error (e.g., RLS), still store locally so the range persists for the user
+        try {
+          const { data: auth } = await supabase.auth.getUser()
+          const uid = auth?.user?.id
+          if (uid) localStorage.setItem(`cdw:${uid}`, JSON.stringify({ start: rangeStart, end: rangeEnd }))
+        } catch {}
+      }
+    }, 700)
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
+  }, [mounted, rangeStart, rangeEnd, stats.currentWeek])
+
+  // Don't render until mounted (avoids SSR mismatch)
+  if (!mounted) {
+    return (
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="text-center py-8">
+            <div className="text-gray-600">Loading dashboard...</div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Missed check-ins (auto-created by system) - patient view only indicator
@@ -2049,8 +2187,98 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             </div>
           </div>
         )}
-
-
+        {/* Global Time Range (UI only in Step 5) */}
+        <div className="mt-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h3 className="text-md font-semibold text-gray-900">Time range</h3>
+              <p className="text-sm text-gray-600">Applies to all charts below</p>
+            </div>
+            {(() => {
+              const maxW = stats.currentWeek || 1
+              const start = rangeStart ?? 1
+              const end = rangeEnd ?? maxW
+              const denom = Math.max(1, (maxW - 1))
+              const startPct = Math.max(0, Math.min(100, ((start - 1) / denom) * 100))
+              const endPct = Math.max(0, Math.min(100, ((end - 1) / denom) * 100))
+              return (
+                <div className="w-full md:w-[520px]">
+                  <div className="flex items-center gap-3">
+                    {/* Start numeric input */}
+                    <input
+                      type="number"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      min={1}
+                      max={end}
+                      value={start}
+                      onChange={(e) => handleStartChange(parseInt(e.target.value || '1', 10))}
+                    />
+                    {/* Combined slider */}
+                    <div
+                      className="relative flex-1 h-8 select-none"
+                      onPointerDownCapture={(e) => {
+                        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                        const x = (e as PointerEvent).clientX - rect.left
+                        const pct = Math.max(0, Math.min(100, (x / Math.max(1, rect.width)) * 100))
+                        const dStart = Math.abs(pct - startPct)
+                        const dEnd = Math.abs(pct - endPct)
+                        setActiveThumb(dStart <= dEnd ? 'start' : 'end')
+                      }}
+                      onPointerUp={() => setActiveThumb(null)}
+                    >
+                      {/* Base track */}
+                      <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded bg-gray-200"></div>
+                      {/* Selected range fill */}
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded bg-blue-500"
+                        style={{ left: `${startPct}%`, right: `${100 - endPct}%` }}
+                      />
+                      {/* Start thumb (full width; gated by pointer-events) */}
+                      <input
+                        type="range"
+                        min={1}
+                        max={maxW}
+                        step={1}
+                        value={start}
+                        onPointerDown={(e) => {
+                          setActiveThumb('start')
+                          ;(e.currentTarget as any).setPointerCapture?.((e as any).pointerId)
+                        }}
+                        onChange={(e) => handleStartChange(parseInt(e.target.value || '1', 10))}
+                        className="absolute left-0 right-0 w-full h-8 appearance-none bg-transparent cursor-pointer"
+                        style={{ WebkitAppearance: 'none' as any, zIndex: 20, pointerEvents: activeThumb === 'end' ? 'none' : 'auto' }}
+                      />
+                      {/* End thumb (full width; gated by pointer-events) */}
+                      <input
+                        type="range"
+                        min={start}
+                        max={maxW}
+                        step={1}
+                        value={end}
+                        onPointerDown={(e) => {
+                          setActiveThumb('end')
+                          ;(e.currentTarget as any).setPointerCapture?.((e as any).pointerId)
+                        }}
+                        onChange={(e) => handleEndChange(parseInt(e.target.value || String(maxW), 10))}
+                        className="absolute left-0 right-0 w-full h-8 appearance-none bg-transparent cursor-pointer"
+                        style={{ WebkitAppearance: 'none' as any, zIndex: 20, pointerEvents: activeThumb === 'start' ? 'none' : 'auto' }}
+                      />
+                    </div>
+                    {/* End numeric input */}
+                    <input
+                      type="number"
+                      className="w-20 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+                      min={start}
+                      max={maxW}
+                      value={end}
+                      onChange={(e) => handleEndChange(parseInt(e.target.value || String(maxW), 10))}
+                    />
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
       </div>
 
       {/* Move Missed Check-ins Indicator down to the data table area (client view only) */}
@@ -2325,54 +2553,64 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
       {/* Charts Grid - Always render charts, they handle empty data themselves */}
       <div className="space-y-6">
         
+        {/* Compute ranged data for charts and table */}
+        {(() => { return null })()}
+        {/**
+         * Apply selected range to all visualizations below. Week 0 will be included
+         * only if it falls within the selected range (or is explicitly provided by the data).
+         */}
+        {(() => {
+          return null
+        })()}
+
         {/* Row 1: Weight-Related Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          <WeightProjectionChart data={chartData} unitSystem={unitSystem} />
-          <PlateauPreventionChart data={chartData} />
+          <WeightProjectionChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} unitSystem={unitSystem} />
+          <PlateauPreventionChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
         </div>
 
         {/* Row 2A: Weight Trend (Full Width) */}
         <div className="grid grid-cols-1">
-          <WeightTrendChart data={chartData} unitSystem={unitSystem} />
+          <WeightTrendChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} unitSystem={unitSystem} />
         </div>
 
         {/* Row 2B: Waist Charts (Left: Waist Trend, Right: Plateau Prevention) */}
         <div className="grid lg:grid-cols-2 gap-6">
-          <WaistTrendChart data={chartData} unitSystem={unitSystem} />
-          <WaistPlateauPreventionChart data={chartData} />
+          <WaistTrendChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} unitSystem={unitSystem} />
+          <WaistPlateauPreventionChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
         </div>
 
         {/* Row 2.5: Blood Pressure Charts (conditional) */}
         {tracksBP && (
           <div className="grid lg:grid-cols-2 gap-6">
-            <SystolicBloodPressureChart data={chartData} />
-            <DiastolicBloodPressureChart data={chartData} />
+            <SystolicBloodPressureChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+            <DiastolicBloodPressureChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
           </div>
         )}
 
         {/* Row 3: New Dr. Nick Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          <MorningFatBurnChart data={chartData} />
-          <BodyFatPercentageChart data={chartData} />
+          <MorningFatBurnChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+          <BodyFatPercentageChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
         </div>
 
         {/* Row 3.5: Body Composition Section (conditional charts, excluding RHR) */}
         {tracksBodyComp && (
           <div className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-6">
-              <VisceralFatLevelChart data={chartData} />
-              <SubcutaneousFatLevelChart data={chartData} />
+              <VisceralFatLevelChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+              <SubcutaneousFatLevelChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
             </div>
             <div className="grid lg:grid-cols-2 gap-6">
-              <BellyFatPercentChart data={chartData} />
-              <TotalMuscleMassPercentChart data={chartData} />
+              <BellyFatPercentChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+              <TotalMuscleMassPercentChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
             </div>
           </div>
         )}
 
         {/* RHR chart belongs with Metabolic Health and is always independent */}
         <div className="grid grid-cols-1">
-          <RestingHeartRateChart data={chartData} />
+          <RestingHeartRateChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
         </div>
 
         {/* Removed Nutrition/Strain charts here – now rendered inside Compliance Metrics section */}
@@ -2380,12 +2618,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
 
         {/* Compliance Metrics Table */}
         <div className="grid grid-cols-1">
-          <ComplianceMetricsTable patientId={patientId} />
+          <ComplianceMetricsTable patientId={patientId} rangeStart={rangeStart ?? undefined as any} rangeEnd={rangeEnd ?? undefined as any} />
         </div>
 
         {/* Data Table - Different for Client vs Dr. Nick */}
         <DataTable 
-          data={chartData} 
+          data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} 
           isDoctorView={isDoctorView}
           onDataUpdate={loadChartData}
           patientId={patientId}

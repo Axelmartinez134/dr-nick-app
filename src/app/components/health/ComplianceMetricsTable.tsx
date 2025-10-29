@@ -13,6 +13,8 @@ import { supabase } from '../auth/AuthContext'
 
 interface ComplianceMetricsTableProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
+  rangeStart?: number | null
+  rangeEnd?: number | null
 }
 
 // Compliance Metrics Tooltip Component
@@ -62,7 +64,7 @@ function MetricsTooltip({ title, formula, explanation, interpretation, children 
   )
 }
 
-export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsTableProps) {
+export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd }: ComplianceMetricsTableProps) {
   const [metrics, setMetrics] = useState<ComplianceMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
@@ -180,6 +182,11 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
     }
   }
 
+  // Apply selected range to embedded charts (KPIs remain whole-history)
+  const rangedData: WeeklyCheckin[] = (rangeStart != null && rangeEnd != null)
+    ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd)
+    : chartData
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -232,7 +239,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
                 </div>
               </div>
             </MetricsTooltip>
-            <NutritionComplianceChart data={chartData} />
+            <NutritionComplianceChart data={rangedData} />
           </div>
 
           {/* Strain KPI + Chart (Full Width) */}
@@ -253,7 +260,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
                 </div>
               </div>
             </MetricsTooltip>
-            <StrainGoalMetChart data={chartData} />
+            <StrainGoalMetChart data={rangedData} />
           </div>
 
           {/* Poor Recovery KPI + Chart (Full Width) */}
@@ -274,7 +281,7 @@ export default function ComplianceMetricsTable({ patientId }: ComplianceMetricsT
                 </div>
               </div>
             </MetricsTooltip>
-            <SleepConsistencyChart data={chartData} />
+            <SleepConsistencyChart data={rangedData} />
           </div>
 
           {/* Waist/Height Goal KPI removed per request (now reflected in Waist Trend chart pill) */}

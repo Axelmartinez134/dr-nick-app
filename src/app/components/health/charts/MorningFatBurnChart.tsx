@@ -40,19 +40,21 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) {
   const description = "Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes and that metabolic adaptation is progressing accordingly."
-  // Build calendar-complete series (weeks 0..max) with nulls for missing values
+  // Build calendar-complete series within provided data's min..max week range
   const chartData = useMemo(() => {
     const allWeeksMap = new Map<number, WeeklyCheckin>(data.map(entry => [entry.week_number, entry]))
     const maxWeekNumber = data.length > 0 ? Math.max(...data.map(d => d.week_number)) : 0
+    const minWeekNumber = data.length > 0 ? Math.min(...data.map(d => d.week_number)) : 0
 
-    const fullChartData = Array.from({ length: maxWeekNumber + 1 }, (_, i) => {
-      const entry = allWeeksMap.get(i)
+    const fullChartData = Array.from({ length: (maxWeekNumber - minWeekNumber + 1) }, (_, idx) => {
+      const week = minWeekNumber + idx
+      const entry = allWeeksMap.get(week)
       const raw: any = (entry as any)?.morning_fat_burn_percent
       const parsed = raw !== null && raw !== undefined && raw !== '' ? parseFloat(String(raw)) : null
       const value = Number.isNaN(parsed as number) ? null : (parsed as number | null)
 
       return {
-        week: i,
+        week,
         fatBurn: value,
         date: entry?.date || (entry as any)?.created_at || ''
       }

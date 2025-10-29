@@ -12,6 +12,10 @@ import { uploadSingleImage, deleteImageByUrl, getSignedImageUrl } from './imageS
 // Extended CheckinFormData interface to include notes
 interface ExtendedCheckinFormData extends CheckinFormData {
   notes?: string
+  // Maintenance-only optional fields (UI-only; saved in Step 3)
+  nutrition_compliance_days?: string
+  sleep_consistency_score?: string
+  morning_fat_burn_percent?: string
 }
 
 // AoE helpers (match logic used in AuthContext gap-fill)
@@ -202,6 +206,10 @@ export default function HealthForm() {
     detailed_symptom_notes: '',
     purposeful_exercise_days: '',
     poor_recovery_days: '',
+    // Maintenance-only inputs (gated by client status)
+    nutrition_compliance_days: '',
+    sleep_consistency_score: '',
+    morning_fat_burn_percent: '',
     systolic_bp: '',
     diastolic_bp: '',
     energetic_constraints_reduction_ok: false,
@@ -247,6 +255,7 @@ export default function HealthForm() {
   const [isTestAccount, setIsTestAccount] = useState<boolean>(false)
   const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
+  const [isMaintenance, setIsMaintenance] = useState<boolean>(false)
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -310,6 +319,7 @@ export default function HealthForm() {
 
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
       setIsTestAccount((profileData as any)?.client_status === 'Test')
+      setIsMaintenance((profileData as any)?.client_status === 'Maintenance')
       setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
       setTracksBodyComp(Boolean((profileData as any)?.track_body_composition))
     } catch (error) {
@@ -380,6 +390,9 @@ export default function HealthForm() {
           detailed_symptom_notes: existingData.detailed_symptom_notes || '',
           purposeful_exercise_days: existingData.purposeful_exercise_days?.toString() || '',
           poor_recovery_days: existingData.poor_recovery_days?.toString() || '',
+          nutrition_compliance_days: (existingData as any)?.nutrition_compliance_days != null ? String((existingData as any).nutrition_compliance_days) : '',
+          sleep_consistency_score: (existingData as any)?.sleep_consistency_score != null ? String((existingData as any).sleep_consistency_score) : '',
+          morning_fat_burn_percent: (existingData as any)?.morning_fat_burn_percent != null ? String((existingData as any).morning_fat_burn_percent) : '',
           systolic_bp: (existingData as any)?.systolic_bp != null ? String((existingData as any).systolic_bp) : '',
           diastolic_bp: (existingData as any)?.diastolic_bp != null ? String((existingData as any).diastolic_bp) : '',
           energetic_constraints_reduction_ok: existingData.energetic_constraints_reduction_ok || false,
@@ -503,6 +516,23 @@ export default function HealthForm() {
     // Self reflection validation - REQUIRED
     if (!formData.notes || !formData.notes.trim()) {
       errors.notes = 'Self reflection is required'
+    }
+
+    // Maintenance-only validations (not required; range-check only if provided)
+    if (formData.nutrition_compliance_days && formData.nutrition_compliance_days.trim() !== '') {
+      if (isNaN(Number(formData.nutrition_compliance_days)) || Number(formData.nutrition_compliance_days) < 0 || Number(formData.nutrition_compliance_days) > 7) {
+        errors.nutrition_compliance_days = 'Nutrition days must be between 0 and 7'
+      }
+    }
+    if (formData.sleep_consistency_score && formData.sleep_consistency_score.trim() !== '') {
+      if (isNaN(Number(formData.sleep_consistency_score)) || Number(formData.sleep_consistency_score) < 0 || Number(formData.sleep_consistency_score) > 100) {
+        errors.sleep_consistency_score = 'Sleep score must be between 0 and 100'
+      }
+    }
+    if (formData.morning_fat_burn_percent && formData.morning_fat_burn_percent.trim() !== '') {
+      if (isNaN(Number(formData.morning_fat_burn_percent)) || Number(formData.morning_fat_burn_percent) < 0 || Number(formData.morning_fat_burn_percent) > 100) {
+        errors.morning_fat_burn_percent = 'Morning fat burn % must be between 0 and 100'
+      }
     }
 
     setValidationErrors(errors)
@@ -916,6 +946,69 @@ export default function HealthForm() {
             )}
           </div>
         </div>
+
+      {/* Maintenance Self-Service (visible only for Maintenance clients) */}
+      {isMaintenance && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🛠️ Maintenance Self-Service</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
+              <input
+                type="number"
+                min="0"
+                max="7"
+                value={(formData as any).nutrition_compliance_days || ''}
+                onChange={(e) => handleInputChange('nutrition_compliance_days' as any, e.target.value)}
+                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                  (validationErrors as any).nutrition_compliance_days ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="e.g., 5"
+              />
+              {(validationErrors as any).nutrition_compliance_days && (
+                <p className="text-sm text-red-600 mt-1">{(validationErrors as any).nutrition_compliance_days}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sleep Consistency Score (0-100)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={(formData as any).sleep_consistency_score || ''}
+                onChange={(e) => handleInputChange('sleep_consistency_score' as any, e.target.value)}
+                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                  (validationErrors as any).sleep_consistency_score ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="e.g., 82"
+              />
+              {(validationErrors as any).sleep_consistency_score && (
+                <p className="text-sm text-red-600 mt-1">{(validationErrors as any).sleep_consistency_score}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Morning Fat Burn % (0-100)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={(formData as any).morning_fat_burn_percent || ''}
+                onChange={(e) => handleInputChange('morning_fat_burn_percent' as any, e.target.value)}
+                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                  (validationErrors as any).morning_fat_burn_percent ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="e.g., 65.5"
+              />
+              {(validationErrors as any).morning_fat_burn_percent && (
+                <p className="text-sm text-red-600 mt-1">{(validationErrors as any).morning_fat_burn_percent}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
         {imageUrl ? (
           // Show existing image

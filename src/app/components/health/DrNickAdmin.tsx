@@ -90,6 +90,25 @@ export default function DrNickAdmin() {
     navigator.clipboard.writeText(password)
   }
 
+  // Update client status via admin API
+  const updateClientStatus = async (patientId: string, clientStatus: string) => {
+    try {
+      const res = await fetch('/api/admin/update-patient-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patientId, clientStatus })
+      })
+      const json = await res.json()
+      if (!res.ok || !json?.success) {
+        alert(json?.error || 'Failed to update status')
+        return
+      }
+      await loadPatients()
+    } catch (e: any) {
+      alert(e?.message || 'Failed to update status')
+    }
+  }
+
   // Filter patients based on search term
   const filteredPatients = patients.filter(patient =>
     patient.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -283,6 +302,7 @@ export default function DrNickAdmin() {
         {!patientsLoading && !patientsError && filteredPatients.length > 0 && (() => {
           const onboarding = filteredPatients.filter(p => p.client_status === 'Onboarding')
           const current = filteredPatients.filter(p => p.client_status === 'Current')
+          const maintenance = filteredPatients.filter(p => p.client_status === 'Maintenance')
           const past = filteredPatients.filter(p => p.client_status === 'Past')
           const test = filteredPatients.filter(p => p.client_status === 'Test')
 
@@ -315,6 +335,20 @@ export default function DrNickAdmin() {
                           <p className="text-xs text-gray-400 mt-1">
                             ID: {patient.id}
                           </p>
+                          <div className="mt-2">
+                            <label className="text-xs text-gray-600 mr-2">Status:</label>
+                            <select
+                              value={patient.client_status || 'Current'}
+                              onChange={(e) => updateClientStatus(patient.id, e.target.value)}
+                              className="px-2 py-1 text-sm border border-gray-300 rounded bg-white text-gray-900"
+                            >
+                              <option value="Current">Current</option>
+                              <option value="Maintenance">Maintenance</option>
+                              <option value="Onboarding">Onboarding</option>
+                              <option value="Past">Past</option>
+                              <option value="Test">Test</option>
+                            </select>
+                          </div>
                         </div>
                         <div className="ml-4 text-right">
                           <div>
@@ -349,6 +383,7 @@ export default function DrNickAdmin() {
             <div>
               {renderSection('📋 Currently Onboarding', { headerText: 'text-blue-900', rowHover: 'hover:bg-blue-50' }, onboarding)}
               {renderSection('✅ Current Clients', { headerText: 'text-green-900', rowHover: 'hover:bg-green-50' }, current)}
+              {renderSection('🛠️ Maintenance', { headerText: 'text-purple-900', rowHover: 'hover:bg-purple-50' }, maintenance)}
               {renderSection('📁 Past Clients', { headerText: 'text-gray-900', rowHover: 'hover:bg-gray-50' }, past)}
               {renderSection('🧪 Test', { headerText: 'text-purple-900', rowHover: 'hover:bg-purple-50' }, test)}
             </div>

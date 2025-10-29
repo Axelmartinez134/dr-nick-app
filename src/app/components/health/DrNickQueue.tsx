@@ -67,6 +67,7 @@ export interface QueueSubmission {
     email: string
     first_name: string | null
     last_name: string | null
+    client_status?: string | null
   }
   // System metadata
   data_entered_by?: string | null
@@ -108,7 +109,11 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
         return
       }
       
-      setQueueSubmissions(data || [])
+      const submissions = (data || []) as QueueSubmission[]
+      // Keep created_at ascending order within groups; push Maintenance to bottom
+      const nonMaintenance = submissions.filter(s => (s.profiles?.client_status || '') !== 'Maintenance')
+      const maintenance = submissions.filter(s => (s.profiles?.client_status || '') === 'Maintenance')
+      setQueueSubmissions([...nonMaintenance, ...maintenance])
     } catch (err) {
       setError('Failed to load queue submissions')
       console.error(err)
@@ -341,7 +346,9 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                     selectedSubmission?.id === submission.id 
                       ? 'border-blue-500 bg-blue-50' 
                       : 'border-gray-200 hover:border-gray-300'
-                  } ${ (submission.data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED')) ? 'border-l-4 border-l-indigo-500' : ''}`}
+                  } ${ (submission.data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED'))
+                        ? 'border-l-4 border-l-indigo-500'
+                        : ((submission.profiles?.client_status || '') === 'Maintenance' ? 'border-l-4 border-l-purple-500' : '')}`}
                   onClick={() => selectSubmission(submission)}
                 >
                   <div className="flex items-center justify-between">
@@ -357,6 +364,11 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                         {(submission.data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED')) && (
                           <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-300">
                             MISSED CHECK-IN (SYSTEM) — Week {submission.week_number}
+                          </span>
+                        )}
+                        {!(submission.data_entered_by === 'system' || (submission.notes || '').startsWith('AUTO-CREATED')) && ((submission.profiles?.client_status || '') === 'Maintenance') && (
+                          <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-300">
+                            MAINTENANCE — Week {submission.week_number}
                           </span>
                         )}
                         {submission.energetic_constraints_reduction_ok && (

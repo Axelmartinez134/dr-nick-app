@@ -22,10 +22,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing required fields: patientId and clientStatus' }, { status: 400 })
     }
 
-    // Validate status value
-    const validStatuses = ['Current', 'Past', 'Onboarding', 'Test']
+    // Validate status value (include Maintenance)
+    const validStatuses = ['Current', 'Past', 'Onboarding', 'Test', 'Maintenance']
     if (!validStatuses.includes(clientStatus)) {
-      return NextResponse.json({ success: false, error: 'Invalid client status. Must be Current, Past, Onboarding, or Test' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Invalid client status. Must be Current, Past, Onboarding, Test, or Maintenance' }, { status: 400 })
     }
 
     // Update patient status using admin client (bypasses RLS)

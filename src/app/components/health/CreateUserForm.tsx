@@ -291,6 +291,7 @@ export default function CreateUserForm({ onSuccess, onCancel }: CreateUserFormPr
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
               >
                 <option value="Current">Current</option>
+                <option value="Maintenance">Maintenance</option>
                 <option value="Onboarding">Onboarding</option>
                 <option value="Past">Past</option>
                 <option value="Test">Test</option>

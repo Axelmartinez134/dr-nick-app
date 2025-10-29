@@ -45,6 +45,10 @@ export interface CheckinFormData {
   week_number: string
   weight?: string
   waist?: string
+  // Maintenance-self service fields (string inputs from form)
+  nutrition_compliance_days?: string
+  sleep_consistency_score?: string
+  morning_fat_burn_percent?: string
   systolic_bp?: string
   diastolic_bp?: string
   visceral_fat_level?: string
@@ -134,6 +138,11 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       week_number: parseInt(data.week_number),
       weight: toTwo(weightLbs),
       waist: toTwo(waistInches),
+      // Maintenance fields (optional)
+      nutrition_compliance_days: data.nutrition_compliance_days ? parseInt(data.nutrition_compliance_days) : null,
+      sleep_consistency_score: data.sleep_consistency_score ? parseInt(data.sleep_consistency_score) : null,
+      morning_fat_burn_percent: data.morning_fat_burn_percent !== undefined && data.morning_fat_burn_percent !== null && data.morning_fat_burn_percent !== ''
+        ? parseFloat(String(data.morning_fat_burn_percent)) : null,
       systolic_bp: data.systolic_bp ? Math.round(parseFloat(data.systolic_bp)) : null,
       diastolic_bp: data.diastolic_bp ? Math.round(parseFloat(data.diastolic_bp)) : null,
       visceral_fat_level: data.visceral_fat_level !== undefined && data.visceral_fat_level !== null && data.visceral_fat_level !== '' ? parseFloat(String(data.visceral_fat_level)) : null,
@@ -667,7 +676,8 @@ export async function getSubmissionsNeedingReview() {
           profiles!user_id (
             id,
             email,
-            full_name
+            full_name,
+            client_status
           )
         `)
         .order('created_at', { ascending: false })
@@ -686,7 +696,8 @@ export async function getSubmissionsNeedingReview() {
           id: item.profiles?.id,
           email: item.profiles?.email,
           first_name: item.profiles?.full_name?.split(' ')[0] || '',
-          last_name: item.profiles?.full_name?.split(' ').slice(1).join(' ') || ''
+          last_name: item.profiles?.full_name?.split(' ').slice(1).join(' ') || '',
+          client_status: (item.profiles as any)?.client_status || null
         }
       }))
 
@@ -700,7 +711,8 @@ export async function getSubmissionsNeedingReview() {
         profiles!user_id (
           id,
           email,
-          full_name
+          full_name,
+          client_status
         )
       `)
       .eq('needs_review', true)
@@ -714,7 +726,8 @@ export async function getSubmissionsNeedingReview() {
           id: item.profiles?.id,
           email: item.profiles?.email,
           first_name: item.profiles?.full_name?.split(' ')[0] || '',
-          last_name: item.profiles?.full_name?.split(' ').slice(1).join(' ') || ''
+          last_name: item.profiles?.full_name?.split(' ').slice(1).join(' ') || '',
+          client_status: (item.profiles as any)?.client_status || null
         }
       }))
     }
