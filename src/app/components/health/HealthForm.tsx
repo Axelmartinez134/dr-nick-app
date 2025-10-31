@@ -435,6 +435,24 @@ export default function HealthForm() {
     }))
   }, [activeWeek, devMode, devWeek])
 
+  // Disable mouse wheel value changes on focused number inputs (form-scoped)
+  useEffect(() => {
+    const capture = true
+    const onWheel = (_e: WheelEvent) => {
+      const active = document.activeElement as HTMLElement | null
+      if (active && active.tagName === 'INPUT') {
+        const input = active as HTMLInputElement
+        if (input.type === 'number') {
+          input.blur()
+        }
+      }
+    }
+    document.addEventListener('wheel', onWheel, { capture })
+    return () => {
+      document.removeEventListener('wheel', onWheel, capture)
+    }
+  }, [])
+
   // Generate signed URLs for existing images when form data changes
   useEffect(() => {
     const imageFields = [

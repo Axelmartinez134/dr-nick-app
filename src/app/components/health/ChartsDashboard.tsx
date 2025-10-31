@@ -1002,7 +1002,6 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Visceral Fat Level</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Subcutaneous Fat Level</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Belly Fat (%)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resting HR (bpm)</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Total Muscle Mass (%)</th>
                 </>
               )}
@@ -1012,6 +1011,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resistance Training Days Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Consistency Score</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resting HR (bpm)</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days Goal Met</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
@@ -1080,9 +1080,6 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                       {renderCell(record, 'belly_fat_percent', (record as any).belly_fat_percent)}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900">
-                      {renderCell(record, 'resting_heart_rate', (record as any).resting_heart_rate)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
                       {renderCell(record, 'total_muscle_mass_percent', (record as any).total_muscle_mass_percent)}
                     </td>
                   </>
@@ -1104,6 +1101,9 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'resting_heart_rate', (record as any).resting_heart_rate)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'nutrition_compliance_days', record.nutrition_compliance_days)}
@@ -1562,6 +1562,8 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
 }
 
 export default function ChartsDashboard({ patientId, onSubmissionSelect, selectedWeekNumber }: ChartsDashboardProps) {
+  // Feature flag: persist time range preferences (disabled per latest requirement)
+  const persistRangePrefs = false
   const [chartData, setChartData] = useState<WeeklyCheckin[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1940,9 +1942,10 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     if (rangeEnd !== null) rangeEndRef.current = rangeEnd
   }, [rangeEnd])
 
-  // Load persisted range preferences (per account)
+  // Load persisted range preferences (per account) - disabled when persistRangePrefs is false
   useEffect(() => {
     if (!mounted || rangePrefsLoaded || stats.currentWeek <= 0) return
+    if (!persistRangePrefs) { setRangePrefsLoaded(true); return }
     ;(async () => {
       try {
         const { data: auth } = await supabase.auth.getUser()
@@ -1964,7 +1967,6 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             setRangeEnd(endClamped)
           }
         } else {
-          // Fallback: load from localStorage if server has no prefs or errors
           try {
             const saved = localStorage.getItem(`cdw:${uid}`)
             if (saved) {
@@ -1980,7 +1982,6 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           } catch {}
         }
       } catch (e) {
-        // Fallback: try localStorage on any error
         try {
           const { data: auth } = await supabase.auth.getUser()
           const uid = auth?.user?.id
@@ -2002,13 +2003,14 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         setRangePrefsLoaded(true)
       }
     })()
-  }, [mounted, rangePrefsLoaded, stats.currentWeek])
+  }, [mounted, rangePrefsLoaded, stats.currentWeek, persistRangePrefs])
 
-  // Debounced save of range preferences
+  // Debounced save of range preferences (disabled when persistRangePrefs is false)
   useEffect(() => {
     if (!mounted) return
     if (stats.currentWeek <= 0) return
     if (rangeStart === null || rangeEnd === null) return
+    if (!persistRangePrefs) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       try {
@@ -2040,7 +2042,14 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
       }
     }, 700)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
-  }, [mounted, rangeStart, rangeEnd, stats.currentWeek])
+  }, [mounted, rangeStart, rangeEnd, stats.currentWeek, persistRangePrefs])
+
+  // Reset range when switching patients in doctor view (defaults will re-apply)
+  useEffect(() => {
+    if (!isDoctorView) return
+    setRangeStart(null)
+    setRangeEnd(null)
+  }, [isDoctorView, patientId])
 
   // Don't render until mounted (avoids SSR mismatch)
   if (!mounted) {
