@@ -10,6 +10,7 @@ import DrNickAdmin from './DrNickAdmin'
 import DrNickQueue, { QueueSubmission } from './DrNickQueue'
 import DrNickSubmissionReview from './DrNickSubmissionReview'
 import MarketingTab from './marketing/MarketingTab'
+import ChatBotDemo from './ChatBotDemo'
 
 // Import QueueSubmission interface from DrNickQueue
 interface PatientSummary {
@@ -269,6 +270,17 @@ export default function DrNickPatientDashboard() {
               }`}
             >
               🎬 Marketing
+            </button>
+
+            <button
+              onClick={() => setActiveTab('chatbot')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'chatbot'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              🤖 Chat Bot Demo
             </button>
 
             <button
@@ -627,6 +639,10 @@ export default function DrNickPatientDashboard() {
       {/* Marketing Tab Content */}
       {activeTab === 'marketing' && (
         <MarketingTab />
+      )}
+
+      {activeTab === 'chatbot' && (
+        <ChatBotDemo selectedPatientId={selectedPatientId} />
       )}
 
     </div>
