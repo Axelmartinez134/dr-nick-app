@@ -947,68 +947,7 @@ export default function HealthForm() {
           </div>
         </div>
 
-      {/* Maintenance Self-Service (visible only for Maintenance clients) */}
-      {isMaintenance && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🛠️ Maintenance Self-Service</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
-              <input
-                type="number"
-                min="0"
-                max="7"
-                value={(formData as any).nutrition_compliance_days || ''}
-                onChange={(e) => handleInputChange('nutrition_compliance_days' as any, e.target.value)}
-                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                  (validationErrors as any).nutrition_compliance_days ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="e.g., 5"
-              />
-              {(validationErrors as any).nutrition_compliance_days && (
-                <p className="text-sm text-red-600 mt-1">{(validationErrors as any).nutrition_compliance_days}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sleep Consistency Score (0-100)</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={(formData as any).sleep_consistency_score || ''}
-                onChange={(e) => handleInputChange('sleep_consistency_score' as any, e.target.value)}
-                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                  (validationErrors as any).sleep_consistency_score ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="e.g., 82"
-              />
-              {(validationErrors as any).sleep_consistency_score && (
-                <p className="text-sm text-red-600 mt-1">{(validationErrors as any).sleep_consistency_score}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Morning Fat Burn % (0-100)</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={(formData as any).morning_fat_burn_percent || ''}
-                onChange={(e) => handleInputChange('morning_fat_burn_percent' as any, e.target.value)}
-                className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                  (validationErrors as any).morning_fat_burn_percent ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="e.g., 65.5"
-              />
-              {(validationErrors as any).morning_fat_burn_percent && (
-                <p className="text-sm text-red-600 mt-1">{(validationErrors as any).morning_fat_burn_percent}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      
 
         {imageUrl ? (
           // Show existing image
@@ -1141,6 +1080,8 @@ export default function HealthForm() {
             </label>
           </div>
         )}
+
+        
       </div>
     )
   }
@@ -1218,10 +1159,10 @@ export default function HealthForm() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            ✅ Your information has been submitted to Dr. Nick
+            {isMaintenance ? '✅ Your data has been submitted' : '✅ Your information has been submitted to Dr. Nick'}
           </h2>
           <p className="text-gray-600 mb-4">
-            You have submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!
+            {isMaintenance ? 'You can review your information by reloading this page.' : 'You have submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!'}
           </p>
           <div className="text-sm text-gray-500 mb-6">
             You cannot submit again until the next Monday.
@@ -1299,20 +1240,29 @@ export default function HealthForm() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            ✅ Your information has been submitted to Dr. Nick
+            {isMaintenance ? '✅ Your data has been submitted' : '✅ Your information has been submitted to Dr. Nick'}
           </h2>
           <p className="text-gray-600 mb-4">
-            Updates have been made to your dashboard - check out your progress!
+            {isMaintenance ? 'You can review your information by reloading this page.' : 'Updates have been made to your dashboard - check out your progress!'}
           </p>
           <div className="text-sm text-gray-500 mb-6">
             You cannot submit again until next Monday
           </div>
+          {isMaintenance ? (
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Refresh Page
+            </button>
+          ) : (
           <button
             onClick={() => setIsSubmissionSuccessful(false)}
             className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
           >
             Back to Form
           </button>
+          )}
         </div>
       </div>
     )
@@ -1650,6 +1600,54 @@ export default function HealthForm() {
           </div>
         </div>
 
+        {/* 🛠️ Maintenance Inputs (Maintenance-only) */}
+        {isMaintenance && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🛠️ Maintenance Inputs</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
+              <input
+                type="number"
+                min="0"
+                max="7"
+                value={formData.nutrition_compliance_days}
+                onChange={(e) => handleInputChange('nutrition_compliance_days', e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 5"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sleep Consistency Score (0-100)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={formData.sleep_consistency_score}
+                onChange={(e) => handleInputChange('sleep_consistency_score', e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 82"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Morning Fat Burn % (0-100)</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={(formData as any).morning_fat_burn_percent || ''}
+                onChange={(e) => handleInputChange('morning_fat_burn_percent' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 65.5"
+              />
+            </div>
+          </div>
+        </div>
+        )}
+
         {/* Blood Pressure (mmHg) - Only when tracking is enabled */}
         {/* Body Composition - Only when tracking is enabled (without RHR) */}
         {tracksBodyComp && (
@@ -1782,7 +1780,8 @@ export default function HealthForm() {
         </div>
         )}
 
-        {/* Energetic Constraints Question */}
+        {/* Energetic Constraints Question (hidden for Maintenance) */}
+        {!isMaintenance && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">⚡ Energetic Constraints</h3>
           
@@ -1806,6 +1805,7 @@ export default function HealthForm() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Self Reflection - Moved above Lumen Screenshots */}
         <div className="space-y-4">
@@ -1833,6 +1833,7 @@ export default function HealthForm() {
         </div>
 
         {/* Lumen Screenshots - Required */}
+        {!isMaintenance && (
         <div className="space-y-4">
           <div>
             <h3 className="text-lg font-medium text-gray-900 border-b pb-2">
@@ -1883,8 +1884,10 @@ export default function HealthForm() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Food Log Screenshots - Optional */}
+        {!isMaintenance && (
         <div className="space-y-4">
           <div>
             <h3 className="text-lg font-medium text-gray-900 border-b pb-2">
@@ -1906,6 +1909,7 @@ export default function HealthForm() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Submit Button */}
         <div className="pt-4">

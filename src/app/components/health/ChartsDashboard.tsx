@@ -1648,6 +1648,47 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     }
   }, [mounted, patientId, isDoctorView])
 
+  // Realtime: auto-refresh charts/data when new health_data rows are inserted/updated
+  useEffect(() => {
+    if (!mounted) return
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        let targetUserId = patientId || null as string | null
+        if (!targetUserId) {
+          const { data: auth } = await supabase.auth.getUser()
+          targetUserId = auth?.user?.id || null
+        }
+        if (!targetUserId || cancelled) return
+
+        channel = supabase
+          .channel(`health-data-${targetUserId}`)
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'health_data',
+            filter: `user_id=eq.${targetUserId}`
+          }, () => { void loadChartData() })
+          .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'health_data',
+            filter: `user_id=eq.${targetUserId}`
+          }, () => { void loadChartData() })
+          .subscribe()
+      } catch {}
+    })()
+
+    return () => {
+      cancelled = true
+      if (channel) {
+        try { supabase.removeChannel(channel) } catch {}
+      }
+    }
+  }, [mounted, patientId])
+
   // Function to load chart data
   const loadChartData = async () => {
     setLoading(true)

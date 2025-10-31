@@ -118,13 +118,15 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
 
     // Determine user's unit system to convert inputs to canonical Imperial before saving
     let unitSystem: 'imperial' | 'metric' = 'imperial'
+    let isMaintenance = false
     try {
       const { data: unitRow } = await supabase
         .from('profiles')
-        .select('unit_system')
+        .select('unit_system, client_status')
         .eq('id', user.id)
         .single()
       if (unitRow?.unit_system === 'metric') unitSystem = 'metric'
+      if ((unitRow as any)?.client_status === 'Maintenance') isMaintenance = true
     } catch {}
 
     const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)
@@ -184,8 +186,8 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       monthly_whoop_analysis: data.monthly_whoop_analysis || null,
       monthly_ai_analysis: data.monthly_ai_analysis || null,
       monthly_whoop_pdf: data.monthly_whoop_pdf || null,
-      // Queue management - set to true when patient submits
-      needs_review: true,
+      // Queue management - patient submissions enter review queue except Maintenance
+      needs_review: !isMaintenance,
     }
 
     // Check if record already exists for this week
