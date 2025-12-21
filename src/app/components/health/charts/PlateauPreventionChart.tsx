@@ -7,10 +7,12 @@ import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin, calculateLossPercentageRate } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface PlateauPreventionChartProps {
   data: WeeklyCheckin[]
   hideIndividualWeekFormula?: boolean
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -39,7 +41,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function PlateauPreventionChart({ data, hideIndividualWeekFormula = false }: PlateauPreventionChartProps) {
+export default function PlateauPreventionChart({ data, hideIndividualWeekFormula = false, hideTrendPill = false }: PlateauPreventionChartProps) {
 
   // Process data to calculate plateau prevention using Dr. Nick's progressive averaging method
   const chartData = useMemo(() => {
@@ -150,6 +152,17 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
     }))
   }, [chartData, averageLineResult])
 
+  // Regression over the plateau prevention series (lossRate vs week) for the visible range
+  const regressionResult = useMemo(() => {
+    const valid = chartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null && !Number.isNaN(d.lossRate as number))
+    if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [], equation: '' }
+    const regressionData = valid.map(d => ({ week: d.week, value: d.lossRate as number }))
+    const minWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+    const res = calculateLinearRegression(regressionData, minWeek, maxWeek)
+    return res
+  }, [chartData])
+
   // Calculate Y-axis domain excluding trend line values to prevent skewing
   const calculateYAxisDomain = () => {
     const allValues: number[] = []
@@ -239,19 +252,28 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Plateau Prevention" 
           description="Tracks week-to-week loss percentage to identify plateaus early. Any data point trends approaching 0% may require program adjustments."
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-green-600 transition-colors">
+          <h3 className="text-lg font-semibold text-gray-900 hover:text-green-600 transition-colors">
             📈 Plateau Prevention (Weight Loss Rate)
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">
-          Tracks average weight loss percentage using progressive averaging to identify potential plateaus
-        </p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={chartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null).length}
+            insufficientThreshold={1}
+            orientation="negativeGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600 mb-2">
+        Tracks average weight loss percentage using progressive averaging to identify potential plateaus
+      </p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

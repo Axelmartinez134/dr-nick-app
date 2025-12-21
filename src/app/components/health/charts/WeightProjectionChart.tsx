@@ -14,6 +14,7 @@ interface WeightProjectionChartProps {
   // Anchors for static projection lines and fixed X range
   initialWeek0Weight?: number | null
   maxWeek?: number | null
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -43,8 +44,9 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 import { poundsToKilograms } from '../unitCore'
+import TrendPill from './common/TrendPill'
 
-export default function WeightProjectionChart({ data, unitSystem = 'imperial', initialWeek0Weight, maxWeek }: WeightProjectionChartProps) {
+export default function WeightProjectionChart({ data, unitSystem = 'imperial', initialWeek0Weight, maxWeek, hideTrendPill = false }: WeightProjectionChartProps) {
   // MOVE ALL HOOKS TO THE TOP - Fix React Rules of Hooks violation
   
   // Process actual weight data - using useMemo to fix dependency warning
@@ -219,22 +221,31 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Weight Loss Projections" 
           description="Shows 4 different theoretical weight loss rates vs. actual progress. Helps track if you're meeting expected weight loss goals and identify if adjustments are needed."
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-blue-600 transition-colors">
+          <h3 className="text-lg font-semibold text-gray-900 hover:text-blue-600 transition-colors">
             📊 Weight Loss Trend vs. Projections
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">
-          Compares actual weight loss (red line) against 4 different fat loss projection rates
-        </p>
-        <p className="text-sm text-gray-500">
-          Starting weight: {initialWeight ? (unitSystem === 'metric' ? `${(((poundsToKilograms(initialWeight) || 0))).toFixed(2)} kg` : `${initialWeight.toFixed(2)} lbs`) : 'N/A'}
-        </p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={actualWeightData.length}
+            insufficientThreshold={1}
+            orientation="negativeGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600 mb-1">
+        Compares actual weight loss (red line) against 4 different fat loss projection rates
+      </p>
+      <p className="text-sm text-gray-500">
+        Starting weight: {initialWeight ? (unitSystem === 'metric' ? `${(((poundsToKilograms(initialWeight) || 0))).toFixed(2)} kg` : `${initialWeight.toFixed(2)} lbs`) : 'N/A'}
+      </p>
 
       <ResponsiveContainer width="100%" height={400}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
