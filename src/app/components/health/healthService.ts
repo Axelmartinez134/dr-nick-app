@@ -49,6 +49,7 @@ export interface CheckinFormData {
   nutrition_compliance_days?: string
   sleep_consistency_score?: string
   morning_fat_burn_percent?: string
+  body_fat_percentage?: string
   systolic_bp?: string
   diastolic_bp?: string
   visceral_fat_level?: string
@@ -145,6 +146,8 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       sleep_consistency_score: data.sleep_consistency_score ? parseInt(data.sleep_consistency_score) : null,
       morning_fat_burn_percent: data.morning_fat_burn_percent !== undefined && data.morning_fat_burn_percent !== null && data.morning_fat_burn_percent !== ''
         ? parseFloat(String(data.morning_fat_burn_percent)) : null,
+      body_fat_percentage: data.body_fat_percentage !== undefined && data.body_fat_percentage !== null && data.body_fat_percentage !== ''
+        ? parseFloat(String(data.body_fat_percentage)) : null,
       systolic_bp: data.systolic_bp ? Math.round(parseFloat(data.systolic_bp)) : null,
       diastolic_bp: data.diastolic_bp ? Math.round(parseFloat(data.diastolic_bp)) : null,
       visceral_fat_level: data.visceral_fat_level !== undefined && data.visceral_fat_level !== null && data.visceral_fat_level !== '' ? parseFloat(String(data.visceral_fat_level)) : null,

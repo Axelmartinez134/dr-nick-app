@@ -16,6 +16,7 @@ interface ExtendedCheckinFormData extends CheckinFormData {
   nutrition_compliance_days?: string
   sleep_consistency_score?: string
   morning_fat_burn_percent?: string
+  body_fat_percentage?: string
 }
 
 // AoE helpers (match logic used in AuthContext gap-fill)
@@ -210,6 +211,7 @@ export default function HealthForm() {
     nutrition_compliance_days: '',
     sleep_consistency_score: '',
     morning_fat_burn_percent: '',
+    body_fat_percentage: '',
     systolic_bp: '',
     diastolic_bp: '',
     energetic_constraints_reduction_ok: false,
@@ -497,40 +499,43 @@ export default function HealthForm() {
       errors.waist = 'Waist measurement must be a positive number'
     }
     
-    // Days purposeful exercise validation - REQUIRED
-    if (!formData.purposeful_exercise_days || !formData.purposeful_exercise_days.trim()) {
-      errors.purposeful_exercise_days = 'Days purposeful exercise is required'
-    } else if (isNaN(Number(formData.purposeful_exercise_days)) ||
-      Number(formData.purposeful_exercise_days) < 0 ||
-      Number(formData.purposeful_exercise_days) > 7) {
-      errors.purposeful_exercise_days = 'Days purposeful exercise must be between 0 and 7'
-    }
-    
-    // Resistance training days validation - REQUIRED
-    if (!formData.resistance_training_days || !formData.resistance_training_days.trim()) {
-      errors.resistance_training_days = 'Resistance training days is required'
-    } else if (isNaN(Number(formData.resistance_training_days)) || 
-         Number(formData.resistance_training_days) < 0 || 
-         Number(formData.resistance_training_days) > 7) {
-      errors.resistance_training_days = 'Resistance training days must be between 0 and 7'
-    }
-    
-    // Symptom tracking days validation - REQUIRED
-    if (!formData.symptom_tracking_days || !formData.symptom_tracking_days.trim()) {
-      errors.symptom_tracking_days = 'Symptom tracking days is required'
-    } else if (isNaN(Number(formData.symptom_tracking_days)) ||
-      Number(formData.symptom_tracking_days) < 0 ||
-      Number(formData.symptom_tracking_days) > 7) {
-      errors.symptom_tracking_days = 'Symptom tracking days must be between 0 and 7'
-    }
-    
-    // Poor recovery days validation - REQUIRED
-    if (!formData.poor_recovery_days || !formData.poor_recovery_days.trim()) {
-      errors.poor_recovery_days = 'Poor recovery days is required'
-    } else if (isNaN(Number(formData.poor_recovery_days)) || 
-         Number(formData.poor_recovery_days) < 0 || 
-         Number(formData.poor_recovery_days) > 7) {
-      errors.poor_recovery_days = 'Poor recovery days must be between 0 and 7'
+    // For Nutraceutical clients, the following fields are hidden and not required.
+    if (!isNutraceutical) {
+      // Days purposeful exercise validation - REQUIRED
+      if (!formData.purposeful_exercise_days || !formData.purposeful_exercise_days.trim()) {
+        errors.purposeful_exercise_days = 'Days purposeful exercise is required'
+      } else if (isNaN(Number(formData.purposeful_exercise_days)) ||
+        Number(formData.purposeful_exercise_days) < 0 ||
+        Number(formData.purposeful_exercise_days) > 7) {
+        errors.purposeful_exercise_days = 'Days purposeful exercise must be between 0 and 7'
+      }
+      
+      // Resistance training days validation - REQUIRED
+      if (!formData.resistance_training_days || !formData.resistance_training_days.trim()) {
+        errors.resistance_training_days = 'Resistance training days is required'
+      } else if (isNaN(Number(formData.resistance_training_days)) || 
+          Number(formData.resistance_training_days) < 0 || 
+          Number(formData.resistance_training_days) > 7) {
+        errors.resistance_training_days = 'Resistance training days must be between 0 and 7'
+      }
+      
+      // Symptom tracking days validation - REQUIRED
+      if (!formData.symptom_tracking_days || !formData.symptom_tracking_days.trim()) {
+        errors.symptom_tracking_days = 'Symptom tracking days is required'
+      } else if (isNaN(Number(formData.symptom_tracking_days)) ||
+        Number(formData.symptom_tracking_days) < 0 ||
+        Number(formData.symptom_tracking_days) > 7) {
+        errors.symptom_tracking_days = 'Symptom tracking days must be between 0 and 7'
+      }
+      
+      // Poor recovery days validation - REQUIRED
+      if (!formData.poor_recovery_days || !formData.poor_recovery_days.trim()) {
+        errors.poor_recovery_days = 'Poor recovery days is required'
+      } else if (isNaN(Number(formData.poor_recovery_days)) || 
+          Number(formData.poor_recovery_days) < 0 || 
+          Number(formData.poor_recovery_days) > 7) {
+        errors.poor_recovery_days = 'Poor recovery days must be between 0 and 7'
+      }
     }
     
     // Self reflection validation - REQUIRED
@@ -1766,6 +1771,31 @@ export default function HealthForm() {
             </div>
           </div>
         </div>
+
+        {/* Body Fat % - Always visible for Nutraceutical clients (independent of Body Composition toggle) */}
+        {isNutraceutical && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">📉 Body Fat %</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="body_fat_percentage" className="block text-sm font-medium text-gray-700 mb-1">
+                Body Fat Percentage (%)
+              </label>
+              <input
+                type="number"
+                id="body_fat_percentage"
+                step="0.01"
+                min="0"
+                max="100"
+                value={(formData as any).body_fat_percentage || ''}
+                onChange={(e) => handleInputChange('body_fat_percentage' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 28.5"
+              />
+            </div>
+          </div>
+        </div>
+        )}
         
         {/* Blood Pressure (mmHg) - Only when tracking is enabled */}
         {tracksBP && (

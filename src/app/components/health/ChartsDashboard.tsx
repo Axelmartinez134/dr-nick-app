@@ -1168,7 +1168,9 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       
       <div className="mt-4 text-sm text-gray-500">
         <p><strong>Note:</strong> Week 0 represents your baseline measurements. Sleep scores, Morning Fat %, and Body Fat % are tracked throughout your program.</p>
-        <p><strong>Morning Fat %:</strong> Monthly metabolic analysis showing fat burning efficiency. <strong>Body Fat %:</strong> Periodic body composition scans tracking your progress.</p>
+        {!hideNutriCols && (
+          <p><strong>Morning Fat %:</strong> Monthly metabolic analysis showing fat burning efficiency. <strong>Body Fat %:</strong> Periodic body composition scans tracking your progress.</p>
+        )}
         {isDoctorView ? (
           <p className="text-blue-600 mt-1">
             <strong>Dr. Nick:</strong> Click any cell to edit values. For notes, use Ctrl+Enter to save. Press Escape to cancel edits.
