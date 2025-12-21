@@ -30,6 +30,7 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
+  const [isNutraceutical, setIsNutraceutical] = useState<boolean>(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string>('')
   const [messageType, setMessageType] = useState<'success' | 'error' | ''>('')
@@ -500,7 +501,7 @@ function InitialWeightEditor({ chartData, unitSystem, onSaved }: { chartData: We
 }
 
   // Data Table Component - Different versions for Client vs Dr. Nick
-function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP, tracksBodyComp }: { 
+function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP, tracksBodyComp, isNutraceutical }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
   onDataUpdate?: () => void,
@@ -508,11 +509,13 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   onSubmissionSelect?: (submission: QueueSubmission) => void,
   unitSystem: UnitSystem,
   tracksBP: boolean,
-  tracksBodyComp: boolean
+  tracksBodyComp: boolean,
+  isNutraceutical: boolean
 }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const hideNutriCols = !isDoctorView && isNutraceutical
   // Delete row modal state
   const [showDeleteRowModal, setShowDeleteRowModal] = useState(false)
   const [rowToDelete, setRowToDelete] = useState<string | null>(null)
@@ -1006,15 +1009,27 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Total Muscle Mass (%)</th>
                 </>
               )}
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resistance Training Days Goal Met</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Consistency Score</th>
+              {!hideNutriCols && (
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days of Low EA Symptons</th>
+              )}
+              {!hideNutriCols && (
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Detailed Symptom Notes</th>
+              )}
+              {!hideNutriCols && (
+                <>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Days Strain Goal Met</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resistance Training Days Goal Met</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Poor Recovery Days</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Sleep Consistency Score</th>
+                </>
+              )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Resting HR (bpm)</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days Goal Met</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
+              {!hideNutriCols && (
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days Goal Met</th>
+              )}
+              {!hideNutriCols && (
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
+              )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Self Reflection</th>
               {isDoctorView && (
@@ -1085,35 +1100,47 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                     </td>
                   </>
                 )}
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'detailed_symptom_notes', record.detailed_symptom_notes, true)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'purposeful_exercise_days', record.purposeful_exercise_days)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'resistance_training_days', record.resistance_training_days)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'poor_recovery_days', record.poor_recovery_days)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
-                </td>
+                {!hideNutriCols && (
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {renderCell(record, 'symptom_tracking_days', record.symptom_tracking_days)}
+                  </td>
+                )}
+                {!hideNutriCols && (
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {renderCell(record, 'detailed_symptom_notes', record.detailed_symptom_notes, true)}
+                  </td>
+                )}
+                {!hideNutriCols && (
+                  <>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'purposeful_exercise_days', record.purposeful_exercise_days)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'resistance_training_days', record.resistance_training_days)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'poor_recovery_days', record.poor_recovery_days)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {renderCell(record, 'sleep_consistency_score', record.sleep_consistency_score)}
+                    </td>
+                  </>
+                )}
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'resting_heart_rate', (record as any).resting_heart_rate)}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {renderCell(record, 'nutrition_compliance_days', record.nutrition_compliance_days)}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  <TableTooltip content="Your morning fat burn efficiency measured through monthly metabolic analysis">
-                    {renderCell(record, 'morning_fat_burn_percent', record.morning_fat_burn_percent)}
-                  </TableTooltip>
-                </td>
+                {!hideNutriCols && (
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    {renderCell(record, 'nutrition_compliance_days', record.nutrition_compliance_days)}
+                  </td>
+                )}
+                {!hideNutriCols && (
+                  <td className="px-4 py-3 text-sm text-gray-900">
+                    <TableTooltip content="Your morning fat burn efficiency measured through monthly metabolic analysis">
+                      {renderCell(record, 'morning_fat_burn_percent', record.morning_fat_burn_percent)}
+                    </TableTooltip>
+                  </td>
+                )}
                 <td className="px-4 py-3 text-sm text-gray-900">
                   <TableTooltip content="Your body fat percentage from precise Fit 3-D body composition scans">
                     {renderCell(record, 'body_fat_percentage', record.body_fat_percentage)}
@@ -1598,6 +1625,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
+  const [isNutraceutical, setIsNutraceutical] = useState<boolean>(false)
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
@@ -1627,11 +1655,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           if (isDoctorView && patientId) {
             const { data } = await supabase
               .from('profiles')
-              .select('track_blood_pressure, track_body_composition')
+              .select('track_blood_pressure, track_body_composition, client_status')
               .eq('id', patientId)
               .single()
             setTracksBP(Boolean(data?.track_blood_pressure))
             setTracksBodyComp(Boolean((data as any)?.track_body_composition))
+            setIsNutraceutical((data as any)?.client_status === 'Nutraceutical')
           } else {
             // current user
             const { data: userData } = await supabase.auth.getUser()
@@ -1639,11 +1668,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             if (uid) {
               const { data } = await supabase
                 .from('profiles')
-                .select('track_blood_pressure, track_body_composition')
+                .select('track_blood_pressure, track_body_composition, client_status')
                 .eq('id', uid)
                 .single()
               setTracksBP(Boolean(data?.track_blood_pressure))
               setTracksBodyComp(Boolean((data as any)?.track_body_composition))
+              setIsNutraceutical((data as any)?.client_status === 'Nutraceutical')
             }
           }
         } catch {}
@@ -2743,7 +2773,9 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
 
         {/* Row 3: New Dr. Nick Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          <MorningFatBurnChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+          {!( !isDoctorView && isNutraceutical ) && (
+            <MorningFatBurnChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+          )}
           <BodyFatPercentageChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
         </div>
 
@@ -2769,10 +2801,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         {/* Removed Nutrition/Strain charts here – now rendered inside Compliance Metrics section */}
         {/* Removed Sleep chart here – now rendered inside Compliance Metrics section */}
 
-        {/* Compliance Metrics Table */}
-        <div className="grid grid-cols-1">
-          <ComplianceMetricsTable patientId={patientId} rangeStart={rangeStart ?? undefined as any} rangeEnd={rangeEnd ?? undefined as any} />
-        </div>
+        {/* Compliance Metrics Table (hidden for Nutraceutical patients on client view) */}
+        {!( !isDoctorView && isNutraceutical ) && (
+          <div className="grid grid-cols-1">
+            <ComplianceMetricsTable patientId={patientId} rangeStart={rangeStart ?? undefined as any} rangeEnd={rangeEnd ?? undefined as any} />
+          </div>
+        )}
 
         {/* Data Table - Different for Client vs Dr. Nick */}
         <DataTable 
@@ -2784,6 +2818,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           unitSystem={unitSystem}
           tracksBP={tracksBP}
           tracksBodyComp={tracksBodyComp}
+          isNutraceutical={isNutraceutical}
         />
 
         {/* Removed duplicate bottom missed-checkins note: now rendered inside DataTable header */}

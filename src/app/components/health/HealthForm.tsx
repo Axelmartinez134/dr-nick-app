@@ -256,6 +256,7 @@ export default function HealthForm() {
   const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
   const [isMaintenance, setIsMaintenance] = useState<boolean>(false)
+  const [isNutraceutical, setIsNutraceutical] = useState<boolean>(false)
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -320,6 +321,7 @@ export default function HealthForm() {
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
       setIsTestAccount((profileData as any)?.client_status === 'Test')
       setIsMaintenance((profileData as any)?.client_status === 'Maintenance' || (profileData as any)?.client_status === 'Nutraceutical')
+      setIsNutraceutical((profileData as any)?.client_status === 'Nutraceutical')
       setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
       setTracksBodyComp(Boolean((profileData as any)?.track_body_composition))
     } catch (error) {
@@ -1486,7 +1488,8 @@ export default function HealthForm() {
             </div>
           </div>
 
-          {/* Exercise & Training */}
+          {/* Exercise & Training (hidden for Nutraceutical) */}
+        {!isNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">💪 Exercise & Training</h3>
           
@@ -1548,8 +1551,10 @@ export default function HealthForm() {
             </div>
           </div>
         </div>
+        )}
 
-          {/* Recovery & Nutrition */}
+          {/* Recovery & Nutrition (hidden for Nutraceutical) */}
+        {!isNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">😴 Recovery & Nutrition</h3>
               
@@ -1617,9 +1622,10 @@ export default function HealthForm() {
             />
           </div>
         </div>
+        )}
 
-        {/* 🛠️ Maintenance Inputs (Maintenance-only) */}
-        {isMaintenance && (
+        {/* 🛠️ Maintenance Inputs (Maintenance-only for Maintenance, hidden for Nutraceutical) */}
+        {isMaintenance && !isNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🛠️ Maintenance Inputs</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
