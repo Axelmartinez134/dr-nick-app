@@ -23,9 +23,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate status value (include Maintenance)
-    const validStatuses = ['Current', 'Past', 'Onboarding', 'Test', 'Maintenance']
+    const validStatuses = ['Current', 'Past', 'Onboarding', 'Test', 'Maintenance', 'Nutraceutical']
     if (!validStatuses.includes(clientStatus)) {
-      return NextResponse.json({ success: false, error: 'Invalid client status. Must be Current, Past, Onboarding, Test, or Maintenance' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'Invalid client status. Must be Current, Past, Onboarding, Test, Maintenance, or Nutraceutical' }, { status: 400 })
     }
 
     // Update patient status using admin client (bypasses RLS)

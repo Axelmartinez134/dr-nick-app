@@ -319,7 +319,7 @@ export default function HealthForm() {
 
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
       setIsTestAccount((profileData as any)?.client_status === 'Test')
-      setIsMaintenance((profileData as any)?.client_status === 'Maintenance')
+      setIsMaintenance((profileData as any)?.client_status === 'Maintenance' || (profileData as any)?.client_status === 'Nutraceutical')
       setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
       setTracksBodyComp(Boolean((profileData as any)?.track_body_composition))
     } catch (error) {

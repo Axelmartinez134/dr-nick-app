@@ -126,7 +126,7 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
         .eq('id', user.id)
         .single()
       if (unitRow?.unit_system === 'metric') unitSystem = 'metric'
-      if ((unitRow as any)?.client_status === 'Maintenance') isMaintenance = true
+      if ((unitRow as any)?.client_status === 'Maintenance' || (unitRow as any)?.client_status === 'Nutraceutical') isMaintenance = true
     } catch {}
 
     const toTwo = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100)

@@ -335,6 +335,7 @@ export default function DrNickPatientDashboard() {
                 const onboardingPatients = patients.filter(p => p.client_status === 'Onboarding')
                 const currentPatients = patients.filter(p => p.client_status === 'Current')
                 const maintenancePatients = patients.filter(p => p.client_status === 'Maintenance')
+                const nutraceuticalPatients = patients.filter(p => p.client_status === 'Nutraceutical')
                 const pastPatients = patients.filter(p => p.client_status === 'Past')
                 const testPatients = patients.filter(p => p.client_status === 'Test')
 
@@ -461,6 +462,57 @@ export default function DrNickPatientDashboard() {
                             </thead>
                             <tbody>
                               {maintenancePatients.map((patient) => (
+                                <tr key={patient.user_id} className="border-t hover:bg-purple-50">
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.full_name || 'Unknown Name'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.email}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    Week {patient.current_week}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900">
+                                    {patient.last_checkin ? new Date(patient.last_checkin).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedPatientId(patient.user_id)
+                                        setActiveTab('charts')
+                                      }}
+                                      className="text-blue-600 hover:text-blue-800 mr-3"
+                                    >
+                                      📊 View Charts
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Nutraceutical Clients Section */}
+                    {nutraceuticalPatients.length > 0 && (
+                      <div className="bg-white rounded-lg shadow-md p-6">
+                        <h3 className="text-lg font-semibold text-purple-900 mb-4">
+                           Nutraceutical Clients ({nutraceuticalPatients.length} Clients)
+                        </h3>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full table-auto">
+                            <thead>
+                              <tr className="bg-purple-50">
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Client</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Email</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Current Week</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Last Check-in</th>
+                                <th className="px-4 py-3 text-left text-sm font-medium text-purple-700">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {nutraceuticalPatients.map((patient) => (
                                 <tr key={patient.user_id} className="border-t hover:bg-purple-50">
                                   <td className="px-4 py-3 text-sm text-gray-900">
                                     {patient.full_name || 'Unknown Name'}

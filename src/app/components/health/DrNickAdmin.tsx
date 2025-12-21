@@ -303,6 +303,7 @@ export default function DrNickAdmin() {
           const onboarding = filteredPatients.filter(p => p.client_status === 'Onboarding')
           const current = filteredPatients.filter(p => p.client_status === 'Current')
           const maintenance = filteredPatients.filter(p => p.client_status === 'Maintenance')
+          const nutraceutical = filteredPatients.filter(p => p.client_status === 'Nutraceutical')
           const past = filteredPatients.filter(p => p.client_status === 'Past')
           const test = filteredPatients.filter(p => p.client_status === 'Test')
 
@@ -344,6 +345,7 @@ export default function DrNickAdmin() {
                             >
                               <option value="Current">Current</option>
                               <option value="Maintenance">Maintenance</option>
+                              <option value="Nutraceutical">Nutraceutical</option>
                               <option value="Onboarding">Onboarding</option>
                               <option value="Past">Past</option>
                               <option value="Test">Test</option>
@@ -384,6 +386,7 @@ export default function DrNickAdmin() {
               {renderSection('📋 Currently Onboarding', { headerText: 'text-blue-900', rowHover: 'hover:bg-blue-50' }, onboarding)}
               {renderSection('✅ Current Clients', { headerText: 'text-green-900', rowHover: 'hover:bg-green-50' }, current)}
               {renderSection('🛠️ Maintenance', { headerText: 'text-purple-900', rowHover: 'hover:bg-purple-50' }, maintenance)}
+              {renderSection('Nutraceutical Clients', { headerText: 'text-purple-900', rowHover: 'hover:bg-purple-50' }, nutraceutical)}
               {renderSection('📁 Past Clients', { headerText: 'text-gray-900', rowHover: 'hover:bg-gray-50' }, past)}
               {renderSection('🧪 Test', { headerText: 'text-purple-900', rowHover: 'hover:bg-purple-50' }, test)}
             </div>

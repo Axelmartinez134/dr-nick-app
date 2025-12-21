@@ -217,6 +217,7 @@ function PatientStatusManagement({ patientId, onBpTrackingChange }: { patientId?
             >
               <option value="Current">Current</option>
               <option value="Maintenance">Maintenance</option>
+              <option value="Nutraceutical">Nutraceutical</option>
               <option value="Past">Past</option>
               <option value="Onboarding">Onboarding</option>
               <option value="Test">Test</option>
