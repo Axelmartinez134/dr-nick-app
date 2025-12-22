@@ -96,19 +96,6 @@ export default function TotalMuscleMassPercentChart({ data, hideTrendPill = fals
     return null
   }
 
-  if (chartData.length === 0) {
-    return (
-      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-        <ChartTooltip title="Total Muscle Mass %" description="Measures your percentage of muscle — crucial for a healthy metabolism and strength.">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">💪 Total Muscle Mass %</h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No muscle mass % data yet</p>
-        </div>
-      </div>
-    )
-  }
-
   const xMin = chartData.length > 0 ? Math.min(...chartData.map(d => d.week)) : 0
   const xMax = chartData.length > 0 ? Math.max(...chartData.map(d => d.week)) : 0
   const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
@@ -122,6 +109,19 @@ export default function TotalMuscleMassPercentChart({ data, hideTrendPill = fals
   const validPointCount = useMemo(() => {
     return chartData.filter(d => typeof d.percent === 'number' && d.percent !== null && !Number.isNaN(d.percent as number)).length
   }, [chartData])
+
+  if (chartData.length === 0) {
+    return (
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
+        <ChartTooltip title="Total Muscle Mass %" description="Measures your percentage of muscle — crucial for a healthy metabolism and strength.">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">💪 Total Muscle Mass %</h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No muscle mass % data yet</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
