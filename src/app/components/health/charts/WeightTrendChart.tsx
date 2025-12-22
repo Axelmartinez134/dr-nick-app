@@ -8,10 +8,12 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine, formatTrendLineHover } from '../regressionUtils'
 import { getWeightUnitLabel } from '../unitCore'
+import TrendPill from './common/TrendPill'
 
 interface WeightTrendChartProps {
   data: WeeklyCheckin[]
   unitSystem?: 'imperial' | 'metric'
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -42,7 +44,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 import { poundsToKilograms } from '../unitCore'
 
-export default function WeightTrendChart({ data, unitSystem = 'imperial' }: WeightTrendChartProps) {
+export default function WeightTrendChart({ data, unitSystem = 'imperial', hideTrendPill = false }: WeightTrendChartProps) {
   // Build full week series and set null for missing values
   const weeks = data.map(d => d.week_number)
   const minWeek = Math.min(...weeks)
@@ -120,6 +122,10 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
     return [minValue - padding, maxValue + padding]
   }
 
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.weight === 'number' && d.weight !== null && !Number.isNaN(d.weight as number)).length
+  }, [chartData])
+
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -161,7 +167,7 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Weight Trend" 
           description="Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
@@ -170,10 +176,19 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial' }: Weig
             ⚖️ Weight Trend Analysis
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">
-          Weekly weight measurements with trend line showing overall progress
-        </p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={validPointCount}
+            insufficientThreshold={2}
+            orientation="negativeGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600 mb-2">
+        Weekly weight measurements with trend line showing overall progress
+      </p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

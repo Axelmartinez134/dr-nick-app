@@ -6,9 +6,11 @@ import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface NutritionComplianceChartProps {
   data: WeeklyCheckin[]
+  hideTrendPill?: boolean
 }
 
 // Tooltip shell used for title/description like the Sleep chart
@@ -34,7 +36,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function NutritionComplianceChart({ data }: NutritionComplianceChartProps) {
+export default function NutritionComplianceChart({ data, hideTrendPill = false }: NutritionComplianceChartProps) {
   // Prepare chart points from weekly data
   const chartData = data
     .filter(entry => {
@@ -97,6 +99,10 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
     return [Math.max(0, Math.floor(minValue - padding)), Math.min(7, Math.ceil(maxValue + padding))]
   }
 
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.nutritionDays === 'number' && d.nutritionDays !== null && !Number.isNaN(d.nutritionDays as number)).length
+  }, [chartData])
+
   // Custom tooltip formatter like Sleep
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -142,7 +148,7 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip
           title="Nutrition Compliance"
           description="Number of days this week you hit your macronutrient targets. Consistent nutrition compliance improves metabolic health, supports fat loss, and stabilizes energy across the week."
@@ -151,8 +157,17 @@ export default function NutritionComplianceChart({ data }: NutritionComplianceCh
             🍽️ Nutrition Days Goal Met
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">Weekly nutrition compliance days from your check-ins</p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={validPointCount}
+            insufficientThreshold={2}
+            orientation="positiveGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600">Weekly nutrition compliance days from your check-ins</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

@@ -6,10 +6,13 @@
 import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
+import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface BodyFatPercentageChartProps {
   data: WeeklyCheckin[]
   hideDateInTooltip?: boolean
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -38,7 +41,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function BodyFatPercentageChart({ data, hideDateInTooltip = false }: BodyFatPercentageChartProps) {
+export default function BodyFatPercentageChart({ data, hideDateInTooltip = false, hideTrendPill = false }: BodyFatPercentageChartProps) {
   // Process body fat percentage data only (exclude null values for calculation, but keep for display)
   const chartData = useMemo(() => {
     return data
@@ -50,6 +53,19 @@ export default function BodyFatPercentageChart({ data, hideDateInTooltip = false
         date: new Date(entry.date).toLocaleDateString()
       }))
   }, [data])
+
+  // Regression for body fat % across visible data
+  const regressionResult = useMemo(() => {
+    const valid = chartData.filter(d => typeof d.bodyFat === 'number' && d.bodyFat !== null && !Number.isNaN(d.bodyFat as number))
+    if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [] as Array<{ week: number; value: number }>, equation: '' }
+    const minWeek = Math.min(...chartData.map(d => d.week))
+    const maxWeek = Math.max(...chartData.map(d => d.week))
+    return calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.bodyFat as number })), minWeek, maxWeek)
+  }, [chartData])
+
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.bodyFat === 'number' && d.bodyFat !== null && !Number.isNaN(d.bodyFat as number)).length
+  }, [chartData])
 
   // Calculate Y-axis domain starting from first data point
   const calculateYAxisDomain = useMemo(() => {
@@ -109,7 +125,7 @@ export default function BodyFatPercentageChart({ data, hideDateInTooltip = false
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Body Fat Percentage" 
           description="Your body fat percentage tracks changes in body composition beyond just weight. This precise measurement shows how much of your weight loss comes from fat versus muscle, helping optimize your program for the best results."
@@ -118,6 +134,15 @@ export default function BodyFatPercentageChart({ data, hideDateInTooltip = false
             📊 Body Fat Percentage
           </h3>
         </ChartTooltip>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={validPointCount}
+            insufficientThreshold={2}
+            orientation="negativeGood"
+          />
+        )}
         <p className="text-sm text-gray-600">
           Your body fat percentage tracks changes in body composition beyond just weight. This shows how much of your progress comes from fat loss versus muscle.
         </p>

@@ -6,9 +6,11 @@ import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface SystolicBloodPressureChartProps {
   data: WeeklyCheckin[]
+  hideTrendPill?: boolean
 }
 
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -29,7 +31,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function SystolicBloodPressureChart({ data }: SystolicBloodPressureChartProps) {
+export default function SystolicBloodPressureChart({ data, hideTrendPill = false }: SystolicBloodPressureChartProps) {
   // Build full week series and set null for missing values
   const weeks = data.map(d => d.week_number)
   const minWeek = Math.min(...weeks)
@@ -82,6 +84,15 @@ export default function SystolicBloodPressureChart({ data }: SystolicBloodPressu
     return null
   }
 
+  const regressionForPill = useMemo(() => {
+    if (chartData.length < 2) return { isValid: false, slope: 0, intercept: 0 }
+    const minW = Math.min(...chartData.map(d => d.week))
+    const maxW = Math.max(...chartData.map(d => d.week))
+    const valid = chartData.filter(d => typeof d.systolic === 'number' && d.systolic !== null && !Number.isNaN(d.systolic as number))
+    const r = calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.systolic as number })), minW, maxW)
+    return { isValid: r.isValid, slope: r.slope || 0, intercept: r.intercept || 0, count: valid.length }
+  }, [chartData])
+
   if (chartData.length === 0) {
     return (
       <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
@@ -98,12 +109,21 @@ export default function SystolicBloodPressureChart({ data }: SystolicBloodPressu
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip title="Systolic Blood Pressure (mmHg)" description="Top number — pressure when the heart contracts. Tracked weekly.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-blue-600 transition-colors">🩺 Systolic Blood Pressure (mmHg)</h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">Weekly systolic measurements</p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionForPill.slope || 0}
+            intercept={regressionForPill.intercept || 0}
+            pointsCount={(regressionForPill as any).count || 0}
+            insufficientThreshold={2}
+            orientation="negativeGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600">Weekly systolic measurements</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

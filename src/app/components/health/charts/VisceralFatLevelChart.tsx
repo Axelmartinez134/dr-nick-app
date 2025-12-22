@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface VisceralFatLevelChartProps {
   data: WeeklyCheckin[]
+  hideTrendPill?: boolean
 }
 
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -27,7 +29,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartProps) {
+export default function VisceralFatLevelChart({ data, hideTrendPill = false }: VisceralFatLevelChartProps) {
   // Build continuous week series with nulls when missing
   if (!data || data.length === 0) {
     return (
@@ -136,12 +138,31 @@ export default function VisceralFatLevelChart({ data }: VisceralFatLevelChartPro
   const xMax = Math.max(...chartData.map(d => d.week))
   const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
 
+  const regressionResult = useMemo(() => {
+    const valid = chartData.filter(d => typeof d.level === 'number' && d.level !== null && !Number.isNaN(d.level as number))
+    if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [] as Array<{ week: number; value: number }>, equation: '' }
+    return calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.level as number })), xMin, xMax)
+  }, [chartData, xMin, xMax])
+
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.level === 'number' && d.level !== null && !Number.isNaN(d.level as number)).length
+  }, [chartData])
+
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip title="Visceral Fat Level" description="Tracks the dangerous, hidden fat surrounding your internal organs that is linked to metabolic health risks. Decreasing trend indicates reducing risk for metabolic syndrome and other chronic diseases.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-blue-600 transition-colors">🧬 Visceral Fat Level</h3>
         </ChartTooltip>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={validPointCount}
+            insufficientThreshold={2}
+            orientation="negativeGood"
+          />
+        )}
       </div>
 
       <ResponsiveContainer width="100%" height={300}>

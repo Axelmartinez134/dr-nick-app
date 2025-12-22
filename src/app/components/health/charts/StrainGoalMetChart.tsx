@@ -6,9 +6,11 @@ import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface StrainGoalMetChartProps {
   data: WeeklyCheckin[]
+  hideTrendPill?: boolean
 }
 
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -33,7 +35,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function StrainGoalMetChart({ data }: StrainGoalMetChartProps) {
+export default function StrainGoalMetChart({ data, hideTrendPill = false }: StrainGoalMetChartProps) {
   // Prepare data (0-7 days) and start at week 1
   const raw = data
     .filter(entry => {
@@ -71,6 +73,16 @@ export default function StrainGoalMetChart({ data }: StrainGoalMetChartProps) {
       })
     }
     return series
+  }, [raw])
+
+  const regressionForPill = useMemo(() => {
+    if (raw.length < 2) return { isValid: false, slope: 0, intercept: 0, count: raw.length }
+    const minDataWeek = Math.min(...raw.map(d => d.week))
+    const maxWeek = Math.max(...raw.map(d => d.week))
+    const startWeek = Math.max(1, minDataWeek)
+    const regressionInput = raw.filter(d => d.exerciseDays !== null).map(d => ({ week: d.week, value: d.exerciseDays as number }))
+    const r = calculateLinearRegression(regressionInput, startWeek, maxWeek)
+    return { isValid: r.isValid, slope: r.slope || 0, intercept: r.intercept || 0, count: regressionInput.length }
   }, [raw])
 
   const calculateYAxisDomain = () => {
@@ -116,12 +128,21 @@ export default function StrainGoalMetChart({ data }: StrainGoalMetChartProps) {
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip title="Days Strain Goal Met" description="Number of days this week you hit your personalized strain/effort target. Consistency builds capacity while reducing injury risk.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">🏋️ Days Strain Goal Met</h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">Weekly training strain goal days from your check-ins</p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionForPill.slope || 0}
+            intercept={regressionForPill.intercept || 0}
+            pointsCount={regressionForPill.count || 0}
+            insufficientThreshold={2}
+            orientation="positiveGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600">Weekly training strain goal days from your check-ins</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

@@ -9,6 +9,7 @@ import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
 import { getLengthUnitLabel } from '../unitCore'
 import { supabase } from '../../auth/AuthContext'
+import TrendPill from './common/TrendPill'
 
 interface WaistTrendChartProps {
   data: WeeklyCheckin[]
@@ -18,6 +19,7 @@ interface WaistTrendChartProps {
   hideHeaderTitle?: boolean
   compactHeader?: boolean
   hideDateInTooltip?: boolean
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -48,7 +50,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 import { inchesToCentimeters } from '../unitCore'
 
-export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId, hideAlwaysMeasureNote = false, hideHeaderTitle = false, compactHeader = false, hideDateInTooltip = false }: WaistTrendChartProps) {
+export default function WaistTrendChart({ data, unitSystem = 'imperial', patientId, hideAlwaysMeasureNote = false, hideHeaderTitle = false, compactHeader = false, hideDateInTooltip = false, hideTrendPill = false }: WaistTrendChartProps) {
   const [waistGoalDistance, setWaistGoalDistance] = useState<number | null>(null)
 
   // Local tooltip for the purple distance pill (mirrors metrics tooltip content)
@@ -190,6 +192,10 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
     return [minValue - padding, maxValue + padding]
   }
 
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.waist === 'number' && d.waist !== null && !Number.isNaN(d.waist as number)).length
+  }, [chartData])
+
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -233,7 +239,7 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className={`${compactHeader ? 'mb-1' : 'mb-4'} flex items-start justify-between gap-3`}>
+      <div className={`${compactHeader ? 'mb-1' : 'mb-2'} flex items-start justify-between gap-3`}>
         <ChartTooltip 
           title="Waist Trend" 
           description="Tracks waist circumference changes over time. Often more reliable than weight for measuring body composition changes and fat loss progress."
@@ -244,9 +250,20 @@ export default function WaistTrendChart({ data, unitSystem = 'imperial', patient
             </h3>
           )}
         </ChartTooltip>
-        {waistGoalDistance !== null && (
-          <DistancePill distance={waistGoalDistance} />
-        )}
+        <div className="flex items-start gap-2">
+          {waistGoalDistance !== null && (
+            <DistancePill distance={waistGoalDistance} />
+          )}
+          {!hideTrendPill && (
+            <TrendPill
+              slope={regressionResult.slope || 0}
+              intercept={regressionResult.intercept || 0}
+              pointsCount={validPointCount}
+              insufficientThreshold={2}
+              orientation="negativeGood"
+            />
+          )}
+        </div>
       </div>
       <p className={`text-sm text-gray-600 ${compactHeader ? 'mb-1' : 'mb-2'}`}>Weekly waist measurements showing body composition changes</p>
 

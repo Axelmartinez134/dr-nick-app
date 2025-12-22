@@ -7,9 +7,11 @@ import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface MorningFatBurnChartProps {
   data: WeeklyCheckin[]
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -38,7 +40,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) {
+export default function MorningFatBurnChart({ data, hideTrendPill = false }: MorningFatBurnChartProps) {
   const description = "Higher percentages over time means that your body is responding to my weekly changes to your macronutrient recommendations and to your habit changes and that metabolic adaptation is progressing accordingly."
   // Build calendar-complete series within provided data's min..max week range
   const chartData = useMemo(() => {
@@ -77,6 +79,10 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
     const maxWeek = Math.max(...chartData.map(d => d.week))
 
     return calculateLinearRegression(regressionData, minWeek, maxWeek)
+  }, [chartData])
+
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => d.fatBurn !== null && d.fatBurn !== undefined && !Number.isNaN(d.fatBurn as number)).length
   }, [chartData])
 
   // Merge trend line data with chart data
@@ -150,7 +156,7 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Morning Fat Burn %" 
           description={description}
@@ -159,8 +165,17 @@ export default function MorningFatBurnChart({ data }: MorningFatBurnChartProps) 
             🔥 Morning Fat Oxidation %
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">{description}</p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={validPointCount}
+            insufficientThreshold={2}
+            orientation="positiveGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600">{description}</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

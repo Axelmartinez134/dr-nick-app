@@ -511,6 +511,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                       date: w.date || '',
                       morning_fat_burn_percent: (w.fields?.morning_fat_burn_percent ?? null)
                     })) as any}
+                    hideTrendPill
                   />
                 </AliasMorningFatBurnMobilePill>
               </div>
@@ -530,6 +531,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                       weight: (w.fields?.weight ?? null)
                     })) as any}
                     hideIndividualWeekFormula
+                    hideTrendPill
                   />
                 </AliasPlateauMobilePill>
               </div>
@@ -547,6 +549,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                       body_fat_percentage: (w.fields?.body_fat_percentage ?? null)
                     })) as any}
                     hideDateInTooltip
+                    hideTrendPill
                   />
                 </AliasBodyFatMobilePill>
               </div>
@@ -555,7 +558,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             {chartsEnabled.systolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasSystolicMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any}>
-                  <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} />
+                  <SystolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', systolic_bp: (w.fields?.systolic_bp ?? null) })) as any} hideTrendPill />
                 </AliasSystolicMobilePill>
               </div>
             )}
@@ -563,7 +566,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             {chartsEnabled.diastolicTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasDiastolicMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any}>
-                  <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} />
+                  <DiastolicBloodPressureChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', diastolic_bp: (w.fields?.diastolic_bp ?? null) })) as any} hideTrendPill />
                 </AliasDiastolicMobilePill>
               </div>
             )}
@@ -576,6 +579,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                     date: w.date || '',
                     resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
                   })) as any}
+                  hideTrendPill
                 />
               </div>
             )}
@@ -605,6 +609,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                         date: w.date || '',
                         visceral_fat_level: (w.fields?.visceral_fat_level ?? null)
                       })) as any}
+                      hideTrendPill
                     />
                   </div>
                 )}
@@ -616,6 +621,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                         date: w.date || '',
                         subcutaneous_fat_level: (w.fields?.subcutaneous_fat_level ?? null)
                       })) as any}
+                      hideTrendPill
                     />
                   </div>
                 )}
@@ -627,6 +633,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                         date: w.date || '',
                         belly_fat_percent: (w.fields?.belly_fat_percent ?? null)
                       })) as any}
+                      hideTrendPill
                     />
                   </div>
                 )}
@@ -638,6 +645,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                         date: w.date || '',
                         total_muscle_mass_percent: (w.fields?.total_muscle_mass_percent ?? null)
                       })) as any}
+                      hideTrendPill
                     />
                   </div>
                 )}
@@ -660,6 +668,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
               >
                 <NutritionComplianceChart
                   data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
+                  hideTrendPill
                 />
               </AliasNutritionMobilePill>
             )}
@@ -677,6 +686,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                       initial_weight: (w.fields?.initial_weight ?? null)
                     })) as any}
                     unitSystem={unitSystem}
+                    hideTrendPill
                   />
                 </AliasWeightProjectionMobilePill>
               </div>
@@ -695,6 +705,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                       weight: (w.fields?.weight ?? null)
                     })) as any}
                     unitSystem={unitSystem}
+                    hideTrendPill
                   />
                 </AliasWeightTrendMobilePill>
               </div>
@@ -728,6 +739,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                   hideAlwaysMeasureNote
                   compactHeader
                   hideDateInTooltip
+                  hideTrendPill
                 />
               </AliasWaistTrendMobilePill>
             )}
@@ -740,6 +752,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                   <WaistPlateauPreventionChart
                     data={(snapshot.derived.waistTrend || []).map(([week, value]) => ({ date: '', week_number: week, waist: value })) as any}
                     hideIndividualWeekFormula
+                    hideTrendPill
                   />
                 </AliasWaistPlateauMobilePill>
               </div>
@@ -749,7 +762,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
             {chartsEnabled.strainTrend && Array.isArray(snapshot.weeksRaw) && (snapshot.weeksRaw as any[]).length > 0 && (
               <div className="mt-4">
                 <AliasStrainMobilePill data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}>
-                  <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} />
+                  <StrainGoalMetChart data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any} hideTrendPill />
                 </AliasStrainMobilePill>
               </div>
             )}
@@ -763,6 +776,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                     date: w.date || '',
                     resting_heart_rate: (w.fields?.resting_heart_rate ?? null)
                   })) as any}
+                  hideTrendPill
                 />
               </div>
             )}
@@ -790,6 +804,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                     date: w.date || '',
                     sleep_consistency_score: (w.fields?.sleep_consistency_score ?? null)
                   })) as any}
+                  hideTrendPill
                 />
               </AliasSleepMobilePill>
             )}
@@ -801,6 +816,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 >
                   <NutritionComplianceChart
                     data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', nutrition_compliance_days: (w.fields?.nutrition_compliance_days ?? null) })) as any}
+                    hideTrendPill
                   />
                 </AliasNutritionMobilePill>
               </div>
@@ -813,6 +829,7 @@ export default function AliasStoryClient({ snapshot, shareSlug, pageType = 'alia
                 >
                   <StrainGoalMetChart
                     data={(snapshot.weeksRaw || []).map((w: any) => ({ week_number: w.week_number, date: '', purposeful_exercise_days: (w.fields?.purposeful_exercise_days ?? null) })) as any}
+                    hideTrendPill
                   />
                 </AliasStrainMobilePill>
               </div>

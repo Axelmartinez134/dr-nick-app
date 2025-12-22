@@ -7,9 +7,11 @@ import { useState, useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface SleepConsistencyChartProps {
   data: WeeklyCheckin[]
+  hideTrendPill?: boolean
 }
 
 // Chart Tooltip Component
@@ -38,7 +40,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function SleepConsistencyChart({ data }: SleepConsistencyChartProps) {
+export default function SleepConsistencyChart({ data, hideTrendPill = false }: SleepConsistencyChartProps) {
   // Process sleep data
   const chartData = data
     .filter(entry => {
@@ -107,6 +109,10 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
     
     return [Math.max(0, minValue - padding), Math.min(100, maxValue + padding)]
   }
+
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.sleepScore === 'number' && d.sleepScore !== null && !Number.isNaN(d.sleepScore as number)).length
+  }, [chartData])
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -191,7 +197,7 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip 
           title="Sleep Consistency" 
           description="Sleep quality and recovery biometrics showing your rest patterns. Sleep consistency measures how similar your bed and wake times are over a 4-day period. It's scored on a 0-100% scale where 'low' is under 70%, 'moderate' is between 70% and 80%, and 'high' is 80%+. Consistent sleep-wake times regulate your internal clock, improving sleep quality, metabolism, and immune function."
@@ -200,10 +206,19 @@ export default function SleepConsistencyChart({ data }: SleepConsistencyChartPro
             😴 Sleep Consistency Score
           </h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">
-          Weekly sleep quality scores from biometric analysis (added by Dr. Nick)
-        </p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={validPointCount}
+            insufficientThreshold={2}
+            orientation="positiveGood"
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600">
+        Weekly sleep quality scores from biometric analysis (added by Dr. Nick)
+      </p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

@@ -5,11 +5,14 @@
 import { useMemo, useState } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
+import { calculateLinearRegression } from '../regressionUtils'
+import TrendPill from './common/TrendPill'
 
 interface WaistPlateauPreventionChartProps {
   data: WeeklyCheckin[]
   hideIndividualWeekFormula?: boolean
   visibleStartWeek?: number
+  hideTrendPill?: boolean
 }
 
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -30,7 +33,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFormula = false, visibleStartWeek }: WaistPlateauPreventionChartProps) {
+export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFormula = false, visibleStartWeek, hideTrendPill = false }: WaistPlateauPreventionChartProps) {
   // Build ordered waist data
   const allWeeks = useMemo(() => {
     return (data || [])
@@ -132,6 +135,23 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
     return displayChartData.map(p => ({ ...p, trendLine: averageLineResult.averageValue }))
   }, [displayChartData, averageLineResult])
 
+  // Regression for pill classification on visible window
+  const regressionResult = useMemo(() => {
+    const valid = displayChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null && !Number.isNaN(d.lossRate as number))
+    if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [], equation: '' }
+    const minWeek = Math.min(...displayChartData.map(d => d.week))
+    const maxWeek = Math.max(...displayChartData.map(d => d.week))
+    return calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.lossRate as number })), minWeek, maxWeek)
+  }, [displayChartData])
+
+  // Prepare interval values for hover titleOverride (cap 80 terms)
+  const intervalSummary = useMemo(() => {
+    const start = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
+    const vals = individualLosses.filter(r => r.week >= start).map(r => r.individualLoss)
+    const intervalsUsed = vals.length
+    return { vals, intervalsUsed }
+  }, [individualLosses, visibleStartWeek])
+
   const calculateYAxisDomain = () => {
     const values: number[] = []
     displayChartData.forEach(d => { if (d.lossRate !== null && d.lossRate !== undefined && !isNaN(d.lossRate)) values.push(d.lossRate) })
@@ -188,12 +208,32 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-      <div className="mb-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip title="Plateau Prevention (Waist)" description="Tracks week‑to‑week waist loss % to identify plateaus early. Declining trends toward 0% may signal adjustments are needed.">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors">📉 Plateau Prevention (Waist Loss Rate)</h3>
         </ChartTooltip>
-        <p className="text-sm text-gray-600">Average weekly waist loss percentage using progressive/rolling averaging</p>
+        {!hideTrendPill && (
+          <TrendPill
+            slope={regressionResult.slope || 0}
+            intercept={regressionResult.intercept || 0}
+            pointsCount={intervalSummary.intervalsUsed}
+            insufficientThreshold={1}
+            orientation="negativeGood"
+            titleOverride={averageLineResult.isValid ? (() => {
+              const vals = intervalSummary.vals.map(v => `${v.toFixed(2)}%`)
+              let terms = vals
+              if (vals.length > 80) {
+                const head = vals.slice(0, 40)
+                const tail = vals.slice(-40)
+                terms = [...head, '…', ...tail]
+              }
+              const avgText = averageLineResult.isValid ? averageLineResult.averageValue.toFixed(2) : '0.00'
+              return `Avg = (${terms.join(' + ')}) ÷ ${intervalSummary.intervalsUsed} = ${avgText}%`
+            })() : undefined}
+          />
+        )}
       </div>
+      <p className="text-sm text-gray-600">Average weekly waist loss percentage using progressive/rolling averaging</p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
