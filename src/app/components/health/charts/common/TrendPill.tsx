@@ -24,6 +24,7 @@ interface TrendPillProps {
   decimals?: number
   className?: string
   hidden?: boolean
+  titleOverride?: string
 }
 
 export default function TrendPill({
@@ -37,6 +38,7 @@ export default function TrendPill({
   decimals = 2,
   className,
   hidden = false,
+  titleOverride,
 }: TrendPillProps) {
   const [open, setOpen] = useState(false)
 
@@ -79,7 +81,10 @@ export default function TrendPill({
 
   const m = Number(slope).toFixed(decimals)
   const b = Number(intercept).toFixed(decimals)
-  const title = pointsCount >= insufficientThreshold ? `y = ${m}x + ${b}` : labelTexts.insufficient
+  const defaultTitle = `y = ${m}x + ${b}`
+  const title = pointsCount >= insufficientThreshold
+    ? (titleOverride ?? defaultTitle)
+    : labelTexts.insufficient
 
   return (
     <div className={`relative inline-block ${className ?? ''}`}>

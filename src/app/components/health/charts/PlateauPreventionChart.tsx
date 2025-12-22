@@ -130,10 +130,11 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
       .filter(entry => entry.weight !== null && entry.weight !== undefined)
       .sort((a, b) => a.week_number - b.week_number)
 
-    if (sortedAll.length < 2) return { isValid: false, averageValue: 0 }
+    if (sortedAll.length < 2) return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
 
     let sum = 0
     let intervals = 0
+    const intervalValues: number[] = []
     for (let i = 1; i < sortedAll.length; i++) {
       const curr = sortedAll[i]
       const prev = sortedAll[i - 1]
@@ -145,16 +146,19 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
           if (typeof visibleStartWeek !== 'number' || curr.week_number >= visibleStartWeek) {
             sum += individualLoss
             intervals++
+            intervalValues.push(individualLoss)
           }
         }
       }
     }
 
-    if (intervals < 1) return { isValid: false, averageValue: 0 }
+    if (intervals < 1) return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
     const averageValue = sum / intervals
     return {
       isValid: true,
-      averageValue: Math.round(averageValue * 100) / 100
+      averageValue: Math.round(averageValue * 100) / 100,
+      intervalsUsed: intervals,
+      intervalValues
     }
   }, [data, visibleStartWeek])
 
@@ -289,6 +293,17 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
             pointsCount={displayChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null).length}
             insufficientThreshold={1}
             orientation="negativeGood"
+            titleOverride={averageLineResult.isValid ? (() => {
+              const vals = (averageLineResult.intervalValues as number[]).map(v => `${v.toFixed(2)}%`)
+              let terms = vals
+              if (vals.length > 80) {
+                const head = vals.slice(0, 40)
+                const tail = vals.slice(-40)
+                terms = [...head, '…', ...tail]
+              }
+              const termsStr = terms.join(' + ')
+              return `Avg = (${termsStr}) ÷ ${averageLineResult.intervalsUsed} = ${averageLineResult.averageValue.toFixed(2)}%`
+            })() : undefined}
           />
         )}
       </div>

@@ -15,6 +15,7 @@ interface WeightProjectionChartProps {
   initialWeek0Weight?: number | null
   maxWeek?: number | null
   hideTrendPill?: boolean
+  visibleStartWeek?: number
 }
 
 // Chart Tooltip Component
@@ -46,7 +47,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 import { poundsToKilograms } from '../unitCore'
 import TrendPill from './common/TrendPill'
 
-export default function WeightProjectionChart({ data, unitSystem = 'imperial', initialWeek0Weight, maxWeek, hideTrendPill = false }: WeightProjectionChartProps) {
+export default function WeightProjectionChart({ data, unitSystem = 'imperial', initialWeek0Weight, maxWeek, hideTrendPill = false, visibleStartWeek }: WeightProjectionChartProps) {
   // MOVE ALL HOOKS TO THE TOP - Fix React Rules of Hooks violation
   
   // Process actual weight data - using useMemo to fix dependency warning
@@ -77,17 +78,29 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
       return { initialWeight: null, chartData: [] }
     }
 
-    // Calculate fixed X extent: prefer anchored maxWeek, else fall back to latest actual (min 16)
-    const latestActualWeek = actualWeightData.length > 0 ? Math.max(...actualWeightData.map(d => d.week)) : 0
-    const xMax = (typeof maxWeek === 'number' && maxWeek !== null)
-      ? maxWeek
-      : Math.max(16, latestActualWeek)
+    // Determine visible X range (tie to time range)
+    const startWeek = typeof visibleStartWeek === 'number' ? visibleStartWeek : (actualWeightData.length > 0 ? Math.min(...actualWeightData.map(d => d.week)) : 0)
+    const latestActualWeek = actualWeightData.length > 0 ? Math.max(...actualWeightData.map(d => d.week)) : startWeek
+    const xMax = latestActualWeek
 
-    // Generate projection data over fixed X extent
-    const projections = generateWeightProjections(baselineInitial, xMax)
+    // Generate full projections from baseline (week 0) so we can read the anchor at startWeek
+    const baseProjections = generateWeightProjections(baselineInitial, xMax)
     const chartData: any[] = []
 
-  for (let week = 0; week <= xMax; week++) {
+  // Precompute anchor-at-start for each projection rate (model-consistent)
+  const projectionRates = [0.5, 1.0, 1.5, 2.0]
+  // Prefer actual weight at startWeek if present (actual-anchored); otherwise fall back to model-consistent anchor
+  const actualAtStart = actualWeightData.find(d => d.week === startWeek)?.actualWeight
+  const anchorsAtStart = projectionRates.map((rate, idx) => {
+    if (typeof actualAtStart === 'number' && Number.isFinite(actualAtStart)) {
+      return actualAtStart
+    }
+    const series = baseProjections[idx]
+    const pt = series.data.find(p => p.week === startWeek)
+    return pt ? pt.weight : baselineInitial
+  })
+
+  for (let week = startWeek; week <= xMax; week++) {
     const dataPoint: any = { week }
     
     // Add actual weight if available
@@ -96,19 +109,19 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
       dataPoint.actualWeight = actualData.actualWeight
     }
     
-    // Add projection data
-    projections.forEach((projection, index) => {
-      const projectionPoint = projection.data.find(p => p.week === week)
-      if (projectionPoint) {
-        dataPoint[`projection${index}`] = projectionPoint.weight
-      }
+    // Add projection data re-anchored at startWeek (model-consistent continuation)
+    projectionRates.forEach((rate, index) => {
+      const weeksFromStart = week - startWeek
+      const anchor = anchorsAtStart[index]
+      const projected = anchor * Math.pow(1 - rate / 100, weeksFromStart)
+      dataPoint[`projection${index}`] = projected
     })
     
     chartData.push(dataPoint)
     }
 
     return { initialWeight: baselineInitial, chartData }
-  }, [data, actualWeightData, initialWeek0Weight, maxWeek])
+  }, [data, actualWeightData, initialWeek0Weight, maxWeek, visibleStartWeek])
 
   // Calculate regression for actual weight trend line
   const regressionResult = useMemo(() => {
@@ -145,7 +158,6 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
     actualWeightData.forEach(d => {
       if (d.actualWeight !== null && d.actualWeight !== undefined) {
         allValues.push(d.actualWeight)
-        console.log('Adding actual weight:', d.actualWeight, 'from week:', d.week)
       }
     })
     
@@ -154,14 +166,9 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
       ['projection0', 'projection1', 'projection2', 'projection3'].forEach(key => {
         if (point[key] !== null && point[key] !== undefined) {
           allValues.push(point[key])
-          console.log('Adding projection value:', point[key], 'from week:', point.week, 'type:', key)
         }
       })
     })
-    
-    console.log('All Y-axis values:', allValues)
-    console.log('Min value:', Math.min(...allValues))
-    console.log('Max value:', Math.max(...allValues))
     
     if (allValues.length === 0) return [0, 100]
     
@@ -237,6 +244,25 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
             pointsCount={actualWeightData.length}
             insufficientThreshold={1}
             orientation="negativeGood"
+            titleOverride={(() => {
+              const pts = actualWeightData
+              const n = pts.length
+              if (n < 2) return undefined
+              const meanX = pts.reduce((s, p) => s + p.week, 0) / n
+              const meanY = pts.reduce((s, p) => s + (p.actualWeight as number), 0) / n
+              let sxx = 0
+              let sxy = 0
+              for (const p of pts) {
+                const dx = p.week - meanX
+                const dy = (p.actualWeight as number) - meanY
+                sxx += dx * dx
+                sxy += dx * dy
+              }
+              const m = sxx !== 0 ? (sxy / sxx) : 0
+              const b = meanY - m * meanX
+              const f = (v: number) => Number(v).toFixed(2)
+              return `n=${n} • x_mean=${f(meanX)} • y_mean=${f(meanY)} • Sxx=${f(sxx)} • Sxy=${f(sxy)} • m=Sxy/Sxx=${f(m)} • b=y_mean−m·x_mean=${f(b)} • Final: y=${f(m)}x+${f(b)}`
+            })()}
           />
         )}
       </div>

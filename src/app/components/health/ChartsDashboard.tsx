@@ -2750,6 +2750,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             unitSystem={unitSystem}
             initialWeek0Weight={stats.initialWeight || null}
             maxWeek={stats.currentWeek}
+            visibleStartWeek={rangeStart ?? undefined as any}
           />
           <PlateauPreventionChart 
             data={(rangeStart !== null && rangeEnd !== null) 
