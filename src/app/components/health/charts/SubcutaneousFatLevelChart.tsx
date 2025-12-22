@@ -102,6 +102,20 @@ export default function SubcutaneousFatLevelChart({ data, hideTrendPill = false 
     return null
   }
 
+  const xMin = chartData.length > 0 ? Math.min(...chartData.map(d => d.week)) : 0
+  const xMax = chartData.length > 0 ? Math.max(...chartData.map(d => d.week)) : 0
+  const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
+
+  const regressionResult = useMemo(() => {
+    const valid = chartData.filter(d => typeof d.level === 'number' && d.level !== null && !Number.isNaN(d.level as number))
+    if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [] as Array<{ week: number; value: number }>, equation: '' }
+    return calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.level as number })), xMin, xMax)
+  }, [chartData, xMin, xMax])
+
+  const validPointCount = useMemo(() => {
+    return chartData.filter(d => typeof d.level === 'number' && d.level !== null && !Number.isNaN(d.level as number)).length
+  }, [chartData])
+
   if (chartData.length === 0) {
     return (
       <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
@@ -114,20 +128,6 @@ export default function SubcutaneousFatLevelChart({ data, hideTrendPill = false 
       </div>
     )
   }
-
-  const xMin = Math.min(...chartData.map(d => d.week))
-  const xMax = Math.max(...chartData.map(d => d.week))
-  const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
-
-  const regressionResult = useMemo(() => {
-    const valid = chartData.filter(d => typeof d.level === 'number' && d.level !== null && !Number.isNaN(d.level as number))
-    if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [] as Array<{ week: number; value: number }>, equation: '' }
-    return calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.level as number })), xMin, xMax)
-  }, [chartData, xMin, xMax])
-
-  const validPointCount = useMemo(() => {
-    return chartData.filter(d => typeof d.level === 'number' && d.level !== null && !Number.isNaN(d.level as number)).length
-  }, [chartData])
 
   return (
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">

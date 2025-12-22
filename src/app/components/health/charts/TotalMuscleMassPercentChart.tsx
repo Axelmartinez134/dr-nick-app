@@ -109,8 +109,8 @@ export default function TotalMuscleMassPercentChart({ data, hideTrendPill = fals
     )
   }
 
-  const xMin = Math.min(...chartData.map(d => d.week))
-  const xMax = Math.max(...chartData.map(d => d.week))
+  const xMin = chartData.length > 0 ? Math.min(...chartData.map(d => d.week)) : 0
+  const xMax = chartData.length > 0 ? Math.max(...chartData.map(d => d.week)) : 0
   const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
 
   const regressionResult = useMemo(() => {
