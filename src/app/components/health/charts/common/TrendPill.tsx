@@ -45,8 +45,8 @@ export default function TrendPill({
   if (hidden) return null
 
   const labelTexts = {
-    good: labels?.good ?? 'Trending Good',
-    bad: labels?.bad ?? 'Trending Bad',
+    good: labels?.good ?? 'Trending Well',
+    bad: labels?.bad ?? 'Trending Poorly',
     flat: labels?.flat ?? 'Trending Flat',
     insufficient: labels?.insufficient ?? 'Insufficient data',
   }

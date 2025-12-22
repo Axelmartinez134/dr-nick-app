@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { WeeklyCheckin, generateWeightProjections } from '../healthService'
 import { calculateLinearRegression, mergeDataWithTrendLine } from '../regressionUtils'
@@ -21,9 +21,18 @@ interface WeightProjectionChartProps {
 // Chart Tooltip Component
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   const [isVisible, setIsVisible] = useState(false)
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null)
+  const triggerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (isVisible && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setCoords({ top: rect.top - 8, left: rect.left })
+    }
+  }, [isVisible])
 
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block" ref={triggerRef}>
       <div
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
@@ -31,14 +40,26 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
       >
         {children}
       </div>
-      
-      {isVisible && (
-        <div className="absolute z-50 w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg -top-2 left-0 transform -translate-y-full">
-          <div className="font-medium mb-1">{title}</div>
-          <div className="text-gray-300">{description}</div>
-          {/* Arrow pointing down */}
-          <div className="absolute top-full left-6 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900"></div>
-        </div>
+      {isVisible && coords && createPortal(
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9998,
+              background: 'rgba(0,0,0,0.001)',
+              pointerEvents: 'none'
+            }}
+          />
+          <div
+            style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999, transform: 'translateY(-100%)' }}
+            className="w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg"
+          >
+            <div className="font-medium mb-1">{title}</div>
+            <div className="text-gray-300">{description}</div>
+          </div>
+        </>,
+        document.body
       )}
     </div>
   )
