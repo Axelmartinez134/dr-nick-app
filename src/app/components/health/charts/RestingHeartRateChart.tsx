@@ -31,21 +31,10 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 export default function RestingHeartRateChart({ data, hideTrendPill = false }: RestingHeartRateChartProps) {
   const weeks = data.map(d => d.week_number)
-  if (weeks.length === 0) {
-    return (
-      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-        <ChartTooltip title="Resting Heart Rate" description="Acts as a key indicator of cardiovascular fitness; lower is generally better.">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-rose-600 transition-colors">❤️ Resting Heart Rate</h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No resting heart rate data yet</p>
-        </div>
-      </div>
-    )
-  }
+  const hasWeeks = weeks.length > 0
 
-  const minWeek = Math.min(...weeks)
-  const maxWeek = Math.max(...weeks)
+  const minWeek = hasWeeks ? Math.min(...weeks) : 0
+  const maxWeek = hasWeeks ? Math.max(...weeks) : 0
   const byWeek: Record<number, { bpm: number | null; date?: string | null }> = {}
   data.forEach(entry => {
     const raw = (entry as any).resting_heart_rate
@@ -56,9 +45,11 @@ export default function RestingHeartRateChart({ data, hideTrendPill = false }: R
     }
   })
   const chartData: Array<{ week: number; bpm: number | null; date?: string }> = []
-  for (let w = minWeek; w <= maxWeek; w++) {
-    const rec = byWeek[w] || { bpm: null, date: null }
-    chartData.push({ week: w, bpm: rec.bpm, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
+  if (hasWeeks) {
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const rec = byWeek[w] || { bpm: null, date: null }
+      chartData.push({ week: w, bpm: rec.bpm, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
+    }
   }
 
   const yAxisDomain = (() => {
@@ -103,6 +94,19 @@ export default function RestingHeartRateChart({ data, hideTrendPill = false }: R
   const xMin = Math.min(...chartData.map(d => d.week))
   const xMax = Math.max(...chartData.map(d => d.week))
   const xTicks = (() => { const arr: number[] = []; for (let w = xMin; w <= xMax; w++) arr.push(w); return arr })()
+
+  if (chartData.length === 0) {
+    return (
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
+        <ChartTooltip title="Resting Heart Rate" description="Acts as a key indicator of cardiovascular fitness; lower is generally better.">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-rose-600 transition-colors">❤️ Resting Heart Rate</h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No resting heart rate data yet</p>
+        </div>
+      </div>
+    )
+  }
 
   const regressionResult = useMemo(() => {
     const valid = chartData.filter(d => typeof d.bpm === 'number' && d.bpm !== null && !Number.isNaN(d.bpm as number))

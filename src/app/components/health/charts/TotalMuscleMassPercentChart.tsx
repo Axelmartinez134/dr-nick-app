@@ -31,21 +31,10 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 export default function TotalMuscleMassPercentChart({ data, hideTrendPill = false }: TotalMuscleMassPercentChartProps) {
   const weeks = data.map(d => d.week_number)
-  if (weeks.length === 0) {
-    return (
-      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-        <ChartTooltip title="Total Muscle Mass %" description="Measures your percentage of muscle — crucial for a healthy metabolism and strength.">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">💪 Total Muscle Mass %</h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No muscle mass % data yet</p>
-        </div>
-      </div>
-    )
-  }
+  const hasWeeks = weeks.length > 0
 
-  const minWeek = Math.min(...weeks)
-  const maxWeek = Math.max(...weeks)
+  const minWeek = hasWeeks ? Math.min(...weeks) : 0
+  const maxWeek = hasWeeks ? Math.max(...weeks) : 0
   const byWeek: Record<number, { percent: number | null; date?: string | null }> = {}
   data.forEach(entry => {
     const raw = (entry as any).total_muscle_mass_percent
@@ -56,9 +45,11 @@ export default function TotalMuscleMassPercentChart({ data, hideTrendPill = fals
     }
   })
   const chartData: Array<{ week: number; percent: number | null; date?: string }> = []
-  for (let w = minWeek; w <= maxWeek; w++) {
-    const rec = byWeek[w] || { percent: null, date: null }
-    chartData.push({ week: w, percent: rec.percent, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
+  if (hasWeeks) {
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const rec = byWeek[w] || { percent: null, date: null }
+      chartData.push({ week: w, percent: rec.percent, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
+    }
   }
 
   const yAxisDomain = (() => {
@@ -103,6 +94,19 @@ export default function TotalMuscleMassPercentChart({ data, hideTrendPill = fals
       )
     }
     return null
+  }
+
+  if (chartData.length === 0) {
+    return (
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
+        <ChartTooltip title="Total Muscle Mass %" description="Measures your percentage of muscle — crucial for a healthy metabolism and strength.">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">💪 Total Muscle Mass %</h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No muscle mass % data yet</p>
+        </div>
+      </div>
+    )
   }
 
   const xMin = Math.min(...chartData.map(d => d.week))

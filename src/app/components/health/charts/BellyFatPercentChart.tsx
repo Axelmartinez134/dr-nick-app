@@ -31,29 +31,10 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 export default function BellyFatPercentChart({ data, hideTrendPill = false }: BellyFatPercentChartProps) {
   const weeks = data.map(d => d.week_number)
-  if (weeks.length === 0) {
-    return (
-      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-        <ChartTooltip title="Belly Fat %" description="Accurately measures fat density in your abdominal region — a key indicator of health.">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-yellow-600 transition-colors">🧬 Belly Fat %</h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No belly fat percentage data yet</p>
-        </div>
-        <div className="mt-4">
-          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
-            <li>Measures abdominal fat density — a key indicator of metabolic health.</li>
-            <li>Targets progress in a primary area of concern for many clients.</li>
-            <li>More precise than total body fat for tracking abdominal-specific change.</li>
-            <li>Scale of 0–100% where lower is better.</li>
-          </ul>
-        </div>
-      </div>
-    )
-  }
+  const hasWeeks = weeks.length > 0
 
-  const minWeek = Math.min(...weeks)
-  const maxWeek = Math.max(...weeks)
+  const minWeek = hasWeeks ? Math.min(...weeks) : 0
+  const maxWeek = hasWeeks ? Math.max(...weeks) : 0
   const byWeek: Record<number, { value: number | null; date?: string | null }> = {}
   data.forEach(entry => {
     const raw = (entry as any).belly_fat_percent
@@ -64,9 +45,11 @@ export default function BellyFatPercentChart({ data, hideTrendPill = false }: Be
     }
   })
   const chartData: Array<{ week: number; percent: number | null; date?: string }> = []
-  for (let w = minWeek; w <= maxWeek; w++) {
-    const rec = byWeek[w] || { value: null, date: null }
-    chartData.push({ week: w, percent: rec.value, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
+  if (hasWeeks) {
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const rec = byWeek[w] || { value: null, date: null }
+      chartData.push({ week: w, percent: rec.value, date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined })
+    }
   }
 
   const yAxisDomain = (() => {
@@ -111,6 +94,19 @@ export default function BellyFatPercentChart({ data, hideTrendPill = false }: Be
       )
     }
     return null
+  }
+
+  if (chartData.length === 0) {
+    return (
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
+        <ChartTooltip title="Belly Fat %" description="Accurately measures fat density in your abdominal region — a key indicator of health.">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-yellow-600 transition-colors">🧬 Belly Fat %</h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No belly fat percentage data yet</p>
+        </div>
+      </div>
+    )
   }
 
   const xMin = Math.min(...chartData.map(d => d.week))

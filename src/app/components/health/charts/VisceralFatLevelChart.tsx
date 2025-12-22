@@ -31,30 +31,10 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 
 export default function VisceralFatLevelChart({ data, hideTrendPill = false }: VisceralFatLevelChartProps) {
   // Build continuous week series with nulls when missing
-  if (!data || data.length === 0) {
-    return (
-      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-        <ChartTooltip title="Visceral Fat Level" description="Tracks the dangerous, hidden fat surrounding your internal organs that is linked to metabolic health risks. Decreasing trend indicates reducing risk for metabolic syndrome and other chronic diseases.">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-blue-600 transition-colors">🧬 Visceral Fat Level</h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No visceral fat data yet</p>
-        </div>
-        <div className="mt-4">
-          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
-            <li>Tracks hidden visceral fat around internal organs linked to metabolic risk.</li>
-            <li>A decreasing trend indicates lower risk of metabolic syndrome and chronic disease.</li>
-            <li>Provides an actionable score to monitor and maintain internal health.</li>
-            <li>Scale of 0–10 where lower is better.</li>
-          </ul>
-        </div>
-      </div>
-    )
-  }
-
   const weeks = data.map(d => d.week_number)
-  const minWeek = Math.min(...weeks)
-  const maxWeek = Math.max(...weeks)
+  const hasWeeks = weeks.length > 0
+  const minWeek = hasWeeks ? Math.min(...weeks) : 0
+  const maxWeek = hasWeeks ? Math.max(...weeks) : 0
 
   const byWeek: Record<number, { value: number | null; date?: string | null }> = {}
   data.forEach(entry => {
@@ -66,13 +46,15 @@ export default function VisceralFatLevelChart({ data, hideTrendPill = false }: V
     }
   })
   const chartData: Array<{ week: number; level: number | null; date?: string }> = []
-  for (let w = minWeek; w <= maxWeek; w++) {
-    const rec = byWeek[w] || { value: null, date: null }
-    chartData.push({
-      week: w,
-      level: rec.value,
-      date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
-    })
+  if (hasWeeks) {
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const rec = byWeek[w] || { value: null, date: null }
+      chartData.push({
+        week: w,
+        level: rec.value,
+        date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
+      })
+    }
   }
 
   const yAxisDomain = (() => {

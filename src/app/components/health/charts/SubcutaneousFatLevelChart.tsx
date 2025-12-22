@@ -30,30 +30,10 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
 }
 
 export default function SubcutaneousFatLevelChart({ data, hideTrendPill = false }: SubcutaneousFatLevelChartProps) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
-        <ChartTooltip title="Subcutaneous Fat Level" description="Measures the layer of fat just beneath your skin, giving a more complete body composition picture.">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-emerald-600 transition-colors">🧬 Subcutaneous Fat Level</h3>
-        </ChartTooltip>
-        <div className="text-center py-8 text-gray-500">
-          <p>No subcutaneous fat data yet</p>
-        </div>
-        <div className="mt-4">
-          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
-            <li>Measures the fat layer beneath your skin to complete your composition picture.</li>
-            <li>Compares abdominal subcutaneous fat relative to typical population averages.</li>
-            <li>Helps track visible changes not always reflected by scale weight.</li>
-            <li>Scale of 0–10 where lower is better.</li>
-          </ul>
-        </div>
-      </div>
-    )
-  }
-
   const weeks = data.map(d => d.week_number)
-  const minWeek = Math.min(...weeks)
-  const maxWeek = Math.max(...weeks)
+  const hasWeeks = weeks.length > 0
+  const minWeek = hasWeeks ? Math.min(...weeks) : 0
+  const maxWeek = hasWeeks ? Math.max(...weeks) : 0
 
   const byWeek: Record<number, { value: number | null; date?: string | null }> = {}
   data.forEach(entry => {
@@ -65,13 +45,15 @@ export default function SubcutaneousFatLevelChart({ data, hideTrendPill = false 
     }
   })
   const chartData: Array<{ week: number; level: number | null; date?: string }> = []
-  for (let w = minWeek; w <= maxWeek; w++) {
-    const rec = byWeek[w] || { value: null, date: null }
-    chartData.push({
-      week: w,
-      level: rec.value,
-      date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
-    })
+  if (hasWeeks) {
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const rec = byWeek[w] || { value: null, date: null }
+      chartData.push({
+        week: w,
+        level: rec.value,
+        date: rec.date ? new Date(rec.date).toLocaleDateString() : undefined
+      })
+    }
   }
 
   const yAxisDomain = (() => {
@@ -118,6 +100,19 @@ export default function SubcutaneousFatLevelChart({ data, hideTrendPill = false 
       )
     }
     return null
+  }
+
+  if (chartData.length === 0) {
+    return (
+      <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
+        <ChartTooltip title="Subcutaneous Fat Level" description="Measures the layer of fat just beneath your skin, giving a more complete body composition picture.">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-emerald-600 transition-colors">🧬 Subcutaneous Fat Level</h3>
+        </ChartTooltip>
+        <div className="text-center py-8 text-gray-500">
+          <p>No subcutaneous fat data yet</p>
+        </div>
+      </div>
+    )
   }
 
   const xMin = Math.min(...chartData.map(d => d.week))
