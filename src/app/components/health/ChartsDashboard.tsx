@@ -995,7 +995,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Weight (${getWeightUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Waist (${getLengthUnitLabel(unitSystem)})`}</th>
-              {isDoctorView && tracksBP && (
+              {tracksBP && (
                 <>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Systolic (mmHg)</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Diastolic (mmHg)</th>
@@ -1072,7 +1072,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'waist', record.waist)}
                 </td>
-                {isDoctorView && tracksBP && (
+                {tracksBP && (
                   <>
                     <td className="px-4 py-3 text-sm text-gray-900">
                       {renderCell(record, 'systolic_bp', (record as any).systolic_bp)}

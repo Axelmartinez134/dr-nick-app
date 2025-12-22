@@ -1765,39 +1765,14 @@ export default function HealthForm() {
                 step="1"
                 value={(formData as any).resting_heart_rate || ''}
                 onChange={(e) => handleInputChange('resting_heart_rate' as any, e.target.value)}
-                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                className="w-full p-2 fbor der rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
                 placeholder="e.g., 62"
               />
             </div>
           </div>
         </div>
 
-        {/* Body Fat % - Always visible for Nutraceutical clients (independent of Body Composition toggle) */}
-        {isNutraceutical && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">📉 Body Fat %</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="body_fat_percentage" className="block text-sm font-medium text-gray-700 mb-1">
-                Body Fat Percentage (%)
-              </label>
-              <input
-                type="number"
-                id="body_fat_percentage"
-                step="0.01"
-                min="0"
-                max="100"
-                value={(formData as any).body_fat_percentage || ''}
-                onChange={(e) => handleInputChange('body_fat_percentage' as any, e.target.value)}
-                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
-                placeholder="e.g., 28.5"
-              />
-            </div>
-          </div>
-        </div>
-        )}
-        
-        {/* Blood Pressure (mmHg) - Only when tracking is enabled */}
+        {/* Blood Pressure (mmHg) - Only when tracking is enabled (moved above Body Fat %) */}
         {tracksBP && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🩺 Blood Pressure (mmHg)</h3>
@@ -1828,6 +1803,31 @@ export default function HealthForm() {
                 onChange={(e) => handleInputChange('diastolic_bp' as any, e.target.value)}
                 className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
                 placeholder="80"
+              />
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Body Fat % - Always visible for Nutraceutical clients (independent of Body Composition toggle) */}
+        {isNutraceutical && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">📉 Body Fat %</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="body_fat_percentage" className="block text-sm font-medium text-gray-700 mb-1">
+                Body Fat Percentage (%)
+              </label>
+              <input
+                type="number"
+                id="body_fat_percentage"
+                step="0.01"
+                min="0"
+                max="100"
+                value={(formData as any).body_fat_percentage || ''}
+                onChange={(e) => handleInputChange('body_fat_percentage' as any, e.target.value)}
+                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
+                placeholder="e.g., 28.5"
               />
             </div>
           </div>
