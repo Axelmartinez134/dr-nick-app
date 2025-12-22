@@ -2751,7 +2751,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             initialWeek0Weight={stats.initialWeight || null}
             maxWeek={stats.currentWeek}
           />
-          <PlateauPreventionChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+          <PlateauPreventionChart 
+            data={(rangeStart !== null && rangeEnd !== null) 
+              ? chartData.filter(d => d.week_number >= Math.max((rangeStart as number) - 1, 0) && d.week_number <= (rangeEnd as number)) 
+              : chartData} 
+            visibleStartWeek={rangeStart ?? undefined as any}
+          />
         </div>
 
         {/* Row 2A: Weight Trend (Full Width) */}
@@ -2762,7 +2767,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         {/* Row 2B: Waist Charts (Left: Waist Trend, Right: Plateau Prevention) */}
         <div className="grid lg:grid-cols-2 gap-6">
           <WaistTrendChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} unitSystem={unitSystem} />
-          <WaistPlateauPreventionChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+          <WaistPlateauPreventionChart 
+            data={(rangeStart !== null && rangeEnd !== null) 
+              ? chartData.filter(d => d.week_number >= Math.max((rangeStart as number) - 1, 0) && d.week_number <= (rangeEnd as number)) 
+              : chartData} 
+            visibleStartWeek={rangeStart ?? undefined as any}
+          />
         </div>
 
         {/* Row 2.5: Blood Pressure Charts (conditional) */}

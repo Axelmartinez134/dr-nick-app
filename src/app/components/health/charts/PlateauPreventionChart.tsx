@@ -13,6 +13,7 @@ interface PlateauPreventionChartProps {
   data: WeeklyCheckin[]
   hideIndividualWeekFormula?: boolean
   hideTrendPill?: boolean
+  visibleStartWeek?: number
 }
 
 // Chart Tooltip Component
@@ -41,7 +42,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function PlateauPreventionChart({ data, hideIndividualWeekFormula = false, hideTrendPill = false }: PlateauPreventionChartProps) {
+export default function PlateauPreventionChart({ data, hideIndividualWeekFormula = false, hideTrendPill = false, visibleStartWeek }: PlateauPreventionChartProps) {
 
   // Process data to calculate plateau prevention using Dr. Nick's progressive averaging method
   const chartData = useMemo(() => {
@@ -106,8 +107,21 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
         weight: entry.weight
       }
     })
-    
-    return plateauPreventionData
+
+    // Normalize series to include week 0 placeholder (null) through max week seen
+    const weekNumbers = (data || []).map(w => w.week_number)
+    const maxWeek = weekNumbers.length > 0 ? Math.max(...weekNumbers) : 0
+    const normalized: Array<{ week: number; lossRate: number | null; individualLoss?: number; weight?: number }> = []
+    for (let w = 0; w <= maxWeek; w++) {
+      const found = plateauPreventionData.find(p => p.week === w)
+      normalized.push({
+        week: w,
+        lossRate: found ? found.lossRate : null,
+        individualLoss: found?.individualLoss,
+        weight: found?.weight
+      })
+    }
+    return normalized
   }, [data])
 
   // Calculate horizontal average line using Monday "overall_loss_rate_percent" method
@@ -116,11 +130,10 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
       .filter(entry => entry.weight !== null && entry.weight !== undefined)
       .sort((a, b) => a.week_number - b.week_number)
 
-    const maxWeekNumber = (data && data.length > 0) ? Math.max(...data.map(d => d.week_number)) : 0
-
-    if (maxWeekNumber <= 0 || sortedAll.length < 2) return { isValid: false, averageValue: 0 }
+    if (sortedAll.length < 2) return { isValid: false, averageValue: 0 }
 
     let sum = 0
+    let intervals = 0
     for (let i = 1; i < sortedAll.length; i++) {
       const curr = sortedAll[i]
       const prev = sortedAll[i - 1]
@@ -129,28 +142,36 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
         const currW = parseFloat(String(curr.weight))
         if (Number.isFinite(prevW) && Number.isFinite(currW) && prevW !== 0) {
           const individualLoss = ((prevW - currW) / prevW) * 100
-          sum += individualLoss
+          if (typeof visibleStartWeek !== 'number' || curr.week_number >= visibleStartWeek) {
+            sum += individualLoss
+            intervals++
+          }
         }
       }
     }
 
-    const averageValue = sum / maxWeekNumber
+    if (intervals < 1) return { isValid: false, averageValue: 0 }
+    const averageValue = sum / intervals
     return {
       isValid: true,
       averageValue: Math.round(averageValue * 100) / 100
     }
-  }, [data])
+  }, [data, visibleStartWeek])
+
+  // Filter series for display based on visibleStartWeek
+  const displayStart = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
+  const displayChartData = useMemo(() => chartData.filter(p => p.week >= displayStart), [chartData, displayStart])
 
   // Add horizontal average line to chart data
   const enhancedChartData = useMemo(() => {
-    if (!averageLineResult.isValid) return chartData.map(point => ({ ...point, trendLine: null }))
+    if (!averageLineResult.isValid) return displayChartData.map(point => ({ ...point, trendLine: null }))
     
     // Add the horizontal average line value to each data point
-    return chartData.map(point => ({
+    return displayChartData.map(point => ({
       ...point,
       trendLine: averageLineResult.averageValue
     }))
-  }, [chartData, averageLineResult])
+  }, [displayChartData, averageLineResult])
 
   // Regression over the plateau prevention series (lossRate vs week) for the visible range
   const regressionResult = useMemo(() => {
@@ -168,7 +189,7 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
     const allValues: number[] = []
     
     // Add actual loss rate values
-    chartData.forEach(d => {
+    displayChartData.forEach(d => {
       if (d.lossRate !== null && d.lossRate !== undefined && !isNaN(d.lossRate)) {
         allValues.push(d.lossRate)
       }
@@ -265,7 +286,7 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
           <TrendPill
             slope={regressionResult.slope || 0}
             intercept={regressionResult.intercept || 0}
-            pointsCount={chartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null).length}
+            pointsCount={displayChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null).length}
             insufficientThreshold={1}
             orientation="negativeGood"
           />

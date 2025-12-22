@@ -9,6 +9,7 @@ import { WeeklyCheckin } from '../healthService'
 interface WaistPlateauPreventionChartProps {
   data: WeeklyCheckin[]
   hideIndividualWeekFormula?: boolean
+  visibleStartWeek?: number
 }
 
 function ChartTooltip({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
@@ -29,7 +30,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
   )
 }
 
-export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFormula = false }: WaistPlateauPreventionChartProps) {
+export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFormula = false, visibleStartWeek }: WaistPlateauPreventionChartProps) {
   // Build ordered waist data
   const allWeeks = useMemo(() => {
     return (data || [])
@@ -88,23 +89,52 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
     })
   }, [individualLosses])
 
+  // Normalize to include a Week 0 placeholder (null) through max week seen,
+  // so the range slider can start at 0 without jumping the first plotted point.
+  const normalizedChartData = useMemo(() => {
+    const weekNumbers = (data || []).map(w => w.week_number)
+    const maxWeek = weekNumbers.length > 0 ? Math.max(...weekNumbers) : 0
+    const out: Array<{ week: number; lossRate: number | null; individualLoss?: number; waist?: number }> = []
+    for (let w = 0; w <= maxWeek; w++) {
+      const found = chartData.find(p => p.week === w)
+      out.push({
+        week: w,
+        lossRate: found ? (found.lossRate as number) : null,
+        individualLoss: found?.individualLoss,
+        waist: found?.waist
+      })
+    }
+    return out
+  }, [data, chartData])
+
   // Horizontal average line (overall average loss rate across available weeks)
   const averageLineResult = useMemo(() => {
-    const maxWeekNumber = allWeeks.length > 0 ? Math.max(...allWeeks.map(w => w.week_number)) : 0
-    if (maxWeekNumber <= 0 || individualLosses.length < 1) return { isValid: false, averageValue: 0 }
-    const total = individualLosses.reduce((sum, w) => sum + w.individualLoss, 0)
-    const avg = total / maxWeekNumber
+    if (individualLosses.length < 1) return { isValid: false, averageValue: 0 }
+    const start = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
+    let sum = 0
+    let intervals = 0
+    for (const row of individualLosses) {
+      if (row.week >= start) {
+        sum += row.individualLoss
+        intervals++
+      }
+    }
+    if (intervals < 1) return { isValid: false, averageValue: 0 }
+    const avg = sum / intervals
     return { isValid: true, averageValue: Math.round(avg * 10) / 10 }
-  }, [allWeeks, individualLosses])
+  }, [individualLosses, visibleStartWeek])
+
+  const displayStart = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
+  const displayChartData = useMemo(() => normalizedChartData.filter(p => p.week >= displayStart), [normalizedChartData, displayStart])
 
   const enhancedChartData = useMemo(() => {
-    if (!averageLineResult.isValid) return chartData.map(p => ({ ...p, trendLine: null }))
-    return chartData.map(p => ({ ...p, trendLine: averageLineResult.averageValue }))
-  }, [chartData, averageLineResult])
+    if (!averageLineResult.isValid) return displayChartData.map(p => ({ ...p, trendLine: null }))
+    return displayChartData.map(p => ({ ...p, trendLine: averageLineResult.averageValue }))
+  }, [displayChartData, averageLineResult])
 
   const calculateYAxisDomain = () => {
     const values: number[] = []
-    chartData.forEach(d => { if (d.lossRate !== null && d.lossRate !== undefined && !isNaN(d.lossRate)) values.push(d.lossRate) })
+    displayChartData.forEach(d => { if (d.lossRate !== null && d.lossRate !== undefined && !isNaN(d.lossRate)) values.push(d.lossRate) })
     if (values.length === 0) return [0, 5]
     const maxValue = Math.max(...values)
     const padding = Math.max(1, maxValue * 0.2)
