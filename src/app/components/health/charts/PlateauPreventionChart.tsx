@@ -31,7 +31,7 @@ function ChartTooltip({ title, description, children }: { title: string; descrip
       </div>
       
       {isVisible && (
-        <div className="absolute z-10 w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg -top-2 left-0 transform -translate-y-full">
+        <div className="absolute z-50 w-80 p-3 bg-gray-900 text-white text-sm rounded-lg shadow-lg -top-2 left-0 transform -translate-y-full">
           <div className="font-medium mb-1">{title}</div>
           <div className="text-gray-300">{description}</div>
           {/* Arrow pointing down */}
