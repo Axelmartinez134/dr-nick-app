@@ -10,6 +10,7 @@ import DrNickAdmin from './DrNickAdmin'
 import DrNickQueue, { QueueSubmission } from './DrNickQueue'
 import DrNickSubmissionReview from './DrNickSubmissionReview'
 import MarketingTab from './marketing/MarketingTab'
+import AICarouselPage from './marketing/ai-carousel/AICarouselPage'
 import ChatBotDemo from './ChatBotDemo'
 
 // Import QueueSubmission interface from DrNickQueue
@@ -270,6 +271,17 @@ export default function DrNickPatientDashboard() {
               }`}
             >
               🎬 Marketing
+            </button>
+
+            <button
+              onClick={() => setActiveTab('aiCarousel')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'aiCarousel'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              🎨 AI Carousels
             </button>
 
             <button
@@ -691,6 +703,11 @@ export default function DrNickPatientDashboard() {
       {/* Marketing Tab Content */}
       {activeTab === 'marketing' && (
         <MarketingTab />
+      )}
+
+      {/* AI Carousels Tab Content */}
+      {activeTab === 'aiCarousel' && (
+        <AICarouselPage />
       )}
 
       {activeTab === 'chatbot' && (

@@ -19,6 +19,9 @@ NEXT_PUBLIC_ADMIN_EMAIL=your_admin_email_here
 GROK_API_BASE_URL=https://api.x.ai/v1
 GROK_API_KEY=your_grok_api_key_here
 GROK_MODEL=grok-3-latest
+
+# Anthropic Claude API Configuration (for AI Carousel Generator)
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 ## **Database Configuration**
