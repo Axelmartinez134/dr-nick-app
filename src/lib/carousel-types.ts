@@ -6,11 +6,13 @@ export interface CarouselTextRequest {
   settings?: {
     backgroundColor?: string;
     textColor?: string;
+    includeImage?: boolean;
+    imagePrompt?: string;
   };
 }
 
 export interface TextLayoutDecision {
-  canvas: { width: 1080; height: 1080 };
+  canvas: { width: 1080; height: 1440 };
   headline: {
     x: number;
     y: number;
@@ -28,12 +30,20 @@ export interface TextLayoutDecision {
     textAlign: 'left' | 'center' | 'right';
     fontWeight: 'normal' | 'bold';
   };
+  image?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    scale: number;
+  };
   margins: { top: 60; right: 60; bottom: 60; left: 60 };
 }
 
 export interface LayoutResponse {
   success: boolean;
   layout?: TextLayoutDecision;
+  imageUrl?: string;
   error?: string;
 }
 

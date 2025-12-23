@@ -14,6 +14,8 @@ export default function CarouselInput({ onGenerate, loading, onClear }: Carousel
   const [body, setBody] = useState('');
   const [backgroundColor, setBackgroundColor] = useState('#ffffff');
   const [textColor, setTextColor] = useState('#000000');
+  const [includeImage, setIncludeImage] = useState(true);
+  const [imagePrompt, setImagePrompt] = useState('');
 
   const handleSubmit = () => {
     if (!headline.trim()) {
@@ -28,7 +30,12 @@ export default function CarouselInput({ onGenerate, loading, onClear }: Carousel
     onGenerate({
       headline: headline.trim(),
       body: body.trim(),
-      settings: { backgroundColor, textColor },
+      settings: { 
+        backgroundColor, 
+        textColor,
+        includeImage,
+        imagePrompt: imagePrompt.trim() || undefined,
+      },
     });
   };
 
@@ -37,6 +44,8 @@ export default function CarouselInput({ onGenerate, loading, onClear }: Carousel
     setBody('');
     setBackgroundColor('#ffffff');
     setTextColor('#000000');
+    setIncludeImage(true);
+    setImagePrompt('');
     if (onClear) onClear();
   };
 
@@ -121,6 +130,41 @@ export default function CarouselInput({ onGenerate, loading, onClear }: Carousel
             />
           </div>
         </div>
+      </div>
+
+      <div className="border-t pt-4">
+        <div className="flex items-center space-x-2 mb-3">
+          <input
+            type="checkbox"
+            id="includeImage"
+            checked={includeImage}
+            onChange={(e) => setIncludeImage(e.target.checked)}
+            disabled={loading}
+            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+          />
+          <label htmlFor="includeImage" className="text-sm font-medium text-gray-900">
+            🎨 Include AI-Generated Image
+          </label>
+        </div>
+
+        {includeImage && (
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-1">
+              Custom Image Prompt (optional)
+            </label>
+            <textarea
+              value={imagePrompt}
+              onChange={(e) => setImagePrompt(e.target.value)}
+              rows={3}
+              className="w-full border rounded px-3 py-2 text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              placeholder="Leave empty to auto-generate from headline and body..."
+              disabled={loading}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              If empty, we'll create a medical illustration prompt from your headline and body.
+            </p>
+          </div>
+        )}
       </div>
 
       <button

@@ -2,6 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { decideTextLayout } from '@/lib/claude-text-layout';
+import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/dalle-image-generator';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
 
 export async function POST(request: NextRequest) {
@@ -62,11 +63,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const includeImage = body.settings?.includeImage || false;
+    let imageUrl: string | undefined;
+
+    // Generate image if requested
+    if (includeImage) {
+      console.log('[API] 🎨 ==================== IMAGE GENERATION START ====================');
+      console.log('[API] 🎨 Image generation requested');
+      console.log('[API] 📝 Custom prompt provided?', !!body.settings?.imagePrompt);
+      
+      const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(body.headline.trim(), body.body.trim());
+      console.log('[API] 📝 Final image prompt length:', imagePrompt.length, 'characters');
+      
+      try {
+        const imageStartTime = Date.now();
+        imageUrl = await generateMedicalImage(imagePrompt);
+        const imageElapsed = Date.now() - imageStartTime;
+        
+        console.log('[API] ✅ Image generated successfully in', imageElapsed, 'ms');
+        console.log('[API] 🔗 Image URL obtained:', imageUrl.substring(0, 50) + '...');
+      } catch (error) {
+        console.error('[API] ❌ Image generation failed:', error);
+        console.error('[API] ⚠️ Continuing without image...');
+        // Continue without image rather than failing completely
+      }
+      console.log('[API] 🎨 ==================== IMAGE GENERATION END ====================');
+    } else {
+      console.log('[API] 📝 Image generation skipped (includeImage=false)');
+    }
+
     // Get layout from Claude
     console.log('[API] 🤖 Calling Claude for layout decision...');
     const layout = await decideTextLayout(
       body.headline.trim(),
-      body.body.trim()
+      body.body.trim(),
+      includeImage && !!imageUrl
     );
 
     console.log('[API] ✅ Layout received from Claude:', {
@@ -74,11 +105,14 @@ export async function POST(request: NextRequest) {
       bodyPos: `(${layout.body.x}, ${layout.body.y})`,
       headlineFontSize: layout.headline.fontSize,
       bodyFontSize: layout.body.fontSize,
+      hasImage: !!layout.image,
+      imagePos: layout.image ? `(${layout.image.x}, ${layout.image.y})` : 'N/A',
     });
 
     return NextResponse.json({
       success: true,
       layout,
+      imageUrl,
     } as LayoutResponse);
     
   } catch (error) {

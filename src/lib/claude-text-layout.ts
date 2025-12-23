@@ -4,11 +4,13 @@ import { TextLayoutDecision } from './carousel-types';
 
 export async function decideTextLayout(
   headline: string,
-  body: string
+  body: string,
+  includeImage: boolean = false
 ): Promise<TextLayoutDecision> {
   console.log('[Claude] 🤖 Starting layout decision...');
   console.log('[Claude] 📝 Headline length:', headline.length, 'chars');
   console.log('[Claude] 📝 Body length:', body.length, 'chars');
+  console.log('[Claude] 🖼️ Include image:', includeImage);
 
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -16,15 +18,24 @@ export async function decideTextLayout(
 
   console.log('[Claude] 🔑 API key configured:', !!process.env.ANTHROPIC_API_KEY);
 
-  const prompt = `You are a layout designer for Instagram carousel posts (1080x1080px).
+  const imageSection = includeImage ? `
+INCLUDE IMAGE: Yes - A 1024x1024px medical illustration will be provided
+- Image must be positioned within the content area
+- Image should complement the text, not overlap
+- Common layouts: image-left-text-right, image-top-text-bottom, or centered-image-with-text-above-below
+- Image will be scaled to fit the layout
+` : 'INCLUDE IMAGE: No - Text-only layout';
+
+  const prompt = `You are a layout designer for Instagram carousel posts (1080x1440px portrait format).
 
 Given this text:
 HEADLINE: "${headline}" (${headline.length} characters)
 BODY: "${body}" (${body.length} characters)
+${imageSection}
 
 CRITICAL RULES:
-- Canvas: 1080x1080px with 60px margins on ALL sides
-- Content area: 960x960px (from x:60 to x:1020, y:60 to y:1020)
+- Canvas: 1080x1440px with 60px margins on ALL sides
+- Content area: 960x1320px (from x:60 to x:1020, y:60 to y:1380)
 - Text MUST stay within content area considering line wrapping
 - For textAlign "center": x should be 540 (center of canvas)
 - For textAlign "left": x should be 60 (left margin)
@@ -42,17 +53,17 @@ TEXT LENGTH ANALYSIS:
 - Long text (>300 chars): Smaller fonts, wider maxWidth, ensure full text fits
 
 POSITIONING STRATEGY:
-- Headline should be in upper portion (y: 60-300)
+- Headline should be in upper portion (y: 60-400)
 - Body should start below headline with spacing (y: headline.y + headline.fontSize*2 minimum)
 - For centered text: x = 540, maxWidth should be symmetric (e.g., 800 leaves 100px margins each side)
-- Ensure body doesn't extend beyond y: 960 (bottom margin)
+- Ensure body doesn't extend beyond y: 1380 (bottom margin with more vertical space available)
 
 Return ONLY valid JSON (no markdown, no explanation, no code blocks):
 {
-  "canvas": { "width": 1080, "height": 1080 },
+  "canvas": { "width": 1080, "height": 1440 },
   "headline": {
     "x": [exact x coordinate based on textAlign],
-    "y": [between 60-200],
+    "y": [between 60-300],
     "fontSize": [between 48-72],
     "maxWidth": [between 600-900, considers wrapping],
     "textAlign": "center|left|right",
@@ -60,13 +71,20 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
   },
   "body": {
     "x": [exact x coordinate based on textAlign, same as headline for consistency],
-    "y": [headline.y + adequate spacing, ensure text fits],
+    "y": [headline.y + adequate spacing, ensure text fits within 1380 bottom limit],
     "fontSize": [between 28-40, smaller for longer text],
     "maxWidth": [same as headline for alignment],
     "lineHeight": [1.3-1.5],
     "textAlign": "center|left|right",
     "fontWeight": "normal"
   },
+  ${includeImage ? `"image": {
+    "x": [position within 60-1020],
+    "y": [position within 60-1380, more vertical space available],
+    "width": [200-600px, sized appropriately],
+    "height": [200-600px, sized appropriately],
+    "scale": [0.5-1.0, for fine-tuning size]
+  },` : ''}
   "margins": { "top": 60, "right": 60, "bottom": 60, "left": 60 }
 }`;
 

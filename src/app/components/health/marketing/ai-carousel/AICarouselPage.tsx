@@ -45,6 +45,15 @@ export default function AICarouselPage() {
       addLog(`📝 Headline: "${data.headline.substring(0, 50)}${data.headline.length > 50 ? '...' : ''}"`);
       addLog(`📝 Body: "${data.body.substring(0, 50)}${data.body.length > 50 ? '...' : ''}"`);
       addLog(`🎨 Colors: BG=${data.settings?.backgroundColor}, Text=${data.settings?.textColor}`);
+      addLog(`🖼️ Include image: ${data.settings?.includeImage ? 'Yes' : 'No'}`);
+      
+      if (data.settings?.includeImage) {
+        if (data.settings?.imagePrompt) {
+          addLog(`📝 Custom image prompt provided (${data.settings.imagePrompt.length} chars)`);
+        } else {
+          addLog(`📝 Auto-generating image prompt from headline/body`);
+        }
+      }
 
       // Get auth token from Supabase session
       addLog('🔐 Getting authentication token...');
@@ -58,6 +67,7 @@ export default function AICarouselPage() {
       addLog('✅ Authentication successful');
 
       addLog('📡 Sending request to API...');
+      const apiStartTime = Date.now();
       const response = await fetch('/api/marketing/carousel/layout', {
         method: 'POST',
         headers: {
@@ -67,7 +77,8 @@ export default function AICarouselPage() {
         body: JSON.stringify(data),
       });
 
-      addLog(`📥 API responded with status: ${response.status}`);
+      const apiElapsed = Date.now() - apiStartTime;
+      addLog(`📥 API responded with status: ${response.status} (${apiElapsed}ms)`);
       const result = await response.json() as LayoutResponse;
 
       if (!result.success) {
@@ -79,6 +90,12 @@ export default function AICarouselPage() {
       addLog('✅ Layout received from Claude');
       addLog(`📐 Layout type: Headline at (${result.layout?.headline.x}, ${result.layout?.headline.y}), Body at (${result.layout?.body.x}, ${result.layout?.body.y})`);
       addLog(`📏 Font sizes: Headline=${result.layout?.headline.fontSize}px, Body=${result.layout?.body.fontSize}px`);
+      
+      if (result.imageUrl) {
+        addLog('🖼️ Image URL received');
+        addLog(`🔗 Image URL: ${result.imageUrl}`);
+        addLog(`📐 Image position: (${result.layout?.image?.x}, ${result.layout?.image?.y}), size: ${result.layout?.image?.width}x${result.layout?.image?.height}`);
+      }
 
       setLayoutData(result);
       setInputData(data);
@@ -153,10 +170,11 @@ export default function AICarouselPage() {
                   body={inputData.body}
                   backgroundColor={inputData.settings?.backgroundColor || '#ffffff'}
                   textColor={inputData.settings?.textColor || '#000000'}
+                  imageUrl={layoutData.imageUrl}
                 />
                 
                 <div className="flex flex-col items-center space-y-4">
-                  <ExportButton fabricCanvas={canvasRef.current} />
+                  <ExportButton canvasRef={canvasRef} />
                   
                   <button
                     onClick={handleStartOver}
@@ -192,7 +210,7 @@ export default function AICarouselPage() {
             <li>Choose background and text colors</li>
             <li>Click "Generate Layout" - AI will optimize text positioning</li>
             <li>Change colors anytime - preview updates instantly</li>
-            <li>Click "Export PNG" to download your 1080x1080 image</li>
+            <li>Click "Export PNG" to download your 1080x1440 image</li>
           </ol>
         </div>
 

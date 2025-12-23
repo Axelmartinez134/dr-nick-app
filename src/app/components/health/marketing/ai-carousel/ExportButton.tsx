@@ -1,18 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, RefObject, useEffect } from 'react';
 
 interface ExportButtonProps {
-  fabricCanvas: any;
+  canvasRef: RefObject<any>;
 }
 
-export default function ExportButton({ fabricCanvas }: ExportButtonProps) {
+export default function ExportButton({ canvasRef }: ExportButtonProps) {
   const [exporting, setExporting] = useState(false);
   const [exported, setExported] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
+
+  // Check if canvas is ready
+  useEffect(() => {
+    const checkCanvas = () => {
+      if (canvasRef.current && !canvasReady) {
+        console.log('[Export] ✅ Canvas is now ready');
+        setCanvasReady(true);
+      }
+    };
+
+    // Check immediately
+    checkCanvas();
+
+    // Also check periodically in case it becomes ready later
+    const interval = setInterval(checkCanvas, 100);
+
+    return () => clearInterval(interval);
+  }, [canvasRef, canvasReady]);
 
   const handleExport = async () => {
     console.log('[Export] 🖱️ Export button clicked');
-    console.log('[Export] 🎨 Canvas available?', !!fabricCanvas);
+    console.log('[Export] 📦 Canvas ref:', canvasRef);
+    console.log('[Export] 🎨 Canvas available?', !!canvasRef.current);
+    
+    const fabricCanvas = canvasRef.current;
     
     if (!fabricCanvas) {
       console.log('[Export] ❌ No canvas available');
@@ -74,10 +96,10 @@ export default function ExportButton({ fabricCanvas }: ExportButtonProps) {
     <div className="flex flex-col items-center space-y-2">
       <button
         onClick={handleExport}
-        disabled={!fabricCanvas || exporting}
+        disabled={!canvasReady || exporting}
         className="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium transition-colors"
       >
-        {exporting ? 'Exporting...' : '📥 Export PNG (1080x1080)'}
+        {exporting ? 'Exporting...' : canvasReady ? '📥 Export PNG (1080x1440)' : '⏳ Preparing...'}
       </button>
       {exported && (
         <p className="text-sm text-green-600 font-medium">
