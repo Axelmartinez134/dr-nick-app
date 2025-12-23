@@ -88,13 +88,21 @@ export default function AICarouselPage() {
       }
 
       addLog('✅ Layout received from Claude');
-      addLog(`📐 Layout type: Headline at (${result.layout?.headline.x}, ${result.layout?.headline.y}), Body at (${result.layout?.body.x}, ${result.layout?.body.y})`);
-      addLog(`📏 Font sizes: Headline=${result.layout?.headline.fontSize}px, Body=${result.layout?.body.fontSize}px`);
+      
+      // Handle both old and new layout structures
+      if (result.layout && 'textLines' in result.layout) {
+        addLog(`📊 Text lines generated: ${result.layout.textLines.length}`);
+      } else if (result.layout && 'headline' in result.layout) {
+        addLog(`📐 Layout type: Headline at (${result.layout.headline.x}, ${result.layout.headline.y}), Body at (${result.layout.body.x}, ${result.layout.body.y})`);
+        addLog(`📏 Font sizes: Headline=${result.layout.headline.fontSize}px, Body=${result.layout.body.fontSize}px`);
+      }
       
       if (result.imageUrl) {
         addLog('🖼️ Image URL received');
         addLog(`🔗 Image URL: ${result.imageUrl}`);
-        addLog(`📐 Image position: (${result.layout?.image?.x}, ${result.layout?.image?.y}), size: ${result.layout?.image?.width}x${result.layout?.image?.height}`);
+        if (result.layout?.image) {
+          addLog(`📐 Image position: (${result.layout.image.x}, ${result.layout.image.y}), size: ${result.layout.image.width}x${result.layout.image.height}`);
+        }
       }
 
       setLayoutData(result);
@@ -161,7 +169,7 @@ export default function AICarouselPage() {
 
           {/* Preview & Export Section */}
           <div>
-            {layoutData?.layout && inputData ? (
+            {layoutData?.layout && inputData && 'headline' in layoutData.layout ? (
               <div className="space-y-6">
                 <CarouselPreview
                   ref={canvasRef}
