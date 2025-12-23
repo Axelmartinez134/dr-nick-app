@@ -2,8 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { decideVisionBasedLayout } from '@/lib/claude-vision-layout';
-import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/dalle-image-generator';
-import { removeBackground } from '@/lib/clipdrop-background-removal';
+import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/gpt-image-generator';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
 
 export async function POST(request: NextRequest) {
@@ -67,22 +66,23 @@ export async function POST(request: NextRequest) {
     const includeImage = body.settings?.includeImage !== false; // Default to true
     let imageBase64: string | undefined;
 
-    // STEP 1: Generate image with DALL-E 3 HD (required for vision-based layout)
+    // STEP 1: Generate image with GPT-Image-1.5 (with native transparent background)
     console.log('[API] 🎨 ==================== IMAGE GENERATION START ====================');
-    console.log('[API] 🎨 Image generation started with DALL-E 3 HD');
+    console.log('[API] 🎨 Image generation started with GPT-Image-1.5');
+    console.log('[API] ✨ Native transparent background - no post-processing needed!');
     console.log('[API] 📝 Custom prompt provided?', !!body.settings?.imagePrompt);
     
     const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(body.headline.trim(), body.body.trim());
-    console.log('[API] 📝 Final image prompt length:', imagePrompt.length, 'characters');
+    console.log('[API] 📝 Final image prompt length:', imagePrompt.length, 'characters (max 32000)');
     
     try {
       const imageStartTime = Date.now();
       imageBase64 = await generateMedicalImage(imagePrompt);
       const imageElapsed = Date.now() - imageStartTime;
       
-      console.log('[API] ✅ Image generated successfully in', imageElapsed, 'ms');
+      console.log('[API] ✅ Image generated successfully with transparent background in', imageElapsed, 'ms');
       console.log('[API] 🔗 Image base64 length:', imageBase64.length, 'characters');
-      console.log('[API] 📊 Image data type:', imageBase64.startsWith('data:image/png;base64,') ? 'base64 PNG' : 'unknown');
+      console.log('[API] 📊 Image data type:', imageBase64.startsWith('data:image/png;base64,') ? 'base64 PNG with transparency' : 'unknown');
     } catch (error) {
       console.error('[API] ❌ Image generation failed:', error);
       return NextResponse.json(
@@ -94,24 +94,6 @@ export async function POST(request: NextRequest) {
       );
     }
     console.log('[API] 🎨 ==================== IMAGE GENERATION END ====================');
-
-    // STEP 1.5: Remove background with Clipdrop
-    console.log('[API] ✂️ ==================== BACKGROUND REMOVAL START ====================');
-    console.log('[API] ✂️ Removing background with Clipdrop API');
-    
-    try {
-      const bgRemovalStartTime = Date.now();
-      imageBase64 = await removeBackground(imageBase64);
-      const bgRemovalElapsed = Date.now() - bgRemovalStartTime;
-      
-      console.log('[API] ✅ Background removed successfully in', bgRemovalElapsed, 'ms');
-      console.log('[API] 🔗 Image base64 length after removal:', imageBase64.length, 'characters');
-    } catch (error) {
-      console.error('[API] ⚠️ Background removal failed:', error);
-      console.log('[API] ℹ️ Continuing with original image (background not removed)');
-      // Continue with original image if background removal fails
-    }
-    console.log('[API] ✂️ ==================== BACKGROUND REMOVAL END ====================');
 
     // STEP 2: Determine image position (Claude will refine this based on visual analysis)
     // Position image in lower-middle portion to leave room for text above
