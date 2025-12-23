@@ -23,9 +23,9 @@ CRITICAL REQUIREMENTS:
     model: 'dall-e-3',
     prompt: noTextPrompt,
     n: 1,
-    size: '1024x1024', // Smallest/cheapest size for DALL-E 3
-    quality: 'standard', // Lowest cost quality (vs 'hd' which is more expensive)
-    style: 'natural', // Natural style (same cost as 'vivid')
+    size: '1024x1024', // 1024x1024 size
+    quality: 'hd', // HD QUALITY for better fidelity and detail
+    style: 'natural', // Natural style for professional medical aesthetic
   };
 
   console.log('[DALL-E] 📤 Request config:', {

@@ -23,8 +23,11 @@ GROK_MODEL=grok-3-latest
 # Anthropic Claude API Configuration (for AI Carousel Generator)
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# OpenAI API Configuration (for DALL-E image generation)
+# OpenAI API Configuration (for DALL-E 3 HD image generation)
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Clipdrop API Configuration (for background removal)
+CLIPDROP_API_KEY=your_clipdrop_api_key_here
 ```
 
 ## **Database Configuration**

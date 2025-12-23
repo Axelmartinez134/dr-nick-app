@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { decideVisionBasedLayout } from '@/lib/claude-vision-layout';
 import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/dalle-image-generator';
+import { removeBackground } from '@/lib/clipdrop-background-removal';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
 
 export async function POST(request: NextRequest) {
@@ -66,9 +67,9 @@ export async function POST(request: NextRequest) {
     const includeImage = body.settings?.includeImage !== false; // Default to true
     let imageBase64: string | undefined;
 
-    // STEP 1: Generate image FIRST (required for vision-based layout)
+    // STEP 1: Generate image with DALL-E 3 HD (required for vision-based layout)
     console.log('[API] 🎨 ==================== IMAGE GENERATION START ====================');
-    console.log('[API] 🎨 Image generation started (required for vision analysis)');
+    console.log('[API] 🎨 Image generation started with DALL-E 3 HD');
     console.log('[API] 📝 Custom prompt provided?', !!body.settings?.imagePrompt);
     
     const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(body.headline.trim(), body.body.trim());
@@ -93,6 +94,24 @@ export async function POST(request: NextRequest) {
       );
     }
     console.log('[API] 🎨 ==================== IMAGE GENERATION END ====================');
+
+    // STEP 1.5: Remove background with Clipdrop
+    console.log('[API] ✂️ ==================== BACKGROUND REMOVAL START ====================');
+    console.log('[API] ✂️ Removing background with Clipdrop API');
+    
+    try {
+      const bgRemovalStartTime = Date.now();
+      imageBase64 = await removeBackground(imageBase64);
+      const bgRemovalElapsed = Date.now() - bgRemovalStartTime;
+      
+      console.log('[API] ✅ Background removed successfully in', bgRemovalElapsed, 'ms');
+      console.log('[API] 🔗 Image base64 length after removal:', imageBase64.length, 'characters');
+    } catch (error) {
+      console.error('[API] ⚠️ Background removal failed:', error);
+      console.log('[API] ℹ️ Continuing with original image (background not removed)');
+      // Continue with original image if background removal fails
+    }
+    console.log('[API] ✂️ ==================== BACKGROUND REMOVAL END ====================');
 
     // STEP 2: Determine image position (Claude will refine this based on visual analysis)
     // Position image in lower-middle portion to leave room for text above
