@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { supabase } from '../../../auth/AuthContext';
 import CarouselInput from './CarouselInput';
-import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
+import { CarouselTextRequest, LayoutResponse, TextLayoutDecision } from '@/lib/carousel-types';
 
 // Lazy-load Fabric-dependent components
 const CarouselPreview = dynamic(() => import('./CarouselPreview'), {
@@ -93,8 +93,9 @@ export default function AICarouselPage() {
       if (result.layout && 'textLines' in result.layout) {
         addLog(`📊 Text lines generated: ${result.layout.textLines.length}`);
       } else if (result.layout && 'headline' in result.layout) {
-        addLog(`📐 Layout type: Headline at (${result.layout.headline.x}, ${result.layout.headline.y}), Body at (${result.layout.body.x}, ${result.layout.body.y})`);
-        addLog(`📏 Font sizes: Headline=${result.layout.headline.fontSize}px, Body=${result.layout.body.fontSize}px`);
+        const oldLayout = result.layout as TextLayoutDecision;
+        addLog(`📐 Layout type: Headline at (${oldLayout.headline.x}, ${oldLayout.headline.y}), Body at (${oldLayout.body.x}, ${oldLayout.body.y})`);
+        addLog(`📏 Font sizes: Headline=${oldLayout.headline.fontSize}px, Body=${oldLayout.body.fontSize}px`);
       }
       
       if (result.imageUrl) {
@@ -173,7 +174,7 @@ export default function AICarouselPage() {
               <div className="space-y-6">
                 <CarouselPreview
                   ref={canvasRef}
-                  layout={layoutData.layout}
+                  layout={layoutData.layout as TextLayoutDecision}
                   headline={inputData.headline}
                   body={inputData.body}
                   backgroundColor={inputData.settings?.backgroundColor || '#ffffff'}
