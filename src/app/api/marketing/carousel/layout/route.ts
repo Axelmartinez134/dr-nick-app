@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { decideTextLayout } from '@/lib/claude-text-layout';
+import { decideVisionBasedLayout } from '@/lib/claude-vision-layout';
 import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/dalle-image-generator';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
 
@@ -63,56 +63,84 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const includeImage = body.settings?.includeImage || false;
-    let imageUrl: string | undefined;
+    const includeImage = body.settings?.includeImage !== false; // Default to true
+    let imageBase64: string | undefined;
 
-    // Generate image if requested
-    if (includeImage) {
-      console.log('[API] 🎨 ==================== IMAGE GENERATION START ====================');
-      console.log('[API] 🎨 Image generation requested');
-      console.log('[API] 📝 Custom prompt provided?', !!body.settings?.imagePrompt);
+    // STEP 1: Generate image FIRST (required for vision-based layout)
+    console.log('[API] 🎨 ==================== IMAGE GENERATION START ====================');
+    console.log('[API] 🎨 Image generation started (required for vision analysis)');
+    console.log('[API] 📝 Custom prompt provided?', !!body.settings?.imagePrompt);
+    
+    const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(body.headline.trim(), body.body.trim());
+    console.log('[API] 📝 Final image prompt length:', imagePrompt.length, 'characters');
+    
+    try {
+      const imageStartTime = Date.now();
+      imageBase64 = await generateMedicalImage(imagePrompt);
+      const imageElapsed = Date.now() - imageStartTime;
       
-      const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(body.headline.trim(), body.body.trim());
-      console.log('[API] 📝 Final image prompt length:', imagePrompt.length, 'characters');
-      
-      try {
-        const imageStartTime = Date.now();
-        imageUrl = await generateMedicalImage(imagePrompt);
-        const imageElapsed = Date.now() - imageStartTime;
-        
-        console.log('[API] ✅ Image generated successfully in', imageElapsed, 'ms');
-        console.log('[API] 🔗 Image URL obtained:', imageUrl.substring(0, 50) + '...');
-      } catch (error) {
-        console.error('[API] ❌ Image generation failed:', error);
-        console.error('[API] ⚠️ Continuing without image...');
-        // Continue without image rather than failing completely
-      }
-      console.log('[API] 🎨 ==================== IMAGE GENERATION END ====================');
-    } else {
-      console.log('[API] 📝 Image generation skipped (includeImage=false)');
+      console.log('[API] ✅ Image generated successfully in', imageElapsed, 'ms');
+      console.log('[API] 🔗 Image base64 length:', imageBase64.length, 'characters');
+      console.log('[API] 📊 Image data type:', imageBase64.startsWith('data:image/png;base64,') ? 'base64 PNG' : 'unknown');
+    } catch (error) {
+      console.error('[API] ❌ Image generation failed:', error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Image generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        } as LayoutResponse,
+        { status: 500 }
+      );
     }
+    console.log('[API] 🎨 ==================== IMAGE GENERATION END ====================');
 
-    // Get layout from Claude
-    console.log('[API] 🤖 Calling Claude for layout decision...');
-    const layout = await decideTextLayout(
+    // STEP 2: Determine image position (Claude will refine this based on visual analysis)
+    // Position image in lower-middle portion to leave room for text above
+    const imagePosition = {
+      x: 290,      // Centered: (1080 - 500) / 2
+      y: 850,      // Lower portion of 1440px canvas
+      width: 500,  // Slightly smaller for more text space
+      height: 500,
+    };
+    
+    console.log('[API] 📐 Initial image position:', imagePosition);
+
+    // STEP 3: Get vision-based layout from Claude
+    console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS START ====================');
+    console.log('[API] 🤖 Calling Claude Vision API for layout decision...');
+    console.log('[API] 📝 Headline:', body.headline.substring(0, 50) + '...');
+    console.log('[API] 📝 Body:', body.body.substring(0, 50) + '...');
+    
+    const layout = await decideVisionBasedLayout(
       body.headline.trim(),
       body.body.trim(),
-      includeImage && !!imageUrl
+      imageBase64,
+      imagePosition
     );
 
-    console.log('[API] ✅ Layout received from Claude:', {
-      headlinePos: `(${layout.headline.x}, ${layout.headline.y})`,
-      bodyPos: `(${layout.body.x}, ${layout.body.y})`,
-      headlineFontSize: layout.headline.fontSize,
-      bodyFontSize: layout.body.fontSize,
+    console.log('[API] ✅ Vision-based layout received from Claude');
+    console.log('[API] 📊 Layout summary:', {
+      textLinesCount: layout.textLines.length,
       hasImage: !!layout.image,
       imagePos: layout.image ? `(${layout.image.x}, ${layout.image.y})` : 'N/A',
     });
+    
+    // Log each text line for debugging
+    layout.textLines.forEach((line, index) => {
+      console.log(`[API] 📝 Line ${index + 1}:`, {
+        text: line.text.substring(0, 40) + '...',
+        size: line.baseSize,
+        pos: `(${line.position.x}, ${line.position.y})`,
+        stylesCount: line.styles.length,
+      });
+    });
+    
+    console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS END ====================');
 
     return NextResponse.json({
       success: true,
       layout,
-      imageUrl,
+      imageUrl: imageBase64,
     } as LayoutResponse);
     
   } catch (error) {

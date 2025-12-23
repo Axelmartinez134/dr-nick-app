@@ -4,14 +4,24 @@ export async function generateMedicalImage(prompt: string): Promise<string> {
   const startTime = Date.now();
   console.log('[DALL-E] 🎨 Starting image generation...');
   console.log('[DALL-E] ⏰ Start time:', new Date().toLocaleTimeString());
-  console.log('[DALL-E] 📝 Full prompt:', prompt);
-  console.log('[DALL-E] 📏 Prompt length:', prompt.length, 'characters');
+  
+  // CRITICAL: Ensure no text is generated in the image
+  const noTextPrompt = `${prompt}
+
+CRITICAL REQUIREMENTS:
+- NO TEXT, NO LABELS, NO LETTERS, NO WORDS in the image
+- Pure visual illustration only
+- Text will be added separately by the design system
+- Focus on visual medical illustration without any typography`;
+
+  console.log('[DALL-E] 📝 Full prompt:', noTextPrompt);
+  console.log('[DALL-E] 📏 Prompt length:', noTextPrompt.length, 'characters');
   console.log('[DALL-E] 🔑 API key configured:', !!process.env.OPENAI_API_KEY);
   console.log('[DALL-E] 🔑 API key prefix:', process.env.OPENAI_API_KEY?.substring(0, 20) + '...');
 
   const requestBody = {
     model: 'dall-e-3',
-    prompt: prompt,
+    prompt: noTextPrompt,
     n: 1,
     size: '1024x1024', // Smallest/cheapest size for DALL-E 3
     quality: 'standard', // Lowest cost quality (vs 'hd' which is more expensive)
@@ -102,18 +112,26 @@ export function createMedicalImagePrompt(headline: string, body: string): string
   console.log('[DALL-E] 📝 From headline:', headline.substring(0, 50) + '...');
   console.log('[DALL-E] 📝 From body:', body.substring(0, 50) + '...');
   
-  // Create a detailed prompt for medical/health illustration
-  const prompt = `Create a professional, clean medical illustration for a health education post. 
-Style: Modern, minimalist, educational, suitable for social media carousel.
-Content focus: ${headline}
+  // Create a detailed prompt for medical/health illustration (NO TEXT)
+  const prompt = `Create a professional, clean medical illustration for a health education social media post.
+
+Topic: ${headline}
 Context: ${body.substring(0, 200)}
-Requirements:
-- Clean white or light background
-- Professional medical aesthetic
-- Suitable for Instagram health content
-- Clear, simple, and educational
-- No text or labels in the image
-- High quality, photorealistic where appropriate`;
+
+Style Requirements:
+- Modern, minimalist medical illustration
+- Clean white or very light neutral background
+- Professional medical/anatomical aesthetic
+- Suitable for Instagram/LinkedIn carousel
+- Educational and trustworthy visual style
+- High quality, photorealistic where appropriate
+
+CRITICAL - NO TEXT IN IMAGE:
+- Do NOT include any text, labels, words, letters, or typography
+- Do NOT add captions, titles, or annotations
+- Pure visual illustration only - text will be added separately
+- Focus entirely on the visual medical concept
+- Image should be self-explanatory without text`;
 
   console.log('[DALL-E] ✅ Auto-generated prompt (length:', prompt.length, 'chars)');
   console.log('[DALL-E] 📋 Full prompt:', prompt);
