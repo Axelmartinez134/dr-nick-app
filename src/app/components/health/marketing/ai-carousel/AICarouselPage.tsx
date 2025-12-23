@@ -174,7 +174,7 @@ export default function AICarouselPage() {
               <div className="space-y-6">
                 <CarouselPreview
                   ref={canvasRef}
-                  layout={layoutData.layout as TextLayoutDecision}
+                  layout={layoutData.layout as unknown as TextLayoutDecision}
                   headline={inputData.headline}
                   body={inputData.body}
                   backgroundColor={inputData.settings?.backgroundColor || '#ffffff'}
