@@ -322,7 +322,7 @@ Return ONLY this JSON:
       console.log(`[Gemini Computational]   Image Y range: ${imagePosition.y} to ${imagePosition.y + imagePosition.height}`);
       
       let allTextValid = true;
-      let violations: string[] = [];
+      const violations: string[] = [];
       
       for (const line of layout.textLines) {
         const lineY = line.position.y;

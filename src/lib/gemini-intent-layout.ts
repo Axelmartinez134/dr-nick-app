@@ -78,7 +78,7 @@ Return ONLY valid JSON (no markdown):
         } as any),
         'Gemini generateContent'
       );
-      const response = await withTimeout(result.response, 'Gemini response');
+      const response = await withTimeout(Promise.resolve(result.response), 'Gemini response');
       const text = response.text();
 
       let cleaned = text.trim();
@@ -279,7 +279,7 @@ Return ONLY this JSON (no markdown, no explanation):
         'Gemini generateContent'
       );
 
-      const response = await withTimeout(result.response, 'Gemini response');
+      const response = await withTimeout(Promise.resolve(result.response), 'Gemini response');
       const text = response.text();
 
       console.log('[Gemini Intent] 📨 Response received');
@@ -304,8 +304,7 @@ Return ONLY this JSON (no markdown, no explanation):
       console.log('[Gemini Intent] ✅ Intent parsed successfully');
       console.log('[Gemini Intent] 📊 Layout strategy:');
       console.log(`[Gemini Intent]   Zone: ${intent.selectedZone}`);
-      console.log(`[Gemini Intent]   Alignment: ${intent.alignItems} (horizontal), ${intent.justifyContent} (vertical)`);
-      console.log(`[Gemini Intent]   Gap: ${intent.gap}px`);
+      console.log(`[Gemini Intent]   Alignment: ${intent.alignItems} (horizontal)`);
       console.log(`[Gemini Intent]   Lines: ${intent.textLines.length}`);
 
       intent.textLines.forEach((line, idx) => {

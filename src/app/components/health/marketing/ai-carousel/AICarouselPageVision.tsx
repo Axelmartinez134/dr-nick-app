@@ -141,7 +141,7 @@ export default function AICarouselPageVision() {
       };
       
       // Update image position and URL with saved values
-      if (layout.layout && carousel.imageBase64) {
+      if (layout.layout && carousel.imageBase64 && layout.layout.image) {
         layout.layout.image.url = carousel.imageBase64;
         
         // IMPORTANT: Use the saved image position, not the one from layoutJson

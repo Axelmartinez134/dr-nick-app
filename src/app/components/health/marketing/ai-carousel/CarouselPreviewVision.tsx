@@ -221,7 +221,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           originY === 'bottom' ? height :
           0;
 
-        let topLeft = { x: leftRaw - originOffsetX, y: topRaw - originOffsetY };
+        const topLeft = { x: leftRaw - originOffsetX, y: topRaw - originOffsetY };
 
         // fallback: bounding rect (may be viewport-dependent in some Fabric builds)
         let rectAbs = null as null | { left: number; top: number; width: number; height: number };
