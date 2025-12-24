@@ -259,3 +259,238 @@ RESPOND WITH ONLY THE JSON (no other text):
   throw new Error('Failed to generate layout');
 }
 
+/**
+ * Realign text layout based on user-repositioned image.
+ * This function is called after the user manually moves the image on the canvas.
+ * It regenerates the text layout from scratch with EXTREME focus on spatial constraints.
+ */
+export async function realignTextLayout(
+  headline: string,
+  body: string,
+  canvasScreenshot: string, // base64 PNG of current canvas state
+  imagePosition: { x: number; y: number; width: number; height: number }
+): Promise<VisionLayoutDecision> {
+  console.log('[Claude Realign] 🔄 Starting text realignment...');
+  console.log('[Claude Realign] 📝 Headline length:', headline.length, 'chars');
+  console.log('[Claude Realign] 📝 Body length:', body.length, 'chars');
+  console.log('[Claude Realign] 🖼️ Image position:', imagePosition);
+  console.log('[Claude Realign] 📸 Screenshot length:', canvasScreenshot.length, 'chars');
+
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  });
+
+  console.log('[Claude Realign] 🔑 API key configured:', !!process.env.ANTHROPIC_API_KEY);
+
+  // Extract base64 from data URL
+  const base64Data = canvasScreenshot.replace(/^data:image\/png;base64,/, '');
+
+  const prompt = `CRITICAL: You MUST respond with ONLY valid JSON. No explanation, no description, no markdown. Just pure JSON.
+
+🔴 CRITICAL INSTRUCTION: The screenshot shows ONLY the image and background - NO TEXT.
+The image you see is where the user positioned it. Your job is to place text in the WHITE/EMPTY areas.
+
+You are creating a NEW text layout for a SOCIAL MEDIA CAROUSEL POST (1080x1440px portrait).
+The user has manually positioned the image. Use VISUAL ANALYSIS to find empty space.
+
+📸 WHAT YOU'RE SEEING IN THE SCREENSHOT:
+- ✅ White/light gray background
+- ✅ A medical illustration image (user-positioned)
+- ❌ NO TEXT (we removed it so you see clearly where to place new text)
+
+📐 YOUR VISUAL ANALYSIS STEPS:
+1. **LOOK at the screenshot** - See exactly where the image boundaries are
+2. **Identify EMPTY WHITE SPACE** - This is where text MUST go
+3. **Measure the empty space visually** - How much room do you have?
+4. **Determine text placement strategy**:
+   - If image is in LOWER 60% (y > 600): Stack ALL text at TOP (y: 40-550)
+   - If image is in LEFT/RIGHT side: You can use the opposite side
+   - If image is in MIDDLE: Use space above OR below (not both)
+5. **NEVER place text where you see the image** - Leave 120px buffer minimum
+
+🚨 ABSOLUTE RULES (BREAK THESE = FAILURE):
+
+1. **VISUAL-FIRST APPROACH**:
+   - PRIMARY: Look at the screenshot and identify where the image IS
+   - SECONDARY: Use the coordinates as a backup reference
+   - If the visual and coordinates conflict, TRUST THE VISUAL
+
+2. **40px SAFE MARGIN** - NO TEXT within 40px of canvas edges:
+   - Left: x >= 40
+   - Right: x + maxWidth <= 1040
+   - Top: y >= 40  
+   - Bottom: y + text height <= 1400
+
+3. **120px MINIMUM CLEARANCE from the image you see in the screenshot**:
+   - Look at the screenshot
+   - See where the image boundaries are
+   - Add 120px buffer zone around those boundaries
+   - NO TEXT in that buffer zone
+
+4. **SAFEST APPROACH FOR BOTTOM-HEAVY IMAGES**:
+   - If image occupies y > 600 (lower half), place ALL text at y: 40-550
+   - If image occupies y < 700 (upper half), place ALL text at y: 850-1380
+   - NEVER stack text beside a large image - always above OR below
+
+5. **CHARACTER/WIDTH CALCULATION**:
+   - 72px font: ~12-15 chars per line (maxWidth ~900px)
+   - 64px font: ~14-17 chars per line
+   - 48px font: ~18-22 chars per line
+   - If text is longer, use MORE LINES or SMALLER FONT
+
+REFERENCE COORDINATES (but trust screenshot more):
+- Image reported at: x=${imagePosition.x}, y=${imagePosition.y}
+- Image size: ${imagePosition.width}x${imagePosition.height}
+- (These may not be perfectly accurate - use your visual analysis)
+
+CONTENT TO LAYOUT:
+Headline: "${headline}"
+Body: "${body}"
+
+LAYOUT STRATEGY:
+1. **VISUALLY analyze the screenshot** - Where is the image actually positioned?
+2. **Calculate safe text zone**: Find the largest continuous WHITE space
+3. **If image is in bottom 60%**: Stack ALL text lines at top (y: 40-550)
+4. **If image is in top 40%**: Stack ALL text lines at bottom (y: 850-1380)
+5. **Use large fonts** for headlines (64-84px), smaller for body (42-56px)
+6. **Center-align** all text (x=540 with textAlign "center")
+7. **Generous spacing** between lines (100-130px gaps)
+8. **Bold 2-3 key words** per line for emphasis
+
+TEXT STYLING:
+- Bold: medical terms, numbers, key outcomes (fontWeight: "bold")
+- Keep it scannable and professional
+
+⚠️ FINAL CHECK BEFORE RESPONDING:
+1. Look at the screenshot one more time
+2. Verify EVERY text line y-position does not overlap with where you SEE the image
+3. If in doubt, move text FURTHER AWAY from the image
+4. Better to have text too far from image than overlapping
+
+RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
+{
+  "canvas": { "width": 1080, "height": 1440 },
+  "textLines": [
+    {
+      "text": "Your text here",
+      "baseSize": 72,
+      "position": { "x": 540, "y": 120 },
+      "textAlign": "center",
+      "lineHeight": 1.25,
+      "maxWidth": 900,
+      "styles": [
+        { "start": 0, "end": 4, "fontWeight": "bold" }
+      ]
+    }
+  ],
+  "image": {
+    "x": ${imagePosition.x},
+    "y": ${imagePosition.y},
+    "width": ${imagePosition.width},
+    "height": ${imagePosition.height}
+  },
+  "margins": { "top": 40, "right": 40, "bottom": 40, "left": 40 }
+}`;
+
+  const maxAttempts = 3;
+  let lastResponseText = '';
+
+  for (let attempts = 1; attempts <= maxAttempts; attempts++) {
+    console.log(`[Claude Realign] 🔄 Attempt ${attempts}/${maxAttempts}`);
+
+    try {
+      const response = await client.messages.create({
+        model: 'claude-3-7-sonnet-20250219',
+        max_tokens: 4096,
+        system: [
+          {
+            type: 'text',
+            text: 'You are a JSON-only API. You MUST respond with valid JSON only. Never include explanations, markdown, or any text outside the JSON structure. Your entire response must be parseable as JSON.',
+          },
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/png',
+                  data: base64Data,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      });
+
+      console.log('[Claude Realign] 📨 Response received');
+      console.log('[Claude Realign] 📊 Response type:', response.content[0].type);
+
+      const content = response.content[0];
+      if (content.type !== 'text') {
+        throw new Error('Expected text response from Claude');
+      }
+
+      lastResponseText = content.text;
+      console.log('[Claude Realign] 📄 Raw response (first 200 chars):', content.text.substring(0, 200));
+
+      // Clean up response - remove markdown code blocks if present
+      let cleaned = content.text.trim();
+      
+      // Remove markdown code blocks
+      cleaned = cleaned.replace(/^```json\n?/gm, '').replace(/^```\n?/gm, '').replace(/```$/gm, '');
+      
+      // Try to extract JSON if Claude added explanatory text
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleaned = jsonMatch[0];
+        console.log('[Claude Realign] 🔍 Extracted JSON from response');
+      }
+
+      console.log('[Claude Realign] 🧹 Cleaned response (first 200 chars):', cleaned.substring(0, 200));
+
+      // Parse JSON
+      const layout = JSON.parse(cleaned) as VisionLayoutDecision;
+      
+      // Validate structure
+      if (!layout.textLines || !Array.isArray(layout.textLines)) {
+        throw new Error('Invalid layout: missing textLines array');
+      }
+
+      if (layout.textLines.length === 0) {
+        throw new Error('Invalid layout: no text lines provided');
+      }
+
+      console.log('[Claude Realign] ✅ Layout parsed successfully');
+      console.log('[Claude Realign] 📊 Text lines:', layout.textLines.length);
+      console.log('[Claude Realign] 📐 First line:', {
+        text: layout.textLines[0].text.substring(0, 50),
+        size: layout.textLines[0].baseSize,
+        position: layout.textLines[0].position,
+        stylesCount: layout.textLines[0].styles.length,
+      });
+
+      return layout;
+    } catch (error) {
+      console.error(`[Claude Realign] ❌ Attempt ${attempts} failed:`, error);
+      
+      if (attempts >= maxAttempts) {
+        console.error('[Claude Realign] ❌ All attempts exhausted');
+        console.error('[Claude Realign] 📄 Last response received (first 500 chars):', lastResponseText.substring(0, 500));
+        throw new Error(`Failed to realign layout after ${maxAttempts} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+      
+      console.log('[Claude Realign] 🔄 Retrying...');
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+    }
+  }
+
+  throw new Error('Failed to realign text layout');
+}
+

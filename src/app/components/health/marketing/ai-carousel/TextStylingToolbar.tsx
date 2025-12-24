@@ -16,7 +16,11 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
   } | null>(null);
 
   useEffect(() => {
-    if (!fabricCanvas) return;
+    // Verify canvas is valid and has required methods
+    if (!fabricCanvas || typeof fabricCanvas.on !== 'function') {
+      console.log('[Toolbar] ⏳ Canvas not ready yet');
+      return;
+    }
 
     const handleSelection = () => {
       const activeObject = fabricCanvas.getActiveObject();
@@ -66,15 +70,18 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
     fabricCanvas.on('text:selection:changed', handleSelection);
 
     return () => {
-      fabricCanvas.off('selection:created', handleSelection);
-      fabricCanvas.off('selection:updated', handleSelection);
-      fabricCanvas.off('selection:cleared');
-      fabricCanvas.off('text:selection:changed', handleSelection);
+      // Only remove listeners if canvas still has the off method
+      if (fabricCanvas && typeof fabricCanvas.off === 'function') {
+        fabricCanvas.off('selection:created', handleSelection);
+        fabricCanvas.off('selection:updated', handleSelection);
+        fabricCanvas.off('selection:cleared');
+        fabricCanvas.off('text:selection:changed', handleSelection);
+      }
     };
   }, [fabricCanvas]);
 
   const toggleBold = () => {
-    if (!selectedText || !selectionInfo) return;
+    if (!selectedText || !selectionInfo || !fabricCanvas) return;
 
     console.log('[Toolbar] 🎨 Toggling bold');
     const newWeight = selectionInfo.isBold ? 'normal' : 'bold';
@@ -85,7 +92,9 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
       selectionInfo.end
     );
     
-    fabricCanvas.renderAll();
+    if (typeof fabricCanvas.renderAll === 'function') {
+      fabricCanvas.renderAll();
+    }
     
     setSelectionInfo({
       ...selectionInfo,
@@ -96,7 +105,7 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
   };
 
   const toggleItalic = () => {
-    if (!selectedText || !selectionInfo) return;
+    if (!selectedText || !selectionInfo || !fabricCanvas) return;
 
     console.log('[Toolbar] 🎨 Toggling italic');
     const newStyle = selectionInfo.isItalic ? 'normal' : 'italic';
@@ -107,7 +116,9 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
       selectionInfo.end
     );
     
-    fabricCanvas.renderAll();
+    if (typeof fabricCanvas.renderAll === 'function') {
+      fabricCanvas.renderAll();
+    }
     
     setSelectionInfo({
       ...selectionInfo,
@@ -118,7 +129,7 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
   };
 
   const clearFormatting = () => {
-    if (!selectedText || !selectionInfo) return;
+    if (!selectedText || !selectionInfo || !fabricCanvas) return;
 
     console.log('[Toolbar] 🧹 Clearing formatting');
     
@@ -128,7 +139,9 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
       selectionInfo.end
     );
     
-    fabricCanvas.renderAll();
+    if (typeof fabricCanvas.renderAll === 'function') {
+      fabricCanvas.renderAll();
+    }
     
     setSelectionInfo({
       ...selectionInfo,

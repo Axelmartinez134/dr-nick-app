@@ -25,6 +25,13 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 # OpenAI API Configuration (for GPT-Image-1.5 generation with transparent backgrounds)
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Google AI API Configuration (for Gemini 3 Flash vision-based text realignment)
+# Model: gemini-3-flash-preview
+# Pricing: $0.50/1M input tokens, $3/1M output tokens
+# Context: 1M input / 64k output, Knowledge cutoff: Jan 2025
+# Docs: https://ai.google.dev/gemini-api/docs/gemini-3
+GOOGLE_AI_API_KEY=your_google_ai_api_key_here
 ```
 
 ## **Database Configuration**
