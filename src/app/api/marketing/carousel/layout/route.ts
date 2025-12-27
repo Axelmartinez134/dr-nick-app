@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { decideVisionBasedLayout } from '@/lib/claude-vision-layout';
 import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/gpt-image-generator';
-import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
+import { CarouselTextRequest, LayoutResponse, VisionLayoutDecision } from '@/lib/carousel-types';
 import { wrapFlowLayout } from '@/lib/wrap-flow-layout';
 
 export async function POST(request: NextRequest) {
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     // STEP 2: If a template is selected, use deterministic wrap-flow inside contentRegion.
     // Otherwise fallback to Claude vision layout (legacy).
-    let layout: any;
+    let layout: VisionLayoutDecision;
     if (body.templateId) {
       console.log('[API] 🧩 Template selected; using deterministic WRAP-FLOW inside template contentRegion');
 
@@ -180,7 +180,13 @@ export async function POST(request: NextRequest) {
       );
 
       console.log('[API] 🧩 Wrap-flow meta:', meta);
-      wrapLayout.image.url = imageBase64!;
+      // `VisionLayoutDecision.image` is optional in the type, but wrap-flow layout always returns it.
+      // Guard anyway to satisfy TS and be safe if the implementation changes.
+      if (!wrapLayout.image) {
+        wrapLayout.image = { ...imagePosition, url: imageBase64! };
+      } else {
+        wrapLayout.image.url = imageBase64!;
+      }
       layout = wrapLayout;
     } else {
       // Legacy: deterministic templates not selected, keep Claude vision layout.
