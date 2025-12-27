@@ -45,7 +45,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden md:overflow-x-visible">
       
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
