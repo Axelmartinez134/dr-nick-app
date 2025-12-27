@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
       if (!wrapLayout.image) {
         wrapLayout.image = { ...imagePosition, url: imageBase64! };
       } else {
-        wrapLayout.image.url = imageBase64!;
+      wrapLayout.image.url = imageBase64!;
       }
       layout = wrapLayout;
     } else {

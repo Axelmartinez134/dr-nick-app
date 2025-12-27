@@ -2166,55 +2166,55 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
       
       {/* Metrics Hero Cards - Both Client and Doctor Views */}
       {metrics && metrics.hasEnoughData && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
           
           {/* Total Weight Loss % - Primary KPI */}
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-blue-900">Total Weight Loss</h3>
-              <div className="text-2xl">🎯</div>
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 md:p-6">
+            <div className="flex items-center justify-between mb-1 md:mb-2">
+              <h3 className="text-sm md:text-lg font-semibold text-blue-900">Total Weight Loss</h3>
+              <div className="text-xl md:text-2xl">🎯</div>
             </div>
-            <div className="text-3xl font-bold text-blue-800 mb-1">
+            <div className="text-2xl md:text-3xl font-bold text-blue-800 mb-0.5 md:mb-1">
               {metrics.totalWeightLossPercentage !== null 
                 ? `${metrics.totalWeightLossPercentage.toFixed(2)}%` 
                 : '--'
               }
             </div>
-            <p className="text-sm text-blue-600">
+            <p className="text-xs md:text-sm text-blue-600 leading-tight">
               Since starting {isDoctorView ? 'their journey' : 'your journey'}
             </p>
           </div>
 
           {/* Weekly Weight Loss % */}
-          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-green-900">Weekly Progress</h3>
-              <div className="text-2xl">📈</div>
+          <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 md:p-6">
+            <div className="flex items-center justify-between mb-1 md:mb-2">
+              <h3 className="text-sm md:text-lg font-semibold text-green-900">Weekly Progress</h3>
+              <div className="text-xl md:text-2xl">📈</div>
             </div>
-            <div className="text-3xl font-bold text-green-800 mb-1">
+            <div className="text-2xl md:text-3xl font-bold text-green-800 mb-0.5 md:mb-1">
               {metrics.weeklyWeightLossPercentage !== null 
                 ? `${metrics.weeklyWeightLossPercentage.toFixed(2)}%` 
                 : '--'
               }
             </div>
-            <p className="text-sm text-green-600">
+            <p className="text-xs md:text-sm text-green-600 leading-tight">
               Week-over-week change
             </p>
           </div>
 
           {/* NEW: Weight Change Goal */}
-          <div className="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-semibold text-purple-900">Current Aggregate Week over week Weight Change Goal (%)</h3>
-              <div className="text-2xl">🎯</div>
+          <div className="bg-gradient-to-br from-purple-50 to-violet-50 border border-purple-200 rounded-lg p-4 md:p-6 col-span-2 lg:col-span-1">
+            <div className="flex items-center justify-between mb-1 md:mb-2">
+              <h3 className="text-sm md:text-lg font-semibold text-purple-900">Current Aggregate Week over week Weight Change Goal (%)</h3>
+              <div className="text-xl md:text-2xl">🎯</div>
             </div>
-            <div className="text-3xl font-bold text-purple-800 mb-1">
+            <div className="text-2xl md:text-3xl font-bold text-purple-800 mb-0.5 md:mb-1">
               {metrics.weightChangeGoalPercent !== null 
                 ? `${metrics.weightChangeGoalPercent.toFixed(2)}%` 
                 : '1.00%'
               }
             </div>
-            <p className="text-sm text-purple-600">
+            <p className="text-xs md:text-sm text-purple-600 leading-tight">
               Dr. Nick&apos;s target for {isDoctorView ? 'them' : 'you'}
             </p>
           </div>

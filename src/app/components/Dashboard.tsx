@@ -50,8 +50,36 @@ export default function Dashboard() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            
+          {/* Mobile header (scrolls normally) */}
+          <div className="md:hidden py-3">
+            {/* Row 1: title left, sign out top-right */}
+            <div className="flex items-start justify-between gap-3">
+              <h1 className="text-[17px] font-semibold tracking-tight leading-tight text-gray-900 pr-2">
+                🏥 The Fittest You Health Tracker
+              </h1>
+              <button
+                onClick={handleSignOut}
+                className="shrink-0 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded text-sm text-gray-800 transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+
+            {/* Row 2: welcome below */}
+            <div className="mt-2 flex items-center gap-2 min-w-0">
+              <span className="text-sm text-gray-700 truncate">
+                Welcome, {isDoctor ? 'Dr. Nick' : firstName}!
+              </span>
+              {isDoctor && (
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-medium rounded whitespace-nowrap">
+                  Doctor Portal
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Desktop header (unchanged) */}
+          <div className="hidden md:flex justify-between items-center h-16">
             {/* Logo and Title */}
             <div className="flex items-center">
               <h1 className="text-xl font-bold text-gray-900">

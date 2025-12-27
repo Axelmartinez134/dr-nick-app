@@ -508,8 +508,8 @@ export default function HealthForm() {
         }
         const match = fieldName.match(/(\w+)_day(\d+)_image/)
         if (!match) return
-        const [, imageType, dayNumber] = match
-        const uploadKey = `${imageType}_day${dayNumber}`
+          const [, imageType, dayNumber] = match
+          const uploadKey = `${imageType}_day${dayNumber}`
         if (!signedUrls[uploadKey]) generateSignedUrl(imageUrl, uploadKey)
       }
     })
