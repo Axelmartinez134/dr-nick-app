@@ -296,7 +296,7 @@ export function translateIntentToPixels(
   // IMPORTANT: Use lineHeight in the math, because each Fabric object has height ~= fontSize * lineHeight.
   const totalLineHeights = intent.textLines.reduce((sum, line) => sum + (line.fontSize * DEFAULT_LINE_HEIGHT), 0);
   const availableHeight = zone.height - (2 * innerPadding);
-  const dynamicGap = totalLines > 1
+  const dynamicGap = totalLines > 1 
     ? (availableHeight - totalLineHeights) / (totalLines - 1)
     : 0;
 

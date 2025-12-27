@@ -5,6 +5,10 @@ export interface WrapFlowOptions {
   canvasWidth?: number;
   canvasHeight?: number;
   margin?: number; // canvas margin
+  // Optional override for the usable text/image content bounds (in canvas coordinates).
+  // When provided, wrap-flow will keep ALL lines inside this rect instead of using canvas+margin.
+  // NOTE: This is how templates provide a slide contentRegion (typically inset by padding).
+  contentRect?: { x: number; y: number; width: number; height: number };
   clearancePx?: number; // gap from image AABB
   lineHeight?: number; // multiplier
   headlineFontSize?: number;
@@ -34,7 +38,7 @@ export interface ImageBounds {
 
 type Rect = { left: number; top: number; right: number; bottom: number };
 
-const DEFAULTS: Required<WrapFlowOptions> = {
+const DEFAULTS: Required<Omit<WrapFlowOptions, 'contentRect'>> = {
   canvasWidth: 1080,
   canvasHeight: 1440,
   margin: 40,
@@ -161,13 +165,18 @@ function overlapsRect(a: Rect, b: Rect) {
 
 function lineRect(line: TextLine): Rect {
   const maxWidth = line.maxWidth ?? 0;
-  const left =
+  // Integer-safe rect:
+  // - center alignment with odd widths can produce 0.5px edges and trip strict bounds checks.
+  // - y placement uses ceil, but keep rect conservative by rounding outward.
+  const leftRaw =
     line.textAlign === 'center' ? (line.position.x - (maxWidth / 2)) :
     line.textAlign === 'right' ? (line.position.x - maxWidth) :
     line.position.x;
-  const top = line.position.y;
-  const right = left + maxWidth;
-  const bottom = top + (line.baseSize * line.lineHeight);
+  const topRaw = line.position.y;
+  const left = Math.floor(leftRaw);
+  const top = Math.floor(topRaw);
+  const right = Math.ceil(leftRaw + maxWidth);
+  const bottom = Math.ceil(topRaw + (line.baseSize * line.lineHeight));
   return { left, top, right, bottom };
 }
 
@@ -177,13 +186,29 @@ export function wrapFlowLayout(
   image: ImageBounds,
   opts?: WrapFlowOptions
 ): { layout: VisionLayoutDecision; meta: { truncated: boolean; usedFonts: { headline: number; body: number } } } {
-  const o = { ...DEFAULTS, ...(opts || {}) };
+  const o = { ...DEFAULTS, ...(opts || {}) } as (Required<Omit<WrapFlowOptions, 'contentRect'>> & { contentRect?: { x: number; y: number; width: number; height: number } });
+
+  const contentRect = o.contentRect || {
+    x: o.margin,
+    y: o.margin,
+    width: o.canvasWidth - (o.margin * 2),
+    height: o.canvasHeight - (o.margin * 2),
+  };
+
+  // IMPORTANT: contentRect can have fractional coordinates (e.g., template contentRegion drawn in Fabric).
+  // If we keep it fractional, our integer-safe placement (ceil for x/y, floor for width) can produce a
+  // line that is ~0.1–0.9px outside the content bounds and trigger a hard "margin violation".
+  // Fix: snap content bounds OUTWARDS to integer pixels, same strategy used for blocked image bounds.
+  const cLeftF = clamp(contentRect.x, -10000, 10000);
+  const cTopF = clamp(contentRect.y, -10000, 10000);
+  const cRightF = cLeftF + clamp(contentRect.width, 0, 20000);
+  const cBottomF = cTopF + clamp(contentRect.height, 0, 20000);
 
   const content: Rect = {
-    left: o.margin,
-    top: o.margin,
-    right: o.canvasWidth - o.margin,
-    bottom: o.canvasHeight - o.margin,
+    left: Math.floor(cLeftF),
+    top: Math.floor(cTopF),
+    right: Math.ceil(cRightF),
+    bottom: Math.ceil(cBottomF),
   };
 
   // Image AABB can be fractional; convert to an integer-safe exclusion rect so rounding doesn't
@@ -317,19 +342,40 @@ export function wrapFlowLayout(
       }
 
       const textAlign: 'left' | 'center' = (block === 'BODY' && lane.kind !== 'FULL') ? 'center' : 'left';
-      const xPos = textAlign === 'center' ? (lane.x + (lane.width / 2)) : lane.x;
 
       const textLine: TextLine = {
         text: line,
         baseSize: fontSize,
-        // Use ceil so we never drift into the blocked rect due to fractional y.
-        position: { x: Math.ceil(xPos), y: Math.ceil(y) },
+        // positions filled below after we choose an integer-safe x
+        position: { x: 0, y: Math.ceil(y) },
         textAlign,
         lineHeight: lh,
-        // Use floor so we never exceed content.right
-        maxWidth: Math.floor(lane.width),
+        // Use floor so we never exceed content.right; for centered lines, enforce even widths to avoid 0.5px edges.
+        maxWidth: 0,
         styles: [],
       };
+
+      // Choose an integer-safe maxWidth and x within the CONTENT rect.
+      const contentWidth = Math.max(1, Math.floor(content.right - content.left));
+      let maxWidthPx = Math.max(1, Math.min(Math.floor(lane.width), contentWidth));
+      if (textAlign === 'center' && (maxWidthPx % 2) === 1) maxWidthPx -= 1; // keep even
+      maxWidthPx = Math.max(1, maxWidthPx);
+      textLine.maxWidth = maxWidthPx;
+
+      if (textAlign === 'center') {
+        const desiredCenter = lane.x + (lane.width / 2);
+        const half = maxWidthPx / 2;
+        const minCenter = content.left + half;
+        const maxCenter = content.right - half;
+        const x = clamp(Math.round(desiredCenter), Math.ceil(minCenter), Math.floor(maxCenter));
+        textLine.position.x = x;
+      } else {
+        const desiredLeft = lane.x;
+        const minLeft = content.left;
+        const maxLeft = content.right - maxWidthPx;
+        const xLeft = clamp(Math.ceil(desiredLeft), Math.ceil(minLeft), Math.floor(maxLeft));
+        textLine.position.x = xLeft;
+      }
 
       // Hard guarantee check: line AABB must NOT overlap blocked rect.
       const lr = lineRect(textLine);

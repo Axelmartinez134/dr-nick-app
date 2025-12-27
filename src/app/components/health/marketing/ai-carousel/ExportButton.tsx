@@ -34,9 +34,11 @@ export default function ExportButton({ canvasRef }: ExportButtonProps) {
     console.log('[Export] 📦 Canvas ref:', canvasRef);
     console.log('[Export] 🎨 Canvas available?', !!canvasRef.current);
     
-    const fabricCanvas = canvasRef.current;
+    // In Vision mode, the ref points to an imperative handle object that contains `.canvas`.
+    // In legacy mode, it may be the Fabric canvas directly.
+    const fabricCanvas = canvasRef.current?.canvas || canvasRef.current;
     
-    if (!fabricCanvas) {
+    if (!fabricCanvas || typeof fabricCanvas.toDataURL !== 'function') {
       console.log('[Export] ❌ No canvas available');
       alert('Canvas not ready. Please wait a moment and try again.');
       return;

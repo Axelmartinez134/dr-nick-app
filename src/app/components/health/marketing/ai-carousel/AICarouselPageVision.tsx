@@ -5,13 +5,15 @@ import dynamic from 'next/dynamic';
 import { supabase } from '../../../auth/AuthContext';
 import CarouselInput from './CarouselInput';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
+import type { CarouselTemplateDefinitionV1 } from '@/lib/carousel-template-types';
+import TemplateEditorModal from './TemplateEditorModal';
 
 // Lazy-load Fabric-dependent components
 const CarouselPreviewVision = dynamic(() => import('./CarouselPreviewVision'), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
-      <div className="text-gray-600">Loading preview...</div>
+      <div className="text-black">Loading preview...</div>
     </div>
   ),
 });
@@ -67,6 +69,13 @@ export default function AICarouselPageVision() {
   // Realignment model selection
   const [realignmentModel, setRealignmentModel] = useState<'claude' | 'gemini' | 'gemini-computational'>('gemini-computational');
 
+  // Templates
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string; updatedAt: string }>>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [selectedTemplateSnapshot, setSelectedTemplateSnapshot] = useState<CarouselTemplateDefinitionV1 | null>(null);
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
+
   const addLog = (message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`]);
@@ -76,7 +85,59 @@ export default function AICarouselPageVision() {
   // Load saved carousels on mount
   useEffect(() => {
     loadSavedCarousels();
+    loadTemplatesList();
   }, []);
+
+  const loadTemplatesList = async () => {
+    setLoadingTemplates(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch('/api/marketing/carousel/templates/list', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setTemplates(result.templates || []);
+        addLog(`✅ Loaded ${result.templates?.length || 0} templates`);
+      } else {
+        addLog(`⚠️ Failed to load templates: ${result.error || 'unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to load templates:', err);
+      addLog('⚠️ Failed to load templates');
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const loadTemplate = async (templateId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`/api/marketing/carousel/templates/load?id=${templateId}`, {
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+      });
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load template');
+      }
+      const def = result.template?.definition as CarouselTemplateDefinitionV1;
+      setSelectedTemplateId(templateId);
+      setSelectedTemplateSnapshot(def || null);
+      addLog(`✅ Template loaded: ${result.template?.name || templateId}`);
+    } catch (e) {
+      console.error('Failed to load template:', e);
+      addLog(`⚠️ Failed to load template: ${(e as any)?.message || 'unknown error'}`);
+      setSelectedTemplateId(null);
+      setSelectedTemplateSnapshot(null);
+    }
+  };
 
   const loadSavedCarousels = async () => {
     setLoadingCarousels(true);
@@ -160,12 +221,23 @@ export default function AICarouselPageVision() {
       setInputData({
         headline: carousel.headline,
         body: carousel.body,
+        templateId: carousel.templateId || undefined,
         settings: {
           backgroundColor: carousel.backgroundColor,
           textColor: carousel.textColor,
           imagePrompt: carousel.customImagePrompt,
         },
       });
+
+      // Restore template snapshot (render from snapshot only)
+      if (carousel.templateId && carousel.templateSnapshot) {
+        setSelectedTemplateId(carousel.templateId);
+        setSelectedTemplateSnapshot(carousel.templateSnapshot);
+        addLog(`🧩 Template snapshot restored (templateId=${carousel.templateId})`);
+      } else {
+        setSelectedTemplateId(null);
+        setSelectedTemplateSnapshot(null);
+      }
 
       setSaveStatus('saved');
       setShowDropdown(false);
@@ -192,6 +264,8 @@ export default function AICarouselPageVision() {
     const capturedInputData = inputData;
     const capturedCarouselId = currentCarouselId;
     const capturedTitle = carouselTitle;
+    const capturedTemplateId = selectedTemplateId;
+    const capturedTemplateSnapshot = selectedTemplateSnapshot;
 
     console.log('[Auto-Save] 📸 Captured state for auto-save:', {
       hasLayout: !!capturedLayoutData,
@@ -202,22 +276,26 @@ export default function AICarouselPageVision() {
 
     // Debounce: wait 2 seconds before saving
     saveTimeoutRef.current = setTimeout(() => {
-      performAutoSave(false, capturedLayoutData, capturedInputData, capturedCarouselId, capturedTitle);
+      performAutoSave(false, capturedLayoutData, capturedInputData, capturedCarouselId, capturedTitle, capturedTemplateId, capturedTemplateSnapshot);
     }, 2000);
-  }, [layoutData, inputData, currentCarouselId, carouselTitle]);
+  }, [layoutData, inputData, currentCarouselId, carouselTitle, selectedTemplateId, selectedTemplateSnapshot]);
 
   const performAutoSave = async (
     forceNew = false,
     capturedLayoutData?: LayoutResponse | null,
     capturedInputData?: CarouselTextRequest | null,
     capturedCarouselId?: string | null,
-    capturedTitle?: string
+    capturedTitle?: string,
+    capturedTemplateId?: string | null,
+    capturedTemplateSnapshot?: CarouselTemplateDefinitionV1 | null
   ) => {
     // Use captured values if provided, otherwise use current state
     const dataToSave = capturedLayoutData || layoutData;
     const inputToSave = capturedInputData || inputData;
     const idToUse = capturedCarouselId !== undefined ? capturedCarouselId : currentCarouselId;
     const titleToUse = capturedTitle || carouselTitle;
+    const templateIdToUse = capturedTemplateId !== undefined ? capturedTemplateId : selectedTemplateId;
+    const templateSnapshotToUse = capturedTemplateSnapshot !== undefined ? capturedTemplateSnapshot : selectedTemplateSnapshot;
 
     if (!dataToSave || !inputToSave) {
       addLog('⚠️ Auto-save skipped: no data to save');
@@ -253,6 +331,8 @@ export default function AICarouselPageVision() {
         backgroundColor: inputToSave.settings?.backgroundColor || '#ffffff',
         textColor: inputToSave.settings?.textColor || '#000000',
         customImagePrompt: inputToSave.settings?.imagePrompt,
+        templateId: templateIdToUse,
+        templateSnapshot: templateSnapshotToUse,
       };
 
       const response = await fetch('/api/marketing/carousel/save', {
@@ -301,7 +381,7 @@ export default function AICarouselPageVision() {
       if (retryCountRef.current < 1) {
         retryCountRef.current++;
         addLog('🔄 Retrying auto-save...');
-        setTimeout(() => performAutoSave(forceNew, capturedLayoutData, capturedInputData, capturedCarouselId, capturedTitle), 1000);
+        setTimeout(() => performAutoSave(forceNew, capturedLayoutData, capturedInputData, capturedCarouselId, capturedTitle, capturedTemplateId, capturedTemplateSnapshot), 1000);
       } else {
         addLog('❌ Auto-save retry limit reached');
         retryCountRef.current = 0;
@@ -361,13 +441,18 @@ export default function AICarouselPageVision() {
       addLog('⏳ Step 3: Generating text layout...');
       
       const apiStartTime = Date.now();
+      const requestBody: CarouselTextRequest = {
+        ...data,
+        templateId: selectedTemplateId || undefined,
+      };
+
       const response = await fetch('/api/marketing/carousel/layout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(requestBody),
       });
 
       const apiElapsed = Date.now() - apiStartTime;
@@ -398,7 +483,7 @@ export default function AICarouselPageVision() {
       }
 
       setLayoutData(result);
-      setInputData(data);
+      setInputData(requestBody);
       addLog('✅ Layout data set, rendering preview...');
       
       // Reset carousel ID for new generation (will trigger auto-save as new)
@@ -429,7 +514,22 @@ export default function AICarouselPageVision() {
     setCurrentCarouselId(null);
     setCarouselTitle('Untitled Carousel');
     setSaveStatus('idle');
-    canvasRef.current = null;
+    // Don't null out the ref; the Fabric canvas is managed inside CarouselPreviewVision.
+  };
+
+  // "New carousel" = reset editor state (but keep current template selection so you can iterate quickly).
+  const handleNewCarousel = () => {
+    addLog('🆕 New carousel');
+    setShowDropdown(false);
+    setLayoutData(null);
+    setInputData(null);
+    setError(null);
+    setDebugLogs([]);
+    setLayoutHistory([]);
+    setCurrentCarouselId(null);
+    setCarouselTitle('Untitled Carousel');
+    setSaveStatus('idle');
+    setSaveError(null);
   };
 
   const handleRealign = async () => {
@@ -490,20 +590,22 @@ export default function AICarouselPageVision() {
       let response: Response;
       try {
         response = await fetch('/api/marketing/carousel/realign', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            headline: inputData.headline,
-            body: inputData.body,
-            canvasScreenshot: screenshot,
-            imagePosition,
-            model: realignmentModel, // Pass selected model
-          }),
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          headline: inputData.headline,
+          body: inputData.body,
+          canvasScreenshot: screenshot,
+          imagePosition,
+          contentRegion: selectedTemplateSnapshot?.slides?.[0]?.contentRegion || null,
+          contentPadding: 40,
+          model: realignmentModel, // Pass selected model
+        }),
           signal: controller.signal,
-        });
+      });
       } catch (e) {
         if ((e as any)?.name === 'AbortError') {
           throw new Error('Realign timed out (190s). Check server logs; Gemini may be slow or stalled.');
@@ -553,11 +655,12 @@ export default function AICarouselPageVision() {
         result.layout.image.url = layoutData.imageUrl;
       }
       // CRITICAL: Never allow realign to move the user's image. Preserve prior image bounds if present.
-      if (layoutData.layout?.image && result.layout.image) {
-        result.layout.image.x = layoutData.layout.image.x;
-        result.layout.image.y = layoutData.layout.image.y;
-        result.layout.image.width = layoutData.layout.image.width;
-        result.layout.image.height = layoutData.layout.image.height;
+      // Use the CURRENT image position measured from the canvas (this is the source of truth after dragging/resizing).
+      if (result.layout.image && imagePosition) {
+        result.layout.image.x = imagePosition.x;
+        result.layout.image.y = imagePosition.y;
+        result.layout.image.width = imagePosition.width;
+        result.layout.image.height = imagePosition.height;
       }
 
       // Update layout data with new realigned layout
@@ -602,6 +705,56 @@ export default function AICarouselPageVision() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
+        {/* Template Selector */}
+        <div className="mb-6 bg-white rounded-lg shadow p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-black">
+              Template
+            </label>
+            <select
+              value={selectedTemplateId || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (!v) {
+                  setSelectedTemplateId(null);
+                  setSelectedTemplateSnapshot(null);
+                  return;
+                }
+                void loadTemplate(v);
+              }}
+              className="px-3 py-2 border border-gray-300 rounded bg-white text-sm font-medium text-black disabled:text-black focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={loadingTemplates}
+            >
+              <option value="">{loadingTemplates ? 'Loading templates...' : 'No template (legacy)'}</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {selectedTemplateId && (
+              <span className="text-xs text-black">
+                {selectedTemplateSnapshot ? 'Snapshot loaded' : 'Loading...'}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleNewCarousel}
+              className="px-3 py-2 bg-black text-white rounded text-sm font-medium disabled:bg-black/30 disabled:text-white"
+              title="Start a new carousel (clears current layout + save state)"
+            >
+              New Carousel
+            </button>
+            <button
+              onClick={() => setTemplateEditorOpen(true)}
+              className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 text-sm font-medium flex items-center gap-2"
+              title="Open Template Editor (admin-only)"
+            >
+              <span aria-hidden>⚙️</span>
+              <span>Template Editor</span>
+            </button>
+          </div>
+        </div>
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             🎨 AI Carousel Generator (Vision-Based)
@@ -761,6 +914,7 @@ export default function AICarouselPageVision() {
                     layout={layoutData.layout}
                     backgroundColor={inputData.settings?.backgroundColor || '#ffffff'}
                     textColor={inputData.settings?.textColor || '#000000'}
+                    templateSnapshot={selectedTemplateSnapshot}
                   />
                 </div>
                 
@@ -991,6 +1145,20 @@ export default function AICarouselPageVision() {
           </div>
         )}
       </div>
+
+      <TemplateEditorModal
+        open={templateEditorOpen}
+        onClose={() => setTemplateEditorOpen(false)}
+        templates={templates}
+        currentTemplateId={selectedTemplateId}
+        currentTemplateSnapshot={selectedTemplateSnapshot}
+        onTemplateSaved={(templateId, nextDefinition) => {
+          setSelectedTemplateId(templateId);
+          setSelectedTemplateSnapshot(nextDefinition);
+          addLog(`✅ Template updated (snapshot refreshed): ${templateId}`);
+        }}
+        onRefreshTemplates={loadTemplatesList}
+      />
     </div>
   );
 }

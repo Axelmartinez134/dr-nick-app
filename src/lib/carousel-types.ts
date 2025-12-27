@@ -3,6 +3,7 @@
 export interface CarouselTextRequest {
   headline: string;
   body: string;
+  templateId?: string; // Optional carousel template to constrain layout (templates MVP)
   settings?: {
     backgroundColor?: string;
     textColor?: string;

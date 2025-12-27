@@ -931,6 +931,23 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       )
     }
 
+    // Format fasting minutes as "Hh Mm"
+    if (field === 'avg_daily_fasting_minutes') {
+      const n = value !== null && value !== undefined && value !== ('' as any) ? parseInt(String(value)) : null
+      const display = (n === null || !Number.isFinite(n))
+        ? '—'
+        : `${Math.max(0, Math.floor(n / 60))}h ${Math.max(0, n % 60)}m`
+      return (
+        <span
+          className={isDoctorView ? "cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded" : ""}
+          onClick={() => handleCellClick(record.id!, field, value)}
+          title={isDoctorView ? "Click to edit" : ""}
+        >
+          {display}
+        </span>
+      )
+    }
+
     // Regular field handling
     const displayValue = value !== null && value !== undefined ? value.toString() : '—'
     
@@ -995,6 +1012,8 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Weight (${getWeightUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Waist (${getLengthUnitLabel(unitSystem)})`}</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Average Daily Fasting</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Creatine / MyosMD Consumed</th>
               {tracksBP && (
                 <>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Systolic (mmHg)</th>
@@ -1071,6 +1090,12 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {renderCell(record, 'waist', record.waist)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'avg_daily_fasting_minutes', record.avg_daily_fasting_minutes)}
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-900">
+                  {renderCell(record, 'creatine_myosmd_days', record.creatine_myosmd_days)}
                 </td>
                 {tracksBP && (
                   <>

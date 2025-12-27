@@ -32,6 +32,9 @@ export interface WeeklyCheckin {
   nutrition_compliance_days?: number | null
   systolic_bp?: number | null
   diastolic_bp?: number | null
+  creatine_myosmd_days?: number | null
+  avg_daily_fasting_minutes?: number | null
+  weekly_fasting_screenshot_image?: string | null
   data_entered_by?: string
   needs_review?: boolean | null
   notes?: string | null
@@ -81,6 +84,10 @@ export interface CheckinFormData {
   food_log_day5_image?: string
   food_log_day6_image?: string
   food_log_day7_image?: string
+  // Fasting & Muscle Retention (new)
+  creatine_myosmd_days?: string
+  avg_daily_fasting_hhmm?: string
+  weekly_fasting_screenshot_image?: string
   // Queue system fields - Weekly
   weekly_whoop_pdf_url?: string
   weekly_whoop_analysis?: string
@@ -134,6 +141,20 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
     const weightLbs = data.weight ? (unitSystem === 'metric' ? kilogramsToPounds(parseFloat(data.weight)) : parseFloat(data.weight)) : null
     const waistInches = data.waist ? (unitSystem === 'metric' ? centimetersToInches(parseFloat(data.waist)) : parseFloat(data.waist)) : null
 
+    const parseHhmmToMinutes = (hhmm: string | undefined | null): number | null => {
+      if (!hhmm) return null
+      const v = String(hhmm).trim()
+      if (v === '') return null
+      const m = v.match(/^(\d{2}):(\d{2})$/)
+      if (!m) return null
+      const hours = Number(m[1])
+      const minutes = Number(m[2])
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null
+      if (hours < 0 || hours > 23) return null
+      if (minutes < 0 || minutes > 59) return null
+      return hours * 60 + minutes
+    }
+
     // Convert string inputs to appropriate types
     const checkinData: any = {
       user_id: user.id,
@@ -160,6 +181,11 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       detailed_symptom_notes: data.detailed_symptom_notes || null,
       purposeful_exercise_days: data.purposeful_exercise_days ? parseInt(data.purposeful_exercise_days) : null,
       poor_recovery_days: data.poor_recovery_days ? parseInt(data.poor_recovery_days) : null,
+      // Fasting & Muscle Retention (new)
+      creatine_myosmd_days: data.creatine_myosmd_days !== undefined && data.creatine_myosmd_days !== null && data.creatine_myosmd_days !== ''
+        ? parseInt(String(data.creatine_myosmd_days)) : null,
+      avg_daily_fasting_minutes: parseHhmmToMinutes(data.avg_daily_fasting_hhmm),
+      weekly_fasting_screenshot_image: data.weekly_fasting_screenshot_image || null,
       energetic_constraints_reduction_ok: data.energetic_constraints_reduction_ok || false,
       data_entered_by: 'patient',
       notes: data.notes || null,
@@ -508,6 +534,9 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.initial_weight !== undefined) updateData.initial_weight = updates.initial_weight ? parseFloat(String(updates.initial_weight)) : null
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
     if (updates.nutrition_compliance_days !== undefined) updateData.nutrition_compliance_days = updates.nutrition_compliance_days ? parseInt(String(updates.nutrition_compliance_days)) : null
+    if (updates.creatine_myosmd_days !== undefined) updateData.creatine_myosmd_days = updates.creatine_myosmd_days !== null && updates.creatine_myosmd_days !== ('' as any) ? parseInt(String(updates.creatine_myosmd_days)) : null
+    if (updates.avg_daily_fasting_minutes !== undefined) updateData.avg_daily_fasting_minutes = updates.avg_daily_fasting_minutes !== null && updates.avg_daily_fasting_minutes !== ('' as any) ? parseInt(String(updates.avg_daily_fasting_minutes)) : null
+    if (updates.weekly_fasting_screenshot_image !== undefined) updateData.weekly_fasting_screenshot_image = updates.weekly_fasting_screenshot_image || null
 
     const result = await supabase
       .from('health_data')
@@ -616,6 +645,12 @@ export async function createHealthRecordForPatient(
       diastolic_bp: values.diastolic_bp !== undefined && values.diastolic_bp !== null && values.diastolic_bp !== ('' as any)
         ? parseInt(String(values.diastolic_bp)) : null,
       notes: values.notes || null,
+      // Fasting & Muscle Retention (new)
+      creatine_myosmd_days: values.creatine_myosmd_days !== undefined && values.creatine_myosmd_days !== null && values.creatine_myosmd_days !== ('' as any)
+        ? parseInt(String(values.creatine_myosmd_days)) : null,
+      avg_daily_fasting_minutes: values.avg_daily_fasting_minutes !== undefined && values.avg_daily_fasting_minutes !== null && values.avg_daily_fasting_minutes !== ('' as any)
+        ? parseInt(String(values.avg_daily_fasting_minutes)) : null,
+      weekly_fasting_screenshot_image: values.weekly_fasting_screenshot_image || null,
       // Metadata per spec
       data_entered_by: 'dr_nick',
       needs_review: true,

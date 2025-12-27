@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { saveWeeklyCheckin, getCheckinForWeek, hasUserSubmittedThisWeek, type CheckinFormData } from './healthService'
 import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
@@ -39,6 +39,17 @@ function calculateAoECurrentWeekFromWeek1(week1AoEMonday: Date): number {
   const diffMs = nowAoEMonday.getTime() - week1AoEMonday.getTime()
   const weeksElapsed = Math.floor(diffMs / msPerWeek)
   return weeksElapsed + 1
+}
+
+function normalizeHhmm(v: string | undefined | null): string {
+  const raw = String(v ?? '').trim()
+  if (!raw) return ''
+  const m = raw.match(/^(\d{1,2}):(\d{1,2})$/)
+  if (!m) return raw
+  const hh = Math.max(0, Math.min(23, Number(m[1])))
+  const mm = Math.max(0, Math.min(59, Number(m[2])))
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return raw
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
 // Calendar-based week calculation with relaxed baseline anchor.
@@ -230,7 +241,11 @@ export default function HealthForm() {
     food_log_day4_image: '',
     food_log_day5_image: '',
     food_log_day6_image: '',
-    food_log_day7_image: ''
+    food_log_day7_image: '',
+    // Fasting & Muscle Retention (new)
+    creatine_myosmd_days: '',
+    avg_daily_fasting_hhmm: '',
+    weekly_fasting_screenshot_image: ''
   })
   
   // UI state
@@ -291,7 +306,7 @@ export default function HealthForm() {
 
   // Image upload states for each day
   const [uploadingStates, setUploadingStates] = useState<{[key: string]: boolean}>({})
-  const [uploadQueue, setUploadQueue] = useState<Array<{file: File, imageType: 'lumen' | 'food_log', dayNumber: number}>>([])
+  const [uploadQueue, setUploadQueue] = useState<Array<{file: File, imageType: 'lumen' | 'food_log' | 'fasting', dayNumber: number}>>([])
   const [isProcessingQueue, setIsProcessingQueue] = useState(false)
   
   // Image viewer modal state
@@ -302,6 +317,9 @@ export default function HealthForm() {
   
   // Signed URLs for displaying images
   const [signedUrls, setSignedUrls] = useState<{[key: string]: string}>({})
+
+  // Avg fasting input refs (keep focus stable on mobile)
+  const avgFastingMinutesRef = useRef<HTMLInputElement | null>(null)
 
   // Load resistance training goal from profile
   const loadResistanceTrainingGoal = async () => {
@@ -384,6 +402,15 @@ export default function HealthForm() {
       
       if (result.data) {
         const existingData = result.data
+        const minutesToHhmm = (mins: number | null | undefined): string => {
+          if (mins === null || mins === undefined) return ''
+          const n = Number(mins)
+          if (!Number.isFinite(n) || n < 0) return ''
+          const clamped = Math.min(1439, Math.max(0, Math.floor(n)))
+          const hh = String(Math.floor(clamped / 60)).padStart(2, '0')
+          const mm = String(clamped % 60).padStart(2, '0')
+          return `${hh}:${mm}`
+        }
         setFormData({
           date: existingData.date,
           week_number: weekNumber.toString(),
@@ -415,6 +442,10 @@ export default function HealthForm() {
           food_log_day5_image: existingData.food_log_day5_image || '',
           food_log_day6_image: existingData.food_log_day6_image || '',
           food_log_day7_image: existingData.food_log_day7_image || '',
+          // Fasting & Muscle Retention (new)
+          creatine_myosmd_days: (existingData as any)?.creatine_myosmd_days != null ? String((existingData as any).creatine_myosmd_days) : '',
+          avg_daily_fasting_hhmm: minutesToHhmm((existingData as any)?.avg_daily_fasting_minutes),
+          weekly_fasting_screenshot_image: (existingData as any)?.weekly_fasting_screenshot_image || '',
           notes: '' // Notes aren't stored in health_data table
         })
       }
@@ -463,20 +494,23 @@ export default function HealthForm() {
       'lumen_day1_image', 'lumen_day2_image', 'lumen_day3_image', 'lumen_day4_image', 
       'lumen_day5_image', 'lumen_day6_image', 'lumen_day7_image',
       'food_log_day1_image', 'food_log_day2_image', 'food_log_day3_image', 
-      'food_log_day4_image', 'food_log_day5_image', 'food_log_day6_image', 'food_log_day7_image'
+      'food_log_day4_image', 'food_log_day5_image', 'food_log_day6_image', 'food_log_day7_image',
+      'weekly_fasting_screenshot_image'
     ]
 
     imageFields.forEach(fieldName => {
       const imageUrl = formData[fieldName as keyof CheckinFormData] as string
       if (imageUrl) {
-        const match = fieldName.match(/(\w+)_day(\d+)_image/)
-        if (match) {
-          const [, imageType, dayNumber] = match
-          const uploadKey = `${imageType}_day${dayNumber}`
-          if (!signedUrls[uploadKey]) {
-            generateSignedUrl(imageUrl, uploadKey)
-          }
+        if (fieldName === 'weekly_fasting_screenshot_image') {
+          const uploadKey = 'fasting_weekly'
+          if (!signedUrls[uploadKey]) generateSignedUrl(imageUrl, uploadKey)
+          return
         }
+        const match = fieldName.match(/(\w+)_day(\d+)_image/)
+        if (!match) return
+        const [, imageType, dayNumber] = match
+        const uploadKey = `${imageType}_day${dayNumber}`
+        if (!signedUrls[uploadKey]) generateSignedUrl(imageUrl, uploadKey)
       }
     })
   }, [formData])
@@ -535,6 +569,31 @@ export default function HealthForm() {
           Number(formData.poor_recovery_days) < 0 || 
           Number(formData.poor_recovery_days) > 7) {
         errors.poor_recovery_days = 'Poor recovery days must be between 0 and 7'
+      }
+    }
+
+    // Fasting & Muscle Retention (new)
+    if (!formData.creatine_myosmd_days || !String(formData.creatine_myosmd_days).trim()) {
+      errors.creatine_myosmd_days = 'Creatine / MyosMD Consumed is required'
+    } else {
+      const n = Number(formData.creatine_myosmd_days)
+      if (!Number.isInteger(n) || n < 0 || n > 7) {
+        errors.creatine_myosmd_days = 'Creatine / MyosMD Consumed must be an integer between 0 and 7'
+      }
+    }
+
+    // Avg fasting is soft-required; validate format only if present
+    if (formData.avg_daily_fasting_hhmm && String(formData.avg_daily_fasting_hhmm).trim() !== '') {
+      const v = String(formData.avg_daily_fasting_hhmm).trim()
+      const m = v.match(/^(\d{1,2}):(\d{1,2})$/)
+      if (!m) {
+        errors.avg_daily_fasting_hhmm = 'Average Daily Fasting must be in HH:MM format'
+      } else {
+        const hh = Number(m[1])
+        const mm = Number(m[2])
+        if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+          errors.avg_daily_fasting_hhmm = 'Average Daily Fasting must be between 00:00 and 23:59'
+        }
       }
     }
     
@@ -723,6 +782,7 @@ export default function HealthForm() {
 
       const submissionData = {
         ...formData,
+        avg_daily_fasting_hhmm: normalizeHhmm(formData.avg_daily_fasting_hhmm),
         week_number: weekToSubmit.toString(),
         date: await computeAoEMondayForTarget()
       }
@@ -773,7 +833,7 @@ export default function HealthForm() {
   }
 
   // Add image to upload queue
-  const addToUploadQueue = (file: File, imageType: 'lumen' | 'food_log', dayNumber: number) => {
+  const addToUploadQueue = (file: File, imageType: 'lumen' | 'food_log' | 'fasting', dayNumber: number) => {
     setUploadQueue(prev => [...prev, { file, imageType, dayNumber }])
   }
 
@@ -800,11 +860,13 @@ export default function HealthForm() {
   // Handle individual image upload (internal function)
   const handleSingleImageUpload = async (
     file: File,
-    imageType: 'lumen' | 'food_log',
+    imageType: 'lumen' | 'food_log' | 'fasting',
     dayNumber: number
   ) => {
-    const fieldName = `${imageType}_day${dayNumber}_image` as keyof CheckinFormData
-    const uploadKey = `${imageType}_day${dayNumber}`
+    const fieldName = (imageType === 'fasting'
+      ? 'weekly_fasting_screenshot_image'
+      : `${imageType}_day${dayNumber}_image`) as keyof CheckinFormData
+    const uploadKey = imageType === 'fasting' ? 'fasting_weekly' : `${imageType}_day${dayNumber}`
     
     try {
       setUploadingStates(prev => ({ ...prev, [uploadKey]: true }))
@@ -860,9 +922,11 @@ export default function HealthForm() {
   }, [uploadQueue.length, isProcessingQueue, processUploadQueue])
 
   // Handle image removal
-  const handleImageRemove = async (imageType: 'lumen' | 'food_log', dayNumber: number) => {
-    const fieldName = `${imageType}_day${dayNumber}_image` as keyof CheckinFormData
-    const uploadKey = `${imageType}_day${dayNumber}`
+  const handleImageRemove = async (imageType: 'lumen' | 'food_log' | 'fasting', dayNumber: number) => {
+    const fieldName = (imageType === 'fasting'
+      ? 'weekly_fasting_screenshot_image'
+      : `${imageType}_day${dayNumber}_image`) as keyof CheckinFormData
+    const uploadKey = imageType === 'fasting' ? 'fasting_weekly' : `${imageType}_day${dayNumber}`
     
     try {
       setUploadingStates(prev => ({ ...prev, [uploadKey]: true }))
@@ -1038,7 +1102,7 @@ export default function HealthForm() {
                   disabled={isUploading || isInQueue}
                   className="hidden"
                 />
-                <div className={`w-full text-center py-2 px-3 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 cursor-pointer transition-colors ${
+                <div className={`w-full text-center py-2 px-3 border border-gray-300 rounded text-sm text-gray-900 bg-white hover:bg-gray-50 cursor-pointer transition-colors ${
                   (isUploading || isInQueue) ? 'bg-gray-100 cursor-not-allowed' : ''
                 }`}>
                   {isUploading ? 'Uploading...' : isInQueue ? 'Queued...' : 'Replace'}
@@ -1046,7 +1110,7 @@ export default function HealthForm() {
               </label>
             </div>
             {/* Debug info */}
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-900 mt-1">
               <div>Original URL: {imageUrl ? '✅ Set' : '❌ Empty'}</div>
               <div>Display URL: {displayUrl ? '✅ Ready' : '⏳ Loading...'}</div>
               {imageUrl && displayUrl && imageUrl !== displayUrl && (
@@ -1107,6 +1171,178 @@ export default function HealthForm() {
         )}
 
         
+      </div>
+    )
+  }
+
+  // Weekly fasting screenshot upload (single image)
+  const WeeklyFastingScreenshotSlot = () => {
+    const fieldName = 'weekly_fasting_screenshot_image' as keyof CheckinFormData
+    const uploadKey = 'fasting_weekly'
+    const imageUrl = formData[fieldName] as string
+    const displayUrl = signedUrls[uploadKey] || imageUrl
+    const isUploading = uploadingStates[uploadKey]
+    const isInQueue = uploadQueue.some(item => item.imageType === 'fasting')
+
+    // Generate signed URL when image URL is available
+    useEffect(() => {
+      if (imageUrl && !signedUrls[uploadKey]) {
+        generateSignedUrl(imageUrl, uploadKey)
+      }
+    }, [imageUrl, uploadKey])
+
+    return (
+      <div className={`relative border rounded-lg p-4 transition-all ${
+        imageUrl
+          ? 'border-green-300 bg-green-50'
+          : isUploading || isInQueue
+          ? 'border-blue-300 bg-blue-50'
+          : 'border-gray-200 bg-gray-50'
+      }`}>
+        {imageUrl && (
+          <span className="absolute top-2 right-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            ✓ Uploaded
+          </span>
+        )}
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h4 className="font-medium text-gray-900">
+              Upload your Weekly Fasting Screenshot <span className="text-red-500 ml-1">*</span>
+            </h4>
+            <p className="text-xs text-gray-500">
+              Screenshot of your average Fasting over the week
+            </p>
+          </div>
+          <div className="text-xs">
+            {isUploading && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                📤 Uploading...
+              </span>
+            )}
+            {isInQueue && !isUploading && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                ⏳ In Queue
+              </span>
+            )}
+          </div>
+        </div>
+
+        {imageUrl ? (
+          <div className="space-y-2">
+            <div className="relative">
+              {displayUrl ? (
+                <img
+                  src={displayUrl}
+                  alt="Weekly Fasting Screenshot"
+                  className="w-full h-40 object-cover rounded border shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => setViewingImage({
+                    url: displayUrl,
+                    title: 'Weekly Fasting Screenshot'
+                  })}
+                  title="Click to view full size"
+                  onError={() => {
+                    console.error('Image failed to load:', displayUrl)
+                    generateSignedUrl(imageUrl, uploadKey)
+                  }}
+                />
+              ) : (
+                <div className="w-full h-40 bg-gray-200 rounded border flex items-center justify-center">
+                  <div className="text-gray-500 text-sm">Loading image...</div>
+                </div>
+              )}
+              <div className="absolute top-1 left-1 bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+                ✓
+              </div>
+              <button
+                onClick={() => handleImageRemove('fasting', 1)}
+                disabled={isUploading || isInQueue}
+                className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 disabled:bg-gray-400"
+                title="Remove image"
+              >
+                ×
+              </button>
+              <button
+                onClick={() => displayUrl && setViewingImage({ url: displayUrl, title: 'Weekly Fasting Screenshot' })}
+                disabled={!displayUrl}
+                className="absolute bottom-1 right-1 bg-blue-500 text-white rounded px-2 py-1 text-xs hover:bg-blue-600 transition-colors disabled:bg-gray-400"
+                title="Click to view full size"
+              >
+                👁️ View
+              </button>
+            </div>
+            <div className="flex space-x-2">
+              <label className="flex-1">
+                <span className="sr-only">Replace weekly fasting screenshot</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      addToUploadQueue(file, 'fasting', 1)
+                    }
+                  }}
+                  disabled={isUploading || isInQueue}
+                  className="hidden"
+                />
+                <div className={`w-full text-center py-2 px-3 border border-gray-300 rounded text-sm text-gray-900 bg-white hover:bg-gray-50 cursor-pointer transition-colors ${
+                  (isUploading || isInQueue) ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}>
+                  {isUploading ? 'Uploading...' : isInQueue ? 'Queued...' : 'Replace'}
+                </div>
+              </label>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label className="block">
+              <span className="sr-only">Upload weekly fasting screenshot</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    addToUploadQueue(file, 'fasting', 1)
+                  }
+                }}
+                disabled={isUploading || isInQueue}
+                className="hidden"
+              />
+              <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
+                isUploading || isInQueue
+                  ? 'border-blue-400 bg-blue-50 cursor-not-allowed'
+                  : 'border-gray-300 hover:border-gray-400 bg-white'
+              }`}>
+                {isUploading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <span className="text-sm text-blue-600">Uploading...</span>
+                  </div>
+                ) : isInQueue ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="animate-pulse rounded-full h-4 w-4 bg-yellow-400"></div>
+                    <span className="text-sm text-yellow-600">Queued for upload...</span>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-gray-400 mb-2">
+                      <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Click to upload
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      PNG, JPG, JPEG (max 10MB)
+                    </div>
+                  </div>
+                )}
+              </div>
+            </label>
+          </div>
+        )}
       </div>
     )
   }
@@ -1454,6 +1690,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="weight"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 required
@@ -1476,6 +1713,7 @@ export default function HealthForm() {
               <input
                   type="number"
                   id="waist"
+                  inputMode="decimal"
                   step="0.01"
                   min="0"
                   required
@@ -1508,6 +1746,7 @@ export default function HealthForm() {
                 <input
                   type="number"
                   id="resistance_training_days"
+                  inputMode="numeric"
                   min="0"
                   max="7"
                   value={formData.resistance_training_days}
@@ -1536,6 +1775,7 @@ export default function HealthForm() {
                 <input
                   type="number"
                   id="purposeful_exercise_days"
+                  inputMode="numeric"
                   min="0"
                   max="7"
                   required
@@ -1558,6 +1798,127 @@ export default function HealthForm() {
         </div>
         )}
 
+        {/* Fasting and Muscle Retention (all client statuses) */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-gray-900 border-b pb-2">⏳ Fasting and Muscle Retention</h3>
+
+          {/* Mobile: stacked. Desktop: screenshot left, inputs right */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-1">
+              <div className="mb-2">
+                <h4 className="text-sm font-medium text-gray-900">
+                  📸 Weekly Fasting Screenshot <span className="text-red-500">*Required</span>
+                </h4>
+                <p className="text-sm text-gray-600 mt-1">
+                  Screenshot of your average Fasting over the week
+                </p>
+              </div>
+              <WeeklyFastingScreenshotSlot />
+            </div>
+
+            <div className="md:col-span-2 space-y-4">
+              <div>
+                <label htmlFor="creatine_myosmd_days" className="block text-sm font-medium text-gray-700 mb-1">
+                  How manyy days did you take HMB + Creatine / and or MyosMD this week? <br />(0-7) - Numbers Only <span className="text-red-500">*Required</span>
+                </label>
+                <input
+                  type="number"
+                  id="creatine_myosmd_days"
+                  inputMode="numeric"
+                  min="0"
+                  max="7"
+                  step="1"
+                  required
+                  value={formData.creatine_myosmd_days || ''}
+                  onChange={(e) => handleInputChange('creatine_myosmd_days', e.target.value)}
+                  className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
+                    validationErrors['creatine_myosmd_days'] ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="e.g., 5"
+                />
+                {validationErrors['creatine_myosmd_days'] && (
+                  <p className="text-sm text-red-600 mt-1">{validationErrors['creatine_myosmd_days']}</p>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="avg_daily_fasting_hhmm" className="block text-sm font-medium text-gray-700 mb-1">
+                  Average Daily Fasting Over The Week <span className="text-red-500">*Required</span>
+                </label>
+                <div className={validationErrors['avg_daily_fasting_hhmm'] ? 'rounded-md border border-red-500 p-0.5' : ''}>
+                  {(() => {
+                    const raw = String(formData.avg_daily_fasting_hhmm || '').trim()
+                    const parts = raw.split(':')
+                    const hh = (parts[0] || '').replace(/\D/g, '').slice(0, 2)
+                    const mm = (parts[1] || '').replace(/\D/g, '').slice(0, 2)
+
+                    const setParts = (nextHh: string, nextMm: string) => {
+                      const hasAny = (nextHh + nextMm).trim() !== ''
+                      const combined = hasAny ? `${nextHh}:${nextMm}` : ''
+                      handleInputChange('avg_daily_fasting_hhmm', combined)
+                    }
+
+                    return (
+                      <div className="flex items-stretch w-full border border-gray-300 rounded-md overflow-hidden bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                        <input
+                          aria-label="Hours"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          placeholder="HH"
+                          value={hh}
+                          onChange={(e) => {
+                            const nextRaw = e.target.value.replace(/\D/g, '').slice(0, 2)
+                            // If user entered 2 digits, clamp immediately to 23 to avoid "99" states (esp. on mobile)
+                            const next =
+                              nextRaw.length === 2
+                                ? String(Math.min(23, Number(nextRaw))).padStart(2, '0')
+                                : nextRaw
+                            setParts(next, mm)
+                            // Auto-advance only when the user *finishes* the hours entry (1 digit -> 2 digits).
+                            // This avoids the earlier behavior where focus could jump too early on some mobile keyboards.
+                            if (hh.length === 1 && nextRaw.length === 2) {
+                              setTimeout(() => avgFastingMinutesRef.current?.focus(), 0)
+                            }
+                          }}
+                          maxLength={2}
+                          className="w-20 px-3 py-2 text-gray-900 outline-none"
+                        />
+                        <div className="flex items-center justify-center px-1 text-gray-900 select-none">:</div>
+                        <input
+                          ref={avgFastingMinutesRef}
+                          aria-label="Minutes"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          placeholder="MM"
+                          value={mm}
+                          onChange={(e) => {
+                            const nextRaw = e.target.value.replace(/\D/g, '').slice(0, 2)
+                            // Clamp immediately once 2 digits entered
+                            const next =
+                              nextRaw.length === 2
+                                ? String(Math.min(59, Number(nextRaw))).padStart(2, '0')
+                                : nextRaw
+                            setParts(hh, next)
+                          }}
+                          maxLength={2}
+                          className="w-20 px-3 py-2 text-gray-900 outline-none"
+                        />
+                        <div className="flex-1" />
+                        <div className="px-3 py-2 text-sm text-gray-700 flex items-center border-l border-gray-200">
+                          Hours : Minutes
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+                {validationErrors['avg_daily_fasting_hhmm'] && (
+                  <p className="text-sm text-red-600 mt-1">{validationErrors['avg_daily_fasting_hhmm']}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
           {/* Recovery & Nutrition (hidden for Nutraceutical) */}
         {!isNutraceutical && (
         <div className="space-y-4">
@@ -1571,6 +1932,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="symptom_tracking_days"
+                  inputMode="numeric"
                 min="0"
                 max="7"
                 value={formData.symptom_tracking_days}
@@ -1596,6 +1958,7 @@ export default function HealthForm() {
               <input
                 type="number"
                   id="poor_recovery_days"
+                inputMode="numeric"
                 min="0"
                 max="7"
                 required
@@ -1638,6 +2001,7 @@ export default function HealthForm() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="0"
                 max="7"
                 value={formData.nutrition_compliance_days}
@@ -1651,6 +2015,7 @@ export default function HealthForm() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Sleep Consistency Score (0-100)</label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="0"
                 max="100"
                 value={formData.sleep_consistency_score}
@@ -1664,6 +2029,7 @@ export default function HealthForm() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Morning Fat Burn % (0-100)</label>
               <input
                 type="number"
+                inputMode="decimal"
                 min="0"
                 max="100"
                 step="0.01"
@@ -1690,6 +2056,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="visceral_fat_level"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 value={(formData as any).visceral_fat_level || ''}
@@ -1705,6 +2072,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="subcutaneous_fat_level"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 value={(formData as any).subcutaneous_fat_level || ''}
@@ -1720,6 +2088,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="belly_fat_percent"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 max="100"
@@ -1736,6 +2105,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="total_muscle_mass_percent"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 max="100"
@@ -1760,6 +2130,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="resting_heart_rate"
+                inputMode="numeric"
                 min="20"
                 max="120"
                 step="1"
@@ -1784,6 +2155,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="systolic_bp"
+                inputMode="numeric"
                 step="1"
                 value={formData.systolic_bp as any}
                 onChange={(e) => handleInputChange('systolic_bp' as any, e.target.value)}
@@ -1798,6 +2170,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="diastolic_bp"
+                inputMode="numeric"
                 step="1"
                 value={formData.diastolic_bp as any}
                 onChange={(e) => handleInputChange('diastolic_bp' as any, e.target.value)}
@@ -1821,6 +2194,7 @@ export default function HealthForm() {
               <input
                 type="number"
                 id="body_fat_percentage"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 max="100"

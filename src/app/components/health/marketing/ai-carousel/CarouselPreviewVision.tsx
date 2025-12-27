@@ -2,21 +2,111 @@
 
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 'react';
 import { VisionLayoutDecision } from '@/lib/carousel-types';
+import type { CarouselTemplateDefinitionV1, TemplateAsset, TemplateImageAsset, TemplateTextAsset, TemplateRect } from '@/lib/carousel-template-types';
+import { supabase } from '../../../auth/AuthContext';
 
 interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
   backgroundColor: string;
   textColor: string;
+  templateSnapshot?: CarouselTemplateDefinitionV1 | null;
 }
 
 const DISPLAY_ZOOM = 0.5;
 
 const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
-  ({ layout, backgroundColor, textColor }, ref) => {
+  ({ layout, backgroundColor, textColor, templateSnapshot }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<any>(null);
     const fabricModuleRef = useRef<any>(null);
     const [fabricLoaded, setFabricLoaded] = useState(false);
+    const constraintsRef = useRef<{ allowedRect: null | { x: number; y: number; width: number; height: number } }>({ allowedRect: null });
+
+    const computeAllowedRect = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
+      if (!tpl?.slides?.length) return null;
+      const slide0 = tpl.slides.find(s => s.slideIndex === 0) || tpl.slides[0];
+      const r = slide0?.contentRegion as TemplateRect | undefined;
+      if (!r) return null;
+      const PAD = 40;
+      return {
+        x: r.x + PAD,
+        y: r.y + PAD,
+        width: Math.max(1, r.width - (PAD * 2)),
+        height: Math.max(1, r.height - (PAD * 2)),
+      };
+    };
+
+    const disableRotationControls = (obj: any) => {
+      try {
+        obj.lockRotation = true;
+        obj.hasRotatingPoint = false;
+        if (typeof obj.setControlsVisibility === 'function') {
+          obj.setControlsVisibility({ mtr: false });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const getAABBTopLeft = (obj: any) => {
+      const width = (typeof obj.getScaledWidth === 'function'
+        ? obj.getScaledWidth()
+        : (obj.width || 0) * (obj.scaleX || 1));
+      const height = (typeof obj.getScaledHeight === 'function'
+        ? obj.getScaledHeight()
+        : (obj.height || 0) * (obj.scaleY || 1));
+      const originX = (obj.originX || 'left') as 'left' | 'center' | 'right';
+      const originY = (obj.originY || 'top') as 'top' | 'center' | 'bottom';
+      const leftRaw = obj.left || 0;
+      const topRaw = obj.top || 0;
+      const originOffsetX =
+        originX === 'center' ? width / 2 :
+        originX === 'right' ? width :
+        0;
+      const originOffsetY =
+        originY === 'center' ? height / 2 :
+        originY === 'bottom' ? height :
+        0;
+      return { x: leftRaw - originOffsetX, y: topRaw - originOffsetY, width, height, originOffsetX, originOffsetY };
+    };
+
+    const clampObjectToRect = (obj: any, rect: { x: number; y: number; width: number; height: number }) => {
+      if (!obj) return;
+      const { x: tlx, y: tly, width, height, originOffsetX, originOffsetY } = getAABBTopLeft(obj);
+      const left = rect.x;
+      const top = rect.y;
+      const right = rect.x + rect.width;
+      const bottom = rect.y + rect.height;
+
+      // If object is larger than bounds, shrink (prefer uniform for images)
+      if (width > rect.width || height > rect.height) {
+        const sx = (obj.scaleX || 1);
+        const sy = (obj.scaleY || 1);
+        const maxScaleX = rect.width / Math.max(1, (obj.width || width));
+        const maxScaleY = rect.height / Math.max(1, (obj.height || height));
+        if (obj.type === 'image') {
+          const uniform = Math.min(maxScaleX, maxScaleY);
+          obj.scaleX = uniform;
+          obj.scaleY = uniform;
+        } else {
+          obj.scaleX = Math.min(sx, maxScaleX);
+          obj.scaleY = Math.min(sy, maxScaleY);
+        }
+      }
+
+      const aabb = getAABBTopLeft(obj);
+      let newTlx = aabb.x;
+      let newTly = aabb.y;
+
+      if (newTlx < left) newTlx = left;
+      if (newTly < top) newTly = top;
+      if (newTlx + aabb.width > right) newTlx = right - aabb.width;
+      if (newTly + aabb.height > bottom) newTly = bottom - aabb.height;
+
+      obj.left = newTlx + aabb.originOffsetX;
+      obj.top = newTly + aabb.originOffsetY;
+      if (typeof obj.setCoords === 'function') obj.setCoords();
+    };
 
     // Initialize Fabric canvas once
     useEffect(() => {
@@ -70,6 +160,119 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         fabricCanvasRef.current = canvas;
         setFabricLoaded(true);
         console.log('[Preview Vision] ✅ Canvas created and ready');
+
+        // Enforce hard-clamps for user content when a template contentRegion exists.
+        // We attach listeners once and consult constraintsRef (updated on render).
+        const getUserImageBlockedRect = (): null | { left: number; top: number; right: number; bottom: number } => {
+          const objs = canvas.getObjects?.() || [];
+          const img = objs.find((o: any) => o?.type === 'image' && o?.data?.role === 'user-image');
+          if (!img) return null;
+          const aabb = getAABBTopLeft(img);
+          const clearance = 1;
+          return {
+            left: Math.floor(aabb.x - clearance),
+            top: Math.floor(aabb.y - clearance),
+            right: Math.ceil(aabb.x + aabb.width + clearance),
+            bottom: Math.ceil(aabb.y + aabb.height + clearance),
+          };
+        };
+
+        const rectsOverlap = (a: { left: number; top: number; right: number; bottom: number }, b: { left: number; top: number; right: number; bottom: number }) => {
+          return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+        };
+
+        const objectAABB = (obj: any) => {
+          const aabb = getAABBTopLeft(obj);
+          return { left: aabb.x, top: aabb.y, right: aabb.x + aabb.width, bottom: aabb.y + aabb.height };
+        };
+
+        const pushTextOutOfImage = (obj: any) => {
+          const allowed = constraintsRef.current.allowedRect;
+          const blocked = getUserImageBlockedRect();
+          if (!allowed || !blocked || !obj) return;
+          const lr = objectAABB(obj);
+          if (!rectsOverlap(lr, blocked)) return;
+
+          // Candidate snap positions (keep current x if possible).
+          const w = lr.right - lr.left;
+          const h = lr.bottom - lr.top;
+          const candidates: Array<{ x: number; y: number }> = [];
+
+          // Above image
+          candidates.push({ x: lr.left, y: blocked.top - h });
+          // Below image
+          candidates.push({ x: lr.left, y: blocked.bottom });
+          // Left of image
+          candidates.push({ x: blocked.left - w, y: lr.top });
+          // Right of image (preferred tie-break)
+          candidates.push({ x: blocked.right, y: lr.top });
+
+          const withinAllowed = (p: { x: number; y: number }) => {
+            return (
+              p.x >= allowed.x &&
+              p.y >= allowed.y &&
+              (p.x + w) <= (allowed.x + allowed.width) &&
+              (p.y + h) <= (allowed.y + allowed.height)
+            );
+          };
+
+          const cur = { x: lr.left, y: lr.top };
+          const dist2 = (a: any, b: any) => {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            return dx * dx + dy * dy;
+          };
+
+          const ok = candidates
+            .filter(withinAllowed)
+            .sort((a, b) => {
+              const da = dist2(a, cur);
+              const db = dist2(b, cur);
+              if (da !== db) return da - db;
+              // tie-break: prefer RIGHT
+              if (a.x === blocked.right && b.x !== blocked.right) return -1;
+              if (b.x === blocked.right && a.x !== blocked.right) return 1;
+              return 0;
+            })[0];
+
+          if (!ok) {
+            // Fallback: just clamp to allowed rect (better than staying on top of the image)
+            clampObjectToRect(obj, allowed);
+            return;
+          }
+
+          // Preserve origin offsets when setting left/top
+          const aabbNow = getAABBTopLeft(obj);
+          obj.left = ok.x + aabbNow.originOffsetX;
+          obj.top = ok.y + aabbNow.originOffsetY;
+          if (typeof obj.setCoords === 'function') obj.setCoords();
+        };
+
+        const onObjectMoving = (e: any) => {
+          const rect = constraintsRef.current.allowedRect;
+          if (!rect) return;
+          const obj = e?.target;
+          const role = obj?.data?.role;
+          if (role !== 'user-image' && role !== 'user-text') return;
+          clampObjectToRect(obj, rect);
+          if (role === 'user-text') pushTextOutOfImage(obj);
+          canvas.requestRenderAll?.();
+        };
+        const onObjectScaling = (e: any) => {
+          const rect = constraintsRef.current.allowedRect;
+          if (!rect) return;
+          const obj = e?.target;
+          const role = obj?.data?.role;
+          if (role !== 'user-image' && role !== 'user-text') return;
+          clampObjectToRect(obj, rect);
+          if (role === 'user-text') pushTextOutOfImage(obj);
+          canvas.requestRenderAll?.();
+        };
+
+        canvas.on('object:moving', onObjectMoving);
+        canvas.on('object:scaling', onObjectScaling);
+        // Store for cleanup
+        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling };
       }).catch((error) => {
         console.error('[Preview Vision] ❌ Failed to load Fabric.js:', error);
       });
@@ -79,6 +282,16 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         isMounted = false;
         if (fabricCanvasRef.current) {
           console.log('[Preview Vision] 🧹 Cleaning up canvas');
+          try {
+            const c = fabricCanvasRef.current;
+            const h = (c as any).__dnClampHandlers;
+            if (h) {
+              c.off('object:moving', h.onObjectMoving);
+              c.off('object:scaling', h.onObjectScaling);
+            }
+          } catch {
+            // ignore
+          }
           fabricCanvasRef.current.dispose();
           fabricCanvasRef.current = null;
           setFabricLoaded(false);
@@ -176,9 +389,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         
         console.log('[Preview Vision] 📐 Getting current image position...');
         
-        // Find the image object on canvas (should be the first Image object)
+        // Find the USER image object on canvas.
+        // Templates introduce additional Fabric image objects; do NOT treat those as the user's image.
         const objects = canvas.getObjects();
-        const imageObj = objects.find((obj: any) => obj.type === 'image');
+        const imageObj =
+          objects.find((obj: any) => obj?.type === 'image' && obj?.data?.role === 'user-image') ||
+          objects.find((obj: any) => obj?.type === 'image'); // fallback for legacy canvases
         
         if (!imageObj) {
           console.error('[Preview Vision] ❌ No image found on canvas');
@@ -286,7 +502,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       // Preserve current image position so realign can NEVER move the user's image.
       // Use origin-aware top-left (getPointByOrigin) so we preserve the user's intended placement.
-      const existingImageObj = canvas.getObjects?.().find((obj: any) => obj.type === 'image');
+      const existingImageObj =
+        canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && obj?.data?.role === 'user-image') ||
+        canvas.getObjects?.().find((obj: any) => obj?.type === 'image');
       let preservedImage: null | { left: number; top: number; scaleX: number; scaleY: number } = null;
       if (existingImageObj) {
         try {
@@ -328,6 +546,114 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       canvas.backgroundColor = backgroundColor;
       console.log('[Preview Vision] 🧹 Canvas cleared, background set to', backgroundColor);
 
+      // Update clamp constraints based on template snapshot (contentRegion inset by 40px).
+      constraintsRef.current.allowedRect = computeAllowedRect(templateSnapshot || null);
+
+      const addTemplateAssets = () => {
+        if (!templateSnapshot?.slides?.length) return;
+        const slide0 = templateSnapshot.slides.find(s => s.slideIndex === 0) || templateSnapshot.slides[0];
+        const assets = (slide0?.assets || []) as TemplateAsset[];
+        if (!Array.isArray(assets) || assets.length === 0) return;
+
+        // Deterministic ordering by zIndex, then stable id.
+        const sorted = [...assets].sort((a, b) => {
+          const za = (a.zIndex ?? 0);
+          const zb = (b.zIndex ?? 0);
+          if (za !== zb) return za - zb;
+          return String(a.id).localeCompare(String(b.id));
+        });
+
+        for (const asset of sorted) {
+          try {
+            if (asset.type === 'text') {
+              const t = asset as TemplateTextAsset;
+              const obj = new fabric.Textbox(t.text || '', {
+                left: t.rect.x,
+                top: t.rect.y,
+                width: Math.max(1, t.rect.width),
+                fontSize: t.style?.fontSize || 24,
+                fontFamily: t.style?.fontFamily || 'Arial, sans-serif',
+                fontWeight: t.style?.fontWeight || 'normal',
+                fill: t.style?.fill || '#000000',
+                textAlign: t.style?.textAlign || 'left',
+                originX: 'left',
+                originY: 'top',
+                selectable: false,
+                editable: false,
+                evented: false,
+              });
+              (obj as any).data = { role: 'template-asset', assetId: t.id, assetKind: t.kind, assetType: 'text' };
+              disableRotationControls(obj);
+              canvas.add(obj);
+            } else if (asset.type === 'image') {
+              const imgA = asset as TemplateImageAsset;
+              const imgElement = new Image();
+              imgElement.crossOrigin = 'anonymous';
+              imgElement.onload = () => {
+                try {
+                  const fimg = new fabric.Image(imgElement, {
+                    left: imgA.rect.x,
+                    top: imgA.rect.y,
+                    originX: 'left',
+                    originY: 'top',
+                    scaleX: imgA.rect.width / imgElement.width,
+                    scaleY: imgA.rect.height / imgElement.height,
+                    selectable: false,
+                    evented: false,
+                  });
+                  (fimg as any).data = { role: 'template-asset', assetId: imgA.id, assetKind: imgA.kind, assetType: 'image' };
+                  disableRotationControls(fimg);
+                  canvas.add(fimg);
+                  // Keep template assets behind user content.
+                  if (typeof canvas.sendObjectToBack === 'function') canvas.sendObjectToBack(fimg);
+                  canvas.renderAll();
+                } catch (e) {
+                  console.warn('[Preview Vision] ⚠️ Failed to add template image asset:', e);
+                }
+              };
+              const setSrc = async () => {
+                const publicUrl = imgA.src?.url;
+                const objectPath = imgA.src?.path;
+                if (!publicUrl || !objectPath) return;
+
+                // First try public URL
+                try {
+                  const res = await fetch(publicUrl, { method: 'HEAD' });
+                  if (res.ok) {
+                    imgElement.src = publicUrl;
+                    return;
+                  }
+                } catch {
+                  // ignore and fallback
+                }
+
+                // Fallback: signed URL via server (works even when storage.objects policies can't be edited)
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (!session) return;
+                  const templateId = String(objectPath.split('/')[0] || '');
+                  const url = `/api/marketing/carousel/templates/signed-url?templateId=${encodeURIComponent(templateId)}&path=${encodeURIComponent(objectPath)}&expiresIn=3600`;
+                  const r = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` } });
+                  const j = await r.json();
+                  if (j?.success && j?.signedUrl) {
+                    imgElement.src = j.signedUrl;
+                    return;
+                  }
+                } catch {
+                  // ignore
+                }
+              };
+              void setSrc();
+            }
+          } catch (e) {
+            console.warn('[Preview Vision] ⚠️ Failed to add template asset:', e);
+          }
+        }
+      };
+
+      // STEP 0: Add locked template assets (if any)
+      addTemplateAssets();
+
       // STEP 1: Load and add image if provided
       if (layout.image && layout.image.url) {
         console.log('[Preview Vision] 🖼️ Loading image...');
@@ -358,39 +684,34 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               scaleY: preservedImage ? preservedImage.scaleY : (layout.image!.height / imgElement.height),
               selectable: true,
             });
+            (fabricImage as any).data = { role: 'user-image' };
+            disableRotationControls(fabricImage);
 
             console.log('[Preview Vision] 📐 Image positioned and scaled');
             canvas.add(fabricImage);
             
-            // Send image to back across Fabric versions
-            const sendImageToBack = () => {
-              if (typeof canvas.sendObjectToBack === 'function') {
-                canvas.sendObjectToBack(fabricImage);
-                return true;
-              }
-              if (typeof canvas.sendToBack === 'function') {
-                canvas.sendToBack(fabricImage);
-                return true;
-              }
+            // Stacking: template assets (locked layer) should be behind user content.
+            // Place user image above template assets but below user text.
+            const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
+            let stacked = false;
+            try {
               if (typeof canvas.moveTo === 'function') {
-                canvas.moveTo(fabricImage, 0);
-                return true;
+                canvas.moveTo(fabricImage, templateCount);
+                stacked = true;
+              } else if (typeof (fabricImage as any).moveTo === 'function') {
+                (fabricImage as any).moveTo(templateCount);
+                stacked = true;
               }
-              if (typeof (fabricImage as any).moveTo === 'function') {
-                (fabricImage as any).moveTo(0);
-                return true;
-              }
-              return false;
-            };
-
-            const sent = sendImageToBack();
-            console.log('[Preview Vision] 🧱 Image stacking:', sent ? 'sent to back ✅' : 'could not reorder ⚠️');
+            } catch {
+              stacked = false;
+            }
+            console.log('[Preview Vision] 🧱 Image stacking:', stacked ? `moved to index ${templateCount} ✅` : 'could not reorder ⚠️');
 
             // If the image loads after text has been added, force all text to the front.
             try {
               const objs = canvas.getObjects?.() || [];
               objs.forEach((obj: any) => {
-                if (obj?.type === 'textbox' || obj?.type === 'i-text' || obj?.type === 'text') {
+                if (obj?.data?.role === 'user-text') {
                   if (typeof canvas.bringObjectToFront === 'function') {
                     canvas.bringObjectToFront(obj);
                   } else if (typeof canvas.bringToFront === 'function') {
@@ -452,6 +773,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             editable: true,
             splitByGrapheme: false, // Wrap at word boundaries, not mid-word
           });
+          (textObj as any).data = { role: 'user-text', lineIndex: index };
+          disableRotationControls(textObj);
 
           // Apply style ranges (bold, italic, etc.)
           if (line.styles && line.styles.length > 0) {
@@ -494,7 +817,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       canvas.renderAll();
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
-    }, [layout, backgroundColor, textColor, fabricLoaded]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot]);
 
     return (
       <div className="flex flex-col items-center space-y-4">

@@ -23,6 +23,9 @@ interface RealignRequest {
     width: number;
     height: number;
   };
+  // Optional template contentRegion (outer), used to constrain deterministic wrap-flow.
+  contentRegion?: { x: number; y: number; width: number; height: number };
+  contentPadding?: number; // defaults to 40
   model?: 'claude' | 'gemini' | 'gemini-computational'; // Model selection
 }
 
@@ -126,12 +129,23 @@ export async function POST(request: NextRequest) {
       // Deterministic "Docs-style wrap" layout + single AI call for emphasis styles (never for placement).
       console.log(`[Realign API] 🏗️ Using WRAP-FLOW LAYOUT (NO OVERLAP) + ONE ${selectedModel === 'claude' ? 'CLAUDE' : 'GEMINI'} STYLES CALL`);
 
+      const pad = typeof body.contentPadding === 'number' ? body.contentPadding : 40;
+      const inset = body.contentRegion
+        ? {
+            x: body.contentRegion.x + pad,
+            y: body.contentRegion.y + pad,
+            width: Math.max(1, body.contentRegion.width - (pad * 2)),
+            height: Math.max(1, body.contentRegion.height - (pad * 2)),
+          }
+        : null;
+
       const { layout: wrapLayout, meta } = wrapFlowLayout(
         body.headline.trim(),
         body.body.trim(),
         body.imagePosition,
         {
-          margin: 40,
+          // If a template provides a contentRegion, we constrain layout to that inset rect.
+          ...(inset ? { contentRect: inset } : { margin: 40 }),
           clearancePx: 1,
           lineHeight: 1.2,
           headlineFontSize: 76,

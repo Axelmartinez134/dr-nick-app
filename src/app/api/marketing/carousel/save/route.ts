@@ -16,6 +16,8 @@ interface SaveCarouselRequest {
   backgroundColor: string;
   textColor: string;
   customImagePrompt?: string;
+  templateId?: string | null;
+  templateSnapshot?: any | null;
 }
 
 interface SaveCarouselResponse {
@@ -98,6 +100,8 @@ export async function POST(request: NextRequest) {
           background_color: body.backgroundColor,
           text_color: body.textColor,
           custom_image_prompt: body.customImagePrompt || null,
+          template_id: body.templateId || null,
+          template_snapshot: body.templateSnapshot || null,
         })
         .eq('id', body.id)
         .eq('user_id', user.id) // Ensure user owns this carousel
@@ -128,6 +132,8 @@ export async function POST(request: NextRequest) {
           background_color: body.backgroundColor,
           text_color: body.textColor,
           custom_image_prompt: body.customImagePrompt || null,
+          template_id: body.templateId || null,
+          template_snapshot: body.templateSnapshot || null,
         })
         .select('id')
         .single();

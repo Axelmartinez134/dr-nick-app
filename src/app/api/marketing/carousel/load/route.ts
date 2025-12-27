@@ -108,6 +108,8 @@ export async function GET(request: NextRequest) {
       backgroundColor: data.background_color,
       textColor: data.text_color,
       customImagePrompt: data.custom_image_prompt,
+      templateId: (data as any).template_id || null,
+      templateSnapshot: (data as any).template_snapshot || null,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };

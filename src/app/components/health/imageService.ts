@@ -15,7 +15,7 @@ export async function uploadSingleImage(
   file: File, 
   userId: string, 
   weekNumber: number, 
-  imageType: 'lumen' | 'food_log',
+  imageType: 'lumen' | 'food_log' | 'fasting',
   dayNumber: number
 ): Promise<{ success: boolean, url?: string, error?: string }> {
   try {

@@ -32,6 +32,16 @@ export default function DrNickSubmissionReview({
   onReviewComplete, 
   onBackToQueue 
 }: DrNickSubmissionReviewProps) {
+  const formatFastingMinutes = (mins: number | null | undefined) => {
+    if (mins === null || mins === undefined) return 'N/A'
+    const n = Number(mins)
+    if (!Number.isFinite(n)) return 'N/A'
+    const clamped = Math.min(1439, Math.max(0, Math.floor(n)))
+    const h = Math.floor(clamped / 60)
+    const m = clamped % 60
+    return `${h}h ${m}m`
+  }
+
   // State management
   const [submissionChartData, setSubmissionChartData] = useState<any[]>([])
   const [signedUrls, setSignedUrls] = useState<{[key: string]: string}>({})
@@ -39,7 +49,7 @@ export default function DrNickSubmissionReview({
   // Enhanced image viewer with navigation
   const [viewingImageSet, setViewingImageSet] = useState<{
     currentIndex: number,
-    imageType: 'lumen' | 'food_log',
+    imageType: 'lumen' | 'food_log' | 'fasting',
     images: Array<{url: string, title: string, day: string, fieldName: string}>
   } | null>(null)
   
@@ -199,7 +209,8 @@ export default function DrNickSubmissionReview({
       'lumen_day1_image', 'lumen_day2_image', 'lumen_day3_image', 'lumen_day4_image',
       'lumen_day5_image', 'lumen_day6_image', 'lumen_day7_image',
       'food_log_day1_image', 'food_log_day2_image', 'food_log_day3_image',
-      'food_log_day4_image', 'food_log_day5_image', 'food_log_day6_image', 'food_log_day7_image'
+      'food_log_day4_image', 'food_log_day5_image', 'food_log_day6_image', 'food_log_day7_image',
+      'weekly_fasting_screenshot_image'
     ]
 
     // Add PDF fields to signed URL generation
@@ -1392,7 +1403,7 @@ export default function DrNickSubmissionReview({
             <p className="text-sm text-gray-600">Data submitted by {submission.profiles.first_name} {submission.profiles.last_name} for Week {submission.week_number}</p>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-10 gap-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-blue-700">Weight</label>
             <div className="text-2xl font-bold text-blue-900">{unitSystem === 'metric' ? (submission.weight !== null && submission.weight !== undefined ? `${(Math.round((submission.weight * 0.45359237) * 100) / 100).toFixed(2)} kg` : 'N/A') : (submission.weight !== null && submission.weight !== undefined ? `${submission.weight.toFixed(2)} lbs` : 'N/A')}</div>
@@ -1400,6 +1411,14 @@ export default function DrNickSubmissionReview({
           <div className="bg-green-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-green-700">Waist</label>
             <div className="text-2xl font-bold text-green-900">{unitSystem === 'metric' ? (submission.waist !== null && submission.waist !== undefined ? `${(Math.round((submission.waist * 2.54) * 100) / 100).toFixed(2)} cm` : 'N/A') : (submission.waist !== null && submission.waist !== undefined ? `${submission.waist.toFixed(2)} inches` : 'N/A')}</div>
+          </div>
+          <div className="bg-slate-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-slate-700">Average Daily Fasting</label>
+            <div className="text-2xl font-bold text-slate-900">{formatFastingMinutes((submission as any).avg_daily_fasting_minutes)}</div>
+          </div>
+          <div className="bg-emerald-50 p-4 rounded-lg">
+            <label className="block text-sm font-medium text-emerald-700">Creatine / MyosMD Consumed</label>
+            <div className="text-2xl font-bold text-emerald-900">{(submission as any).creatine_myosmd_days ?? 'N/A'}</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
             <label className="block text-sm font-medium text-purple-700">Days Strain Goal Met</label>
@@ -1619,6 +1638,42 @@ export default function DrNickSubmissionReview({
       {/* 2. Client Submission Images - Full Width */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h4 className="text-xl font-semibold text-gray-900 mb-6">📷 Client Submission Images</h4>
+
+        {/* Weekly Fasting Screenshot */}
+        <div className="mb-8">
+          <h5 className="text-lg font-medium text-gray-700 mb-4 flex items-center">
+            <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm mr-3">Required</span>
+            Weekly Fasting Screenshot
+          </h5>
+          {(() => {
+            const fieldName = 'weekly_fasting_screenshot_image'
+            const imageUrl = submission[fieldName as keyof QueueSubmission] as string
+            const displayUrl = signedUrls[fieldName] || imageUrl
+            return (
+              <div className="max-w-md">
+                {displayUrl ? (
+                  <img
+                    src={displayUrl}
+                    alt="Weekly Fasting Screenshot"
+                    className="w-full h-48 object-cover rounded-lg border-2 border-blue-200 cursor-pointer hover:border-blue-400 transition-colors shadow-sm"
+                    onClick={() => setViewingImageSet({
+                      currentIndex: 0,
+                      imageType: 'fasting',
+                      images: [{ url: displayUrl, title: 'Weekly Fasting Screenshot', day: 'Weekly', fieldName }]
+                    })}
+                  />
+                ) : (
+                  <div
+                    className="w-full h-48 bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-xs text-gray-400"
+                    title="No Image"
+                  >
+                    No Image
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+        </div>
         
         {/* Lumen Images */}
         <div className="mb-8">
@@ -2637,7 +2692,7 @@ export default function DrNickSubmissionReview({
                 </h3>
                 <div className="text-sm text-gray-600 bg-gray-200 px-3 py-1 rounded-full">
                   {viewingImageSet.currentIndex + 1} of {viewingImageSet.images.length} 
-                  {viewingImageSet.imageType === 'lumen' ? ' Lumen' : ' Food Log'} images
+                  {viewingImageSet.imageType === 'lumen' ? ' Lumen' : viewingImageSet.imageType === 'food_log' ? ' Food Log' : ' Fasting'} images
                 </div>
               </div>
               <button

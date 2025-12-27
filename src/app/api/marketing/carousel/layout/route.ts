@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { decideVisionBasedLayout } from '@/lib/claude-vision-layout';
 import { generateMedicalImage, createMedicalImagePrompt } from '@/lib/gpt-image-generator';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
+import { wrapFlowLayout } from '@/lib/wrap-flow-layout';
 
 export async function POST(request: NextRequest) {
   try {
@@ -95,31 +96,118 @@ export async function POST(request: NextRequest) {
     }
     console.log('[API] 🎨 ==================== IMAGE GENERATION END ====================');
 
-    // STEP 2: Determine image position (Claude will refine this based on visual analysis)
-    // Position image in lower-middle portion to leave room for text above
-    const imagePosition = {
-      x: 290,      // Centered: (1080 - 500) / 2
-      y: 850,      // Lower portion of 1440px canvas
-      width: 500,  // Slightly smaller for more text space
-      height: 500,
-    };
-    
-    console.log('[API] 📐 Initial image position:', imagePosition);
+    // STEP 2: If a template is selected, use deterministic wrap-flow inside contentRegion.
+    // Otherwise fallback to Claude vision layout (legacy).
+    let layout: any;
+    if (body.templateId) {
+      console.log('[API] 🧩 Template selected; using deterministic WRAP-FLOW inside template contentRegion');
 
-    // STEP 3: Get vision-based layout from Claude
-    console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS START ====================');
-    console.log('[API] 🤖 Calling Claude Vision API for layout decision...');
-    console.log('[API] 📝 Headline:', body.headline.substring(0, 50) + '...');
-    console.log('[API] 📝 Body:', body.body.substring(0, 50) + '...');
-    
-    const layout = await decideVisionBasedLayout(
-      body.headline.trim(),
-      body.body.trim(),
-      imageBase64,
-      imagePosition
-    );
+      // Load template definition (RLS: readable for authenticated; this endpoint is admin-only anyway).
+      const authedSupabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+      );
 
-    console.log('[API] ✅ Vision-based layout received from Claude');
+      const { data: tpl, error: tplErr } = await authedSupabase
+        .from('carousel_templates')
+        .select('id, definition')
+        .eq('id', body.templateId)
+        .single();
+
+      if (tplErr || !tpl?.definition) {
+        console.error('[API] ❌ Failed to load template:', tplErr?.message);
+        return NextResponse.json(
+          { success: false, error: tplErr?.message || 'Failed to load template' } as LayoutResponse,
+          { status: 400 }
+        );
+      }
+
+      const def = tpl.definition as any;
+      const slide0 = Array.isArray(def?.slides) ? def.slides.find((s: any) => s?.slideIndex === 0) || def.slides[0] : null;
+      const region = slide0?.contentRegion;
+      if (!region || typeof region.x !== 'number' || typeof region.y !== 'number' || typeof region.width !== 'number' || typeof region.height !== 'number') {
+        console.error('[API] ❌ Template missing slides[0].contentRegion');
+        return NextResponse.json(
+          { success: false, error: 'Template is missing slide 1 contentRegion' } as LayoutResponse,
+          { status: 400 }
+        );
+      }
+
+      // Placement bounds = contentRegion inset by 40px (per aligned spec)
+      const PAD = 40;
+      const inset = {
+        x: region.x + PAD,
+        y: region.y + PAD,
+        width: Math.max(1, region.width - (PAD * 2)),
+        height: Math.max(1, region.height - (PAD * 2)),
+      };
+
+      // Deterministic initial image placement:
+      // - square
+      // - left-anchored
+      // - size = 50% of OUTER contentRegion width (clamped to inset bounds)
+      // - vertically centered within inset
+      const desiredSize = region.width * 0.5;
+      const size = Math.max(1, Math.min(desiredSize, inset.width, inset.height));
+      const imagePosition = {
+        x: inset.x,
+        y: inset.y + (inset.height - size) / 2,
+        width: size,
+        height: size,
+      };
+
+      console.log('[API] 📐 Template imagePosition (deterministic):', imagePosition);
+
+      const { layout: wrapLayout, meta } = wrapFlowLayout(
+        body.headline.trim(),
+        body.body.trim(),
+        imagePosition,
+        {
+          contentRect: inset,
+          clearancePx: 1,
+          headlineFontSize: 76,
+          bodyFontSize: 48,
+          headlineMinFontSize: 56,
+          bodyMinFontSize: 36,
+          blockGapPx: 24,
+          laneTieBreak: 'right',
+          bodyPreferSideLane: true,
+          minUsableLaneWidthPx: 300,
+          skinnyLaneWidthPx: 380,
+          minBelowSpacePx: 240,
+        }
+      );
+
+      console.log('[API] 🧩 Wrap-flow meta:', meta);
+      wrapLayout.image.url = imageBase64!;
+      layout = wrapLayout;
+    } else {
+      // Legacy: deterministic templates not selected, keep Claude vision layout.
+      // Position image in lower-middle portion to leave room for text above
+      const imagePosition = {
+        x: 290,      // Centered: (1080 - 500) / 2
+        y: 850,      // Lower portion of 1440px canvas
+        width: 500,  // Slightly smaller for more text space
+        height: 500,
+      };
+      
+      console.log('[API] 📐 Initial image position:', imagePosition);
+
+      // STEP 3: Get vision-based layout from Claude
+      console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS START ====================');
+      console.log('[API] 🤖 Calling Claude Vision API for layout decision...');
+      console.log('[API] 📝 Headline:', body.headline.substring(0, 50) + '...');
+      console.log('[API] 📝 Body:', body.body.substring(0, 50) + '...');
+      
+      layout = await decideVisionBasedLayout(
+        body.headline.trim(),
+        body.body.trim(),
+        imageBase64!,
+        imagePosition
+      );
+    }
+    console.log('[API] ✅ Layout computed successfully');
     console.log('[API] 📊 Layout summary:', {
       textLinesCount: layout.textLines.length,
       hasImage: !!layout.image,
@@ -136,7 +224,9 @@ export async function POST(request: NextRequest) {
       });
     });
     
-    console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS END ====================');
+    if (!body.templateId) {
+      console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS END ====================');
+    }
 
     return NextResponse.json({
       success: true,

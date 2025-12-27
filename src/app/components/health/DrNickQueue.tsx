@@ -31,6 +31,10 @@ export interface QueueSubmission {
   nutrition_compliance_days: number | null
   systolic_bp?: number | null
   diastolic_bp?: number | null
+  // Fasting & Muscle Retention (new)
+  creatine_myosmd_days?: number | null
+  avg_daily_fasting_minutes?: number | null
+  weekly_fasting_screenshot_image?: string | null
   notes: string | null
   created_at: string
   // Image fields
@@ -98,6 +102,16 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
   const [viewingImage, setViewingImage] = useState<{url: string, title: string} | null>(null)
   const [signedUrls, setSignedUrls] = useState<{[key: string]: string}>({})
 
+  const formatFastingMinutes = (mins: number | null | undefined) => {
+    if (mins === null || mins === undefined) return 'N/A'
+    const n = Number(mins)
+    if (!Number.isFinite(n)) return 'N/A'
+    const clamped = Math.min(1439, Math.max(0, Math.floor(n)))
+    const h = Math.floor(clamped / 60)
+    const m = clamped % 60
+    return `${h}h ${m}m`
+  }
+
   // Load queue submissions
   const loadQueueSubmissions = async () => {
     try {
@@ -142,7 +156,8 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
       'lumen_day1_image', 'lumen_day2_image', 'lumen_day3_image', 'lumen_day4_image',
       'lumen_day5_image', 'lumen_day6_image', 'lumen_day7_image',
       'food_log_day1_image', 'food_log_day2_image', 'food_log_day3_image',
-      'food_log_day4_image', 'food_log_day5_image', 'food_log_day6_image', 'food_log_day7_image'
+      'food_log_day4_image', 'food_log_day5_image', 'food_log_day6_image', 'food_log_day7_image',
+      'weekly_fasting_screenshot_image'
     ]
 
     const newSignedUrls: {[key: string]: string} = {}
@@ -408,6 +423,14 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                     <div className="text-lg font-semibold">{formatLength(selectedSubmission.waist as number | null, selectedUnitSystem)}</div>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700">Average Daily Fasting</label>
+                    <div className="text-lg font-semibold">{formatFastingMinutes(selectedSubmission.avg_daily_fasting_minutes)}</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Creatine / MyosMD Consumed</label>
+                    <div className="text-lg font-semibold">{selectedSubmission.creatine_myosmd_days ?? 'N/A'}</div>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700">Days Purposeful Exercise</label>
                     <div className="text-lg font-semibold">{selectedSubmission.purposeful_exercise_days || 'N/A'}</div>
                   </div>
@@ -447,6 +470,35 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                 {/* Client Images */}
                 <div className="mb-6">
                   <h4 className="text-md font-semibold text-gray-900 mb-3">Client Images</h4>
+
+                  {/* Weekly Fasting Screenshot */}
+                  <div className="mb-4">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Weekly Fasting Screenshot (Required)</h5>
+                    {(() => {
+                      const fieldName = 'weekly_fasting_screenshot_image'
+                      const imageUrl = selectedSubmission[fieldName as keyof QueueSubmission] as string
+                      const displayUrl = signedUrls[fieldName] || imageUrl
+                      return (
+                        <div className="max-w-sm">
+                          {displayUrl ? (
+                            <img
+                              src={displayUrl}
+                              alt="Weekly Fasting Screenshot"
+                              className="w-full h-40 object-cover rounded border cursor-pointer hover:opacity-80"
+                              onClick={() => setViewingImage({
+                                url: displayUrl,
+                                title: 'Weekly Fasting Screenshot'
+                              })}
+                            />
+                          ) : (
+                            <div className="w-full h-40 bg-gray-100 rounded border flex items-center justify-center text-xs text-gray-400">
+                              No Image
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
                   
                   {/* Lumen Images */}
                   <div className="mb-4">
