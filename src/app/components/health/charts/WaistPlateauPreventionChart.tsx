@@ -85,8 +85,8 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
       }
       return {
         week: entry.week,
-        lossRate: Math.round(plateauValue * 10) / 10, // 1 decimal place
-        individualLoss: Math.round(entry.individualLoss * 10) / 10,
+        lossRate: Math.round(plateauValue * 100) / 100, // 2 decimals (match weight chart)
+        individualLoss: Math.round(entry.individualLoss * 100) / 100,
         waist: entry.waist
       }
     })
@@ -110,22 +110,43 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
     return out
   }, [data, chartData])
 
-  // Horizontal average line (overall average loss rate across available weeks)
+  // Horizontal average line (match weight chart: average of individual week losses over visible range)
   const averageLineResult = useMemo(() => {
-    if (individualLosses.length < 1) return { isValid: false, averageValue: 0 }
-    const start = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
+    const sortedAll = (data || [])
+      .filter(entry => entry.waist !== null && entry.waist !== undefined)
+      .sort((a, b) => a.week_number - b.week_number)
+
+    if (sortedAll.length < 2) return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
+
     let sum = 0
     let intervals = 0
-    for (const row of individualLosses) {
-      if (row.week >= start) {
-        sum += row.individualLoss
-        intervals++
+    const intervalValues: number[] = []
+    for (let i = 1; i < sortedAll.length; i++) {
+      const curr = sortedAll[i]
+      const prev = sortedAll[i - 1]
+      if (curr.week_number === prev.week_number + 1 && curr.waist !== null && prev.waist !== null) {
+        const prevW = parseFloat(String(prev.waist))
+        const currW = parseFloat(String(curr.waist))
+        if (Number.isFinite(prevW) && Number.isFinite(currW) && prevW !== 0) {
+          const individualLoss = ((prevW - currW) / prevW) * 100
+          if (typeof visibleStartWeek !== 'number' || curr.week_number >= visibleStartWeek) {
+            sum += individualLoss
+            intervals++
+            intervalValues.push(individualLoss)
+          }
+        }
       }
     }
-    if (intervals < 1) return { isValid: false, averageValue: 0 }
-    const avg = sum / intervals
-    return { isValid: true, averageValue: Math.round(avg * 10) / 10 }
-  }, [individualLosses, visibleStartWeek])
+
+    if (intervals < 1) return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
+    const averageValue = sum / intervals
+    return {
+      isValid: true,
+      averageValue: Math.round(averageValue * 100) / 100,
+      intervalsUsed: intervals,
+      intervalValues,
+    }
+  }, [data, visibleStartWeek])
 
   const displayStart = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
   const displayChartData = useMemo(() => normalizedChartData.filter(p => p.week >= displayStart), [normalizedChartData, displayStart])
@@ -135,22 +156,16 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
     return displayChartData.map(p => ({ ...p, trendLine: averageLineResult.averageValue }))
   }, [displayChartData, averageLineResult])
 
-  // Regression for pill classification on visible window
+  // Regression for pill classification (match weight chart: regression over plateau series)
   const regressionResult = useMemo(() => {
-    const valid = displayChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null && !Number.isNaN(d.lossRate as number))
+    const valid = normalizedChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null && !Number.isNaN(d.lossRate as number))
     if (valid.length < 2) return { isValid: false, slope: 0, intercept: 0, trendPoints: [], equation: '' }
-    const minWeek = Math.min(...displayChartData.map(d => d.week))
-    const maxWeek = Math.max(...displayChartData.map(d => d.week))
+    const minWeek = Math.min(...normalizedChartData.map(d => d.week))
+    const maxWeek = Math.max(...normalizedChartData.map(d => d.week))
     return calculateLinearRegression(valid.map(d => ({ week: d.week, value: d.lossRate as number })), minWeek, maxWeek)
-  }, [displayChartData])
+  }, [normalizedChartData])
 
-  // Prepare interval values for hover titleOverride (cap 80 terms)
-  const intervalSummary = useMemo(() => {
-    const start = typeof visibleStartWeek === 'number' ? visibleStartWeek : 0
-    const vals = individualLosses.filter(r => r.week >= start).map(r => r.individualLoss)
-    const intervalsUsed = vals.length
-    return { vals, intervalsUsed }
-  }, [individualLosses, visibleStartWeek])
+  // Use averageLineResult.intervalValues for titleOverride (match weight chart)
 
   const calculateYAxisDomain = () => {
     const values: number[] = []
@@ -216,19 +231,19 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
           <TrendPill
             slope={regressionResult.slope || 0}
             intercept={regressionResult.intercept || 0}
-            pointsCount={intervalSummary.intervalsUsed}
+            pointsCount={displayChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null).length}
             insufficientThreshold={1}
-            orientation="negativeGood"
+            orientation="positiveGood"
             titleOverride={averageLineResult.isValid ? (() => {
-              const vals = intervalSummary.vals.map(v => `${v.toFixed(2)}%`)
+              const vals = ((averageLineResult as any).intervalValues as number[]).map(v => `${v.toFixed(2)}%`)
               let terms = vals
               if (vals.length > 80) {
                 const head = vals.slice(0, 40)
                 const tail = vals.slice(-40)
                 terms = [...head, '…', ...tail]
               }
-              const avgText = averageLineResult.isValid ? averageLineResult.averageValue.toFixed(2) : '0.00'
-              return `Avg = (${terms.join(' + ')}) ÷ ${intervalSummary.intervalsUsed} = ${avgText}%`
+              const termsStr = terms.join(' + ')
+              return `Avg = (${termsStr}) ÷ ${(averageLineResult as any).intervalsUsed} = ${Number(averageLineResult.averageValue).toFixed(2)}%`
             })() : undefined}
           />
         )}

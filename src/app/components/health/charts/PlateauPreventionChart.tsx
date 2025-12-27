@@ -316,7 +316,7 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
             intercept={regressionResult.intercept || 0}
             pointsCount={displayChartData.filter(d => typeof d.lossRate === 'number' && d.lossRate !== null).length}
             insufficientThreshold={1}
-            orientation="negativeGood"
+            orientation="positiveGood"
             titleOverride={averageLineResult.isValid ? (() => {
               const vals = (averageLineResult.intervalValues as number[]).map(v => `${v.toFixed(2)}%`)
               let terms = vals
