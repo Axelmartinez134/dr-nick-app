@@ -1417,7 +1417,7 @@ export default function DrNickSubmissionReview({
             <div className="text-2xl font-bold text-slate-900">{formatFastingMinutes((submission as any).avg_daily_fasting_minutes)}</div>
           </div>
           <div className="bg-emerald-50 p-4 rounded-lg">
-            <label className="block text-sm font-medium text-emerald-700">Creatine / MyosMD Consumed</label>
+            <label className="block text-sm font-medium text-emerald-700">HMB + Creatine/ MyosMD Consumed</label>
             <div className="text-2xl font-bold text-emerald-900">{(submission as any).creatine_myosmd_days ?? 'N/A'}</div>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">

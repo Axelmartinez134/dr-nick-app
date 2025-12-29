@@ -25,3 +25,4 @@ CREATE POLICY "Public role read carousel templates bucket"
   USING (bucket_id = 'carousel-templates');
 
 
+

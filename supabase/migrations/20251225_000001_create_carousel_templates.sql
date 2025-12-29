@@ -105,3 +105,4 @@ ALTER TABLE ai_carousels
 CREATE INDEX IF NOT EXISTS idx_ai_carousels_template_id ON ai_carousels(template_id);
 
 
+

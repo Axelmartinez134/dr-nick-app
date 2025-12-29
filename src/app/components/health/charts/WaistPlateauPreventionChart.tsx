@@ -225,9 +225,9 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <ChartTooltip title="Plateau Prevention (Waist)" description="Tracks week‑to‑week waist loss % to identify plateaus early. Declining trends toward 0% may signal adjustments are needed.">
+        <ChartTooltip title="Plateau Prevention (Waist)" description="Tracks week‑to‑week waist loss % to identify plateaus early. Declining trends toward 0% may signal adjustments are needed.">
             <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-orange-600 transition-colors break-words">📉 Plateau Prevention (Waist Loss Rate)</h3>
-          </ChartTooltip>
+        </ChartTooltip>
         </div>
         {!hideTrendPill && (
           <TrendPill

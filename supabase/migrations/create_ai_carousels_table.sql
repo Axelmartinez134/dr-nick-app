@@ -67,3 +67,4 @@ CREATE TRIGGER trigger_update_ai_carousels_updated_at
 -- Grant permissions
 GRANT ALL ON ai_carousels TO authenticated;
 
+

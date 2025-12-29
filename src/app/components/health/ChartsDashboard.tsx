@@ -669,6 +669,8 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
         week_number: historicalData.week_number || 0,
         weight: historicalData.weight || null,
         waist: historicalData.waist || null,
+        avg_daily_fasting_minutes: (historicalData as any).avg_daily_fasting_minutes ?? null,
+        creatine_myosmd_days: (historicalData as any).creatine_myosmd_days ?? null,
         resistance_training_days: historicalData.resistance_training_days || null,
         symptom_tracking_days: historicalData.symptom_tracking_days || null,
         detailed_symptom_notes: historicalData.detailed_symptom_notes || null,
@@ -694,6 +696,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
         food_log_day5_image: historicalData.food_log_day5_image || null,
         food_log_day6_image: historicalData.food_log_day6_image || null,
         food_log_day7_image: historicalData.food_log_day7_image || null,
+        weekly_fasting_screenshot_image: (historicalData as any).weekly_fasting_screenshot_image ?? null,
         // Analysis fields (important to preserve if they exist)
         weekly_whoop_pdf_url: historicalData.weekly_whoop_pdf_url || null,
         weekly_whoop_analysis: historicalData.weekly_whoop_analysis || null,
@@ -1013,7 +1016,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Weight (${getWeightUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">{`Waist (${getLengthUnitLabel(unitSystem)})`}</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Average Daily Fasting</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Creatine / MyosMD Consumed</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">HMB + Creatine/ MyosMD Consumed</th>
               {tracksBP && (
                 <>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Systolic (mmHg)</th>

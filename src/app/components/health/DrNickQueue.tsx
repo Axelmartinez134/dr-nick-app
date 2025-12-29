@@ -427,7 +427,7 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                     <div className="text-lg font-semibold">{formatFastingMinutes(selectedSubmission.avg_daily_fasting_minutes)}</div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Creatine / MyosMD Consumed</label>
+                    <label className="block text-sm font-medium text-gray-700">HMB + Creatine/ MyosMD Consumed</label>
                     <div className="text-lg font-semibold">{selectedSubmission.creatine_myosmd_days ?? 'N/A'}</div>
                   </div>
                   <div>

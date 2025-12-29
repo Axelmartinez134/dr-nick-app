@@ -169,14 +169,14 @@ export default function WeightTrendChart({ data, unitSystem = 'imperial', hideTr
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <ChartTooltip 
-            title="Weight Trend" 
-            description="Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
-          >
+        <ChartTooltip 
+          title="Weight Trend" 
+          description="Basic progress tracking with trend line for overall direction. Shows your actual weekly weights with a trend line indicating general progress."
+        >
             <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-purple-600 transition-colors break-words">
-              ⚖️ Weight Trend Analysis
-            </h3>
-          </ChartTooltip>
+            ⚖️ Weight Trend Analysis
+          </h3>
+        </ChartTooltip>
         </div>
         {!hideTrendPill && (
           <TrendPill
