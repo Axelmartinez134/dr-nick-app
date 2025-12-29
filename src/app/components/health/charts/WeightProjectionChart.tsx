@@ -156,37 +156,59 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
     return calculateLinearRegression(regressionData, minWeek, maxWeekForRegression)
   }, [actualWeightData])
 
+  // Constrained best-fit line that MUST pass through the left-most visible point (startWeek).
+  // This avoids the "shift everything up" behavior you get when you keep the unconstrained slope
+  // but force the intercept to hit the first point.
+  const anchoredTrendParams = useMemo(() => {
+    if (actualWeightData.length < 2) return { isValid: false, slope: 0, intercept: 0, startWeek: 0 }
+
+    const startWeek = typeof visibleStartWeek === 'number'
+      ? visibleStartWeek
+      : (actualWeightData.length > 0 ? Math.min(...actualWeightData.map(d => d.week)) : 0)
+
+    // Anchor Y: prefer actual weight at startWeek; if missing, fall back to the model projection value at startWeek.
+    const actualAtStart = actualWeightData.find(d => d.week === startWeek)?.actualWeight
+    const modelAtStart = chartData.find(d => d.week === startWeek)?.projection1
+    const anchorY = (typeof actualAtStart === 'number' && Number.isFinite(actualAtStart))
+      ? actualAtStart
+      : (typeof modelAtStart === 'number' && Number.isFinite(modelAtStart) ? modelAtStart : null)
+
+    if (anchorY === null) return { isValid: false, slope: 0, intercept: 0, startWeek }
+
+    // Constrained regression through (x0, y0):
+    // m = Σ((x-x0)(y-y0)) / Σ((x-x0)^2), b = y0 - m*x0
+    let sxx = 0
+    let sxy = 0
+    for (const p of actualWeightData) {
+      if (typeof p.actualWeight !== 'number' || !Number.isFinite(p.actualWeight)) continue
+      if (p.week < startWeek) continue
+      const dx = p.week - startWeek
+      const dy = (p.actualWeight as number) - anchorY
+      sxx += dx * dx
+      sxy += dx * dy
+    }
+    const slope = sxx !== 0 ? (sxy / sxx) : 0
+    const intercept = anchorY - slope * startWeek
+    return { isValid: true, slope, intercept, startWeek }
+  }, [actualWeightData, chartData, visibleStartWeek])
+
   // Add trend line data to chart data - ONLY FOR WEEKS WITH ACTUAL DATA
   const enhancedChartData = useMemo(() => {
-    if (!regressionResult.isValid) return chartData
+    if (!anchoredTrendParams.isValid) return chartData
     
     return chartData.map(point => {
       // Only add trend line values for weeks where we have actual weight data
       const hasActualData = actualWeightData.some(d => d.week === point.week)
-      const startWeek = typeof visibleStartWeek === 'number'
-        ? visibleStartWeek
-        : (actualWeightData.length > 0 ? Math.min(...actualWeightData.map(d => d.week)) : 0)
-
-      // Anchor the black trend line to the same starting Y as the dotted projection lines.
-      // If we have an actual weight at startWeek, all projections anchor to it; otherwise they
-      // anchor to their respective model values at startWeek. We use projection1 (1.0% line)
-      // as the consistent model anchor when actualAtStart is missing.
-      const actualAtStart = actualWeightData.find(d => d.week === startWeek)?.actualWeight
-      const modelAtStart = chartData.find(d => d.week === startWeek)?.projection1
-      const anchorY = (typeof actualAtStart === 'number' && Number.isFinite(actualAtStart))
-        ? actualAtStart
-        : (typeof modelAtStart === 'number' && Number.isFinite(modelAtStart) ? modelAtStart : null)
-
-      const m = regressionResult.slope || 0
-      const anchoredB = anchorY !== null ? (anchorY - (m * startWeek)) : (regressionResult.intercept || 0)
-      const anchoredValue = (m * point.week) + anchoredB
+      const m = anchoredTrendParams.slope || 0
+      const b = anchoredTrendParams.intercept || 0
+      const anchoredValue = (m * point.week) + b
       
       return {
         ...point,
         actualWeightTrendLine: hasActualData ? anchoredValue : null
       }
     })
-  }, [chartData, regressionResult, actualWeightData, visibleStartWeek])
+  }, [chartData, anchoredTrendParams, actualWeightData])
 
   // Calculate Y-axis domain excluding trend line values to prevent skewing - MOVED BEFORE EARLY RETURN
   const calculateYAxisDomain = useMemo(() => {
@@ -277,8 +299,8 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
         </ChartTooltip>
         {!hideTrendPill && (
           <TrendPill
-            slope={regressionResult.slope || 0}
-            intercept={regressionResult.intercept || 0}
+            slope={anchoredTrendParams.slope || 0}
+            intercept={anchoredTrendParams.intercept || 0}
             pointsCount={actualWeightData.length}
             insufficientThreshold={1}
             orientation="negativeGood"
