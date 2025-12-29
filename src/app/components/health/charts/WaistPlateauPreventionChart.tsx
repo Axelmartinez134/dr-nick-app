@@ -47,6 +47,9 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
     for (let i = 1; i < allWeeks.length; i++) {
       const curr = allWeeks[i]
       const prev = allWeeks[i - 1]
+      // IMPORTANT: Do not "bridge" missing weeks.
+      // If week N-1 is missing, week N must be null (not computed vs an older prior week).
+      if (curr.week_number !== prev.week_number + 1) continue
       if (curr.week_number > 0 && curr.waist !== null && prev.waist !== null) {
         const prevW = parseFloat(String(prev.waist))
         const currW = parseFloat(String(curr.waist))
@@ -118,8 +121,14 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
 
     if (sortedAll.length < 2) return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
 
+    // Denominator: number of weeks displayed on the x-axis, inclusive, excluding week 0.
+    // N = maxWeekShown - max(visibleStartWeek, 1) + 1
+    const weekNumbers = (data || []).map(w => w.week_number).filter(n => typeof n === 'number' && Number.isFinite(n))
+    const maxWeekShown = weekNumbers.length > 0 ? Math.max(...weekNumbers) : 0
+    const startWeekForDenom = Math.max(typeof visibleStartWeek === 'number' ? visibleStartWeek : 1, 1)
+    const denomWeeks = maxWeekShown >= startWeekForDenom ? (maxWeekShown - startWeekForDenom + 1) : 0
+
     let sum = 0
-    let intervals = 0
     const intervalValues: number[] = []
     for (let i = 1; i < sortedAll.length; i++) {
       const curr = sortedAll[i]
@@ -131,19 +140,23 @@ export default function WaistPlateauPreventionChart({ data, hideIndividualWeekFo
           const individualLoss = ((prevW - currW) / prevW) * 100
           if (typeof visibleStartWeek !== 'number' || curr.week_number >= visibleStartWeek) {
             sum += individualLoss
-        intervals++
             intervalValues.push(individualLoss)
       }
     }
       }
     }
 
-    if (intervals < 1) return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
-    const averageValue = sum / intervals
+    // Numerator stays as the sum of available interval values; denominator counts all weeks shown (including null weeks).
+    if (intervalValues.length < 1 || denomWeeks < 1) {
+      return { isValid: false, averageValue: 0, intervalsUsed: 0, intervalValues: [] as number[] }
+    }
+
+    const averageValue = sum / denomWeeks
     return {
       isValid: true,
       averageValue: Math.round(averageValue * 100) / 100,
-      intervalsUsed: intervals,
+      // NOTE: "intervalsUsed" is intentionally the denominator (weeks shown), not the count of intervalValues.
+      intervalsUsed: denomWeeks,
       intervalValues,
     }
   }, [data, visibleStartWeek])
