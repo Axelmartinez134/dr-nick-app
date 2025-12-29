@@ -163,14 +163,30 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
     return chartData.map(point => {
       // Only add trend line values for weeks where we have actual weight data
       const hasActualData = actualWeightData.some(d => d.week === point.week)
-      const trendPoint = regressionResult.trendPoints.find(tp => tp.week === point.week)
+      const startWeek = typeof visibleStartWeek === 'number'
+        ? visibleStartWeek
+        : (actualWeightData.length > 0 ? Math.min(...actualWeightData.map(d => d.week)) : 0)
+
+      // Anchor the black trend line to the same starting Y as the dotted projection lines.
+      // If we have an actual weight at startWeek, all projections anchor to it; otherwise they
+      // anchor to their respective model values at startWeek. We use projection1 (1.0% line)
+      // as the consistent model anchor when actualAtStart is missing.
+      const actualAtStart = actualWeightData.find(d => d.week === startWeek)?.actualWeight
+      const modelAtStart = chartData.find(d => d.week === startWeek)?.projection1
+      const anchorY = (typeof actualAtStart === 'number' && Number.isFinite(actualAtStart))
+        ? actualAtStart
+        : (typeof modelAtStart === 'number' && Number.isFinite(modelAtStart) ? modelAtStart : null)
+
+      const m = regressionResult.slope || 0
+      const anchoredB = anchorY !== null ? (anchorY - (m * startWeek)) : (regressionResult.intercept || 0)
+      const anchoredValue = (m * point.week) + anchoredB
       
       return {
         ...point,
-        actualWeightTrendLine: (hasActualData && trendPoint) ? trendPoint.value : null
+        actualWeightTrendLine: hasActualData ? anchoredValue : null
       }
     })
-  }, [chartData, regressionResult, actualWeightData])
+  }, [chartData, regressionResult, actualWeightData, visibleStartWeek])
 
   // Calculate Y-axis domain excluding trend line values to prevent skewing - MOVED BEFORE EARLY RETURN
   const calculateYAxisDomain = useMemo(() => {
