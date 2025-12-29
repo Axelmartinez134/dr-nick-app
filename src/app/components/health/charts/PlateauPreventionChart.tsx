@@ -82,6 +82,10 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
       const currentWeek = allWeeks[i]
       const previousWeek = allWeeks[i - 1]
       
+      // IMPORTANT: Do not "bridge" missing weeks.
+      // If week N-1 is missing, week N must be null (not computed vs an older prior week).
+      if (currentWeek.week_number !== previousWeek.week_number + 1) continue
+
       if (currentWeek.weight && previousWeek.weight && currentWeek.week_number > 0) {
         // Individual week loss = ((previousWeight - currentWeight) / previousWeight) × 100
         const individualLoss = ((previousWeek.weight - currentWeek.weight) / previousWeek.weight) * 100
@@ -358,6 +362,7 @@ export default function PlateauPreventionChart({ data, hideIndividualWeekFormula
             dot={{ fill: '#3b82f6', strokeWidth: 2, r: 5 }}
             activeDot={{ r: 8 }}
             name="Loss Rate"
+            // Connect across missing weeks (nulls) so gaps don't break the line.
             connectNulls={true}
           />
           
