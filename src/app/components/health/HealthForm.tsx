@@ -9,6 +9,272 @@ import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 import { uploadSingleImage, deleteImageByUrl, getSignedImageUrl } from './imageService'
 
+type UploadQueueItem = { file: File; imageType: 'lumen' | 'food_log' | 'fasting'; dayNumber: number }
+
+function WeeklyFastingScreenshotSlotStable(props: {
+  formData: any
+  signedUrls: Record<string, string>
+  uploadingStates: Record<string, boolean>
+  uploadQueue: UploadQueueItem[]
+  generateSignedUrl: (imageUrl: string, uploadKey: string) => void
+  setViewingImage: (img: { url: string; title: string } | null) => void
+  handleImageRemove: (imageType: 'lumen' | 'food_log' | 'fasting', dayNumber: number) => void
+  addToUploadQueue: (file: File, imageType: 'lumen' | 'food_log' | 'fasting', dayNumber: number) => void
+}) {
+  const {
+    formData,
+    signedUrls,
+    uploadingStates,
+    uploadQueue,
+    generateSignedUrl,
+    setViewingImage,
+    handleImageRemove,
+    addToUploadQueue,
+  } = props
+
+  const fieldName = 'weekly_fasting_screenshot_image' as keyof CheckinFormData
+  const uploadKey = 'fasting_weekly'
+  const imageUrl = formData[fieldName] as string
+  const displayUrl = signedUrls[uploadKey] || imageUrl
+  const isUploading = uploadingStates[uploadKey]
+  const isInQueue = uploadQueue.some(item => item.imageType === 'fasting')
+
+  const [isFastingInfoOpen, setIsFastingInfoOpen] = useState(false)
+  const [isFastingInfoHovering, setIsFastingInfoHovering] = useState(false)
+  const [hasClickedFastingInfo, setHasClickedFastingInfo] = useState(false)
+  const [showFastingInfoPulse, setShowFastingInfoPulse] = useState(true)
+  const fastingInfoRef = useRef<HTMLDivElement | null>(null)
+
+  const showFastingInfoTooltip = isFastingInfoOpen || isFastingInfoHovering
+
+  // Stop the "hint" pulse after it has played once (and stop immediately on click).
+  useEffect(() => {
+    const t = setTimeout(() => setShowFastingInfoPulse(false), 3000)
+    return () => clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    if (!isFastingInfoOpen) return
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null
+      if (!target) return
+      if (fastingInfoRef.current && !fastingInfoRef.current.contains(target)) {
+        setIsFastingInfoOpen(false)
+      }
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFastingInfoOpen(false)
+    }
+
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [isFastingInfoOpen])
+
+  // Generate signed URL when image URL is available
+  useEffect(() => {
+    if (imageUrl && !signedUrls[uploadKey]) {
+      generateSignedUrl(imageUrl, uploadKey)
+    }
+  }, [imageUrl, uploadKey, signedUrls, generateSignedUrl])
+
+  return (
+    <div className={`relative border rounded-lg p-4 transition-all ${
+      imageUrl
+        ? 'border-green-300 bg-green-50'
+        : isUploading || isInQueue
+        ? 'border-blue-300 bg-blue-50'
+        : 'border-gray-200 bg-gray-50'
+    }`}>
+      <div className="flex items-start justify-between mb-2 gap-3">
+        <div>
+          <h4 className="font-medium text-gray-900">
+            Upload your Weekly Fasting Screenshot <span className="text-red-500 ml-1">*</span>
+          </h4>
+        </div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <div
+              ref={fastingInfoRef}
+              className="relative"
+              onMouseEnter={() => setIsFastingInfoHovering(true)}
+              onMouseLeave={() => setIsFastingInfoHovering(false)}
+            >
+              {!hasClickedFastingInfo && showFastingInfoPulse && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full ring-2 ring-blue-400/60 motion-reduce:hidden animate-[ping_1.2s_ease-out_2_forwards]"
+                />
+              )}
+              <button
+                type="button"
+                aria-label="Help: where to find your 7-day average fasting duration screenshot"
+                className="relative inline-flex items-center justify-center w-7 h-7 rounded-full border border-gray-300 bg-white text-gray-700 text-sm leading-none hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onClick={() => {
+                  setHasClickedFastingInfo(true)
+                  setShowFastingInfoPulse(false)
+                  setIsFastingInfoOpen((v) => !v)
+                }}
+              >
+                ⓘ
+              </button>
+              {showFastingInfoTooltip && (
+                <div
+                  role="tooltip"
+                  className="absolute right-0 mt-2 w-80 max-w-[85vw] rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-800 shadow-lg z-20"
+                >
+                  Screenshot of your 7-day average fasting duration from the Feel Great app: tap the 4th button from the left in the bottom menu (&quot;My Statistics&quot;), then look at the top-right under &quot;7-day average&quot;.
+                </div>
+              )}
+            </div>
+
+            {imageUrl && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                ✓ Uploaded
+              </span>
+            )}
+          </div>
+
+          <div className="text-xs">
+            {isUploading && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                📤 Uploading...
+              </span>
+            )}
+            {isInQueue && !isUploading && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                ⏳ In Queue
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {imageUrl ? (
+        <div className="space-y-2">
+          <div className="relative">
+            {displayUrl ? (
+              <img
+                src={displayUrl}
+                alt="Weekly Fasting Screenshot"
+                className="w-full h-40 object-cover rounded border shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => setViewingImage({
+                  url: displayUrl,
+                  title: 'Weekly Fasting Screenshot'
+                })}
+                title="Click to view full size"
+                onError={() => {
+                  console.error('Image failed to load:', displayUrl)
+                  generateSignedUrl(imageUrl, uploadKey)
+                }}
+              />
+            ) : (
+              <div className="w-full h-40 bg-gray-200 rounded border flex items-center justify-center">
+                <div className="text-gray-500 text-sm">Loading image...</div>
+              </div>
+            )}
+            <div className="absolute top-1 left-1 bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
+              ✓
+            </div>
+            <button
+              onClick={() => handleImageRemove('fasting', 1)}
+              disabled={isUploading || isInQueue}
+              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 disabled:bg-gray-400"
+              title="Remove image"
+            >
+              ×
+            </button>
+            <button
+              onClick={() => displayUrl && setViewingImage({ url: displayUrl, title: 'Weekly Fasting Screenshot' })}
+              disabled={!displayUrl}
+              className="absolute bottom-1 right-1 bg-blue-500 text-white rounded px-2 py-1 text-xs hover:bg-blue-600 transition-colors disabled:bg-gray-400"
+              title="Click to view full size"
+            >
+              👁️ View
+            </button>
+          </div>
+          <div className="flex space-x-2">
+            <label className="flex-1">
+              <span className="sr-only">Replace weekly fasting screenshot</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    addToUploadQueue(file, 'fasting', 1)
+                  }
+                }}
+                disabled={isUploading || isInQueue}
+                className="hidden"
+              />
+              <div className={`w-full text-center py-2 px-3 border border-gray-300 rounded text-sm text-gray-900 bg-white hover:bg-gray-50 cursor-pointer transition-colors ${
+                (isUploading || isInQueue) ? 'bg-gray-100 cursor-not-allowed' : ''
+              }`}>
+                {isUploading ? 'Uploading...' : isInQueue ? 'Queued...' : 'Replace'}
+              </div>
+            </label>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <label className="block">
+            <span className="sr-only">Upload weekly fasting screenshot</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  addToUploadQueue(file, 'fasting', 1)
+                }
+              }}
+              disabled={isUploading || isInQueue}
+              className="hidden"
+            />
+            <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
+              isUploading || isInQueue
+                ? 'border-blue-400 bg-blue-50 cursor-not-allowed'
+                : 'border-gray-300 hover:border-gray-400 bg-white'
+            }`}>
+              {isUploading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span className="text-sm text-blue-600">Uploading...</span>
+                </div>
+              ) : isInQueue ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="animate-pulse rounded-full h-4 w-4 bg-yellow-400"></div>
+                  <span className="text-sm text-yellow-600">Queued for upload...</span>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-gray-400 mb-2">
+                    <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    Click to upload
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    PNG, JPG, JPEG (max 10MB)
+                  </div>
+                </div>
+              )}
+            </div>
+          </label>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Extended CheckinFormData interface to include notes
 interface ExtendedCheckinFormData extends CheckinFormData {
   notes?: string
@@ -1175,178 +1441,6 @@ export default function HealthForm() {
     )
   }
 
-  // Weekly fasting screenshot upload (single image)
-  const WeeklyFastingScreenshotSlot = () => {
-    const fieldName = 'weekly_fasting_screenshot_image' as keyof CheckinFormData
-    const uploadKey = 'fasting_weekly'
-    const imageUrl = formData[fieldName] as string
-    const displayUrl = signedUrls[uploadKey] || imageUrl
-    const isUploading = uploadingStates[uploadKey]
-    const isInQueue = uploadQueue.some(item => item.imageType === 'fasting')
-
-    // Generate signed URL when image URL is available
-    useEffect(() => {
-      if (imageUrl && !signedUrls[uploadKey]) {
-        generateSignedUrl(imageUrl, uploadKey)
-      }
-    }, [imageUrl, uploadKey])
-
-    return (
-      <div className={`relative border rounded-lg p-4 transition-all ${
-        imageUrl
-          ? 'border-green-300 bg-green-50'
-          : isUploading || isInQueue
-          ? 'border-blue-300 bg-blue-50'
-          : 'border-gray-200 bg-gray-50'
-      }`}>
-        {imageUrl && (
-          <span className="absolute top-2 right-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            ✓ Uploaded
-          </span>
-        )}
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h4 className="font-medium text-gray-900">
-              Upload your Weekly Fasting Screenshot <span className="text-red-500 ml-1">*</span>
-            </h4>
-            <p className="text-xs text-gray-500">
-              Screenshot of your average Fasting over the week
-            </p>
-          </div>
-          <div className="text-xs">
-            {isUploading && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                📤 Uploading...
-              </span>
-            )}
-            {isInQueue && !isUploading && (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                ⏳ In Queue
-              </span>
-            )}
-          </div>
-        </div>
-
-        {imageUrl ? (
-          <div className="space-y-2">
-            <div className="relative">
-              {displayUrl ? (
-                <img
-                  src={displayUrl}
-                  alt="Weekly Fasting Screenshot"
-                  className="w-full h-40 object-cover rounded border shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => setViewingImage({
-                    url: displayUrl,
-                    title: 'Weekly Fasting Screenshot'
-                  })}
-                  title="Click to view full size"
-                  onError={() => {
-                    console.error('Image failed to load:', displayUrl)
-                    generateSignedUrl(imageUrl, uploadKey)
-                  }}
-                />
-              ) : (
-                <div className="w-full h-40 bg-gray-200 rounded border flex items-center justify-center">
-                  <div className="text-gray-500 text-sm">Loading image...</div>
-                </div>
-              )}
-              <div className="absolute top-1 left-1 bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
-                ✓
-              </div>
-              <button
-                onClick={() => handleImageRemove('fasting', 1)}
-                disabled={isUploading || isInQueue}
-                className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600 disabled:bg-gray-400"
-                title="Remove image"
-              >
-                ×
-              </button>
-              <button
-                onClick={() => displayUrl && setViewingImage({ url: displayUrl, title: 'Weekly Fasting Screenshot' })}
-                disabled={!displayUrl}
-                className="absolute bottom-1 right-1 bg-blue-500 text-white rounded px-2 py-1 text-xs hover:bg-blue-600 transition-colors disabled:bg-gray-400"
-                title="Click to view full size"
-              >
-                👁️ View
-              </button>
-            </div>
-            <div className="flex space-x-2">
-              <label className="flex-1">
-                <span className="sr-only">Replace weekly fasting screenshot</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) {
-                      addToUploadQueue(file, 'fasting', 1)
-                    }
-                  }}
-                  disabled={isUploading || isInQueue}
-                  className="hidden"
-                />
-                <div className={`w-full text-center py-2 px-3 border border-gray-300 rounded text-sm text-gray-900 bg-white hover:bg-gray-50 cursor-pointer transition-colors ${
-                  (isUploading || isInQueue) ? 'bg-gray-100 cursor-not-allowed' : ''
-                }`}>
-                  {isUploading ? 'Uploading...' : isInQueue ? 'Queued...' : 'Replace'}
-                </div>
-              </label>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <label className="block">
-              <span className="sr-only">Upload weekly fasting screenshot</span>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) {
-                    addToUploadQueue(file, 'fasting', 1)
-                  }
-                }}
-                disabled={isUploading || isInQueue}
-                className="hidden"
-              />
-              <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
-                isUploading || isInQueue
-                  ? 'border-blue-400 bg-blue-50 cursor-not-allowed'
-                  : 'border-gray-300 hover:border-gray-400 bg-white'
-              }`}>
-                {isUploading ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    <span className="text-sm text-blue-600">Uploading...</span>
-                  </div>
-                ) : isInQueue ? (
-                  <div className="flex items-center justify-center space-x-2">
-                    <div className="animate-pulse rounded-full h-4 w-4 bg-yellow-400"></div>
-                    <span className="text-sm text-yellow-600">Queued for upload...</span>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="text-gray-400 mb-2">
-                      <svg className="mx-auto h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      Click to upload
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      PNG, JPG, JPEG (max 10MB)
-                    </div>
-                  </div>
-                )}
-              </div>
-            </label>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   if (loading || isLoading || checkingSubmissionStatus) {
     return (
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
@@ -1809,11 +1903,17 @@ export default function HealthForm() {
                 <h4 className="text-sm font-medium text-gray-900">
                   📸 Weekly Fasting Screenshot <span className="text-red-500">*Required</span>
                 </h4>
-                <p className="text-sm text-gray-600 mt-1">
-                  Screenshot of your average Fasting over the week
-                </p>
               </div>
-              <WeeklyFastingScreenshotSlot />
+              <WeeklyFastingScreenshotSlotStable
+                formData={formData}
+                signedUrls={signedUrls}
+                uploadingStates={uploadingStates}
+                uploadQueue={uploadQueue}
+                generateSignedUrl={generateSignedUrl}
+                setViewingImage={setViewingImage}
+                handleImageRemove={handleImageRemove}
+                addToUploadQueue={addToUploadQueue}
+              />
             </div>
 
             <div className="md:col-span-2 space-y-4">
