@@ -15,6 +15,9 @@ interface ComplianceMetricsTableProps {
   patientId?: string // Optional patient ID for Dr. Nick's use
   rangeStart?: number | null
   rangeEnd?: number | null
+  // Dev-only override (Test accounts only; provided by ChartsDashboard client view)
+  devModeEnabled?: boolean
+  devViewAsClientStatus?: string
 }
 
 // Compliance Metrics Tooltip Component
@@ -64,12 +67,13 @@ function MetricsTooltip({ title, formula, explanation, interpretation, children 
   )
 }
 
-export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd }: ComplianceMetricsTableProps) {
+export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd, devModeEnabled, devViewAsClientStatus }: ComplianceMetricsTableProps) {
   const [metrics, setMetrics] = useState<ComplianceMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
   const [proteinGoal, setProteinGoal] = useState<number | null>(null)
   const [chartData, setChartData] = useState<WeeklyCheckin[]>([])
+  const [isMaintenanceOnly, setIsMaintenanceOnly] = useState<boolean>(false)
 
   // Determine if this is Dr. Nick's view
   const isDoctorView = !!patientId
@@ -103,15 +107,17 @@ export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd
       if (currentUserId) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('protein_goal_grams')
+          .select('protein_goal_grams, client_status')
           .eq('id', currentUserId)
           .single()
         
         if (profileError) {
           console.error('Error loading protein goal:', profileError)
           setProteinGoal(150) // Default fallback
+          setIsMaintenanceOnly(false)
         } else {
           setProteinGoal(profileData?.protein_goal_grams || 150)
+          setIsMaintenanceOnly((profileData as any)?.client_status === 'Maintenance')
         }
       }
 
@@ -131,6 +137,7 @@ export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd
         error: error instanceof Error ? error.message : 'Failed to load metrics'
       })
       setProteinGoal(150) // Default fallback
+      setIsMaintenanceOnly(false)
     } finally {
       setLoading(false)
     }
@@ -187,6 +194,10 @@ export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd
     ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd)
     : chartData
 
+  const effectiveIsMaintenanceOnly = (devModeEnabled && devViewAsClientStatus)
+    ? devViewAsClientStatus === 'Maintenance'
+    : isMaintenanceOnly
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -221,26 +232,28 @@ export default function ComplianceMetricsTable({ patientId, rangeStart, rangeEnd
       ) : (
         <>
           
-          {/* Nutrition KPI + Chart (Full Width) */}
-          <div className="grid grid-cols-1 gap-3 mb-6">
-            <MetricsTooltip
-              title="Average Days Nutrition Goal Met"
-              formula={`Daily Protein Goal: ${proteinGoal || 150}g (±3g) | Valid Range: ${(proteinGoal || 150) - 3}g - ${(proteinGoal || 150) + 3}g | Weekly Score: (Compliant Days ÷ 7) × 100`}
-              explanation={`Compliance is BINARY for each day: either you hit your daily protein goal of ${proteinGoal || 150}g within ±3g range, or you didn't. Even being off by 5g means that day was non-compliant. This measures how many days per week you stayed within ${(proteinGoal || 150) - 3}g to ${(proteinGoal || 150) + 3}g protein intake.`}
-              interpretation="Your protein goal is the highest priority of all nutrition recommendations. Hitting protein within the ±3g range every day is critical for maintaining muscle mass, controlling hunger, and preventing overeating on carbs/fats. This binary compliance system ensures precision in your nutrition execution."
-            >
-              <div className="bg-green-50 p-4 rounded-lg hover:bg-green-100 transition-colors">
-                <h3 className="text-sm font-medium text-green-700 mb-2">% AVERAGE DAYS NUTRITION GOAL MET</h3>
-                <div className="text-2xl font-bold text-green-900">
-                  {metrics.nutritionGoalMet !== null 
-                    ? `${metrics.nutritionGoalMet.toFixed(1)}%` 
-                    : 'N/A'
-                  }
+          {/* Nutrition KPI + Chart (Full Width) - hidden for Maintenance */}
+          {!effectiveIsMaintenanceOnly && (
+            <div className="grid grid-cols-1 gap-3 mb-6">
+              <MetricsTooltip
+                title="Average Days Nutrition Goal Met"
+                formula={`Daily Protein Goal: ${proteinGoal || 150}g (±3g) | Valid Range: ${(proteinGoal || 150) - 3}g - ${(proteinGoal || 150) + 3}g | Weekly Score: (Compliant Days ÷ 7) × 100`}
+                explanation={`Compliance is BINARY for each day: either you hit your daily protein goal of ${proteinGoal || 150}g within ±3g range, or you didn't. Even being off by 5g means that day was non-compliant. This measures how many days per week you stayed within ${(proteinGoal || 150) - 3}g to ${(proteinGoal || 150) + 3}g protein intake.`}
+                interpretation="Your protein goal is the highest priority of all nutrition recommendations. Hitting protein within the ±3g range every day is critical for maintaining muscle mass, controlling hunger, and preventing overeating on carbs/fats. This binary compliance system ensures precision in your nutrition execution."
+              >
+                <div className="bg-green-50 p-4 rounded-lg hover:bg-green-100 transition-colors">
+                  <h3 className="text-sm font-medium text-green-700 mb-2">% AVERAGE DAYS NUTRITION GOAL MET</h3>
+                  <div className="text-2xl font-bold text-green-900">
+                    {metrics.nutritionGoalMet !== null 
+                      ? `${metrics.nutritionGoalMet.toFixed(1)}%` 
+                      : 'N/A'
+                    }
+                  </div>
                 </div>
-              </div>
-            </MetricsTooltip>
-            <NutritionComplianceChart data={rangedData} />
-          </div>
+              </MetricsTooltip>
+              <NutritionComplianceChart data={rangedData} />
+            </div>
+          )}
 
           {/* Strain KPI + Chart (Full Width) */}
           <div className="grid grid-cols-1 gap-3 mb-6">

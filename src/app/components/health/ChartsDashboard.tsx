@@ -501,7 +501,7 @@ function InitialWeightEditor({ chartData, unitSystem, onSaved }: { chartData: We
 }
 
   // Data Table Component - Different versions for Client vs Dr. Nick
-function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP, tracksBodyComp, isNutraceutical }: { 
+function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSelect, unitSystem, tracksBP, tracksBodyComp, isNutraceutical, isMaintenanceOnly }: { 
   data: WeeklyCheckin[], 
   isDoctorView: boolean,
   onDataUpdate?: () => void,
@@ -511,11 +511,13 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
   tracksBP: boolean,
   tracksBodyComp: boolean,
   isNutraceutical: boolean
+  isMaintenanceOnly: boolean
 }) {
   const [editingCell, setEditingCell] = useState<{ recordId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
   const hideNutriCols = !isDoctorView && isNutraceutical
+  const hideMorningFatBurnCol = isMaintenanceOnly || isNutraceutical
   // Delete row modal state
   const [showDeleteRowModal, setShowDeleteRowModal] = useState(false)
   const [rowToDelete, setRowToDelete] = useState<string | null>(null)
@@ -1049,7 +1051,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               {!hideNutriCols && (
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Nutrition Days Goal Met</th>
               )}
-              {!hideNutriCols && (
+              {!hideNutriCols && !hideMorningFatBurnCol && (
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Morning Fat Burn %</th>
               )}
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Body Fat %</th>
@@ -1162,7 +1164,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                     {renderCell(record, 'nutrition_compliance_days', record.nutrition_compliance_days)}
                   </td>
                 )}
-                {!hideNutriCols && (
+                {!hideNutriCols && !hideMorningFatBurnCol && (
                   <td className="px-4 py-3 text-sm text-gray-900">
                     <TableTooltip content="Your morning fat burn efficiency measured through monthly metabolic analysis">
                       {renderCell(record, 'morning_fat_burn_percent', record.morning_fat_burn_percent)}
@@ -1195,10 +1197,9 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
       </div>
       
       <div className="mt-4 text-sm text-gray-500">
-        <p><strong>Note:</strong> Week 0 represents your baseline measurements. Sleep scores, Morning Fat %, and Body Fat % are tracked throughout your program.</p>
-        {!hideNutriCols && (
-          <p><strong>Morning Fat %:</strong> Monthly metabolic analysis showing fat burning efficiency. <strong>Body Fat %:</strong> Periodic body composition scans tracking your progress.</p>
-        )}
+        <p>
+          <strong>Note:</strong> Week 0 represents your baseline measurements. Sleep scores and Body Fat % are tracked throughout your program.
+        </p>
         {isDoctorView ? (
           <p className="text-blue-600 mt-1">
             <strong>Dr. Nick:</strong> Click any cell to edit values. For notes, use Ctrl+Enter to save. Press Escape to cancel edits.
@@ -1504,7 +1505,7 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7) - (Fill this in only in durations of Lumen usage)</label>
                 <input
                   type="number"
                   min="0"
@@ -1656,9 +1657,19 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
   const [isNutraceutical, setIsNutraceutical] = useState<boolean>(false)
+  const [isMaintenanceOnly, setIsMaintenanceOnly] = useState<boolean>(false)
+  const [isTestAccount, setIsTestAccount] = useState<boolean>(false)
+  const [clientStatus, setClientStatus] = useState<string>('')
+  const [devMode, setDevMode] = useState<boolean>(false)
+  const [devViewAsClientStatus, setDevViewAsClientStatus] = useState<string>('')
 
   // Determine if this is Dr. Nick's view (when patientId is provided)
   const isDoctorView = !!patientId
+
+  // Dev "View as..." override is only for Test accounts on client view, and only active when Dev Mode is ON.
+  const devViewAsActive = !isDoctorView && isTestAccount && devMode && !!devViewAsClientStatus
+  const effIsNutraceutical = devViewAsActive ? devViewAsClientStatus === 'Nutraceutical' : isNutraceutical
+  const effIsMaintenanceOnly = devViewAsActive ? devViewAsClientStatus === 'Maintenance' : isMaintenanceOnly
 
   // Ensure component is mounted (client-side only)
   useEffect(() => {
@@ -1690,7 +1701,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
               .single()
             setTracksBP(Boolean(data?.track_blood_pressure))
             setTracksBodyComp(Boolean((data as any)?.track_body_composition))
-            setIsNutraceutical((data as any)?.client_status === 'Nutraceutical')
+            const status = String((data as any)?.client_status || '')
+            setClientStatus(status)
+            setIsTestAccount(false)
+            setIsNutraceutical(status === 'Nutraceutical')
+            setIsMaintenanceOnly(status === 'Maintenance')
           } else {
             // current user
             const { data: userData } = await supabase.auth.getUser()
@@ -1703,13 +1718,34 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
                 .single()
               setTracksBP(Boolean(data?.track_blood_pressure))
               setTracksBodyComp(Boolean((data as any)?.track_body_composition))
-              setIsNutraceutical((data as any)?.client_status === 'Nutraceutical')
+              const status = String((data as any)?.client_status || '')
+              setClientStatus(status)
+              setIsTestAccount(status === 'Test')
+              setIsNutraceutical(status === 'Nutraceutical')
+              setIsMaintenanceOnly(status === 'Maintenance')
             }
           }
         } catch {}
       })()
     }
   }, [mounted, patientId, isDoctorView])
+
+  // Load/persist "View as client type" (Test accounts only; dashboard client view only)
+  useEffect(() => {
+    if (isDoctorView || !isTestAccount) return
+    try {
+      const saved = localStorage.getItem('dev:viewAsClientStatus')
+      if (saved) setDevViewAsClientStatus(saved)
+    } catch {}
+  }, [isDoctorView, isTestAccount])
+
+  useEffect(() => {
+    if (isDoctorView || !isTestAccount) return
+    try {
+      if (devViewAsClientStatus) localStorage.setItem('dev:viewAsClientStatus', devViewAsClientStatus)
+      else localStorage.removeItem('dev:viewAsClientStatus')
+    } catch {}
+  }, [isDoctorView, isTestAccount, devViewAsClientStatus])
 
   // Realtime: auto-refresh charts/data when new health_data rows are inserted/updated
   useEffect(() => {
@@ -2238,6 +2274,53 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             }
           </p>
         </div>
+
+        {/* Dev Mode (Test accounts only; client view only) */}
+        {!isDoctorView && isTestAccount && (
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900">🛠️ Developer Mode</h3>
+                <p className="text-sm text-gray-600">
+                  {devMode ? "Client status preview enabled" : "Enable to preview different client types (UI-only)."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDevMode(!devMode)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  devMode
+                    ? 'bg-green-600 text-white hover:bg-green-700'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                {devMode ? '✅ Dev Mode ON' : '⚪ Dev Mode OFF'}
+              </button>
+            </div>
+
+            {devMode && (
+              <div className="mt-4 p-3 bg-yellow-100 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  View as Client Type:
+                </label>
+                <select
+                  value={devViewAsClientStatus}
+                  onChange={(e) => setDevViewAsClientStatus(e.target.value)}
+                  className="p-2 border border-gray-300 rounded text-gray-900"
+                >
+                  <option value="">{`Actual (profile: ${clientStatus || 'Current'})`}</option>
+                  <option value="Current">Current</option>
+                  <option value="Maintenance">Maintenance</option>
+                  <option value="Nutraceutical">Nutraceutical</option>
+                  <option value="Test">Test</option>
+                </select>
+                <p className="text-xs text-yellow-700 mt-2">
+                  UI preview only (uses your saved selection while Dev Mode is ON)
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Error Message */}
         {error && (
@@ -2814,10 +2897,22 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
 
         {/* Row 3: New Dr. Nick Charts */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {!( !isDoctorView && isNutraceutical ) && (
-            <MorningFatBurnChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
-          )}
-          <BodyFatPercentageChart data={(rangeStart !== null && rangeEnd !== null) ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd) : chartData} />
+          {(() => {
+            const ranged = (rangeStart !== null && rangeEnd !== null)
+              ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd)
+              : chartData
+            const showMorningFatBurn = !effIsMaintenanceOnly && !( !isDoctorView && effIsNutraceutical )
+            return (
+              <>
+                {showMorningFatBurn && (
+                  <MorningFatBurnChart data={ranged} />
+                )}
+                <div className={!showMorningFatBurn ? 'lg:col-span-2' : ''}>
+                  <BodyFatPercentageChart data={ranged} />
+                </div>
+              </>
+            )
+          })()}
         </div>
 
         {/* Row 3.5: Body Composition Section (conditional charts, excluding RHR) */}
@@ -2843,9 +2938,15 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         {/* Removed Sleep chart here – now rendered inside Compliance Metrics section */}
 
         {/* Compliance Metrics Table (hidden for Nutraceutical patients on client view) */}
-        {!( !isDoctorView && isNutraceutical ) && (
+        {!( !isDoctorView && effIsNutraceutical ) && (
           <div className="grid grid-cols-1">
-            <ComplianceMetricsTable patientId={patientId} rangeStart={rangeStart ?? undefined as any} rangeEnd={rangeEnd ?? undefined as any} />
+            <ComplianceMetricsTable
+              patientId={patientId}
+              rangeStart={rangeStart ?? undefined as any}
+              rangeEnd={rangeEnd ?? undefined as any}
+              devModeEnabled={!isDoctorView && isTestAccount && devMode}
+              devViewAsClientStatus={devViewAsClientStatus}
+            />
           </div>
         )}
 
@@ -2859,7 +2960,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           unitSystem={unitSystem}
           tracksBP={tracksBP}
           tracksBodyComp={tracksBodyComp}
-          isNutraceutical={isNutraceutical}
+          isNutraceutical={effIsNutraceutical}
+          isMaintenanceOnly={effIsMaintenanceOnly}
         />
 
         {/* Removed duplicate bottom missed-checkins note: now rendered inside DataTable header */}

@@ -539,7 +539,18 @@ export default function HealthForm() {
   const [tracksBP, setTracksBP] = useState<boolean>(false)
   const [tracksBodyComp, setTracksBodyComp] = useState<boolean>(false)
   const [isMaintenance, setIsMaintenance] = useState<boolean>(false)
+  const [isMaintenanceOnly, setIsMaintenanceOnly] = useState<boolean>(false)
   const [isNutraceutical, setIsNutraceutical] = useState<boolean>(false)
+  const [clientStatus, setClientStatus] = useState<string>('')
+  const [devViewAsClientStatus, setDevViewAsClientStatus] = useState<string>('')
+
+  // Effective client status override (Test accounts only; only active when Dev Mode is ON)
+  const effectiveClientStatus = (isTestAccount && devMode && devViewAsClientStatus)
+    ? devViewAsClientStatus
+    : clientStatus
+  const effIsNutraceutical = effectiveClientStatus === 'Nutraceutical'
+  const effIsMaintenanceOnly = effectiveClientStatus === 'Maintenance'
+  const effIsMaintenance = effIsMaintenanceOnly || effIsNutraceutical
 
   // Reset submission success state when dev week changes
   useEffect(() => {
@@ -605,15 +616,35 @@ export default function HealthForm() {
       }
 
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
-      setIsTestAccount((profileData as any)?.client_status === 'Test')
-      setIsMaintenance((profileData as any)?.client_status === 'Maintenance' || (profileData as any)?.client_status === 'Nutraceutical')
-      setIsNutraceutical((profileData as any)?.client_status === 'Nutraceutical')
+      const status = String((profileData as any)?.client_status || '')
+      setClientStatus(status)
+      setIsTestAccount(status === 'Test')
+      setIsMaintenance(status === 'Maintenance' || status === 'Nutraceutical')
+      setIsMaintenanceOnly(status === 'Maintenance')
+      setIsNutraceutical(status === 'Nutraceutical')
       setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
       setTracksBodyComp(Boolean((profileData as any)?.track_body_composition))
     } catch (error) {
       console.error('Error loading resistance training goal:', error)
     }
   }
+
+  // Load/persist "View as client type" (Test accounts only)
+  useEffect(() => {
+    if (!isTestAccount) return
+    try {
+      const saved = localStorage.getItem('dev:viewAsClientStatus')
+      if (saved) setDevViewAsClientStatus(saved)
+    } catch {}
+  }, [isTestAccount])
+
+  useEffect(() => {
+    if (!isTestAccount) return
+    try {
+      if (devViewAsClientStatus) localStorage.setItem('dev:viewAsClientStatus', devViewAsClientStatus)
+      else localStorage.removeItem('dev:viewAsClientStatus')
+    } catch {}
+  }, [isTestAccount, devViewAsClientStatus])
 
   // Load user and calculate current week
   const loadUserAndCalculateWeek = async () => {
@@ -800,7 +831,7 @@ export default function HealthForm() {
     }
     
     // For Nutraceutical clients, the following fields are hidden and not required.
-    if (!isNutraceutical) {
+    if (!effIsNutraceutical) {
       // Days purposeful exercise validation - REQUIRED
       if (!formData.purposeful_exercise_days || !formData.purposeful_exercise_days.trim()) {
         errors.purposeful_exercise_days = 'Days purposeful exercise is required'
@@ -1499,6 +1530,25 @@ export default function HealthForm() {
                 <p className="text-sm text-yellow-700 mt-2">
                   ⚠️ Testing mode - You can submit forms for any week
                 </p>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    View as Client Type:
+                  </label>
+                  <select
+                    value={devViewAsClientStatus}
+                    onChange={(e) => setDevViewAsClientStatus(e.target.value)}
+                    className="p-2 border border-gray-300 rounded text-gray-900"
+                  >
+                    <option value="">{`Actual (profile: ${clientStatus || 'Current'})`}</option>
+                    <option value="Current">Current</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Nutraceutical">Nutraceutical</option>
+                    <option value="Test">Test</option>
+                  </select>
+                  <p className="text-xs text-yellow-700 mt-2">
+                    UI preview only (uses your saved selection while Dev Mode is ON)
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1514,10 +1564,10 @@ export default function HealthForm() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {isMaintenance ? '✅ Your data has been submitted' : '✅ Your information has been submitted to Dr. Nick'}
+            {effIsMaintenance ? '✅ Your data has been submitted' : '✅ Your information has been submitted to Dr. Nick'}
           </h2>
           <p className="text-gray-600 mb-4">
-            {isMaintenance ? 'You can review your information by reloading this page.' : 'You have submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!'}
+            {effIsMaintenance ? 'You can review your information by reloading this page.' : 'You have submitted your weekly check-in. Updates have been made to your dashboard - check out your progress!'}
           </p>
           <div className="text-sm text-gray-500 mb-6">
             You cannot submit again until the next Monday.
@@ -1580,6 +1630,25 @@ export default function HealthForm() {
                 <p className="text-sm text-yellow-700 mt-2">
                   ⚠️ Testing mode - You can submit forms for any week
                 </p>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    View as Client Type:
+                  </label>
+                  <select
+                    value={devViewAsClientStatus}
+                    onChange={(e) => setDevViewAsClientStatus(e.target.value)}
+                    className="p-2 border border-gray-300 rounded text-gray-900"
+                  >
+                    <option value="">{`Actual (profile: ${clientStatus || 'Current'})`}</option>
+                    <option value="Current">Current</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Nutraceutical">Nutraceutical</option>
+                    <option value="Test">Test</option>
+                  </select>
+                  <p className="text-xs text-yellow-700 mt-2">
+                    UI preview only (uses your saved selection while Dev Mode is ON)
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1595,15 +1664,15 @@ export default function HealthForm() {
             </div>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {isMaintenance ? '✅ Your data has been submitted' : '✅ Your information has been submitted to Dr. Nick'}
+            {effIsMaintenance ? '✅ Your data has been submitted' : '✅ Your information has been submitted to Dr. Nick'}
           </h2>
           <p className="text-gray-600 mb-4">
-            {isMaintenance ? 'You can review your information by reloading this page.' : 'Updates have been made to your dashboard - check out your progress!'}
+            {effIsMaintenance ? 'You can review your information by reloading this page.' : 'Updates have been made to your dashboard - check out your progress!'}
           </p>
           <div className="text-sm text-gray-500 mb-6">
             You cannot submit again until next Monday
           </div>
-          {isMaintenance ? (
+          {effIsMaintenance ? (
             <button
               onClick={() => window.location.reload()}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -1670,6 +1739,25 @@ export default function HealthForm() {
                 <p className="text-sm text-yellow-700 mt-2">
                   ⚠️ Testing mode - You can submit forms for any week
                 </p>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    View as Client Type:
+                  </label>
+                  <select
+                    value={devViewAsClientStatus}
+                    onChange={(e) => setDevViewAsClientStatus(e.target.value)}
+                    className="p-2 border border-gray-300 rounded text-gray-900"
+                  >
+                    <option value="">{`Actual (profile: ${clientStatus || 'Current'})`}</option>
+                    <option value="Current">Current</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Nutraceutical">Nutraceutical</option>
+                    <option value="Test">Test</option>
+                  </select>
+                  <p className="text-xs text-yellow-700 mt-2">
+                    UI preview only (uses your saved selection while Dev Mode is ON)
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1742,6 +1830,25 @@ export default function HealthForm() {
               <p className="text-sm text-yellow-700 mt-2">
                 ⚠️ Testing mode - You can submit forms for any week
               </p>
+            <div className="mt-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                View as Client Type:
+              </label>
+              <select
+                value={devViewAsClientStatus}
+                onChange={(e) => setDevViewAsClientStatus(e.target.value)}
+                className="p-2 border border-gray-300 rounded text-gray-900"
+              >
+                <option value="">{`Actual (profile: ${clientStatus || 'Current'})`}</option>
+                <option value="Current">Current</option>
+                <option value="Maintenance">Maintenance</option>
+                <option value="Nutraceutical">Nutraceutical</option>
+                <option value="Test">Test</option>
+              </select>
+              <p className="text-xs text-yellow-700 mt-2">
+                UI preview only (uses your saved selection while Dev Mode is ON)
+              </p>
+            </div>
             </div>
           )}
 
@@ -1826,7 +1933,7 @@ export default function HealthForm() {
           </div>
 
           {/* Exercise & Training (hidden for Nutraceutical) */}
-        {!isNutraceutical && (
+        {!effIsNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">💪 Exercise & Training</h3>
           
@@ -2020,7 +2127,7 @@ export default function HealthForm() {
         </div>
 
           {/* Recovery & Nutrition (hidden for Nutraceutical) */}
-        {!isNutraceutical && (
+        {!effIsNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">😴 Recovery & Nutrition</h3>
               
@@ -2092,13 +2199,13 @@ export default function HealthForm() {
         </div>
         )}
 
-        {/* 🛠️ Maintenance Inputs (Maintenance-only for Maintenance, hidden for Nutraceutical) */}
-        {isMaintenance && !isNutraceutical && (
+        {/* 🛠️ Maintenance Inputs (Maintenance-only, hidden for Nutraceutical) */}
+        {effIsMaintenanceOnly && !effIsNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">🛠️ Maintenance Inputs</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nutrition Days Goal Met (0-7) - (Fill this in only in durations of Lumen usage)</label>
               <input
                 type="number"
                 inputMode="numeric"
@@ -2122,21 +2229,6 @@ export default function HealthForm() {
                 onChange={(e) => handleInputChange('sleep_consistency_score', e.target.value)}
                 className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
                 placeholder="e.g., 82"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Morning Fat Burn % (0-100)</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                max="100"
-                step="0.01"
-                value={(formData as any).morning_fat_burn_percent || ''}
-                onChange={(e) => handleInputChange('morning_fat_burn_percent' as any, e.target.value)}
-                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 border-gray-300"
-                placeholder="e.g., 65.5"
               />
             </div>
           </div>
@@ -2283,7 +2375,7 @@ export default function HealthForm() {
         )}
 
         {/* Body Fat % - Always visible for Nutraceutical clients (independent of Body Composition toggle) */}
-        {isNutraceutical && (
+        {effIsNutraceutical && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">📉 Body Fat %</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2309,7 +2401,7 @@ export default function HealthForm() {
         )}
 
         {/* Energetic Constraints Question (hidden for Maintenance) */}
-        {!isMaintenance && (
+        {!effIsMaintenance && (
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900 border-b pb-2">⚡ Energetic Constraints</h3>
           
@@ -2361,7 +2453,7 @@ export default function HealthForm() {
         </div>
 
         {/* Lumen Screenshots - Required */}
-        {!isMaintenance && (
+        {!effIsMaintenance && (
         <div className="space-y-4">
           <div>
             <h3 className="text-lg font-medium text-gray-900 border-b pb-2">
@@ -2415,7 +2507,7 @@ export default function HealthForm() {
         )}
 
         {/* Food Log Screenshots - Optional */}
-        {!isMaintenance && (
+        {!effIsMaintenance && (
         <div className="space-y-4">
           <div>
             <h3 className="text-lg font-medium text-gray-900 border-b pb-2">
