@@ -91,6 +91,7 @@ export default function TrendPill({
       <div
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
+        data-trendpill="1"
         className={`cursor-help text-xs rounded-full px-3 py-1 whitespace-nowrap ${classes}`}
         aria-label={`${text}${arrow ? ` ${arrow}` : ''}`}
         title={title}

@@ -28,3 +28,9 @@ body {
 .force-black-text {
   color: #000000 !important;
 }
+
+/* Client/self view: TrendPill should remain visible but not show equation/tooltips on hover */
+.client-view [data-trendpill] {
+  pointer-events: none;
+  cursor: default !important;
+}

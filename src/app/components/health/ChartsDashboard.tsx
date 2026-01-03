@@ -2201,7 +2201,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className={`max-w-7xl mx-auto space-y-6 ${!isDoctorView ? 'client-view' : ''}`}>
       
       {/* Metrics Hero Cards - Both Client and Doctor Views */}
       {metrics && metrics.hasEnoughData && (
