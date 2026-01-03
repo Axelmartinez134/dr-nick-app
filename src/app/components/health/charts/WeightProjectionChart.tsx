@@ -301,11 +301,21 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
           <TrendPill
             slope={anchoredTrendParams.slope || 0}
             intercept={anchoredTrendParams.intercept || 0}
-            pointsCount={actualWeightData.length}
+            pointsCount={(() => {
+              // If Week 0 exists AND there is at least one week > 0, exclude Week 0 from "denominator"/point-count
+              // calculations while still anchoring the trend line at Week 0 (when startWeek === 0).
+              const hasWeek0 = actualWeightData.some(p => p.week === 0)
+              const hasNonZero = actualWeightData.some(p => p.week > 0)
+              const shouldExcludeWeek0 = anchoredTrendParams.startWeek === 0 && hasWeek0 && hasNonZero
+              return shouldExcludeWeek0 ? actualWeightData.filter(p => p.week > 0).length : actualWeightData.length
+            })()}
             insufficientThreshold={1}
             orientation="negativeGood"
             titleOverride={(() => {
-              const pts = actualWeightData
+              const hasWeek0 = actualWeightData.some(p => p.week === 0)
+              const hasNonZero = actualWeightData.some(p => p.week > 0)
+              const shouldExcludeWeek0 = anchoredTrendParams.startWeek === 0 && hasWeek0 && hasNonZero
+              const pts = shouldExcludeWeek0 ? actualWeightData.filter(p => p.week > 0) : actualWeightData
               const n = pts.length
               if (n < 2) return undefined
               const meanX = pts.reduce((s, p) => s + p.week, 0) / n
@@ -321,7 +331,7 @@ export default function WeightProjectionChart({ data, unitSystem = 'imperial', i
               const m = sxx !== 0 ? (sxy / sxx) : 0
               const b = meanY - m * meanX
               const f = (v: number) => Number(v).toFixed(2)
-              return `n=${n} • x_mean=${f(meanX)} • y_mean=${f(meanY)} • Sxx=${f(sxx)} • Sxy=${f(sxy)} • m=Sxy/Sxx=${f(m)} • b=y_mean−m·x_mean=${f(b)} • Final: y=${f(m)}x+${f(b)}`
+              return `${shouldExcludeWeek0 ? '(Week 0 excluded) • ' : ''}n=${n} • x_mean=${f(meanX)} • y_mean=${f(meanY)} • Sxx=${f(sxx)} • Sxy=${f(sxy)} • m=Sxy/Sxx=${f(m)} • b=y_mean−m·x_mean=${f(b)} • Final: y=${f(m)}x+${f(b)}`
             })()}
           />
         )}
