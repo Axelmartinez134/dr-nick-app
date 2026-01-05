@@ -3,7 +3,7 @@
 
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { saveWeeklyCheckin, getCheckinForWeek, hasUserSubmittedThisWeek, type CheckinFormData } from './healthService'
 import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
@@ -466,6 +466,30 @@ const isValidSubmissionDay = (devMode: boolean): boolean => {
 const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 export default function HealthForm() {
+  const creatineDayKeys = useMemo(() => ([
+    'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+  ] as const), [])
+  const creatineDayLabels = useMemo(() => ([
+    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+  ] as const), [])
+
+  const toggleCreatineDay = (day: typeof creatineDayKeys[number]) => {
+    setFormData(prev => {
+      const current = Array.isArray((prev as any).creatine_myosmd_days_selected)
+        ? ([...(prev as any).creatine_myosmd_days_selected] as string[])
+        : ([] as string[])
+      const idx = current.indexOf(day)
+      if (idx >= 0) current.splice(idx, 1)
+      else current.push(day)
+      // Keep stable Mon–Sun ordering in the stored payload
+      const ordered = creatineDayKeys.filter(d => current.includes(d)) as unknown as string[]
+      return {
+        ...prev,
+        creatine_myosmd_days_selected: ordered,
+        creatine_myosmd_days: String(ordered.length)
+      } as any
+    })
+  }
   // Form state
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('imperial')
   useEffect(() => {
@@ -509,7 +533,8 @@ export default function HealthForm() {
     food_log_day6_image: '',
     food_log_day7_image: '',
     // Fasting & Muscle Retention (new)
-    creatine_myosmd_days: '',
+    creatine_myosmd_days: '0',
+    creatine_myosmd_days_selected: [],
     avg_daily_fasting_hhmm: '',
     weekly_fasting_screenshot_image: ''
   })
@@ -740,7 +765,16 @@ export default function HealthForm() {
           food_log_day6_image: existingData.food_log_day6_image || '',
           food_log_day7_image: existingData.food_log_day7_image || '',
           // Fasting & Muscle Retention (new)
-          creatine_myosmd_days: (existingData as any)?.creatine_myosmd_days != null ? String((existingData as any).creatine_myosmd_days) : '',
+          creatine_myosmd_days_selected: Array.isArray((existingData as any)?.creatine_myosmd_days_selected)
+            ? (existingData as any).creatine_myosmd_days_selected
+            : [],
+          creatine_myosmd_days: (() => {
+            const sel = Array.isArray((existingData as any)?.creatine_myosmd_days_selected)
+              ? (existingData as any).creatine_myosmd_days_selected
+              : []
+            // If selection detail is missing, treat as unknown and start unchecked (0)
+            return String(Array.isArray(sel) ? sel.length : 0)
+          })(),
           avg_daily_fasting_hhmm: minutesToHhmm((existingData as any)?.avg_daily_fasting_minutes),
           weekly_fasting_screenshot_image: (existingData as any)?.weekly_fasting_screenshot_image || '',
           notes: '' // Notes aren't stored in health_data table
@@ -870,14 +904,7 @@ export default function HealthForm() {
     }
 
     // Fasting & Muscle Retention (new)
-    if (!formData.creatine_myosmd_days || !String(formData.creatine_myosmd_days).trim()) {
-      errors.creatine_myosmd_days = 'Creatine / MyosMD Consumed is required'
-    } else {
-      const n = Number(formData.creatine_myosmd_days)
-      if (!Number.isInteger(n) || n < 0 || n > 7) {
-        errors.creatine_myosmd_days = 'Creatine / MyosMD Consumed must be an integer between 0 and 7'
-      }
-    }
+    // Creatine / MyosMD is now captured via day-by-day selection, and 0 is allowed.
 
     // Avg fasting is soft-required; validate format only if present
     if (formData.avg_daily_fasting_hhmm && String(formData.avg_daily_fasting_hhmm).trim() !== '') {
@@ -2025,27 +2052,58 @@ export default function HealthForm() {
 
             <div className="md:col-span-2 space-y-4">
               <div>
-                <label htmlFor="creatine_myosmd_days" className="block text-sm font-medium text-gray-700 mb-1">
-                  How manyy days did you take HMB + Creatine / and or MyosMD this week? <br />(0-7) - Numbers Only <span className="text-red-500">*Required</span>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  HMB + Creatine / MyosMD Consumed (select the days you took it)
                 </label>
-                <input
-                  type="number"
-                  id="creatine_myosmd_days"
-                  inputMode="numeric"
-                  min="0"
-                  max="7"
-                  step="1"
-                  required
-                  value={formData.creatine_myosmd_days || ''}
-                  onChange={(e) => handleInputChange('creatine_myosmd_days', e.target.value)}
-                  className={`w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 ${
-                    validationErrors['creatine_myosmd_days'] ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  placeholder="e.g., 5"
-                />
-                {validationErrors['creatine_myosmd_days'] && (
-                  <p className="text-sm text-red-600 mt-1">{validationErrors['creatine_myosmd_days']}</p>
-                )}
+
+                {(() => {
+                  const selected = Array.isArray((formData as any).creatine_myosmd_days_selected)
+                    ? ((formData as any).creatine_myosmd_days_selected as string[])
+                    : ([] as string[])
+                  const isSelected = (day: string) => selected.includes(day)
+                  const total = selected.length
+
+                  const DayBox = ({ day, label }: { day: string; label: string }) => (
+                    <button
+                      type="button"
+                      onClick={() => toggleCreatineDay(day as any)}
+                      className={`relative w-full rounded-md border px-3 py-3 text-left transition-colors ${
+                        isSelected(day)
+                          ? 'border-green-600 bg-green-50'
+                          : 'border-gray-300 bg-white hover:bg-gray-50'
+                      }`}
+                      aria-pressed={isSelected(day)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{label}</span>
+                        {isSelected(day) ? <span className="font-bold text-green-700">✓</span> : null}
+                      </div>
+                    </button>
+                  )
+
+                  const TotalBox = () => (
+                    <div className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-gray-700">Total</span>
+                        <span className="text-lg font-bold text-gray-900">{total}</span>
+                      </div>
+                    </div>
+                  )
+
+                  return (
+                    <div className="grid grid-cols-4 gap-2">
+                      {/* Row 1: Mon–Thu */}
+                      {creatineDayKeys.slice(0, 4).map((day, i) => (
+                        <DayBox key={day} day={day} label={creatineDayLabels[i]} />
+                      ))}
+                      {/* Row 2: Fri–Sun + Total */}
+                      {creatineDayKeys.slice(4, 7).map((day, i) => (
+                        <DayBox key={day} day={day} label={creatineDayLabels[i + 4]} />
+                      ))}
+                      <TotalBox />
+                    </div>
+                  )
+                })()}
               </div>
 
               <div>

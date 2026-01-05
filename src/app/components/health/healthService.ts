@@ -33,6 +33,7 @@ export interface WeeklyCheckin {
   systolic_bp?: number | null
   diastolic_bp?: number | null
   creatine_myosmd_days?: number | null
+  creatine_myosmd_days_selected?: string[] | null
   avg_daily_fasting_minutes?: number | null
   weekly_fasting_screenshot_image?: string | null
   data_entered_by?: string
@@ -86,6 +87,7 @@ export interface CheckinFormData {
   food_log_day7_image?: string
   // Fasting & Muscle Retention (new)
   creatine_myosmd_days?: string
+  creatine_myosmd_days_selected?: string[]
   avg_daily_fasting_hhmm?: string
   weekly_fasting_screenshot_image?: string
   // Queue system fields - Weekly
@@ -184,6 +186,9 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       // Fasting & Muscle Retention (new)
       creatine_myosmd_days: data.creatine_myosmd_days !== undefined && data.creatine_myosmd_days !== null && data.creatine_myosmd_days !== ''
         ? parseInt(String(data.creatine_myosmd_days)) : null,
+      creatine_myosmd_days_selected: Array.isArray((data as any).creatine_myosmd_days_selected)
+        ? (data as any).creatine_myosmd_days_selected
+        : null,
       avg_daily_fasting_minutes: parseHhmmToMinutes(data.avg_daily_fasting_hhmm),
       weekly_fasting_screenshot_image: data.weekly_fasting_screenshot_image || null,
       energetic_constraints_reduction_ok: data.energetic_constraints_reduction_ok || false,
@@ -535,6 +540,11 @@ export async function updateHealthRecord(recordId: string, updates: Partial<Week
     if (updates.notes !== undefined) updateData.notes = updates.notes || null
     if (updates.nutrition_compliance_days !== undefined) updateData.nutrition_compliance_days = updates.nutrition_compliance_days ? parseInt(String(updates.nutrition_compliance_days)) : null
     if (updates.creatine_myosmd_days !== undefined) updateData.creatine_myosmd_days = updates.creatine_myosmd_days !== null && updates.creatine_myosmd_days !== ('' as any) ? parseInt(String(updates.creatine_myosmd_days)) : null
+    if ((updates as any).creatine_myosmd_days_selected !== undefined) {
+      updateData.creatine_myosmd_days_selected = Array.isArray((updates as any).creatine_myosmd_days_selected)
+        ? (updates as any).creatine_myosmd_days_selected
+        : ((updates as any).creatine_myosmd_days_selected === null ? null : (updates as any).creatine_myosmd_days_selected)
+    }
     if (updates.avg_daily_fasting_minutes !== undefined) updateData.avg_daily_fasting_minutes = updates.avg_daily_fasting_minutes !== null && updates.avg_daily_fasting_minutes !== ('' as any) ? parseInt(String(updates.avg_daily_fasting_minutes)) : null
     if (updates.weekly_fasting_screenshot_image !== undefined) updateData.weekly_fasting_screenshot_image = updates.weekly_fasting_screenshot_image || null
 
@@ -648,6 +658,9 @@ export async function createHealthRecordForPatient(
       // Fasting & Muscle Retention (new)
       creatine_myosmd_days: values.creatine_myosmd_days !== undefined && values.creatine_myosmd_days !== null && values.creatine_myosmd_days !== ('' as any)
         ? parseInt(String(values.creatine_myosmd_days)) : null,
+      creatine_myosmd_days_selected: Array.isArray((values as any).creatine_myosmd_days_selected)
+        ? (values as any).creatine_myosmd_days_selected
+        : null,
       avg_daily_fasting_minutes: values.avg_daily_fasting_minutes !== undefined && values.avg_daily_fasting_minutes !== null && values.avg_daily_fasting_minutes !== ('' as any)
         ? parseInt(String(values.avg_daily_fasting_minutes)) : null,
       weekly_fasting_screenshot_image: values.weekly_fasting_screenshot_image || null,

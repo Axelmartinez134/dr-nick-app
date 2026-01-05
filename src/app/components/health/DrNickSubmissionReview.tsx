@@ -62,6 +62,24 @@ export default function DrNickSubmissionReview({
       foodLogImage: {url: string, title: string, fieldName: string} | null
     }>
   } | null>(null)
+
+  // Creatine/MyosMD per-day selection (Mon–Sun) stored as JSON array of full lowercase strings
+  const creatineSelectedDays = (() => {
+    const raw = (submission as any)?.creatine_myosmd_days_selected
+    if (Array.isArray(raw)) return raw.map((s: any) => String(s).toLowerCase())
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) return parsed.map((s: any) => String(s).toLowerCase())
+      } catch {}
+    }
+    return [] as string[]
+  })()
+  const creatineDayKeys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
+  const didTakeCreatineOn = (index0: number) => {
+    const key = creatineDayKeys[index0]
+    return !!key && creatineSelectedDays.includes(key)
+  }
   
   // PDF viewing modal state
   const [viewingPdf, setViewingPdf] = useState<{
@@ -1706,6 +1724,11 @@ export default function DrNickSubmissionReview({
                       No Image
                     </div>
                   )}
+                  {didTakeCreatineOn(index) ? (
+                    <div className="mt-1 text-sm font-bold text-green-700">
+                      Creatine ✓
+                    </div>
+                  ) : null}
                 </div>
               )
             })}

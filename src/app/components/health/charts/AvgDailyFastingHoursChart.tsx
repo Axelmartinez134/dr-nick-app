@@ -150,11 +150,11 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
     return (
       <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
         <ChartTooltip
-          title="Avg Daily Fasting (Hours)"
+          title="Average Daily Fasting (Hours)"
           description="Your average daily fasting duration (in hours) from each weekly check-in. This helps you track consistency over time."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">
-            ⏳ Avg Daily Fasting (Hours)
+            ⏳ Average Daily Fasting (Hours)
           </h3>
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
@@ -169,11 +169,11 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
     <div className="bg-white rounded-lg p-6 shadow-[0_12px_28px_rgba(0,0,0,0.09),0_-10px_24px_rgba(0,0,0,0.07)]">
       <div className="mb-2 flex items-start justify-between gap-3">
         <ChartTooltip
-          title="Avg Daily Fasting (Hours)"
+          title="Average Daily Fasting (Hours)"
           description="Average daily fasting duration across the week."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">
-            ⏳ Avg Daily Fasting (Hours)
+            ⏳ Average Daily Fasting (Hours)
           </h3>
         </ChartTooltip>
         {!hideTrendPill && (
