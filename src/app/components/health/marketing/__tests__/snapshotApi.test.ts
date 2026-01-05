@@ -75,7 +75,7 @@ describe('GET /api/marketing/shares/[slug]', () => {
     const res = await getSnapshotBySlug(new Request('http://localhost'), { params: { slug: 'andrea-123' } } as any)
     expect(res.status).toBe(200)
     const json = await res.json()
-    expect(json).toEqual({ hello: 'world' })
+    expect(json).toEqual({ hello: 'world', schema_version: 1 })
     // Ensure counter incremented in mock store
     expect(mockShares['andrea-123']!.view_count).toBe(3)
     // Cache headers present

@@ -450,6 +450,8 @@ const PlateauPreventionChart = dynamic(() => import('./charts/PlateauPreventionC
 const SleepConsistencyChart = dynamic(() => import('./charts/SleepConsistencyChart'), { ssr: false })
 const SystolicBloodPressureChart = dynamic(() => import('./charts/SystolicBloodPressureChart'), { ssr: false }) as any
 const DiastolicBloodPressureChart = dynamic(() => import('./charts/DiastolicBloodPressureChart'), { ssr: false }) as any
+const AvgDailyFastingHoursChart = dynamic(() => import('./charts/AvgDailyFastingHoursChart'), { ssr: false }) as any
+const CreatineMyosMDDaysChart = dynamic(() => import('./charts/CreatineMyosMDDaysChart'), { ssr: false }) as any
 
 // Lightweight inline component for editing Week 0 initial_weight
 function InitialWeightEditor({ chartData, unitSystem, onSaved }: { chartData: WeeklyCheckin[]; unitSystem: UnitSystem; onSaved: () => void }) {
@@ -624,11 +626,77 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
     if (!isDoctorView && field !== 'notes' && field !== 'detailed_symptom_notes') return
     
     setEditingCell({ recordId, field })
+    // Special: avg_daily_fasting_minutes is stored as minutes (number) but should be edited as HH:MM
+    if (field === 'avg_daily_fasting_minutes') {
+      const n = (() => {
+        if (currentValue === null || currentValue === undefined || currentValue === ('' as any)) return null
+        // If someone passed HH:MM already, keep it (strictly)
+        const s = String(currentValue).trim()
+        const m = s.match(/^(\d{2}):(\d{2})$/)
+        if (m) return (parseInt(m[1], 10) * 60) + parseInt(m[2], 10)
+        // Otherwise treat as minutes
+        const num = parseInt(s)
+        return Number.isFinite(num) ? num : null
+      })()
+      const hh = n !== null && Number.isFinite(n) ? Math.max(0, Math.floor(n / 60)) : 0
+      const mm = n !== null && Number.isFinite(n) ? Math.max(0, n % 60) : 0
+      const hhStr = String(hh).padStart(2, '0')
+      const mmStr = String(mm).padStart(2, '0')
+      setEditValue(n === null ? '' : `${hhStr}:${mmStr}`)
+      return
+    }
     setEditValue(currentValue?.toString() || '')
   }
 
   const handleSaveEdit = async () => {
     if (!editingCell || !onDataUpdate) return
+
+    // Validate/transform fasting edit from HH:MM -> minutes before saving
+    if (editingCell.field === 'avg_daily_fasting_minutes') {
+      const v = String(editValue || '').trim()
+      if (v === '') {
+        setSaving(true)
+        try {
+          const updates = { [editingCell.field]: null }
+          await updateHealthRecord(editingCell.recordId, updates)
+          onDataUpdate()
+          setEditingCell(null)
+        } catch (error) {
+          console.error('Error updating record:', error)
+          alert('Failed to update record')
+        } finally {
+          setSaving(false)
+        }
+        return
+      }
+
+      const m = v.match(/^(\d{2}):(\d{2})$/)
+      if (!m) {
+        alert('Average Daily Fasting must be in HH:MM format (00:00 to 23:59)')
+        return
+      }
+      const hh = parseInt(m[1], 10)
+      const mm = parseInt(m[2], 10)
+      if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+        alert('Average Daily Fasting must be between 00:00 and 23:59')
+        return
+      }
+      const minutes = (hh * 60) + mm
+
+      setSaving(true)
+      try {
+        const updates = { [editingCell.field]: minutes }
+        await updateHealthRecord(editingCell.recordId, updates)
+        onDataUpdate()
+        setEditingCell(null)
+      } catch (error) {
+        console.error('Error updating record:', error)
+        alert('Failed to update record')
+      } finally {
+        setSaving(false)
+      }
+      return
+    }
 
     setSaving(true)
     try {
@@ -766,6 +834,69 @@ function DataTable({ data, isDoctorView, onDataUpdate, patientId, onSubmissionSe
                 if (e.key === 'Escape') handleCancelEdit()
               }}
             />
+          ) : field === 'avg_daily_fasting_minutes' ? (
+            (() => {
+              // Mirror the Monday Check-in HH:MM control (HH and MM inputs) for Dr. Nick edits
+              const raw = String(editValue || '').trim()
+              const parts = raw.split(':')
+              const hh = (parts[0] || '').replace(/\D/g, '').slice(0, 2)
+              const mm = (parts[1] || '').replace(/\D/g, '').slice(0, 2)
+
+              const setParts = (nextHh: string, nextMm: string) => {
+                const hasAny = (nextHh + nextMm).trim() !== ''
+                const combined = hasAny ? `${nextHh}:${nextMm}` : ''
+                setEditValue(combined)
+              }
+
+              return (
+                <div className="flex items-stretch border border-gray-300 rounded-md overflow-hidden bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                  <input
+                    aria-label="Hours"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="HH"
+                    value={hh}
+                    onChange={(e) => {
+                      const nextRaw = e.target.value.replace(/\D/g, '').slice(0, 2)
+                      const next =
+                        nextRaw.length === 2
+                          ? String(Math.min(23, Number(nextRaw))).padStart(2, '0')
+                          : nextRaw
+                      setParts(next, mm)
+                    }}
+                    maxLength={2}
+                    className="w-16 px-3 py-2 text-gray-900 outline-none"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveEdit()
+                      if (e.key === 'Escape') handleCancelEdit()
+                    }}
+                  />
+                  <div className="flex items-center justify-center px-1 text-gray-900 select-none">:</div>
+                  <input
+                    aria-label="Minutes"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="MM"
+                    value={mm}
+                    onChange={(e) => {
+                      const nextRaw = e.target.value.replace(/\D/g, '').slice(0, 2)
+                      const next =
+                        nextRaw.length === 2
+                          ? String(Math.min(59, Number(nextRaw))).padStart(2, '0')
+                          : nextRaw
+                      setParts(hh, next)
+                    }}
+                    maxLength={2}
+                    className="w-16 px-3 py-2 text-gray-900 outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveEdit()
+                      if (e.key === 'Escape') handleCancelEdit()
+                    }}
+                  />
+                </div>
+              )
+            })()
           ) : isLongText ? (
             <textarea
               value={editValue}
@@ -2936,6 +3067,20 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
 
         {/* Removed Nutrition/Strain charts here – now rendered inside Compliance Metrics section */}
         {/* Removed Sleep chart here – now rendered inside Compliance Metrics section */}
+
+        {/* Row: Fasting & Muscle Retention (always show for all client types) */}
+        <div className="grid lg:grid-cols-2 gap-6">
+          <AvgDailyFastingHoursChart
+            data={(rangeStart !== null && rangeEnd !== null)
+              ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd)
+              : chartData}
+          />
+          <CreatineMyosMDDaysChart
+            data={(rangeStart !== null && rangeEnd !== null)
+              ? chartData.filter(d => d.week_number >= rangeStart && d.week_number <= rangeEnd)
+              : chartData}
+          />
+        </div>
 
         {/* Compliance Metrics Table (hidden for Nutraceutical patients on client view) */}
         {!( !isDoctorView && effIsNutraceutical ) && (
