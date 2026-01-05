@@ -2053,7 +2053,25 @@ export default function HealthForm() {
             <div className="md:col-span-2 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  HMB + Creatine / MyosMD Consumed (select the days you took it)
+                  {'How many days did you take '}
+                  <a
+                    href="https://blonyx.com/products/blonyx-hmb-creatine/?ref=THEFITTESTDOC&utm_source=affiliate"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline text-blue-600 hover:text-blue-700"
+                  >
+                    HMB + Creatine
+                  </a>
+                  {' / and or '}
+                  <a
+                    href="https://myosmd.com/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline text-blue-600 hover:text-blue-700"
+                  >
+                    MyosMD
+                  </a>
+                  {' this week? (select the days you took it)'}
                 </label>
 
                 {(() => {
