@@ -143,10 +143,10 @@ export default function BodyFatPercentageChart({ data, hideDateInTooltip = false
             orientation="negativeGood"
           />
         )}
-        <p className="text-sm text-gray-600">
-          Your body fat percentage tracks changes in body composition beyond just weight. This shows how much of your progress comes from fat loss versus muscle.
-        </p>
       </div>
+      <p className="text-sm text-gray-600 mb-2">
+        Your body fat percentage tracks changes in body composition beyond just weight. This shows how much of your progress comes from fat loss versus muscle.
+      </p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

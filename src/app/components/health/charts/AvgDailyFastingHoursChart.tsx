@@ -154,7 +154,7 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
           description="Your average daily fasting duration (in hours) from each weekly check-in. This helps you track consistency over time."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-4 hover:text-indigo-600 transition-colors">
-            ⏳ Average Daily Fasting (Hours)
+            ⏳ Average Daily Fasting
           </h3>
         </ChartTooltip>
         <div className="text-center py-8 text-gray-500">
@@ -173,7 +173,7 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
           description="Average daily fasting duration across the week."
         >
           <h3 className="text-lg font-semibold text-gray-900 mb-2 hover:text-indigo-600 transition-colors">
-            ⏳ Average Daily Fasting (Hours)
+            ⏳ Average Daily Fasting
           </h3>
         </ChartTooltip>
         {!hideTrendPill && (
@@ -194,7 +194,7 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} />
           <YAxis
-            label={{ value: 'Hours', angle: -90, position: 'insideLeft', dy: 80 }}
+            label={{ value: 'Hours', angle: -90, position: 'insideLeft' }}
             domain={yDomain as any}
             ticks={yTicks as any}
             tickFormatter={(v) => `${Math.round(v)}`}

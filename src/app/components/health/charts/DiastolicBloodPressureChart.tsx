@@ -40,8 +40,10 @@ export default function DiastolicBloodPressureChart({ data, hideTrendPill = fals
   data.forEach(entry => {
     const raw = (entry as any).diastolic_bp
     const num = raw === null || raw === undefined || raw === '' ? null : parseFloat(String(raw))
+    // Guardrail: diastolic BP should be within a human range; treat outliers as null so the axis doesn't explode
+    const cleaned = (num !== null && !Number.isNaN(num) && Number.isFinite(num) && num >= 20 && num <= 200) ? num : null
     byWeek[entry.week_number] = {
-      diastolic: num !== null && !Number.isNaN(num) && Number.isFinite(num) ? num : null,
+      diastolic: cleaned,
       date: entry.date || null
     }
   })
@@ -61,12 +63,14 @@ export default function DiastolicBloodPressureChart({ data, hideTrendPill = fals
       .map(d => (typeof d.diastolic === 'number' ? d.diastolic : null))
       .filter((v): v is number => v !== null && !isNaN(v))
 
-    if (values.length === 0) return [0, 150]
+    if (values.length === 0) return [40, 100]
 
     const minValue = Math.min(...values)
     const maxValue = Math.max(...values)
     const padding = Math.max(2, (maxValue - minValue) * 0.1)
-    return [minValue - padding, maxValue + padding]
+    const lo = Math.max(0, minValue - padding)
+    const hi = Math.min(220, maxValue + padding)
+    return [lo, hi]
   }, [chartData])
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -129,7 +133,12 @@ export default function DiastolicBloodPressureChart({ data, hideTrendPill = fals
         <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} />
-          <YAxis label={{ value: 'mmHg', angle: -90, position: 'insideLeft' }} domain={calculateYAxisDomain} />
+          <YAxis
+            label={{ value: 'mmHg', angle: -90, position: 'insideLeft' }}
+            domain={calculateYAxisDomain}
+            tickFormatter={(v) => `${Math.round(Number(v))}`}
+            allowDecimals={false}
+          />
           <Tooltip content={<CustomTooltip />} />
           <Line type="monotone" dataKey="diastolic" stroke="#059669" strokeWidth={3} dot={{ fill: '#059669', strokeWidth: 2, r: 5 }} activeDot={{ r: 8 }} name="Diastolic (mmHg)" connectNulls={true} />
           {/* Continuous regression trend line across full week range */}

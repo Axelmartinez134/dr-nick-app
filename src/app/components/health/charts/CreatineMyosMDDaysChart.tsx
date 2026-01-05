@@ -168,7 +168,7 @@ export default function CreatineMyosMDDaysChart({ data, hideTrendPill = false }:
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="week" label={{ value: 'Week Number', position: 'insideBottom', offset: -5 }} />
           <YAxis
-            label={{ value: 'Days', angle: -90, position: 'insideLeft', dy: 80 }}
+            label={{ value: 'Days', angle: -90, position: 'insideLeft' }}
             domain={yDomain as any}
             ticks={yTicks as any}
             tickCount={8}
