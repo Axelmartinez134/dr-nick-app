@@ -37,6 +37,10 @@ export function useCarouselEditorEngine() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Project-wide typography (persisted with the carousel; canvas-only).
+  const [headlineFontFamily, setHeadlineFontFamily] = useState<string>('Inter, sans-serif');
+  const [bodyFontFamily, setBodyFontFamily] = useState<string>('Inter, sans-serif');
+
   // Saved carousels list
   const [savedCarousels, setSavedCarousels] = useState<SavedCarousel[]>([]);
   const [loadingCarousels, setLoadingCarousels] = useState(false);
@@ -203,6 +207,10 @@ export function useCarouselEditorEngine() {
         },
       });
 
+      // Restore typography (project-wide)
+      setHeadlineFontFamily(carousel.headlineFontFamily || 'Inter, sans-serif');
+      setBodyFontFamily(carousel.bodyFontFamily || 'Inter, sans-serif');
+
       // Restore template snapshot (render from snapshot only)
       if (carousel.templateId && carousel.templateSnapshot) {
         setSelectedTemplateId(carousel.templateId);
@@ -240,6 +248,8 @@ export function useCarouselEditorEngine() {
     const capturedTitle = carouselTitle;
     const capturedTemplateId = selectedTemplateId;
     const capturedTemplateSnapshot = selectedTemplateSnapshot;
+    const capturedHeadlineFontFamily = headlineFontFamily;
+    const capturedBodyFontFamily = bodyFontFamily;
 
     console.log('[Auto-Save] 📸 Captured state for auto-save:', {
       hasLayout: !!capturedLayoutData,
@@ -250,9 +260,19 @@ export function useCarouselEditorEngine() {
 
     // Debounce: wait 2 seconds before saving
     saveTimeoutRef.current = setTimeout(() => {
-      void performAutoSave(false, capturedLayoutData, capturedInputData, capturedCarouselId, capturedTitle, capturedTemplateId, capturedTemplateSnapshot);
+      void performAutoSave(
+        false,
+        capturedLayoutData,
+        capturedInputData,
+        capturedCarouselId,
+        capturedTitle,
+        capturedTemplateId,
+        capturedTemplateSnapshot,
+        capturedHeadlineFontFamily,
+        capturedBodyFontFamily
+      );
     }, 2000);
-  }, [layoutData, inputData, currentCarouselId, carouselTitle, selectedTemplateId, selectedTemplateSnapshot]);
+  }, [layoutData, inputData, currentCarouselId, carouselTitle, selectedTemplateId, selectedTemplateSnapshot, headlineFontFamily, bodyFontFamily]);
 
   const performAutoSave = useCallback(async (
     forceNew = false,
@@ -261,7 +281,9 @@ export function useCarouselEditorEngine() {
     capturedCarouselId?: string | null,
     capturedTitle?: string,
     capturedTemplateId?: string | null,
-    capturedTemplateSnapshot?: CarouselTemplateDefinitionV1 | null
+    capturedTemplateSnapshot?: CarouselTemplateDefinitionV1 | null,
+    capturedHeadlineFontFamily?: string,
+    capturedBodyFontFamily?: string
   ): Promise<string | null> => {
     // Use captured values if provided, otherwise use current state
     const dataToSave = capturedLayoutData || layoutData;
@@ -270,6 +292,8 @@ export function useCarouselEditorEngine() {
     const titleToUse = capturedTitle || carouselTitle;
     const templateIdToUse = capturedTemplateId !== undefined ? capturedTemplateId : selectedTemplateId;
     const templateSnapshotToUse = capturedTemplateSnapshot !== undefined ? capturedTemplateSnapshot : selectedTemplateSnapshot;
+    const headlineFontFamilyToUse = capturedHeadlineFontFamily || headlineFontFamily;
+    const bodyFontFamilyToUse = capturedBodyFontFamily || bodyFontFamily;
 
     if (!dataToSave || !inputToSave) {
       addLog('⚠️ Auto-save skipped: no data to save');
@@ -303,6 +327,8 @@ export function useCarouselEditorEngine() {
         imagePosition: imagePosition || dataToSave.layout?.image || { x: 0, y: 0, width: 0, height: 0 },
         backgroundColor: inputToSave.settings?.backgroundColor || '#ffffff',
         textColor: inputToSave.settings?.textColor || '#000000',
+        headlineFontFamily: headlineFontFamilyToUse,
+        bodyFontFamily: bodyFontFamilyToUse,
         customImagePrompt: inputToSave.settings?.imagePrompt,
         templateId: templateIdToUse,
         templateSnapshot: templateSnapshotToUse,
@@ -355,7 +381,20 @@ export function useCarouselEditorEngine() {
       if (retryCountRef.current < 1) {
         retryCountRef.current++;
         addLog('🔄 Retrying auto-save...');
-        setTimeout(() => void performAutoSave(forceNew, capturedLayoutData, capturedInputData, capturedCarouselId, capturedTitle, capturedTemplateId, capturedTemplateSnapshot), 1000);
+        setTimeout(
+          () => void performAutoSave(
+            forceNew,
+            capturedLayoutData,
+            capturedInputData,
+            capturedCarouselId,
+            capturedTitle,
+            capturedTemplateId,
+            capturedTemplateSnapshot,
+            capturedHeadlineFontFamily,
+            capturedBodyFontFamily
+          ),
+          1000
+        );
       } else {
         addLog('❌ Auto-save retry limit reached');
         retryCountRef.current = 0;
@@ -364,8 +403,10 @@ export function useCarouselEditorEngine() {
     }
   }, [
     addLog,
+    bodyFontFamily,
     carouselTitle,
     currentCarouselId,
+    headlineFontFamily,
     inputData,
     layoutData,
     loadSavedCarousels,
@@ -720,6 +761,8 @@ export function useCarouselEditorEngine() {
     selectedTemplateId,
     selectedTemplateSnapshot,
     templateEditorOpen,
+    headlineFontFamily,
+    bodyFontFamily,
 
     // setters (used by UI)
     setShowDropdown,
@@ -736,6 +779,8 @@ export function useCarouselEditorEngine() {
     setSelectedTemplateId,
     setSelectedTemplateSnapshot,
     setTemplateEditorOpen,
+    setHeadlineFontFamily,
+    setBodyFontFamily,
 
     // actions
     addLog,

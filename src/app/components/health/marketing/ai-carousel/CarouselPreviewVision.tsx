@@ -10,12 +10,14 @@ interface CarouselPreviewProps {
   backgroundColor: string;
   textColor: string;
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
+  headlineFontFamily?: string;
+  bodyFontFamily?: string;
 }
 
 const DISPLAY_ZOOM = 0.5;
 
 const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
-  ({ layout, backgroundColor, textColor, templateSnapshot }, ref) => {
+  ({ layout, backgroundColor, textColor, templateSnapshot, headlineFontFamily, bodyFontFamily }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<any>(null);
     const fabricModuleRef = useRef<any>(null);
@@ -747,6 +749,16 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       console.log('[Preview Vision] ✍️ Adding text lines...');
       console.log('[Preview Vision] 📊 Total text lines:', layout.textLines.length);
 
+      // Decide which lines are "headline" vs "body" so we can apply per-block font families.
+      // Heuristic:
+      // - If there are 2+ distinct font sizes, treat the largest baseSize lines as HEADLINE.
+      // - If there is only 1 distinct font size, treat the first line as HEADLINE and the rest as BODY.
+      const sizesDesc = Array.from(new Set(layout.textLines.map((l) => l.baseSize))).sort((a, b) => b - a);
+      const headlineSize = sizesDesc[0] ?? 0;
+      const hasDistinctHeadlineSize = sizesDesc.length >= 2;
+      const headlineFont = headlineFontFamily || 'Inter, sans-serif';
+      const bodyFont = bodyFontFamily || 'Inter, sans-serif';
+
       layout.textLines.forEach((line, index) => {
         console.log(`[Preview Vision] ✍️ Line ${index + 1}:`, {
           text: line.text.substring(0, 40),
@@ -757,6 +769,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         });
 
         try {
+          const isHeadlineLine = hasDistinctHeadlineSize ? line.baseSize === headlineSize : index === 0;
           // Create Textbox object (enforces width constraint, supports mixed formatting)
           const textObj = new fabric.Textbox(line.text, {
             left: line.position.x,
@@ -764,7 +777,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             width: line.maxWidth, // CRITICAL: Hard width constraint that forces wrapping
             fontSize: line.baseSize,
             fill: textColor,
-            fontFamily: 'Arial, sans-serif',
+            fontFamily: isHeadlineLine ? headlineFont : bodyFont,
             textAlign: line.textAlign,
             lineHeight: line.lineHeight,
             originX: line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left',
@@ -817,7 +830,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       canvas.renderAll();
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily]);
 
     return (
       <div className="flex flex-col items-center space-y-4">

@@ -15,6 +15,8 @@ interface SaveCarouselRequest {
   imagePosition: { x: number; y: number; width: number; height: number };
   backgroundColor: string;
   textColor: string;
+  headlineFontFamily?: string;
+  bodyFontFamily?: string;
   customImagePrompt?: string;
   templateId?: string | null;
   templateSnapshot?: any | null;
@@ -99,6 +101,8 @@ export async function POST(request: NextRequest) {
           image_position: body.imagePosition,
           background_color: body.backgroundColor,
           text_color: body.textColor,
+          headline_font_family: body.headlineFontFamily || null,
+          body_font_family: body.bodyFontFamily || null,
           custom_image_prompt: body.customImagePrompt || null,
           template_id: body.templateId || null,
           template_snapshot: body.templateSnapshot || null,
@@ -131,6 +135,8 @@ export async function POST(request: NextRequest) {
           image_position: body.imagePosition,
           background_color: body.backgroundColor,
           text_color: body.textColor,
+          headline_font_family: body.headlineFontFamily || null,
+          body_font_family: body.bodyFontFamily || null,
           custom_image_prompt: body.customImagePrompt || null,
           template_id: body.templateId || null,
           template_snapshot: body.templateSnapshot || null,

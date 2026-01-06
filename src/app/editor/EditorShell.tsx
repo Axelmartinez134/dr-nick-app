@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
 import type { CarouselTextRequest } from "@/lib/carousel-types";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
+import { useAuth } from "../components/auth/AuthContext";
 
 function SlideCard({
   index,
@@ -55,12 +56,23 @@ const TextStylingToolbar = dynamic(
 );
 
 export default function EditorShell() {
+  const { signOut } = useAuth();
   const slideCount = 6;
   const [activeSlideIndex, setActiveSlideIndex] = useState(0); // 0..5
   const [switchingSlides, setSwitchingSlides] = useState(false);
   const [topExporting, setTopExporting] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  // Project-wide typography (shared across all slides; canvas-only).
+  const FONT_OPTIONS = useMemo(
+    () => [
+      { label: "Inter", value: "Inter, sans-serif" },
+      { label: "Poppins", value: "Poppins, sans-serif" },
+      { label: "Montserrat", value: "Montserrat, sans-serif" },
+      { label: "Playfair Display", value: "\"Playfair Display\", serif" },
+    ],
+    []
+  );
 
   const {
     canvasRef,
@@ -94,6 +106,10 @@ export default function EditorShell() {
     setSelectedTemplateSnapshot,
     templateEditorOpen,
     setTemplateEditorOpen,
+    headlineFontFamily,
+    bodyFontFamily,
+    setHeadlineFontFamily,
+    setBodyFontFamily,
     loadTemplate,
     loadCarousel,
     performAutoSave,
@@ -113,6 +129,18 @@ export default function EditorShell() {
     addLog,
     loadTemplatesList,
   } = useCarouselEditorEngine();
+
+  // Project-wide colors (shared across all slides; affects canvas + generation).
+  const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
+  const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
+
+  // When a carousel is loaded/generated, sync project colors from it.
+  useEffect(() => {
+    const bg = inputData?.settings?.backgroundColor;
+    const tc = inputData?.settings?.textColor;
+    if (bg) setProjectBackgroundColor(bg);
+    if (tc) setProjectTextColor(tc);
+  }, [inputData]);
 
   type SlideState = {
     carouselId: string | null;
@@ -155,6 +183,29 @@ export default function EditorShell() {
   useEffect(() => {
     slidesRef.current = slides;
   }, [slides]);
+
+  // Enforce project-wide BG/Text across all slide drafts.
+  useEffect(() => {
+    setSlides((prev) =>
+      prev.map((s) => ({ ...s, draftBg: projectBackgroundColor, draftText: projectTextColor }))
+    );
+  }, [projectBackgroundColor, projectTextColor]);
+
+  const updateProjectColors = (bg: string, text: string) => {
+    setProjectBackgroundColor(bg);
+    setProjectTextColor(text);
+    // Keep engine inputData in sync so autosave persists the colors.
+    if (inputData) {
+      setInputData({
+        ...inputData,
+        settings: {
+          ...(inputData.settings || {}),
+          backgroundColor: bg,
+          textColor: text,
+        },
+      });
+    }
+  };
 
   // Mirror engine state into the active slide slot (so switching can restore instantly).
   useEffect(() => {
@@ -357,6 +408,10 @@ export default function EditorShell() {
 
   const activeSlideTitle = slides[activeSlideIndex]?.carouselTitle ?? carouselTitle;
 
+  const handleSignOut = async () => {
+    await signOut();
+  };
+
   const StatusPill = () => {
     const status = saveStatus;
     if (status === "idle") return null;
@@ -369,14 +424,13 @@ export default function EditorShell() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       {/* Top bar (visual only for now) */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-slate-900" />
-          <div className="leading-tight">
-            <div className="text-sm font-semibold text-slate-900">aiCarousels</div>
-            <div className="text-[11px] text-slate-500">Editor</div>
+          <div className="text-sm font-semibold text-slate-900">
+            The Fittest You - AI Carousel Generator
           </div>
         </div>
         <div className="flex items-center gap-2 min-w-0">
@@ -411,39 +465,25 @@ export default function EditorShell() {
           >
             {topExporting ? "Downloading..." : "Download"}
           </button>
+          <button
+            onClick={() => void handleSignOut()}
+            className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
+            title="Sign out"
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left sidebar */}
         <aside className="w-[400px] bg-white border-r border-slate-200 flex flex-col">
-          <div className="p-4 border-b border-slate-100">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              AI Carousel Generator
-            </div>
-            <div className="mt-3 space-y-2">
-              <button className="w-full py-2.5 rounded-lg bg-violet-600 text-white font-semibold text-sm">
-                Generate Carousel…
-              </button>
-              <button className="w-full py-2.5 rounded-lg bg-violet-100 text-violet-800 font-semibold text-sm">
-                Import Carousel…
-              </button>
-            </div>
-          </div>
-
           <div className="p-4 space-y-4 overflow-auto">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-900">Template Settings</div>
-              <button className="text-xs text-violet-700 font-semibold">Surprise Me</button>
             </div>
 
             <div className="space-y-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase">Platform Format</div>
-              <div className="flex items-center gap-2">
-                <select className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white">
-                  <option>LinkedIn (4:5, Recommended)</option>
-                </select>
-              </div>
               <div className="flex items-center gap-2">
                 <select
                   className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
@@ -534,27 +574,82 @@ export default function EditorShell() {
               )}
             </div>
 
+            {/* Typography (project-wide; canvas-only) */}
             <div className="border-t border-slate-100 pt-4 space-y-3">
-              {[
-                "Color Palette",
-                "Text Settings",
-                "Background Effects",
-                "Counter & Corners",
-                "Creator Info",
-              ].map((label) => (
-                <div key={label} className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-slate-900">{label}</div>
-                  <div className="w-5 h-5 rounded bg-slate-100" />
+              <div className="text-sm font-semibold text-slate-900">Fonts</div>
+              <div className="space-y-2">
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline</div>
+                  <select
+                    className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                    value={headlineFontFamily}
+                    onChange={(e) => setHeadlineFontFamily(e.target.value)}
+                  >
+                    {FONT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ))}
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body</div>
+                  <select
+                    className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                    value={bodyFontFamily}
+                    onChange={(e) => setBodyFontFamily(e.target.value)}
+                  >
+                    {FONT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Background Effects (project-wide colors) */}
+            <div className="border-t border-slate-100 pt-4 space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Background Effects</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Background</div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
+                      value={projectBackgroundColor || "#ffffff"}
+                      onChange={(e) => updateProjectColors(e.target.value, projectTextColor)}
+                      disabled={loading || switchingSlides}
+                      aria-label="Background color"
+                    />
+                    <div className="text-sm text-slate-700 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
+                      value={projectTextColor || "#000000"}
+                      onChange={(e) => updateProjectColors(projectBackgroundColor, e.target.value)}
+                      disabled={loading || switchingSlides}
+                      aria-label="Text color"
+                    />
+                    <div className="text-sm text-slate-700 tabular-nums">{projectTextColor || "#000000"}</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </aside>
 
         {/* Workspace */}
-        <main className={`flex-1 min-w-0 flex flex-col ${styles.workspace}`}>
+        <main className={`flex-1 min-w-0 overflow-y-auto ${styles.workspace}`}>
           {/* Slides row */}
-          <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6">
+          <div className="flex flex-col items-center justify-center p-6">
             <div className="w-full max-w-[1400px] flex items-center gap-3">
               <button
                 className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
@@ -607,9 +702,11 @@ export default function EditorShell() {
                                 <CarouselPreviewVision
                                   ref={canvasRef}
                                   layout={layoutData.layout as any}
-                                  backgroundColor={inputData.settings?.backgroundColor || "#ffffff"}
-                                  textColor={inputData.settings?.textColor || "#000000"}
+                                  backgroundColor={projectBackgroundColor}
+                                  textColor={projectTextColor}
                                   templateSnapshot={selectedTemplateSnapshot}
+                                  headlineFontFamily={headlineFontFamily}
+                                  bodyFontFamily={bodyFontFamily}
                                 />
                               </div>
                             </div>
@@ -641,10 +738,6 @@ export default function EditorShell() {
           {/* Bottom panel */}
           <section className="bg-white border-t border-slate-200">
             <div className="max-w-[1400px] mx-auto px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-900">Slide Settings</div>
-              </div>
-
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-3">
                   <div>
@@ -682,38 +775,6 @@ export default function EditorShell() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Background</label>
-                      <input
-                        className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                        value={slides[activeSlideIndex]?.draftBg || "#ffffff"}
-                        onChange={(e) =>
-                          setSlides((prev) =>
-                            prev.map((s, i) =>
-                              i === activeSlideIndex ? { ...s, draftBg: e.target.value } : s
-                            )
-                          )
-                        }
-                        disabled={loading || switchingSlides}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Text</label>
-                      <input
-                        className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                        value={slides[activeSlideIndex]?.draftText || "#000000"}
-                        onChange={(e) =>
-                          setSlides((prev) =>
-                            prev.map((s, i) =>
-                              i === activeSlideIndex ? { ...s, draftText: e.target.value } : s
-                            )
-                          )
-                        }
-                        disabled={loading || switchingSlides}
-                      />
-                    </div>
-                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -732,8 +793,8 @@ export default function EditorShell() {
                         headline: (cur.draftHeadline || "").trim(),
                         body: (cur.draftBody || "").trim(),
                         settings: {
-                          backgroundColor: cur.draftBg || "#ffffff",
-                          textColor: cur.draftText || "#000000",
+                          backgroundColor: projectBackgroundColor || "#ffffff",
+                          textColor: projectTextColor || "#000000",
                           // Keep image generation off by default in this shell; can be revisited later.
                           includeImage: false,
                         },

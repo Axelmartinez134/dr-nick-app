@@ -1,0 +1,21 @@
+﻿/**
+ * Note: This file is only used by the v2 widgets, and is designed to be uploaded 
+ *       along with the font files into an S3 bucket
+ */
+@font-face {
+    font-family: "Soehne";
+    src: url("/static/fonts/soehne-web-buch.eot");
+    src: url("/static/fonts/soehne-web-buch.woff") format("woff"), url("/static/fonts/soehne-web-buch.woff2") format("woff2");
+    font-display: swap;
+    font-weight: 400;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: "Soehne";
+    src: url("/static/fonts/soehne-web-halbfett.eot");
+    src: url("/static/fonts/soehne-web-halbfett.woff") format("woff"), url("/static/fonts/soehne-web-halbfett.woff2") format("woff2");
+    font-display: swap;
+    font-weight: 700;
+    font-style: normal;
+}

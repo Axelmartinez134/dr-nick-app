@@ -17,6 +17,8 @@ interface LoadCarouselResponse {
     imagePosition: { x: number; y: number; width: number; height: number };
     backgroundColor: string;
     textColor: string;
+    headlineFontFamily?: string;
+    bodyFontFamily?: string;
     customImagePrompt?: string;
     createdAt: string;
     updatedAt: string;
@@ -107,6 +109,8 @@ export async function GET(request: NextRequest) {
       imagePosition: data.image_position,
       backgroundColor: data.background_color,
       textColor: data.text_color,
+      headlineFontFamily: (data as any).headline_font_family || undefined,
+      bodyFontFamily: (data as any).body_font_family || undefined,
       customImagePrompt: data.custom_image_prompt,
       templateId: (data as any).template_id || null,
       templateSnapshot: (data as any).template_snapshot || null,
