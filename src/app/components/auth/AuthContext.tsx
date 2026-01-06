@@ -29,6 +29,7 @@ interface AuthContextType {
   session: Session | null
   loading: boolean
   editorLoading: boolean
+  editorAccessChecked: boolean
   isEditorUser: boolean
   isDoctor: boolean
   isPatient: boolean
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [editorLoading, setEditorLoading] = useState(false)
+  const [editorAccessChecked, setEditorAccessChecked] = useState(false)
   const [isEditorUser, setIsEditorUser] = useState(false)
   const gapFillTriggeredRef = useRef(false)
   const pastRedirectTriggeredRef = useRef(false)
@@ -78,6 +80,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (!nextUser) {
       setIsEditorUser(false)
       setEditorLoading(false)
+      setEditorAccessChecked(false)
       lastEditorCheckUserIdRef.current = null
       return false
     }
@@ -85,13 +88,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // This prevents periodic token refresh / auth events from unmounting the editor shell.
     if (lastEditorCheckUserIdRef.current === nextUser.id) {
       setEditorLoading(false)
+      setEditorAccessChecked(true)
       return isEditorUser
     }
     lastEditorCheckUserIdRef.current = nextUser.id
     setEditorLoading(true)
+    setEditorAccessChecked(false)
     const allowed = await checkEditorMembership(nextUser.id)
     setIsEditorUser(allowed)
     setEditorLoading(false)
+    setEditorAccessChecked(true)
     return allowed
   }
 
@@ -143,6 +149,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null)
         setIsEditorUser(false)
         setEditorLoading(false)
+        setEditorAccessChecked(false)
         lastEditorCheckUserIdRef.current = null
         setLoading(false)
       })
@@ -289,6 +296,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     session,
     loading,
     editorLoading,
+    editorAccessChecked,
     isEditorUser,
     isDoctor,
     isPatient,

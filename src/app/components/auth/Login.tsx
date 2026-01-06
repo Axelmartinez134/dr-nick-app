@@ -4,7 +4,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth, supabase } from './AuthContext'
+import { useAuth } from './AuthContext'
 
 export default function Login() {
   // Form state
@@ -27,39 +27,7 @@ export default function Login() {
     if (error) {
       setMessage(error.message)
     } else {
-      try {
-        const userId = data?.user?.id
-        if (userId) {
-          // Editor users always route to /editor after login
-          const { data: editorRow } = await supabase
-            .from('editor_users')
-            .select('user_id')
-            .eq('user_id', userId)
-            .maybeSingle()
-          if (editorRow?.user_id) {
-            window.location.href = '/editor'
-            setLoading(false)
-            return
-          }
-
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('client_status')
-            .eq('id', userId)
-            .single()
-          const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
-          const isAdmin = !!(data?.user?.email && adminEmail && data.user.email === adminEmail)
-          if (!isAdmin && profile?.client_status === 'Past') {
-            if (window.location.pathname !== '/inactive') {
-              window.location.href = '/inactive'
-            }
-            setLoading(false)
-            return
-          }
-        }
-      } catch {
-        // ignore and continue
-      }
+      // Redirects are handled centrally (e.g. / → /editor) to avoid double navigation / full reloads.
       setMessage('Login successful! Redirecting...')
     }
     

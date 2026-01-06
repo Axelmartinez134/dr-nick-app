@@ -30,7 +30,7 @@ function AccessDenied() {
 }
 
 export default function EditorPage() {
-  const { user, loading, editorLoading, isEditorUser } = useAuth();
+  const { user, loading, editorLoading, editorAccessChecked, isEditorUser } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function EditorPage() {
   if (loading) return <LoadingScreen message="Loading..." />;
   if (!user) return <LoadingScreen message="Redirecting to login..." />;
   // Once access is granted, never unmount the editor shell due to background re-checks.
-  if (editorLoading && !isEditorUser) return <LoadingScreen message="Checking editor access..." />;
+  if ((!editorAccessChecked || editorLoading) && !isEditorUser) return <LoadingScreen message="Checking editor access..." />;
   if (!isEditorUser) return <AccessDenied />;
 
   // Option A: Shell-first (pixel-perfect scaffolding first, then dock existing editor into it).

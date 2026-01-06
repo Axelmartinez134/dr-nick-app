@@ -151,6 +151,7 @@ export default function EditorShell() {
   const remixSaveTimeoutRef = useRef<number | null>(null);
   const [remixSaveStatus, setRemixSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [remixModalOpen, setRemixModalOpen] = useState(false);
+  const remixDirtyRef = useRef(false);
 
   // When a carousel is loaded/generated, sync project colors from it.
   useEffect(() => {
@@ -231,6 +232,9 @@ export default function EditorShell() {
     let cancelled = false;
     (async () => {
       try {
+        // Don't show any "saved" state on initial load.
+        setRemixSaveStatus("idle");
+        remixDirtyRef.current = false;
         const { data, error } = await supabase
           .from("editor_preferences")
           .select("carousel_remix_instructions")
@@ -248,16 +252,9 @@ export default function EditorShell() {
           setRemixLoaded(true);
           return;
         }
-        // No row / empty: seed default.
-        setRemixInstructions((prev) => prev || DEFAULT_REMIX_INSTRUCTIONS);
+        // No row / empty: show default locally, but do NOT auto-write to Supabase.
+        setRemixInstructions(DEFAULT_REMIX_INSTRUCTIONS);
         setRemixLoaded(true);
-        await supabase.from("editor_preferences").upsert(
-          {
-            user_id: user.id,
-            carousel_remix_instructions: DEFAULT_REMIX_INSTRUCTIONS,
-          },
-          { onConflict: "user_id" }
-        );
       } catch (e) {
         console.warn("[EditorShell] Failed to load/seed editor_preferences:", e);
         setRemixLoaded(true);
@@ -271,6 +268,8 @@ export default function EditorShell() {
 
   useEffect(() => {
     if (!user?.id || !remixLoaded) return;
+    // Only save after the user has actually changed the field in this session.
+    if (!remixDirtyRef.current) return;
     // Debounced save on every change
     if (remixSaveTimeoutRef.current) window.clearTimeout(remixSaveTimeoutRef.current);
     remixSaveTimeoutRef.current = window.setTimeout(async () => {
@@ -281,6 +280,7 @@ export default function EditorShell() {
           { onConflict: "user_id" }
         );
         setRemixSaveStatus("saved");
+        remixDirtyRef.current = false;
         window.setTimeout(() => setRemixSaveStatus("idle"), 1500);
       } catch (e) {
         console.warn("[EditorShell] Failed to save remix instructions:", e);
@@ -670,9 +670,9 @@ export default function EditorShell() {
               className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
               onClick={() => setRemixModalOpen(true)}
               disabled={!remixLoaded}
-              title="Edit Viral Remix Instructions"
+              title="Edit Prompt"
             >
-              <div className="text-sm font-semibold text-slate-700">Viral Remix Instructions</div>
+              <div className="text-sm font-semibold text-slate-700">Prompt</div>
               <div className="mt-0.5 text-xs text-slate-500 truncate">
                 {remixLoaded ? (remixInstructions || DEFAULT_REMIX_INSTRUCTIONS).split("\n")[0] : "Loading..."}
               </div>
@@ -1131,7 +1131,7 @@ export default function EditorShell() {
         onRefreshTemplates={loadTemplatesList}
       />
 
-      {/* Viral Remix Instructions modal */}
+      {/* Prompt modal */}
       {remixModalOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
@@ -1142,7 +1142,7 @@ export default function EditorShell() {
         >
           <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div className="text-base font-semibold text-slate-900">Viral Remix Instructions</div>
+              <div className="text-base font-semibold text-slate-900">Prompt</div>
               <button
                 type="button"
                 className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -1158,7 +1158,10 @@ export default function EditorShell() {
                 className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                 rows={18}
                 value={remixInstructions}
-                onChange={(e) => setRemixInstructions(e.target.value)}
+                onChange={(e) => {
+                  remixDirtyRef.current = true;
+                  setRemixInstructions(e.target.value);
+                }}
                 placeholder="Paste your remix instructions..."
                 autoFocus
               />
