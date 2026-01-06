@@ -30,6 +30,18 @@ export default function Login() {
       try {
         const userId = data?.user?.id
         if (userId) {
+          // Editor users always route to /editor after login
+          const { data: editorRow } = await supabase
+            .from('editor_users')
+            .select('user_id')
+            .eq('user_id', userId)
+            .maybeSingle()
+          if (editorRow?.user_id) {
+            window.location.href = '/editor'
+            setLoading(false)
+            return
+          }
+
           const { data: profile } = await supabase
             .from('profiles')
             .select('client_status')

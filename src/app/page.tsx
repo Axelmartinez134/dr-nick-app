@@ -1,21 +1,25 @@
 // src/app/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "./components/auth/AuthContext";
 import Login from "./components/auth/Login";
-import Signup from "./components/auth/Signup";
 import Dashboard from "./components/Dashboard";
 
 export default function Home() {
-  // Track whether to show login or signup form
-  const [showSignup, setShowSignup] = useState(false);
-  
   // Get user info from our authentication system
-  const { user, loading } = useAuth();
+  const { user, loading, editorLoading, isEditorUser } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user && !editorLoading && isEditorUser) {
+      router.replace("/editor");
+    }
+  }, [user, editorLoading, isEditorUser, router]);
 
   // STEP 1: If the app is still checking if user is logged in, show loading
-  if (loading) {
+  if (loading || (user && editorLoading) || (user && isEditorUser)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">

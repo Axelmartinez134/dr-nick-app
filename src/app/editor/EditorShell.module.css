@@ -1,0 +1,10 @@
+.workspace {
+  /* Matches the inspiration: light gray field with subtle dot grid */
+  background-color: #EEF0F3;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(16, 24, 40, 0.16) 1px, transparent 0);
+  background-size: 14px 14px;
+}
+
+
+

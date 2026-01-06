@@ -28,6 +28,8 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
+  editorLoading: boolean
+  isEditorUser: boolean
   isDoctor: boolean
   isPatient: boolean
   signUp: (email: string, password: string, fullName?: string) => Promise<AuthResponse>
@@ -48,12 +50,41 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editorLoading, setEditorLoading] = useState(false)
+  const [isEditorUser, setIsEditorUser] = useState(false)
   const gapFillTriggeredRef = useRef(false)
   const pastRedirectTriggeredRef = useRef(false)
 
   // Role detection based on email
   const isDoctor = !!(user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAIL && user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
   const isPatient = !!user && !isDoctor
+
+  async function checkEditorMembership(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('editor_users')
+        .select('user_id')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (error) return false
+      return !!data?.user_id
+    } catch {
+      return false
+    }
+  }
+
+  async function refreshEditorAccess(nextUser: User | null): Promise<boolean> {
+    if (!nextUser) {
+      setIsEditorUser(false)
+      setEditorLoading(false)
+      return false
+    }
+    setEditorLoading(true)
+    const allowed = await checkEditorMembership(nextUser.id)
+    setIsEditorUser(allowed)
+    setEditorLoading(false)
+    return allowed
+  }
 
   useEffect(() => {
     // Get initial session
@@ -65,6 +96,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         gapFillTriggeredRef.current = true
         void gapFillMissedWeeks(session.user)
       }
+      void refreshEditorAccess(session?.user ?? null)
 
       // Redirect Past patients to /inactive (admins exempt)
       const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
@@ -72,6 +104,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (session?.user && !isDoctorEmail && !pastRedirectTriggeredRef.current) {
         ;(async () => {
           try {
+            // Bypass Past redirect for /editor paths or editor-allowed users
+            if (window.location.pathname.startsWith('/editor')) return
+            const editorAllowed = await checkEditorMembership(session.user!.id)
+            if (editorAllowed) return
+
             const { data: profile, error } = await supabase
               .from('profiles')
               .select('client_status')
@@ -101,6 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         gapFillTriggeredRef.current = true
         void gapFillMissedWeeks(session.user)
       }
+      void refreshEditorAccess(session?.user ?? null)
 
       // Redirect Past patients to /inactive (admins exempt)
       const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
@@ -108,6 +146,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (session?.user && !isDoctorEmail && !pastRedirectTriggeredRef.current) {
         ;(async () => {
           try {
+            // Bypass Past redirect for /editor paths or editor-allowed users
+            if (window.location.pathname.startsWith('/editor')) return
+            const editorAllowed = await checkEditorMembership(session.user!.id)
+            if (editorAllowed) return
+
             const { data: profile, error } = await supabase
               .from('profiles')
               .select('client_status')
@@ -217,6 +260,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     user,
     session,
     loading,
+    editorLoading,
+    isEditorUser,
     isDoctor,
     isPatient,
     signUp,
