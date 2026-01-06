@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
 import type { CarouselTextRequest } from "@/lib/carousel-types";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
-import { useAuth } from "../components/auth/AuthContext";
+import { supabase, useAuth } from "../components/auth/AuthContext";
 
 function SlideCard({
   index,
@@ -56,13 +56,23 @@ const TextStylingToolbar = dynamic(
 );
 
 export default function EditorShell() {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const slideCount = 6;
   const [activeSlideIndex, setActiveSlideIndex] = useState(0); // 0..5
   const [switchingSlides, setSwitchingSlides] = useState(false);
   const [topExporting, setTopExporting] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+  // Resizable left sidebar (desktop-only)
+  const SIDEBAR_MIN = 320;
+  const SIDEBAR_MAX = 560;
+  const SIDEBAR_DEFAULT = 400;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+  const sidebarDragRef = useRef<{
+    dragging: boolean;
+    startX: number;
+    startWidth: number;
+  }>({ dragging: false, startX: 0, startWidth: SIDEBAR_DEFAULT });
   // Project-wide typography (shared across all slides; canvas-only).
   const FONT_OPTIONS = useMemo(
     () => [
@@ -124,8 +134,6 @@ export default function EditorShell() {
     handleRealign,
     handleUndo,
     handleNewCarousel,
-    handleSaveAsNew,
-    handleUpdateCurrent,
     addLog,
     loadTemplatesList,
   } = useCarouselEditorEngine();
@@ -133,6 +141,16 @@ export default function EditorShell() {
   // Project-wide colors (shared across all slides; affects canvas + generation).
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
+  const [captionDraft, setCaptionDraft] = useState<string>("");
+
+  const DEFAULT_REMIX_INSTRUCTIONS =
+    "I have an Instagram carousel post that has done very well and gone viral. The post is shared within the \"Viral Carousel Post\" group. I want you to remix the post so that I can post an entirely unique version of it, while ensuring that it maintains all elements that made it viral and highly resonant with the Instagram audience. No copy that you create should remain line by line verbatim compared to the original post shared within the \"Viral Carousel Post\". I want to have the copy you create for both the first slide AND the second slide of each carousel hook the viewer and entrap their attention such that they stop scrolling and continue to explore more of the new carousel post you have created for me. For slides 1-6, all the while using the attached \"'Challenging a commonly held belief' framework\" group, please create 10 different variations of the carousel post but only share with me the one amongst them that you analytically determine is the most likely to be resonant with the Instagram audience and go viral. In addition, list out all verbiage that would be present on each slide of a post and each caption that would accompany each post as well as ensuring that you retaining the core meaning and message being communicated through the original Instagram carousel I shared with you\n\nThe Carousel post will contain 6 slides so you should create the copy for each slide and each slide should have a Max of 250 characters of text in Tweet Like Text. Do not go past this character limitation it is very important to stay under 250 characters of text.\n\nSlide #1-2. The First Slide Copy should challenge a commonly held belief and should make an instagram user scrolling through their feed want to read what comes in next. The second slide copy should be just as jarring and make the Instagram user scrolling through their become absolutely obsessed with reading the rest of the carousel.\n\nSlide #3-#5. The following slides should be related to the subject matter.\n\nSlide #6. The final 6th slide should be a wrap up slide that uses the least amount of words of what was discussed and why what was discussed matters with a takeaway.\n\nDo:\nUse Newlines to separate Ideas in a slide to make it visually easy to read.\n\nDont do:\nNever use ** for any copy\nDon't surround your outputs with \"\" unless it is necessary to make a point within the sentence or to paraphrase something.\nuse dashes sparingly\nDon't ever use an em dash, \"—\", and always replace any appropriate usage of it with an ellipsis instead.\n\nIn addition, ensure each post variation has an accompanying post caption that is cohesive with and contributes more value to the carousel slides copy and is 900 characters long at most\n\nRemember, the copy of both the first slide and the second slide of the carousel, with the highest importance of entrapping the viewer's attention being placed on the first slide, is the most important to get the viewer to continue to read through the piece of content so I want to have the copy you create for both the first and second slide of the carousel hook the viewer and entrap their attention all the while using the instruction from the \"'Challenging a commonly held belief' framework\" group to keep it entirely cohesive with the rest of the copy for each of the slides.\n\nUsing the subject matter of the social media post deduced from the \"Viral Carousel Post\" group in addition to the copy for the slides you have created, generate the most effective social media caption hook for Instagram utilizing the '5-Caption Hooks' video within the connected \"Art Of Hooks\" group. Ensure that the social media caption hook presented is 125 characters or less.\n\nOnce again, ensure that the generated social media caption hook presented is 125 characters or less.\n\nEnd every caption with a line break followed by this:\n\"🫶🏾 Dr. Nick\n\n#metabolichealth #mindsetsmatter\"\n\nYou do not need to supply any hashtags.";
+
+  const [remixInstructions, setRemixInstructions] = useState<string>(DEFAULT_REMIX_INSTRUCTIONS);
+  const [remixLoaded, setRemixLoaded] = useState(false);
+  const remixSaveTimeoutRef = useRef<number | null>(null);
+  const [remixSaveStatus, setRemixSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [remixModalOpen, setRemixModalOpen] = useState(false);
 
   // When a carousel is loaded/generated, sync project colors from it.
   useEffect(() => {
@@ -205,6 +223,147 @@ export default function EditorShell() {
         },
       });
     }
+  };
+
+  // Load + persist remix instructions (per-user) in Supabase.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("editor_preferences")
+          .select("carousel_remix_instructions")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          console.warn("[EditorShell] Failed to load editor_preferences:", error);
+          setRemixLoaded(true);
+          return;
+        }
+        const text = (data as any)?.carousel_remix_instructions;
+        if (typeof text === "string" && text.length > 0) {
+          setRemixInstructions(text);
+          setRemixLoaded(true);
+          return;
+        }
+        // No row / empty: seed default.
+        setRemixInstructions((prev) => prev || DEFAULT_REMIX_INSTRUCTIONS);
+        setRemixLoaded(true);
+        await supabase.from("editor_preferences").upsert(
+          {
+            user_id: user.id,
+            carousel_remix_instructions: DEFAULT_REMIX_INSTRUCTIONS,
+          },
+          { onConflict: "user_id" }
+        );
+      } catch (e) {
+        console.warn("[EditorShell] Failed to load/seed editor_preferences:", e);
+        setRemixLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !remixLoaded) return;
+    // Debounced save on every change
+    if (remixSaveTimeoutRef.current) window.clearTimeout(remixSaveTimeoutRef.current);
+    remixSaveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        setRemixSaveStatus("saving");
+        await supabase.from("editor_preferences").upsert(
+          { user_id: user.id, carousel_remix_instructions: remixInstructions },
+          { onConflict: "user_id" }
+        );
+        setRemixSaveStatus("saved");
+        window.setTimeout(() => setRemixSaveStatus("idle"), 1500);
+      } catch (e) {
+        console.warn("[EditorShell] Failed to save remix instructions:", e);
+        setRemixSaveStatus("error");
+        window.setTimeout(() => setRemixSaveStatus("idle"), 2000);
+      }
+    }, 600);
+    return () => {
+      if (remixSaveTimeoutRef.current) window.clearTimeout(remixSaveTimeoutRef.current);
+    };
+  }, [remixInstructions, remixLoaded, user?.id]);
+
+  // Close the remix modal on Escape.
+  useEffect(() => {
+    if (!remixModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRemixModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [remixModalOpen]);
+
+  // Load/persist sidebar width locally (best-effort)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("editor.sidebarWidth");
+      if (!raw) return;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return;
+      const clamped = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(n)));
+      setSidebarWidth(clamped);
+      sidebarDragRef.current.startWidth = clamped;
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("editor.sidebarWidth", String(sidebarWidth));
+    } catch {
+      // ignore
+    }
+  }, [sidebarWidth]);
+
+  const onSidebarResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Left click / primary only
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    sidebarDragRef.current.dragging = true;
+    sidebarDragRef.current.startX = e.clientX;
+    sidebarDragRef.current.startWidth = sidebarWidth;
+
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      if (!sidebarDragRef.current.dragging) return;
+      const dx = ev.clientX - sidebarDragRef.current.startX;
+      const next = Math.max(
+        SIDEBAR_MIN,
+        Math.min(SIDEBAR_MAX, Math.round(sidebarDragRef.current.startWidth + dx))
+      );
+      setSidebarWidth(next);
+    };
+
+    const end = () => {
+      sidebarDragRef.current.dragging = false;
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
   };
 
   // Mirror engine state into the active slide slot (so switching can restore instantly).
@@ -423,6 +582,18 @@ export default function EditorShell() {
     return null;
   };
 
+  const RemixStatusPill = () => {
+    if (remixSaveStatus === "idle") return null;
+    const base = "px-3 py-1 rounded-full text-xs font-semibold border";
+    if (remixSaveStatus === "saving") {
+      return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Remix: Saving…</span>;
+    }
+    if (remixSaveStatus === "saved") {
+      return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Remix: Saved ✓</span>;
+    }
+    return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Remix: Save Failed</span>;
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Top bar (visual only for now) */}
@@ -449,6 +620,7 @@ export default function EditorShell() {
             title="Slide title"
           />
           <StatusPill />
+          <RemixStatusPill />
           <button
             className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm disabled:opacity-50"
             onClick={() => void handleTopSaveDraft()}
@@ -477,8 +649,35 @@ export default function EditorShell() {
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left sidebar */}
-        <aside className="w-[400px] bg-white border-r border-slate-200 flex flex-col">
+        <aside
+          className="relative bg-white border-r border-slate-200 flex flex-col shrink-0"
+          style={{ width: sidebarWidth }}
+        >
           <div className="p-4 space-y-4 overflow-auto">
+            <button
+              className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
+              onClick={() => {
+                setSlides((prev) => prev.map((s, i) => (i === activeSlideIndex ? initSlide() : s)));
+                handleNewCarousel();
+              }}
+              disabled={switchingSlides}
+            >
+              Create Carousel
+            </button>
+
+            <button
+              type="button"
+              className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+              onClick={() => setRemixModalOpen(true)}
+              disabled={!remixLoaded}
+              title="Edit Viral Remix Instructions"
+            >
+              <div className="text-sm font-semibold text-slate-700">Viral Remix Instructions</div>
+              <div className="mt-0.5 text-xs text-slate-500 truncate">
+                {remixLoaded ? (remixInstructions || DEFAULT_REMIX_INSTRUCTIONS).split("\n")[0] : "Loading..."}
+              </div>
+            </button>
+
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-900">Template Settings</div>
             </div>
@@ -644,6 +843,15 @@ export default function EditorShell() {
               </div>
             </div>
           </div>
+
+          {/* Resize handle */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Drag to resize"
+            onPointerDown={onSidebarResizePointerDown}
+            className="absolute top-0 right-0 h-full w-2 cursor-col-resize bg-transparent hover:bg-slate-200/60 active:bg-slate-300/60"
+          />
         </aside>
 
         {/* Workspace */}
@@ -834,43 +1042,8 @@ export default function EditorShell() {
                     Undo
                   </button>
 
-                  <ExportButton canvasRef={canvasRef} />
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                      onClick={handleSaveAsNew}
-                      disabled={saveStatus === "saving" || switchingSlides}
-                    >
-                      Save As New
-                    </button>
-                    <button
-                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                      onClick={handleUpdateCurrent}
-                      disabled={saveStatus === "saving" || switchingSlides}
-                    >
-                      Update Current
-                    </button>
-                  </div>
-
-                  <button
-                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
-                    onClick={() => {
-                      setSlides((prev) =>
-                        prev.map((s, i) => (i === activeSlideIndex ? initSlide() : s))
-                      );
-                      handleNewCarousel();
-                    }}
-                    disabled={switchingSlides}
-                  >
-                    New Carousel
-                  </button>
-
                   {saveError && <div className="text-xs text-red-600">❌ {saveError}</div>}
                   {error && <div className="text-xs text-red-600">❌ {error}</div>}
-                  <div className="text-xs text-slate-500">
-                    Slides 1–6 are now switchable. Each slide auto-saves before switching.
-                  </div>
 
                   {error && inputData && (
                     <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
@@ -886,59 +1059,59 @@ export default function EditorShell() {
                     </div>
                   )}
 
-                  <button
-                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
-                    onClick={() => {
-                      setSlides((prev) =>
-                        prev.map((s, i) => (i === activeSlideIndex ? initSlide() : s))
-                      );
-                      handleNewCarousel();
-                    }}
-                    disabled={switchingSlides}
-                  >
-                    Start Over
-                  </button>
-
-                  <details className="mt-2 rounded-md border border-slate-200 bg-white">
-                    <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-900">
-                      Debug
-                    </summary>
-                    <div className="px-3 pb-3 space-y-3">
-                      {debugScreenshot && (
-                        <div>
-                          <button
-                            className="text-xs text-violet-700 underline"
-                            onClick={() => setShowDebugPreview(!showDebugPreview)}
-                          >
-                            {showDebugPreview ? "Hide" : "Show"} Screenshot
-                          </button>
-                          {showDebugPreview && (
-                            <div className="mt-2 bg-white rounded border border-slate-200 p-2 overflow-auto max-h-64">
-                              <img
-                                src={debugScreenshot}
-                                alt="Screenshot sent to Claude Vision"
-                                className="max-w-full h-auto mx-auto"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {debugLogs.length > 0 ? (
-                        <div className="rounded border border-slate-200 bg-slate-950 p-2 max-h-64 overflow-y-auto font-mono text-[11px] text-green-300">
-                          {debugLogs.map((log, idx) => (
-                            <div key={idx} className="mb-1">
-                              {log}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-xs text-slate-500">No debug logs yet.</div>
-                      )}
-                    </div>
-                  </details>
                 </div>
               </div>
+
+              {/* Caption (UI-only for now) */}
+              <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
+                <div className="text-sm font-semibold text-slate-900">Caption</div>
+                <textarea
+                  className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                  rows={3}
+                  placeholder="Write a caption..."
+                  value={captionDraft}
+                  onChange={(e) => setCaptionDraft(e.target.value)}
+                />
+              </div>
+
+              <details className="mt-4 rounded-md border border-slate-200 bg-white">
+                <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-900">
+                  Debug
+                </summary>
+                <div className="px-3 pb-3 space-y-3">
+                  {debugScreenshot && (
+                    <div>
+                      <button
+                        className="text-xs text-violet-700 underline"
+                        onClick={() => setShowDebugPreview(!showDebugPreview)}
+                      >
+                        {showDebugPreview ? "Hide" : "Show"} Screenshot
+                      </button>
+                      {showDebugPreview && (
+                        <div className="mt-2 bg-white rounded border border-slate-200 p-2 overflow-auto max-h-64">
+                          <img
+                            src={debugScreenshot}
+                            alt="Screenshot sent to Claude Vision"
+                            className="max-w-full h-auto mx-auto"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {debugLogs.length > 0 ? (
+                    <div className="rounded border border-slate-200 bg-slate-950 p-2 max-h-64 overflow-y-auto font-mono text-[11px] text-green-300">
+                      {debugLogs.map((log, idx) => (
+                        <div key={idx} className="mb-1">
+                          {log}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500">No debug logs yet.</div>
+                  )}
+                </div>
+              </details>
             </div>
           </section>
         </main>
@@ -957,6 +1130,45 @@ export default function EditorShell() {
         }}
         onRefreshTemplates={loadTemplatesList}
       />
+
+      {/* Viral Remix Instructions modal */}
+      {remixModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
+          onMouseDown={(e) => {
+            // Only close on true backdrop clicks (not inside the panel).
+            if (e.target === e.currentTarget) setRemixModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="text-base font-semibold text-slate-900">Viral Remix Instructions</div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setRemixModalOpen(false)}
+                aria-label="Close"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <textarea
+                className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                rows={18}
+                value={remixInstructions}
+                onChange={(e) => setRemixInstructions(e.target.value)}
+                placeholder="Paste your remix instructions..."
+                autoFocus
+              />
+              <div className="mt-2 text-xs text-slate-500">
+                Auto-saves to Supabase as you type. Press <span className="font-mono">Esc</span> to close.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
