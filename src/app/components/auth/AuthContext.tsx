@@ -97,10 +97,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        setSession(session)
+        setUser(session?.user ?? null)
+        setLoading(false)
       if (session?.user && !gapFillTriggeredRef.current) {
         gapFillTriggeredRef.current = true
         void gapFillMissedWeeks(session.user)
@@ -134,7 +136,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
           }
         })()
       }
-    })
+      })
+      .catch((err) => {
+        console.error('[Auth] getSession failed:', err)
+        setSession(null)
+        setUser(null)
+        setIsEditorUser(false)
+        setEditorLoading(false)
+        lastEditorCheckUserIdRef.current = null
+        setLoading(false)
+      })
 
     // Listen for auth changes
     const {

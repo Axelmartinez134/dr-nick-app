@@ -220,28 +220,28 @@ export async function POST(request: NextRequest) {
       layout = wrapLayout;
     } else {
       // Legacy: deterministic templates not selected, keep Claude vision layout.
-      // Position image in lower-middle portion to leave room for text above
-      const imagePosition = {
-        x: 290,      // Centered: (1080 - 500) / 2
-        y: 850,      // Lower portion of 1440px canvas
-        width: 500,  // Slightly smaller for more text space
-        height: 500,
-      };
-      
-      console.log('[API] 📐 Initial image position:', imagePosition);
+    // Position image in lower-middle portion to leave room for text above
+    const imagePosition = {
+      x: 290,      // Centered: (1080 - 500) / 2
+      y: 850,      // Lower portion of 1440px canvas
+      width: 500,  // Slightly smaller for more text space
+      height: 500,
+    };
+    
+    console.log('[API] 📐 Initial image position:', imagePosition);
 
-      // STEP 3: Get vision-based layout from Claude
-      console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS START ====================');
-      console.log('[API] 🤖 Calling Claude Vision API for layout decision...');
-      console.log('[API] 📝 Headline:', body.headline.substring(0, 50) + '...');
-      console.log('[API] 📝 Body:', body.body.substring(0, 50) + '...');
-      
+    // STEP 3: Get vision-based layout from Claude
+    console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS START ====================');
+    console.log('[API] 🤖 Calling Claude Vision API for layout decision...');
+    console.log('[API] 📝 Headline:', body.headline.substring(0, 50) + '...');
+    console.log('[API] 📝 Body:', body.body.substring(0, 50) + '...');
+    
       layout = await decideVisionBasedLayout(
-        body.headline.trim(),
-        body.body.trim(),
+      body.headline.trim(),
+      body.body.trim(),
         imageBase64!,
-        imagePosition
-      );
+      imagePosition
+    );
     }
     console.log('[API] ✅ Layout computed successfully');
     console.log('[API] 📊 Layout summary:', {
@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
     });
     
     if (!body.templateId) {
-      console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS END ====================');
+    console.log('[API] 🤖 ==================== CLAUDE VISION ANALYSIS END ====================');
     }
 
     return NextResponse.json({
