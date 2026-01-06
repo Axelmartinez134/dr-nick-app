@@ -277,7 +277,7 @@ export function useCarouselEditorEngine() {
         hasLayoutData: !!dataToSave,
         hasInputData: !!inputToSave,
       });
-      return;
+      return null;
     }
 
     setSaveStatus('saving');

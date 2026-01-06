@@ -33,12 +33,14 @@ Key files:
   - Added `isEditorUser` + `editorLoading`
   - Added membership check against `editor_users`
   - Past-client redirect bypasses for `/editor` and for editor users.
+  - **Stability fix**: stop repeated editor membership re-checks on token refresh events to prevent `/editor` remount loops.
 - `src/app/components/auth/Login.tsx`
   - After sign-in, checks `editor_users`; if present, redirects to `/editor`.
 - `src/app/page.tsx`
   - Prevent dashboard flash: while checking editor membership, shows loading and routes to `/editor`.
 - `src/app/editor/page.tsx`
   - Gating wrapper; renders `EditorShell`.
+  - **Stability fix**: once `isEditorUser` is true, do not unmount the shell due to background `editorLoading` flips.
 
 ## `/editor` shell UI
 Implemented a React shell approximating the inspiration:
@@ -50,6 +52,8 @@ Implemented a React shell approximating the inspiration:
   - Removed top “Remove Watermark”
   - Removed bottom “Slide #” and slide-type buttons (“Text / Text+Image / Image”)
   - Removed bottom “Reorder / Delete / Add Slide +”
+  - Added left sidebar **Saved Carousels dropdown** to load any prior saved carousel into the active slide slot.
+  - Added top bar **Save Draft** + **Download** buttons wired to real save/export logic.
 
 ## Phase implementation history (important)
 We used gated phases; each phase implemented only after user approved.
@@ -77,6 +81,18 @@ Implementation details:
 - `useCarouselEditorEngine` exposes setters so `/editor` can restore state on slide switch:
   - `setLayoutData`, `setInputData`, `setLayoutHistory`, `setCurrentCarouselId`, etc.
 - `/editor` renders Fabric preview only for the active slide; inactive slides show “saved/empty”.
+
+## MVP parity additions (added after Phase 3)
+To fully replace the Dr Nick MVP UI, `/editor` now includes the missing MVP affordances:
+- **Top bar title input** (per active slide) saved via existing `ai_carousels.title`
+- **Save status pill** (Editing/Saving/Saved/Save Failed)
+- **Retry panel** for generation failures (uses engine `handleRetry`)
+- **Start Over** action (resets only the active slide)
+- **Collapsible Debug** section (screenshot preview + debug logs)
+- **TextStylingToolbar** mounted for the active slide
+
+Related files:
+- `src/app/editor/EditorShell.tsx`
 
 ## API authorization change (fix “Forbidden” for editor users)
 The original marketing carousel endpoints were admin-email-only. That caused 403 “Forbidden” for editor-only users.
@@ -107,18 +123,23 @@ The DB has `custom_image_prompt` and save API stores it, but the UI currently do
 ### Stale build confusion
 User reported still seeing old UI text and “Forbidden” after fixes; likely due to stale dev server/browser cache. Restart dev server + hard refresh. Verify `editor_users` exists in the same Supabase project referenced by env vars.
 
+### Preview header text removed
+`CarouselPreviewVision` previously rendered a header "Preview (540x720 display, exports at 1080x1440)" above the canvas. This was removed for `/editor` visual parity by deleting the header and helper text in:
+- `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx`
+
 ## What’s in place right now (quick checklist)
 - `/editor` gated by `editor_users`.
 - `/editor` shell UI present and wired.
 - Templates visible (dropdown + Template Editor modal).
 - 6-slide arrow navigation; each slide can generate/realign/save.
 - API endpoints allow editor users (not just admin) for layout/realign.
+- `/editor` now has MVP parity UI (title, status pill, retry, debug, toolbar).
 
 ## Next work (suggested)
 1) Decide whether to introduce real `carousel_projects` + `carousel_slides` tables (future-proof) or keep `ai_carousels` rows per slide longer.
 2) Remove/disable image generation if the product truly doesn’t use images.
 3) Replace Headline/Body fields with per-slide Tagline/Title/Paragraph + swipe indicator fields; map to template-defined text assets.
-4) Add saved “projects” list into the left sidebar (currently only templates are wired).
+4) Consider adding a true **Projects** abstraction (vs “saved carousels”) so one project owns 6 slide records cleanly.
 5) More pixel-perfect UI polish (buttons, spacing) and optional keyboard navigation.
 
 
