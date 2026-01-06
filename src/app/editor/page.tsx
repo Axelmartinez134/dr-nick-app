@@ -41,7 +41,8 @@ export default function EditorPage() {
 
   if (loading) return <LoadingScreen message="Loading..." />;
   if (!user) return <LoadingScreen message="Redirecting to login..." />;
-  if (editorLoading) return <LoadingScreen message="Checking editor access..." />;
+  // Once access is granted, never unmount the editor shell due to background re-checks.
+  if (editorLoading && !isEditorUser) return <LoadingScreen message="Checking editor access..." />;
   if (!isEditorUser) return <AccessDenied />;
 
   // Option A: Shell-first (pixel-perfect scaffolding first, then dock existing editor into it).

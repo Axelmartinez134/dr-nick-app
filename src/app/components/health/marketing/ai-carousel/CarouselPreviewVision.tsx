@@ -821,7 +821,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
     return (
       <div className="flex flex-col items-center space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">Preview (540x720 display, exports at 1080x1440)</h3>
         <div 
           style={{ 
             width: '540px', 
@@ -842,9 +841,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }} 
           />
         </div>
-        <p className="text-sm text-gray-600">
-          Click text to edit. Drag to reposition. Select text to change styling.
-        </p>
       </div>
     );
   }

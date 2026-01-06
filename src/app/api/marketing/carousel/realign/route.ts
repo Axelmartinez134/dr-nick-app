@@ -67,12 +67,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' } as RealignResponse, { status: 401 });
   }
 
-  if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    console.error('[Realign API] ❌ User is not admin:', user.email);
-    return NextResponse.json({ success: false, error: 'Forbidden - Admin access required' } as RealignResponse, { status: 403 });
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+  const isAdmin = !!(adminEmail && user.email === adminEmail);
+
+  let isEditor = false;
+  try {
+    const authedSupabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+    const { data: editorRow } = await authedSupabase
+      .from('editor_users')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    isEditor = !!editorRow?.user_id;
+  } catch {
+    isEditor = false;
   }
 
-  console.log('[Realign API] ✅ Admin user authenticated:', user.email);
+  if (!isAdmin && !isEditor) {
+    console.error('[Realign API] ❌ Forbidden: user not admin and not editor allowlisted:', user.email);
+    return NextResponse.json({ success: false, error: 'Forbidden' } as RealignResponse, { status: 403 });
+  }
+
+  console.log('[Realign API] ✅ User authenticated:', { email: user.email, isAdmin, isEditor });
 
   // PARSE REQUEST BODY
   let body: RealignRequest;

@@ -10,7 +10,9 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[API] 🚀 Carousel layout request received');
     
-    // Auth check: require Bearer token and admin email
+    // Auth check: require Bearer token and allow either:
+    // - admin email, OR
+    // - membership in public.editor_users (editor allowlist)
     const authHeader = request.headers.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       console.log('[API] ❌ No authorization header');
@@ -29,15 +31,43 @@ export async function POST(request: NextRequest) {
 
     const { data: { user }, error: userError } = await verificationClient.auth.getUser(token);
     
-    if (userError || !user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-      console.log('[API] ❌ Auth failed:', userError?.message || 'Not admin');
+    if (userError || !user) {
+      console.log('[API] ❌ Auth failed:', userError?.message || 'No user');
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' } as LayoutResponse,
+        { status: 401 }
+      );
+    }
+
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+    const isAdmin = !!(adminEmail && user.email === adminEmail);
+
+    let isEditor = false;
+    try {
+      const authedSupabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
+      );
+      const { data: editorRow } = await authedSupabase
+        .from('editor_users')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      isEditor = !!editorRow?.user_id;
+    } catch {
+      isEditor = false;
+    }
+
+    if (!isAdmin && !isEditor) {
+      console.log('[API] ❌ Forbidden: user not admin and not editor allowlisted');
       return NextResponse.json(
         { success: false, error: 'Forbidden' } as LayoutResponse,
         { status: 403 }
       );
     }
 
-    console.log('[API] ✅ Authenticated as admin');
+    console.log('[API] ✅ Authenticated:', { isAdmin, isEditor, email: user.email });
 
     // Parse and validate request body
     const body = await request.json() as CarouselTextRequest;

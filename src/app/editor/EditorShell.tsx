@@ -2,13 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./EditorShell.module.css";
+import dynamic from "next/dynamic";
+import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
+import type { CarouselTextRequest } from "@/lib/carousel-types";
+import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
 
 function SlideCard({
   index,
   active,
+  children,
 }: {
   index: number;
   active: boolean;
+  children?: React.ReactNode;
 }) {
   const isPrimary = index === 1;
   return (
@@ -21,18 +27,176 @@ function SlideCard({
       ].join(" ")}
       aria-label={`Slide ${index}`}
     >
-      <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm">
-        {isPrimary ? "Slide 1 (placeholder shell)" : `Slide ${index} (placeholder)`}
-      </div>
+      {children ? (
+        children
+      ) : (
+        <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm">
+          {isPrimary ? "Slide 1 (placeholder shell)" : `Slide ${index} (placeholder)`}
+        </div>
+      )}
     </div>
   );
 }
 
+// Fabric-dependent components should be dynamically imported (client-only).
+const CarouselPreviewVision = dynamic(
+  () => import("../components/health/marketing/ai-carousel/CarouselPreviewVision"),
+  {
+    ssr: false,
+  }
+);
+const ExportButton = dynamic(
+  () => import("../components/health/marketing/ai-carousel/ExportButton"),
+  { ssr: false }
+);
+const TextStylingToolbar = dynamic(
+  () => import("../components/health/marketing/ai-carousel/TextStylingToolbar"),
+  { ssr: false }
+);
+
 export default function EditorShell() {
   const slideCount = 6;
   const [activeSlideIndex, setActiveSlideIndex] = useState(0); // 0..5
+  const [switchingSlides, setSwitchingSlides] = useState(false);
+  const [topExporting, setTopExporting] = useState(false);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
+
+  const {
+    canvasRef,
+    loading,
+    realigning,
+    error,
+    layoutData,
+    inputData,
+    layoutHistory,
+    currentCarouselId,
+    carouselTitle,
+    setCarouselTitle,
+    saveStatus,
+    saveError,
+    debugLogs,
+    debugScreenshot,
+    showDebugPreview,
+    setShowDebugPreview,
+    handleRetry,
+    savedCarousels,
+    loadingCarousels,
+    showDropdown,
+    setShowDropdown,
+    realignmentModel,
+    setRealignmentModel,
+    templates,
+    loadingTemplates,
+    selectedTemplateId,
+    selectedTemplateSnapshot,
+    setSelectedTemplateId,
+    setSelectedTemplateSnapshot,
+    templateEditorOpen,
+    setTemplateEditorOpen,
+    loadTemplate,
+    loadCarousel,
+    performAutoSave,
+    setLayoutData,
+    setInputData,
+    setLayoutHistory,
+    setCurrentCarouselId,
+    setSaveStatus,
+    setSaveError,
+    setError,
+    handleGenerate,
+    handleRealign,
+    handleUndo,
+    handleNewCarousel,
+    handleSaveAsNew,
+    handleUpdateCurrent,
+    addLog,
+    loadTemplatesList,
+  } = useCarouselEditorEngine();
+
+  type SlideState = {
+    carouselId: string | null;
+    carouselTitle: string;
+    layoutData: any | null;
+    inputData: any | null;
+    layoutHistory: any[];
+    saveStatus: any;
+    saveError: string | null;
+    error: string | null;
+    debugLogs: string[];
+    debugScreenshot: string | null;
+    draftHeadline: string;
+    draftBody: string;
+    draftBg: string;
+    draftText: string;
+  };
+
+  const initSlide = (): SlideState => ({
+    carouselId: null,
+    carouselTitle: "Untitled Carousel",
+    layoutData: null,
+    inputData: null,
+    layoutHistory: [],
+    saveStatus: "idle",
+    saveError: null,
+    error: null,
+    debugLogs: [],
+    debugScreenshot: null,
+    draftHeadline: "",
+    draftBody: "",
+    draftBg: "#ffffff",
+    draftText: "#000000",
+  });
+
+  const [slides, setSlides] = useState<SlideState[]>(
+    () => Array.from({ length: slideCount }, () => initSlide())
+  );
+  const slidesRef = useRef<SlideState[]>(slides);
+  useEffect(() => {
+    slidesRef.current = slides;
+  }, [slides]);
+
+  // Mirror engine state into the active slide slot (so switching can restore instantly).
+  useEffect(() => {
+    setSlides((prev) =>
+      prev.map((s, i) => {
+        if (i !== activeSlideIndex) return s;
+        const next: SlideState = {
+          ...s,
+          carouselId: currentCarouselId ?? s.carouselId,
+          carouselTitle,
+          layoutData,
+          inputData,
+          layoutHistory,
+          saveStatus,
+          saveError,
+          error,
+          debugLogs,
+          debugScreenshot,
+        };
+        // If engine has inputData (load/generate), refresh drafts for convenience.
+        if (inputData) {
+          next.draftHeadline = inputData.headline || "";
+          next.draftBody = inputData.body || "";
+          next.draftBg = inputData.settings?.backgroundColor || "#ffffff";
+          next.draftText = inputData.settings?.textColor || "#000000";
+        }
+        return next;
+      })
+    );
+  }, [
+    activeSlideIndex,
+    carouselTitle,
+    currentCarouselId,
+    inputData,
+    layoutData,
+    layoutHistory,
+    saveStatus,
+    saveError,
+    error,
+    debugLogs,
+    debugScreenshot,
+  ]);
 
   const slideRefs = useMemo(
     () =>
@@ -70,8 +234,139 @@ export default function EditorShell() {
   const maxTranslate = 0;
   const translateX = Math.max(minTranslate, Math.min(maxTranslate, rawTranslate));
 
-  const goPrev = () => setActiveSlideIndex((i) => Math.max(0, i - 1));
-  const goNext = () => setActiveSlideIndex((i) => Math.min(slideCount - 1, i + 1));
+  const switchToSlide = async (nextIndex: number) => {
+    if (switchingSlides) return;
+    if (nextIndex < 0 || nextIndex >= slideCount) return;
+    if (nextIndex === activeSlideIndex) return;
+
+    setSwitchingSlides(true);
+    try {
+      // Force-save current slide before switching (best effort).
+      if (layoutData && inputData) {
+        const forceNew = !currentCarouselId;
+        const savedId = await performAutoSave(forceNew);
+        if (savedId) {
+          setSlides((prev) =>
+            prev.map((s, i) => (i === activeSlideIndex ? { ...s, carouselId: savedId } : s))
+          );
+        }
+      }
+
+      // Snapshot current engine state into the current slide slot.
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i === activeSlideIndex
+            ? {
+                ...s,
+                carouselId: currentCarouselId ?? s.carouselId,
+                carouselTitle,
+                layoutData,
+                inputData,
+                layoutHistory,
+                saveStatus,
+                saveError,
+                error,
+                debugLogs,
+                debugScreenshot,
+              }
+            : s
+        )
+      );
+
+      setActiveSlideIndex(nextIndex);
+
+      const next = slidesRef.current[nextIndex] || initSlide();
+      if (next.carouselId) {
+        await loadCarousel(next.carouselId);
+        return;
+      }
+
+      if (next.layoutData || next.inputData) {
+        setLayoutData(next.layoutData);
+        setInputData(next.inputData);
+        setLayoutHistory(next.layoutHistory || []);
+        setCurrentCarouselId(next.carouselId);
+        setCarouselTitle(next.carouselTitle || "Untitled Carousel");
+        setSaveStatus((next as any).saveStatus || "idle");
+        setSaveError((next as any).saveError || null);
+        setError((next as any).error || null);
+      } else {
+        handleNewCarousel();
+      }
+    } finally {
+      setSwitchingSlides(false);
+    }
+  };
+
+  const goPrev = () => void switchToSlide(activeSlideIndex - 1);
+  const goNext = () => void switchToSlide(activeSlideIndex + 1);
+
+  const handleTopSaveDraft = async () => {
+    if (switchingSlides) return;
+    // Match MVP behavior: if no current id, save as new; otherwise update current.
+    const forceNew = !currentCarouselId;
+    const savedId = await performAutoSave(forceNew);
+    if (savedId) {
+      setSlides((prev) =>
+        prev.map((s, i) => (i === activeSlideIndex ? { ...s, carouselId: savedId } : s))
+      );
+    }
+  };
+
+  const handleTopDownload = async () => {
+    if (topExporting) return;
+    // Reuse the same approach as ExportButton (works with the vision canvasRef handle).
+    const fabricCanvas = canvasRef.current?.canvas || canvasRef.current;
+    if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") {
+      alert("Canvas not ready. Please generate or load a slide first.");
+      return;
+    }
+
+    setTopExporting(true);
+    try {
+      const currentZoom = fabricCanvas.getZoom?.() ?? 1;
+      try {
+        fabricCanvas.discardActiveObject?.();
+      } catch {
+        // ignore
+      }
+
+      // Full-res export
+      fabricCanvas.setZoom?.(1);
+      fabricCanvas.renderAll?.();
+      await new Promise((r) => setTimeout(r, 100));
+
+      const dataURL = fabricCanvas.toDataURL({
+        format: "png",
+        quality: 1.0,
+        multiplier: 1,
+      });
+
+      const link = document.createElement("a");
+      link.download = `carousel-${Date.now()}.png`;
+      link.href = dataURL;
+      link.click();
+
+      // Restore zoom
+      fabricCanvas.setZoom?.(currentZoom);
+      fabricCanvas.renderAll?.();
+    } finally {
+      setTopExporting(false);
+    }
+  };
+
+  const activeSlideTitle = slides[activeSlideIndex]?.carouselTitle ?? carouselTitle;
+
+  const StatusPill = () => {
+    const status = saveStatus;
+    if (status === "idle") return null;
+    const base = "px-3 py-1 rounded-full text-xs font-semibold border";
+    if (status === "editing") return <span className={`${base} bg-yellow-50 text-yellow-700 border-yellow-200`}>Editing…</span>;
+    if (status === "saving") return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Saving…</span>;
+    if (status === "saved") return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Saved ✓</span>;
+    if (status === "error") return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Save Failed</span>;
+    return null;
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -84,15 +379,37 @@ export default function EditorShell() {
             <div className="text-[11px] text-slate-500">Editor</div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <input
+            className="h-9 w-[320px] max-w-[40vw] rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+            value={activeSlideTitle}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSlides((prev) =>
+                prev.map((s, i) => (i === activeSlideIndex ? { ...s, carouselTitle: v } : s))
+              );
+              setCarouselTitle(v);
+            }}
+            placeholder="Untitled Carousel"
+            disabled={switchingSlides}
+            title="Slide title"
+          />
+          <StatusPill />
+          <button
+            className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm disabled:opacity-50"
+            onClick={() => void handleTopSaveDraft()}
+            disabled={saveStatus === "saving" || switchingSlides}
+            title={currentCarouselId ? "Update current carousel" : "Save as new carousel"}
+          >
             Save Draft
           </button>
-          <button className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm">
-            Remove Watermark
-          </button>
-          <button className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm">
-            Download
+          <button
+            className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
+            onClick={() => void handleTopDownload()}
+            disabled={topExporting}
+            title="Download PNG (1080×1440)"
+          >
+            {topExporting ? "Downloading..." : "Download"}
           </button>
         </div>
       </header>
@@ -127,9 +444,94 @@ export default function EditorShell() {
                   <option>LinkedIn (4:5, Recommended)</option>
                 </select>
               </div>
-              <button className="w-full h-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm">
-                Select Template…
+              <div className="flex items-center gap-2">
+                <select
+                  className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                  value={selectedTemplateId || ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) {
+                      setSelectedTemplateId(null);
+                      setSelectedTemplateSnapshot(null);
+                      return;
+                    }
+                    void loadTemplate(v);
+                  }}
+                  disabled={loadingTemplates}
+                >
+                  <option value="">
+                    {loadingTemplates ? "Loading templates..." : "No template (legacy)"}
+                  </option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+                  title="Open Template Editor (admin-only)"
+                  onClick={() => setTemplateEditorOpen(true)}
+                >
+                  ⚙️
+                </button>
+              </div>
+              {selectedTemplateId && (
+                <div className="text-xs text-slate-500">
+                  {selectedTemplateSnapshot ? "Snapshot loaded" : "Loading..."}
+                </div>
+              )}
+            </div>
+
+            {/* Saved carousels (loads into the current active slide) */}
+            <div className="border-t border-slate-100 pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-900">Saved Carousels</div>
+                <div className="text-xs text-slate-500">{savedCarousels.length}</div>
+              </div>
+              <button
+                onClick={() => setShowDropdown(!showDropdown)}
+                className="w-full h-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm flex items-center justify-between px-3"
+                disabled={loadingCarousels || switchingSlides}
+              >
+                <span>
+                  {loadingCarousels ? "Loading..." : "Load saved…"}
+                </span>
+                <span className="text-slate-400">{showDropdown ? "▴" : "▾"}</span>
               </button>
+
+              {showDropdown && (
+                <div className="w-full bg-white border border-slate-200 rounded-md shadow-sm max-h-64 overflow-y-auto">
+                  {savedCarousels.length === 0 ? (
+                    <div className="p-3 text-sm text-slate-500">No saved carousels yet</div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {savedCarousels.map((c) => (
+                        <button
+                          key={c.id}
+                          className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                          onClick={() => {
+                            setShowDropdown(false);
+                            // Load into the currently active slide slot.
+                            setSlides((prev) =>
+                              prev.map((s, idx) =>
+                                idx === activeSlideIndex ? { ...s, carouselId: c.id } : s
+                              )
+                            );
+                            void loadCarousel(c.id);
+                          }}
+                        >
+                          <div className="text-sm font-medium text-slate-900 truncate">{c.title}</div>
+                          <div className="text-xs text-slate-500 truncate">{c.headline}</div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Updated: {new Date(c.updatedAt).toLocaleDateString()}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="border-t border-slate-100 pt-4 space-y-3">
@@ -158,7 +560,7 @@ export default function EditorShell() {
                 className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
                 aria-label="Previous"
                 onClick={goPrev}
-                disabled={!canGoPrev}
+                disabled={!canGoPrev || switchingSlides}
               >
                 ←
               </button>
@@ -183,7 +585,44 @@ export default function EditorShell() {
                       }}
                       className="relative"
                     >
-                      <SlideCard index={i + 1} active={i === activeSlideIndex} />
+                      <SlideCard index={i + 1} active={i === activeSlideIndex}>
+                        {i === activeSlideIndex && layoutData?.layout && inputData ? (
+                          <div className="w-full h-full flex flex-col items-center justify-center">
+                            {/* Scale the existing 540x720 preview down to fit 420x560 */}
+                            <div
+                              style={{
+                                width: 420,
+                                height: 560,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  transform: "scale(0.7777778)",
+                                  transformOrigin: "top left",
+                                  width: 540,
+                                  height: 720,
+                                }}
+                              >
+                                <CarouselPreviewVision
+                                  ref={canvasRef}
+                                  layout={layoutData.layout as any}
+                                  backgroundColor={inputData.settings?.backgroundColor || "#ffffff"}
+                                  textColor={inputData.settings?.textColor || "#000000"}
+                                  templateSnapshot={selectedTemplateSnapshot}
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-3">
+                              <TextStylingToolbar fabricCanvas={canvasRef.current?.canvas} />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm">
+                            {slides[i]?.carouselId ? `Slide ${i + 1} (saved)` : `Slide ${i + 1} (empty)`}
+                          </div>
+                        )}
+                      </SlideCard>
                     </div>
                   ))}
                 </div>
@@ -192,7 +631,7 @@ export default function EditorShell() {
                 className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
                 aria-label="Next"
                 onClick={goNext}
-                disabled={!canGoNext}
+                disabled={!canGoNext || switchingSlides}
               >
                 →
               </button>
@@ -204,79 +643,259 @@ export default function EditorShell() {
             <div className="max-w-[1400px] mx-auto px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold text-slate-900">Slide Settings</div>
-                <div className="flex items-center gap-2">
-                  <button className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm">
-                    Reorder
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm">
-                    Delete
-                  </button>
-                  <button className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm">
-                    Add Slide +
-                  </button>
-                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-500 uppercase">Slide Type</span>
-                    <span className="ml-auto text-xs text-slate-500">Slide #{activeSlideIndex + 1}</span>
-                    <div className="flex items-center gap-2">
-                      <button className="px-3 py-1.5 rounded-md bg-violet-100 text-violet-800 text-sm font-semibold">
-                        Text
-                      </button>
-                      <button className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm font-semibold bg-white">
-                        Text + Image
-                      </button>
-                      <button className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm font-semibold bg-white">
-                        Image
-                      </button>
-                    </div>
-                  </div>
-
                   <div>
-                    <label className="block text-sm font-semibold text-slate-900 mb-1">Title</label>
+                    <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
                     <input
                       className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                      placeholder="Amazing title here!"
-                      value=""
-                      readOnly
+                      placeholder="Enter headline..."
+                      value={slides[activeSlideIndex]?.draftHeadline || ""}
+                      onChange={(e) =>
+                        setSlides((prev) =>
+                          prev.map((s, i) =>
+                            i === activeSlideIndex ? { ...s, draftHeadline: e.target.value } : s
+                          )
+                        )
+                      }
+                      disabled={loading || switchingSlides}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-semibold text-slate-900 mb-1">Paragraph</label>
+                    <label className="block text-sm font-semibold text-slate-900 mb-1">Body</label>
                     <textarea
                       className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                       rows={3}
-                      placeholder="A message that will leave viewers wanting more."
-                      value=""
-                      readOnly
+                      placeholder="Enter body..."
+                      value={slides[activeSlideIndex]?.draftBody || ""}
+                      onChange={(e) =>
+                        setSlides((prev) =>
+                          prev.map((s, i) =>
+                            i === activeSlideIndex ? { ...s, draftBody: e.target.value } : s
+                          )
+                        )
+                      }
+                      disabled={loading || switchingSlides}
                     />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Background</label>
+                      <input
+                        className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
+                        value={slides[activeSlideIndex]?.draftBg || "#ffffff"}
+                        onChange={(e) =>
+                          setSlides((prev) =>
+                            prev.map((s, i) =>
+                              i === activeSlideIndex ? { ...s, draftBg: e.target.value } : s
+                            )
+                          )
+                        }
+                        disabled={loading || switchingSlides}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Text</label>
+                      <input
+                        className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
+                        value={slides[activeSlideIndex]?.draftText || "#000000"}
+                        onChange={(e) =>
+                          setSlides((prev) =>
+                            prev.map((s, i) =>
+                              i === activeSlideIndex ? { ...s, draftText: e.target.value } : s
+                            )
+                          )
+                        }
+                        disabled={loading || switchingSlides}
+                      />
+                    </div>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-900">Controls (placeholder)</div>
-                  <button className="w-full h-10 rounded-lg bg-[#6D28D9] text-white text-sm font-semibold shadow-sm">
-                    Generate Layout
+                  <div className="text-sm font-semibold text-slate-900">Controls</div>
+                  <button
+                    className="w-full h-10 rounded-lg bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+                    disabled={
+                      loading ||
+                      switchingSlides ||
+                      !(slides[activeSlideIndex]?.draftHeadline || "").trim() ||
+                      !(slides[activeSlideIndex]?.draftBody || "").trim()
+                    }
+                    onClick={() => {
+                      const cur = slidesRef.current[activeSlideIndex] || initSlide();
+                      const req: CarouselTextRequest = {
+                        headline: (cur.draftHeadline || "").trim(),
+                        body: (cur.draftBody || "").trim(),
+                        settings: {
+                          backgroundColor: cur.draftBg || "#ffffff",
+                          textColor: cur.draftText || "#000000",
+                          // Keep image generation off by default in this shell; can be revisited later.
+                          includeImage: false,
+                        },
+                        templateId: selectedTemplateId || undefined,
+                      } as any;
+                      void handleGenerate(req);
+                    }}
+                  >
+                    {loading ? "Generating..." : "Generate Layout"}
                   </button>
-                  <button className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm">
-                    Realign Text
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold px-3"
+                      value={realignmentModel}
+                      onChange={(e) => setRealignmentModel(e.target.value as any)}
+                      disabled={realigning}
+                    >
+                      <option value="gemini-computational">Gemini Computational</option>
+                      <option value="gemini">Gemini 3 Vision</option>
+                      <option value="claude">Claude Vision</option>
+                    </select>
+                  </div>
+
+                  <button
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                    onClick={() => void handleRealign()}
+                    disabled={loading || realigning || !layoutData || switchingSlides}
+                  >
+                    {realigning ? "Realigning..." : "Realign Text"}
                   </button>
-                  <button className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm">
+                  <button
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                    onClick={handleUndo}
+                    disabled={layoutHistory.length === 0 || realigning || switchingSlides}
+                  >
                     Undo
                   </button>
-                  <div className="text-xs text-slate-500">
-                    Shell-first: next we’ll move the real editor inputs/buttons into this bottom panel.
+
+                  <ExportButton canvasRef={canvasRef} />
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                      onClick={handleSaveAsNew}
+                      disabled={saveStatus === "saving" || switchingSlides}
+                    >
+                      Save As New
+                    </button>
+                    <button
+                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                      onClick={handleUpdateCurrent}
+                      disabled={saveStatus === "saving" || switchingSlides}
+                    >
+                      Update Current
+                    </button>
                   </div>
+
+                  <button
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
+                    onClick={() => {
+                      setSlides((prev) =>
+                        prev.map((s, i) => (i === activeSlideIndex ? initSlide() : s))
+                      );
+                      handleNewCarousel();
+                    }}
+                    disabled={switchingSlides}
+                  >
+                    New Carousel
+                  </button>
+
+                  {saveError && <div className="text-xs text-red-600">❌ {saveError}</div>}
+                  {error && <div className="text-xs text-red-600">❌ {error}</div>}
+                  <div className="text-xs text-slate-500">
+                    Slides 1–6 are now switchable. Each slide auto-saves before switching.
+                  </div>
+
+                  {error && inputData && (
+                    <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
+                      <div className="text-sm font-semibold text-red-800">Generation Failed</div>
+                      <div className="text-xs text-red-700 mt-1">{error}</div>
+                      <button
+                        className="mt-2 w-full h-9 rounded-md bg-red-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+                        onClick={() => void handleRetry()}
+                        disabled={!inputData || loading || switchingSlides}
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
+                    onClick={() => {
+                      setSlides((prev) =>
+                        prev.map((s, i) => (i === activeSlideIndex ? initSlide() : s))
+                      );
+                      handleNewCarousel();
+                    }}
+                    disabled={switchingSlides}
+                  >
+                    Start Over
+                  </button>
+
+                  <details className="mt-2 rounded-md border border-slate-200 bg-white">
+                    <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-900">
+                      Debug
+                    </summary>
+                    <div className="px-3 pb-3 space-y-3">
+                      {debugScreenshot && (
+                        <div>
+                          <button
+                            className="text-xs text-violet-700 underline"
+                            onClick={() => setShowDebugPreview(!showDebugPreview)}
+                          >
+                            {showDebugPreview ? "Hide" : "Show"} Screenshot
+                          </button>
+                          {showDebugPreview && (
+                            <div className="mt-2 bg-white rounded border border-slate-200 p-2 overflow-auto max-h-64">
+                              <img
+                                src={debugScreenshot}
+                                alt="Screenshot sent to Claude Vision"
+                                className="max-w-full h-auto mx-auto"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {debugLogs.length > 0 ? (
+                        <div className="rounded border border-slate-200 bg-slate-950 p-2 max-h-64 overflow-y-auto font-mono text-[11px] text-green-300">
+                          {debugLogs.map((log, idx) => (
+                            <div key={idx} className="mb-1">
+                              {log}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500">No debug logs yet.</div>
+                      )}
+                    </div>
+                  </details>
                 </div>
               </div>
             </div>
           </section>
         </main>
       </div>
+
+      <TemplateEditorModal
+        open={templateEditorOpen}
+        onClose={() => setTemplateEditorOpen(false)}
+        templates={templates}
+        currentTemplateId={selectedTemplateId}
+        currentTemplateSnapshot={selectedTemplateSnapshot}
+        onTemplateSaved={(templateId, nextDefinition) => {
+          setSelectedTemplateId(templateId);
+          setSelectedTemplateSnapshot(nextDefinition);
+          addLog(`✅ Template updated (snapshot refreshed): ${templateId}`);
+        }}
+        onRefreshTemplates={loadTemplatesList}
+      />
     </div>
   );
 }

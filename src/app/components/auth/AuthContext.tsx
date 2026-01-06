@@ -54,6 +54,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isEditorUser, setIsEditorUser] = useState(false)
   const gapFillTriggeredRef = useRef(false)
   const pastRedirectTriggeredRef = useRef(false)
+  const lastEditorCheckUserIdRef = useRef<string | null>(null)
 
   // Role detection based on email
   const isDoctor = !!(user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAIL && user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
@@ -77,8 +78,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (!nextUser) {
       setIsEditorUser(false)
       setEditorLoading(false)
+      lastEditorCheckUserIdRef.current = null
       return false
     }
+    // Minimal "less security" approach: only re-check if the user id changed.
+    // This prevents periodic token refresh / auth events from unmounting the editor shell.
+    if (lastEditorCheckUserIdRef.current === nextUser.id) {
+      setEditorLoading(false)
+      return isEditorUser
+    }
+    lastEditorCheckUserIdRef.current = nextUser.id
     setEditorLoading(true)
     const allowed = await checkEditorMembership(nextUser.id)
     setIsEditorUser(allowed)
@@ -130,7 +139,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)
@@ -138,7 +147,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
         gapFillTriggeredRef.current = true
         void gapFillMissedWeeks(session.user)
       }
-      void refreshEditorAccess(session?.user ?? null)
+      // Only check editor membership on real session/user transitions, not token refresh noise.
+      if (event === 'SIGNED_OUT') {
+        void refreshEditorAccess(null)
+      } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        void refreshEditorAccess(session?.user ?? null)
+      } else {
+        // Do not toggle editorLoading for TOKEN_REFRESHED / INITIAL_SESSION events.
+        setEditorLoading(false)
+      }
 
       // Redirect Past patients to /inactive (admins exempt)
       const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
