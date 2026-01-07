@@ -18,6 +18,23 @@ export interface TemplateEditorCanvasHandle {
   exportDefinition: () => CarouselTemplateDefinitionV1;
   addOrReplaceImageAsset: (asset: TemplateImageAsset) => void;
   upsertTextAsset: (asset: TemplateTextAsset) => void;
+  getLayers: () => Array<{
+    id: string;
+    type: 'content-region' | 'text' | 'image';
+    name: string;
+    zIndex: number;
+    kind?: string;
+  }>;
+  selectLayer: (layerId: string) => void;
+  reorderLayer: (layerId: string, direction: 'up' | 'down') => void;
+  addTextLayer: () => void;
+  renameLayer: (layerId: string, nextName: string) => void;
+  deleteLayer: (layerId: string) => void;
+  undo: () => void;
+  getActiveLayerId: () => string | null;
+  getTextLayerStyle: (layerId: string) => null | { fontFamily: string; fontWeight?: any; fontSize: number; fontStyle?: string };
+  setTextLayerStyle: (layerId: string, patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string }>) => void;
+  startTextEditing: (layerId: string) => void;
 }
 
 function clone<T>(v: T): T {
@@ -49,6 +66,11 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
 
     const assetObjByIdRef = useRef<Map<string, any>>(new Map());
     const contentRegionObjRef = useRef<any>(null);
+    const contentRegionLayerId = '__content_region__';
+    const historyRef = useRef<CarouselTemplateDefinitionV1[]>([]);
+    const historyDebounceRef = useRef<number | null>(null);
+    const applyingHistoryRef = useRef(false);
+    const HISTORY_LIMIT = 50;
 
     const disableRotation = (obj: any) => {
       try {
@@ -115,6 +137,276 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       def.slides = [slide0];
       def.template_version = 1;
       return def;
+    };
+
+    const pushHistory = (snapshot?: CarouselTemplateDefinitionV1) => {
+      if (applyingHistoryRef.current) return;
+      const snap = snapshot ? clone(snapshot) : clone(exportFromCanvas());
+      const arr = historyRef.current;
+      // Avoid pushing duplicates (cheap check via JSON length).
+      const prev = arr[arr.length - 1];
+      if (prev && JSON.stringify(prev) === JSON.stringify(snap)) return;
+      arr.push(snap);
+      if (arr.length > HISTORY_LIMIT) arr.splice(0, arr.length - HISTORY_LIMIT);
+    };
+
+    const scheduleHistoryPush = () => {
+      if (applyingHistoryRef.current) return;
+      if (historyDebounceRef.current) window.clearTimeout(historyDebounceRef.current);
+      historyDebounceRef.current = window.setTimeout(() => {
+        historyDebounceRef.current = null;
+        pushHistory();
+      }, 250);
+    };
+
+    const computeLayersFromDef = (def: CarouselTemplateDefinitionV1) => {
+      const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const sorted = [...assets].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      const nameForAsset = (a: any, idx: number) => {
+        if (typeof a?.name === 'string' && a.name.trim()) return a.name.trim();
+        if (a?.type === 'image') {
+          if (a?.kind === 'avatar') return 'Avatar';
+          if (a?.kind === 'footer_icon') return 'Footer icon';
+          if (a?.kind === 'cta_pill_image') return 'CTA';
+          return `Image ${idx + 1}`;
+        }
+        // text
+        if (a?.kind === 'display_name') return 'Display name';
+        if (a?.kind === 'handle') return 'Handle';
+        if (a?.kind === 'cta_text') return 'CTA text';
+        return `Text ${idx + 1}`;
+      };
+      const layers = sorted.map((a: any, idx: number) => ({
+        id: String(a.id),
+        type: a.type === 'image' ? ('image' as const) : ('text' as const),
+        name: nameForAsset(a, idx),
+        zIndex: typeof a.zIndex === 'number' ? a.zIndex : 0,
+        kind: a.kind,
+      }));
+      return [
+        {
+          id: contentRegionLayerId,
+          type: 'content-region' as const,
+          name: (slide0 as any)?.contentRegionName || 'Content Region',
+          zIndex: -999,
+          kind: 'contentRegion',
+        },
+        ...layers,
+      ];
+    };
+
+    const selectLayerOnCanvas = (layerId: string) => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) return;
+      let obj: any = null;
+      if (layerId === contentRegionLayerId) {
+        obj = contentRegionObjRef.current;
+      } else {
+        obj = assetObjByIdRef.current.get(layerId) || null;
+      }
+      if (!obj) return;
+      try {
+        canvas.setActiveObject?.(obj);
+        canvas.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+    };
+
+    const normalizeZIndex = (assets: any[]) => {
+      const sorted = [...assets].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      sorted.forEach((a, idx) => {
+        a.zIndex = idx;
+      });
+      return sorted;
+    };
+
+    const reorderLayerInDef = (layerId: string, direction: 'up' | 'down') => {
+      if (!layerId || layerId === contentRegionLayerId) return;
+      pushHistory();
+      const def = clone(defRef.current);
+      const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const sorted = normalizeZIndex(assets);
+      const idx = sorted.findIndex((a: any) => String(a.id) === String(layerId));
+      if (idx === -1) return;
+      const swapWith = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapWith < 0 || swapWith >= sorted.length) return;
+      const tmp = sorted[idx];
+      sorted[idx] = sorted[swapWith];
+      sorted[swapWith] = tmp;
+      // Re-normalize so zIndex remains contiguous and deterministic.
+      normalizeZIndex(sorted);
+      slide0.assets = sorted as any;
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      renderFromDefinition(defRef.current);
+      // Reselect after rerender so the user sees it.
+      selectLayerOnCanvas(layerId);
+    };
+
+    const addTextLayerToDef = () => {
+      pushHistory();
+      const def = exportFromCanvas();
+      const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const nextZ = assets.reduce((m: number, a: any) => Math.max(m, typeof a?.zIndex === 'number' ? a.zIndex : -1), -1) + 1;
+      const id = crypto.randomUUID();
+      const t: TemplateTextAsset = {
+        id,
+        type: 'text',
+        kind: 'other_text',
+        name: `Text ${assets.filter((a: any) => a?.type === 'text').length + 1}`,
+        rect: { x: 140, y: 220, width: 800, height: 80 },
+        text: 'New text',
+        style: { fontFamily: 'Inter', fontSize: 36, fontWeight: 'normal', fill: '#111827', textAlign: 'left' },
+        locked: false,
+        zIndex: nextZ,
+        rotation: 0,
+      };
+      slide0.assets = [...assets, t as any];
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      renderFromDefinition(defRef.current);
+      selectLayerOnCanvas(id);
+    };
+
+    const renameLayerInDef = (layerId: string, nextName: string) => {
+      const name = String(nextName || '').trim();
+      if (!name) return;
+
+      pushHistory();
+      const def = clone(defRef.current);
+      const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+
+      if (layerId === contentRegionLayerId) {
+        (slide0 as any).contentRegionName = name;
+        def.slides = [slide0];
+        defRef.current = clone(def);
+        // No need to rerender canvas; just updating list/persistence.
+        return;
+      }
+
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const idx = assets.findIndex((a: any) => String(a?.id) === String(layerId));
+      if (idx === -1) return;
+      assets[idx] = { ...(assets[idx] as any), name };
+      slide0.assets = assets as any;
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      // Rerender so subsequent exports/operations stay consistent.
+      renderFromDefinition(defRef.current);
+      selectLayerOnCanvas(layerId);
+    };
+
+    const deleteLayerInDef = (layerId: string) => {
+      if (!layerId) return;
+      if (layerId === contentRegionLayerId) return; // never delete content region
+
+      pushHistory();
+      const def = clone(defRef.current);
+      const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const nextAssets = assets.filter((a: any) => String(a?.id) !== String(layerId));
+      slide0.assets = nextAssets as any;
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      renderFromDefinition(defRef.current);
+      try {
+        const canvas = fabricCanvasRef.current;
+        canvas?.discardActiveObject?.();
+        canvas?.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+    };
+
+    const undoFromHistory = () => {
+      const arr = historyRef.current;
+      if (arr.length === 0) return;
+      const last = arr.pop();
+      if (!last) return;
+      applyingHistoryRef.current = true;
+      try {
+        defRef.current = clone(last);
+        renderFromDefinition(defRef.current);
+      } finally {
+        applyingHistoryRef.current = false;
+      }
+    };
+
+    const getActiveLayerIdFromCanvas = () => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) return null;
+      const obj = canvas.getActiveObject?.();
+      if (!obj) return null;
+      const role = obj?.data?.role;
+      if (role === 'template-content-region') return contentRegionLayerId;
+      if (role === 'template-asset' && obj?.data?.assetId) return String(obj.data.assetId);
+      return null;
+    };
+
+    const getTextStyleForLayer = (layerId: string) => {
+      if (!layerId || layerId === contentRegionLayerId) return null;
+      const obj = assetObjByIdRef.current.get(layerId);
+      if (!obj) return null;
+      const isText = obj.type === 'textbox' || obj.type === 'i-text' || obj.type === 'text';
+      if (!isText) return null;
+      return {
+        fontFamily: String(obj.fontFamily || 'Inter'),
+        fontWeight: obj.fontWeight,
+        fontSize: Number(obj.fontSize || 24),
+        fontStyle: String(obj.fontStyle || 'normal'),
+      };
+    };
+
+    const setTextStyleForLayer = (
+      layerId: string,
+      patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string }>
+    ) => {
+      if (!layerId || layerId === contentRegionLayerId) return;
+      const obj = assetObjByIdRef.current.get(layerId);
+      const canvas = fabricCanvasRef.current;
+      if (!obj || !canvas) return;
+      const isText = obj.type === 'textbox' || obj.type === 'i-text' || obj.type === 'text';
+      if (!isText) return;
+      pushHistory();
+      try {
+        const next: any = {};
+        if (patch.fontFamily) next.fontFamily = patch.fontFamily;
+        if (patch.fontWeight !== undefined) next.fontWeight = patch.fontWeight;
+        if (typeof patch.fontSize === 'number' && Number.isFinite(patch.fontSize)) next.fontSize = Math.max(1, Math.round(patch.fontSize));
+        if (patch.fontStyle) next.fontStyle = patch.fontStyle;
+        obj.set?.(next);
+        obj.setCoords?.();
+        canvas.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+    };
+
+    const startEditingTextLayer = (layerId: string) => {
+      if (!layerId || layerId === contentRegionLayerId) return;
+      const obj = assetObjByIdRef.current.get(layerId);
+      const canvas = fabricCanvasRef.current;
+      if (!obj || !canvas) return;
+      const isText = obj.type === 'textbox' || obj.type === 'i-text' || obj.type === 'text';
+      if (!isText) return;
+      try {
+        canvas.setActiveObject?.(obj);
+        if (typeof obj.enterEditing === 'function') {
+          obj.enterEditing();
+          if (typeof obj.selectAll === 'function') obj.selectAll();
+        }
+        canvas.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
     };
 
     const ensureContentRegion = (fabric: any, canvas: any, r: TemplateRect) => {
@@ -276,6 +568,16 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         }
       }
 
+      // Track direct canvas edits (drag/resize/text edits) for undo.
+      try {
+        canvas.off?.('object:modified');
+        canvas.off?.('text:changed');
+        canvas.on?.('object:modified', () => scheduleHistoryPush());
+        canvas.on?.('text:changed', () => scheduleHistoryPush());
+      } catch {
+        // ignore
+      }
+
       canvas.renderAll();
     };
 
@@ -297,6 +599,31 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
           });
           canvas.setZoom(DISPLAY_ZOOM);
           fabricCanvasRef.current = canvas;
+
+          // Enable double-click to edit text layers (Mac Chrome friendly).
+          // Fabric Textbox doesn't reliably enter editing on dblclick without this.
+          try {
+            canvas.on('mouse:dblclick', (opt: any) => {
+              const target = opt?.target;
+              if (!target) return;
+              const role = target?.data?.role;
+              if (role !== 'template-asset') return;
+              const isText = target.type === 'textbox' || target.type === 'i-text' || target.type === 'text';
+              if (!isText) return;
+              try {
+                canvas.setActiveObject?.(target);
+                if (typeof target.enterEditing === 'function') {
+                  target.enterEditing();
+                  if (typeof target.selectAll === 'function') target.selectAll();
+                }
+                canvas.requestRenderAll?.();
+              } catch {
+                // ignore
+              }
+            });
+          } catch {
+            // ignore
+          }
 
           setReady(true);
 
@@ -322,12 +649,14 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
 
     useImperativeHandle(ref, () => ({
       loadDefinition: (def) => {
+        pushHistory(defRef.current);
         const next = clone(def);
         defRef.current = next;
         renderFromDefinition(next);
       },
 
       addOrReplaceImageAsset: (asset) => {
+        pushHistory();
         const def = exportFromCanvas();
         const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
         if (!def.slides || def.slides.length === 0) def.slides = [slide0];
@@ -341,6 +670,7 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       },
 
       upsertTextAsset: (asset) => {
+        pushHistory();
         const def = exportFromCanvas();
         const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
         if (!def.slides || def.slides.length === 0) def.slides = [slide0];
@@ -358,6 +688,17 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         defRef.current = clone(def);
         return def;
       },
+      getLayers: () => computeLayersFromDef(defRef.current),
+      selectLayer: (layerId: string) => selectLayerOnCanvas(layerId),
+      reorderLayer: (layerId: string, direction: 'up' | 'down') => reorderLayerInDef(layerId, direction),
+      addTextLayer: () => addTextLayerToDef(),
+      renameLayer: (layerId: string, nextName: string) => renameLayerInDef(layerId, nextName),
+      deleteLayer: (layerId: string) => deleteLayerInDef(layerId),
+      undo: () => undoFromHistory(),
+      getActiveLayerId: () => getActiveLayerIdFromCanvas(),
+      getTextLayerStyle: (layerId: string) => getTextStyleForLayer(layerId),
+      setTextLayerStyle: (layerId: string, patch: any) => setTextStyleForLayer(layerId, patch),
+      startTextEditing: (layerId: string) => startEditingTextLayer(layerId),
     }), [initialDefinition]);
 
     return (

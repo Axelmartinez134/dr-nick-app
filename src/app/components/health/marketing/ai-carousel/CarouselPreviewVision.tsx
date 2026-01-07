@@ -12,12 +12,14 @@ interface CarouselPreviewProps {
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
   headlineFontFamily?: string;
   bodyFontFamily?: string;
+  headlineFontWeight?: number;
+  bodyFontWeight?: number;
 }
 
 const DISPLAY_ZOOM = 0.5;
 
 const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
-  ({ layout, backgroundColor, textColor, templateSnapshot, headlineFontFamily, bodyFontFamily }, ref) => {
+  ({ layout, backgroundColor, textColor, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<any>(null);
     const fabricModuleRef = useRef<any>(null);
@@ -758,6 +760,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       const hasDistinctHeadlineSize = sizesDesc.length >= 2;
       const headlineFont = headlineFontFamily || 'Inter, sans-serif';
       const bodyFont = bodyFontFamily || 'Inter, sans-serif';
+      const headlineWeight = Number.isFinite(headlineFontWeight as any) ? (headlineFontWeight as number) : 700;
+      const bodyWeight = Number.isFinite(bodyFontWeight as any) ? (bodyFontWeight as number) : 400;
 
       layout.textLines.forEach((line, index) => {
         console.log(`[Preview Vision] ✍️ Line ${index + 1}:`, {
@@ -770,6 +774,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
         try {
           const isHeadlineLine = hasDistinctHeadlineSize ? line.baseSize === headlineSize : index === 0;
+          const baseWeight = isHeadlineLine ? headlineWeight : bodyWeight;
           // Create Textbox object (enforces width constraint, supports mixed formatting)
           const textObj = new fabric.Textbox(line.text, {
             left: line.position.x,
@@ -778,6 +783,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             fontSize: line.baseSize,
             fill: textColor,
             fontFamily: isHeadlineLine ? headlineFont : bodyFont,
+            fontWeight: baseWeight,
             textAlign: line.textAlign,
             lineHeight: line.lineHeight,
             originX: line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left',
@@ -804,7 +810,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               const styleObj: any = {};
               
               if (style.fontWeight) {
-                styleObj.fontWeight = style.fontWeight;
+                // Our generator uses 'bold'/'normal'. Map to numeric weights so fonts like Open Sans Light render correctly.
+                if (style.fontWeight === 'bold') styleObj.fontWeight = 700;
+                else if (style.fontWeight === 'normal') styleObj.fontWeight = baseWeight;
+                else styleObj.fontWeight = style.fontWeight as any;
               }
               if (style.fontStyle) {
                 styleObj.fontStyle = style.fontStyle;
@@ -830,7 +839,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       canvas.renderAll();
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight]);
 
     return (
       <div className="flex flex-col items-center space-y-4">

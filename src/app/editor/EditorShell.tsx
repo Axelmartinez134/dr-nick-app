@@ -5,6 +5,8 @@ import styles from "./EditorShell.module.css";
 import dynamic from "next/dynamic";
 import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
 import type { CarouselTextRequest } from "@/lib/carousel-types";
+import type { VisionLayoutDecision } from "@/lib/carousel-types";
+import { wrapFlowLayout } from "@/lib/wrap-flow-layout";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 
@@ -82,6 +84,10 @@ export default function EditorShell() {
   const slideSaveTimeoutRef = useRef<number | null>(null);
   const layoutDirtyRef = useRef(false);
   const layoutSaveTimeoutRef = useRef<number | null>(null);
+  const LIVE_LAYOUT_DEBOUNCE_MS = 500;
+  const liveLayoutTimeoutsRef = useRef<Record<number, number | null>>({});
+  const liveLayoutQueueRef = useRef<number[]>([]);
+  const liveLayoutRunningRef = useRef(false);
 
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
@@ -117,13 +123,17 @@ export default function EditorShell() {
   // Project-wide typography (shared across all slides; canvas-only).
   const FONT_OPTIONS = useMemo(
     () => [
-      { label: "Inter", value: "Inter, sans-serif" },
-      { label: "Poppins", value: "Poppins, sans-serif" },
-      { label: "Montserrat", value: "Montserrat, sans-serif" },
-      { label: "Playfair Display", value: "\"Playfair Display\", serif" },
+      { label: "Inter", family: "Inter, sans-serif", weight: 400 },
+      { label: "Poppins", family: "Poppins, sans-serif", weight: 400 },
+      { label: "Montserrat (Regular)", family: "Montserrat, sans-serif", weight: 400 },
+      { label: "Montserrat (Bold)", family: "Montserrat, sans-serif", weight: 700 },
+      { label: "Playfair Display", family: "\"Playfair Display\", serif", weight: 400 },
+      { label: "Open Sans (Light)", family: "\"Open Sans\", sans-serif", weight: 300 },
     ],
     []
   );
+
+  const fontKey = (family: string, weight: number) => `${family}@@${weight}`;
 
   const {
     canvasRef,
@@ -154,6 +164,10 @@ export default function EditorShell() {
     bodyFontFamily,
     setHeadlineFontFamily,
     setBodyFontFamily,
+    headlineFontWeight,
+    bodyFontWeight,
+    setHeadlineFontWeight,
+    setBodyFontWeight,
     loadTemplate,
     setLayoutData,
     setInputData,
@@ -346,19 +360,24 @@ export default function EditorShell() {
         body: JSON.stringify({ projectId: currentProjectId }),
       });
       const slidesOut = data.slides || [];
-      setSlides((prev) =>
-        prev.map((s, i) => {
-          const out = slidesOut[i];
-          if (!out) return s;
-          return {
-            ...s,
-            draftHeadline: out.headline ?? '',
-            draftBody: out.body ?? '',
-          };
-        })
-      );
+      const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
+        const prev = slidesRef.current[i] || initSlide();
+        const out = slidesOut[i] || {};
+        const nextHeadline = out.headline ?? '';
+        const nextBody = out.body ?? '';
+        return {
+          ...prev,
+          draftHeadline: nextHeadline,
+          draftBody: nextBody,
+          // Mark as dirty vs saved so autosave of text works, but don't show "saving" just from switching.
+        };
+      });
+      setSlides(nextSlides);
+      slidesRef.current = nextSlides;
       if (typeof data.caption === 'string') setCaptionDraft(data.caption);
       void refreshProjectsList();
+      // Auto-layout all 6 slides sequentially (queued).
+      enqueueLiveLayout([0, 1, 2, 3, 4, 5]);
     } catch (e: any) {
       setCopyError(e?.message || 'Generate Copy failed');
     } finally {
@@ -389,6 +408,192 @@ export default function EditorShell() {
     } catch {
       // ignore
     }
+  };
+
+  const getTemplateContentRectInset = (templateSnapshot: any | null) => {
+    const slide0 =
+      Array.isArray(templateSnapshot?.slides)
+        ? (templateSnapshot.slides.find((s: any) => s?.slideIndex === 0) || templateSnapshot.slides[0])
+        : null;
+    const region = slide0?.contentRegion;
+    if (!region) return null;
+    if (
+      typeof region.x !== "number" ||
+      typeof region.y !== "number" ||
+      typeof region.width !== "number" ||
+      typeof region.height !== "number"
+    ) {
+      return null;
+    }
+    const PAD = 40;
+    return {
+      x: region.x + PAD,
+      y: region.y + PAD,
+      width: Math.max(1, region.width - PAD * 2),
+      height: Math.max(1, region.height - PAD * 2),
+    };
+  };
+
+  const getExistingImageForSlide = (slideIndex: number) => {
+    // Prefer the active canvas measurement (source of truth if user dragged/resized).
+    if (slideIndex === activeSlideIndex) {
+      const pos = (canvasRef.current as any)?.getImagePosition?.();
+      if (pos && typeof pos.x === "number") {
+        const url =
+          (layoutData as any)?.layout?.image?.url ||
+          (layoutData as any)?.imageUrl ||
+          null;
+        return { ...pos, url };
+      }
+    }
+    const img = (slidesRef.current[slideIndex] as any)?.layoutData?.layout?.image;
+    if (img && typeof img.x === "number") return img;
+    return null;
+  };
+
+  const computeDeterministicLayout = (params: {
+    slideIndex: number;
+    headline: string;
+    body: string;
+    templateSnapshot: any;
+    image: any | null;
+  }): VisionLayoutDecision | null => {
+    const inset = getTemplateContentRectInset(params.templateSnapshot);
+    const imageBounds = params.image
+      ? {
+          x: Number(params.image.x) || 0,
+          y: Number(params.image.y) || 0,
+          width: Number(params.image.width) || 0,
+          height: Number(params.image.height) || 0,
+        }
+      : {
+          // "No image" mode: put a tiny blocked rect far off-canvas so it never affects placement.
+          x: -100000,
+          y: -100000,
+          width: 1,
+          height: 1,
+        };
+
+    const { layout } = wrapFlowLayout(params.headline, params.body, imageBounds, {
+      ...(inset ? { contentRect: inset } : { margin: 40 }),
+      clearancePx: 1,
+      lineHeight: 1.2,
+      headlineFontSize: 76,
+      bodyFontSize: 48,
+      headlineMinFontSize: 56,
+      bodyMinFontSize: 36,
+      blockGapPx: 24,
+      laneTieBreak: "right",
+      bodyPreferSideLane: true,
+      minUsableLaneWidthPx: 300,
+      skinnyLaneWidthPx: 380,
+      minBelowSpacePx: 240,
+    });
+
+    // Preserve any existing image URL if present.
+    if ((params.image as any)?.url && layout.image) {
+      (layout.image as any).url = (params.image as any).url;
+    }
+    return layout;
+  };
+
+  const enqueueLiveLayout = (indices: number[]) => {
+    indices.forEach((i) => {
+      if (i < 0 || i >= slideCount) return;
+      if (!liveLayoutQueueRef.current.includes(i)) liveLayoutQueueRef.current.push(i);
+    });
+    void processLiveLayoutQueue();
+  };
+
+  const processLiveLayoutQueue = async () => {
+    if (liveLayoutRunningRef.current) return;
+    liveLayoutRunningRef.current = true;
+    try {
+      while (liveLayoutQueueRef.current.length > 0) {
+        const slideIndex = liveLayoutQueueRef.current.shift() as number;
+        const slide = slidesRef.current[slideIndex] || initSlide();
+        const tid = computeTemplateIdForSlide(slideIndex);
+        const snap = (tid ? templateSnapshots[tid] : null) || null;
+        if (!snap) continue;
+
+        const headline = templateTypeId === "regular" ? "" : (slide.draftHeadline || "");
+        const body = slide.draftBody || "";
+        if (!String(body).trim() && !String(headline).trim()) {
+          continue;
+        }
+
+        const image = getExistingImageForSlide(slideIndex);
+        const nextLayout = computeDeterministicLayout({
+          slideIndex,
+          headline,
+          body,
+          templateSnapshot: snap,
+          image,
+        });
+        if (!nextLayout) continue;
+
+        const req: CarouselTextRequest = {
+          headline,
+          body,
+          settings: {
+            backgroundColor: projectBackgroundColor || "#ffffff",
+            textColor: projectTextColor || "#000000",
+            includeImage: false,
+          },
+          templateId: tid || undefined,
+        } as any;
+
+        const nextLayoutData = {
+          success: true,
+          layout: nextLayout,
+          imageUrl: (image as any)?.url || (slide.layoutData as any)?.imageUrl || null,
+        };
+
+        setSlides((prev) =>
+          prev.map((s, i) =>
+            i !== slideIndex
+              ? s
+              : {
+                  ...s,
+                  layoutData: nextLayoutData,
+                  inputData: req,
+                }
+          )
+        );
+        // Keep ref in sync (so subsequent queued slides use latest).
+        slidesRef.current = slidesRef.current.map((s, i) =>
+          i !== slideIndex ? s : { ...s, layoutData: nextLayoutData, inputData: req }
+        );
+
+        // If this is the active slide, also update the engine so Fabric rerenders immediately.
+        if (slideIndex === activeSlideIndex) {
+          setLayoutData(nextLayoutData as any);
+          setInputData(req as any);
+          setLayoutHistory((h) => h || []);
+        }
+
+        // Persist snapshots (debounced by layout debounce itself).
+        if (currentProjectId) {
+          void saveSlidePatch(slideIndex, {
+            layoutSnapshot: nextLayout,
+            inputSnapshot: req,
+          });
+        }
+
+        // Yield to the browser between slides to keep UI responsive.
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    } finally {
+      liveLayoutRunningRef.current = false;
+    }
+  };
+
+  const scheduleLiveLayout = (slideIndex: number) => {
+    const prev = liveLayoutTimeoutsRef.current[slideIndex];
+    if (prev) window.clearTimeout(prev);
+    liveLayoutTimeoutsRef.current[slideIndex] = window.setTimeout(() => {
+      enqueueLiveLayout([slideIndex]);
+    }, LIVE_LAYOUT_DEBOUNCE_MS);
   };
 
   const loadTemplateTypeEffective = async (type: 'regular' | 'enhanced') => {
@@ -1118,11 +1323,17 @@ export default function EditorShell() {
                   <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline</div>
                   <select
                     className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={headlineFontFamily}
-                    onChange={(e) => setHeadlineFontFamily(e.target.value)}
+                    value={fontKey(headlineFontFamily, headlineFontWeight)}
+                    onChange={(e) => {
+                      const raw = e.target.value || "";
+                      const [family, w] = raw.split("@@");
+                      const weight = Number(w);
+                      setHeadlineFontFamily(family || "Inter, sans-serif");
+                      setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
+                    }}
                   >
                     {FONT_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
+                      <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
                         {o.label}
                       </option>
                     ))}
@@ -1132,11 +1343,17 @@ export default function EditorShell() {
                   <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body</div>
                   <select
                     className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={bodyFontFamily}
-                    onChange={(e) => setBodyFontFamily(e.target.value)}
+                    value={fontKey(bodyFontFamily, bodyFontWeight)}
+                    onChange={(e) => {
+                      const raw = e.target.value || "";
+                      const [family, w] = raw.split("@@");
+                      const weight = Number(w);
+                      setBodyFontFamily(family || "Inter, sans-serif");
+                      setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
+                    }}
                   >
                     {FONT_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
+                      <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
                         {o.label}
                       </option>
                     ))}
@@ -1293,6 +1510,8 @@ export default function EditorShell() {
                                     templateSnapshot={snap}
                                     headlineFontFamily={headlineFontFamily}
                                     bodyFontFamily={bodyFontFamily}
+                                      headlineFontWeight={headlineFontWeight}
+                                      bodyFontWeight={bodyFontWeight}
                                   />
                                 );
                               })()}
@@ -1332,13 +1551,14 @@ export default function EditorShell() {
                       className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
                       placeholder="Enter headline..."
                       value={slides[activeSlideIndex]?.draftHeadline || ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setSlides((prev) =>
                           prev.map((s, i) =>
                             i === activeSlideIndex ? { ...s, draftHeadline: e.target.value } : s
                           )
-                        )
-                      }
+                        );
+                        scheduleLiveLayout(activeSlideIndex);
+                      }}
                       disabled={loading || switchingSlides || copyGenerating || templateTypeId === "regular"}
                     />
                     {templateTypeId === "regular" ? (
@@ -1353,13 +1573,14 @@ export default function EditorShell() {
                       rows={3}
                       placeholder="Enter body..."
                       value={slides[activeSlideIndex]?.draftBody || ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         setSlides((prev) =>
                           prev.map((s, i) =>
                             i === activeSlideIndex ? { ...s, draftBody: e.target.value } : s
                           )
-                        )
-                      }
+                        );
+                        scheduleLiveLayout(activeSlideIndex);
+                      }}
                       disabled={loading || switchingSlides || copyGenerating}
                     />
                   </div>
@@ -1526,11 +1747,17 @@ export default function EditorShell() {
         open={templateEditorOpen}
         onClose={() => setTemplateEditorOpen(false)}
         templates={templates}
-        currentTemplateId={selectedTemplateId}
-        currentTemplateSnapshot={selectedTemplateSnapshot}
+        // In /editor we want Template Editor to default to "Select Template" each open.
+        // The mapped templates still render in the slide strip; this only affects the modal's initial selection.
+        currentTemplateId={null}
+        currentTemplateSnapshot={null}
         onTemplateSaved={(templateId, nextDefinition) => {
           setSelectedTemplateId(templateId);
           setSelectedTemplateSnapshot(nextDefinition);
+          // IMPORTANT: keep the /editor template snapshot cache in sync so:
+          // - slide strip canvases rerender immediately
+          // - reopening Template Editor shows the latest version (no stale cache)
+          setTemplateSnapshots((prev) => ({ ...prev, [templateId]: nextDefinition as any }));
           addLog(`✅ Template updated (snapshot refreshed): ${templateId}`);
         }}
         onRefreshTemplates={loadTemplatesList}

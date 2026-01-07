@@ -10,7 +10,16 @@ import type {
   TemplateTextStyle,
 } from '@/lib/carousel-template-types';
 
-const FONT_OPTIONS = ['Inter', 'Poppins', 'Montserrat', 'Playfair Display'];
+const FONT_OPTIONS = [
+  { label: 'Inter', family: 'Inter', weight: 400 },
+  { label: 'Poppins', family: 'Poppins', weight: 400 },
+  { label: 'Montserrat (Regular)', family: 'Montserrat', weight: 400 },
+  { label: 'Montserrat (Bold)', family: 'Montserrat', weight: 700 },
+  { label: 'Playfair Display', family: 'Playfair Display', weight: 400 },
+  { label: 'Open Sans (Light)', family: 'Open Sans', weight: 300 },
+];
+
+const fontKey = (family: string, weight: number) => `${family}@@${weight}`;
 
 function defaultDefinition(): CarouselTemplateDefinitionV1 {
   return {
@@ -22,7 +31,7 @@ function defaultDefinition(): CarouselTemplateDefinitionV1 {
         assets: [],
       },
     ],
-    allowedFonts: FONT_OPTIONS,
+    allowedFonts: FONT_OPTIONS.map((f) => f.family),
   };
 }
 
@@ -79,16 +88,20 @@ export default function TemplateEditorModal(props: {
   const [definition, setDefinition] = useState<CarouselTemplateDefinitionV1>(props.currentTemplateSnapshot || defaultDefinition());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedPulse, setSavedPulse] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [layers, setLayers] = useState<Array<{ id: string; type: string; name: string; zIndex: number }>>([]);
+  const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingLayerName, setEditingLayerName] = useState<string>('');
+  const [ctxMenu, setCtxMenu] = useState<null | { x: number; y: number; layerId: string }>(null);
+  const [ctxFont, setCtxFont] = useState<string>(fontKey('Inter', 400));
+  const [ctxSize, setCtxSize] = useState<number>(36);
+  const [ctxItalic, setCtxItalic] = useState(false);
 
   const [newTemplateName, setNewTemplateName] = useState('Dr Nick IG');
 
-  const [displayName, setDisplayName] = useState('Dr. Nick');
-  const [handle, setHandle] = useState('@drnick');
-  const [ctaText, setCtaText] = useState('READ MORE');
-
-  const [textFont, setTextFont] = useState('Inter');
-  const [textColor, setTextColor] = useState('#111827');
+  // Template text is edited directly on-canvas (layers), not via special form fields.
 
   const canEdit = useMemo(() => open, [open]);
 
@@ -98,26 +111,129 @@ export default function TemplateEditorModal(props: {
     setDefinition(props.currentTemplateSnapshot || defaultDefinition());
     setError(null);
     setTemplateName('');
+    setSavedPulse(false);
+    setSelectedLayerId(null);
+    setEditingLayerId(null);
+    setEditingLayerName('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Keyboard shortcuts (Template Editor only):
+  // - Cmd/Ctrl+Z: undo
+  // - Delete/Backspace: delete selected layer (not content region)
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Undo (Cmd/Ctrl+Z)
+      const isUndo = (e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey);
+      if (isUndo) {
+        e.preventDefault();
+        if (editingLayerId) return;
+        canvasRef.current?.undo?.();
+        const next = canvasRef.current?.exportDefinition() || definition;
+        setDefinition(next);
+        const nextLayers = canvasRef.current?.getLayers?.() || [];
+        setLayers(nextLayers.map((l: any) => ({ id: l.id, type: l.type, name: l.name, zIndex: l.zIndex ?? 0 })));
+        return;
+      }
+
+      // Delete selected layer
+      const isDelete = e.key === 'Backspace' || e.key === 'Delete';
+      if (isDelete) {
+        if (editingLayerId) return;
+        if (!selectedLayerId) return;
+        if (selectedLayerId === '__content_region__') return;
+        e.preventDefault();
+        canvasRef.current?.deleteLayer?.(selectedLayerId);
+        const next = canvasRef.current?.exportDefinition() || definition;
+        setDefinition(next);
+        const nextLayers = canvasRef.current?.getLayers?.() || [];
+        setLayers(nextLayers.map((l: any) => ({ id: l.id, type: l.type, name: l.name, zIndex: l.zIndex ?? 0 })));
+        setSelectedLayerId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, editingLayerId, selectedLayerId, definition]);
 
   useEffect(() => {
     if (!open) return;
     // When we have a template snapshot, hydrate canvas and text fields from it.
     const def = props.currentTemplateSnapshot || definition;
     const next = JSON.parse(JSON.stringify(def)) as CarouselTemplateDefinitionV1;
-    const dn = ensureTextAsset(next, 'display_name');
-    const h = ensureTextAsset(next, 'handle');
-    const cta = ensureTextAsset(next, 'cta_text');
-    setDisplayName(dn.text);
-    setHandle(h.text);
-    setCtaText(cta.text);
-    setTextFont(dn.style.fontFamily || 'Inter');
-    setTextColor(dn.style.fill || '#111827');
+    ensureTextAsset(next, 'display_name');
+    ensureTextAsset(next, 'handle');
+    ensureTextAsset(next, 'cta_text');
     setDefinition(next);
     canvasRef.current?.loadDefinition(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Refresh layers list (best-effort) when definition changes / after load/upload/save.
+  useEffect(() => {
+    if (!open) return;
+    const next = canvasRef.current?.getLayers?.() || [];
+    setLayers(next.map((l: any) => ({ id: l.id, type: l.type, name: l.name, zIndex: l.zIndex ?? 0 })));
+  }, [open, definition, activeTemplateId]);
+
+  const commitLayerRename = () => {
+    if (!editingLayerId) return;
+    const next = String(editingLayerName || '').trim();
+    if (!next) {
+      setEditingLayerId(null);
+      setEditingLayerName('');
+      return;
+    }
+    canvasRef.current?.renameLayer?.(editingLayerId, next);
+    const updated = canvasRef.current?.exportDefinition() || definition;
+    setDefinition(updated);
+    // Refresh layers from canvas/definition
+    const nextLayers = canvasRef.current?.getLayers?.() || [];
+    setLayers(nextLayers.map((l: any) => ({ id: l.id, type: l.type, name: l.name, zIndex: l.zIndex ?? 0 })));
+    setEditingLayerId(null);
+    setEditingLayerName('');
+  };
+
+  const closeCtxMenu = () => setCtxMenu(null);
+
+  const openTextContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
+    if (!layerId || layerId === '__content_region__') return;
+    const layer = layers.find((x) => x.id === layerId);
+    if (layer?.type !== 'text') return;
+
+    const style = canvasRef.current?.getTextLayerStyle?.(layerId);
+    if (!style) return;
+
+    const fam = style.fontFamily || 'Inter';
+    const weightRaw = style.fontWeight;
+    const weight =
+      typeof weightRaw === 'number'
+        ? weightRaw
+        : weightRaw === 'bold'
+        ? 700
+        : weightRaw === 'normal'
+        ? 400
+        : 400;
+    setCtxFont(fontKey(fam, weight));
+    setCtxSize(Number(style.fontSize || 36));
+    setCtxItalic(String(style.fontStyle || 'normal') === 'italic');
+    setCtxMenu({ x: clientX, y: clientY, layerId });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    if (!ctxMenu) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeCtxMenu();
+    };
+    const onClick = () => closeCtxMenu();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('mousedown', onClick);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('mousedown', onClick);
+    };
+  }, [open, ctxMenu]);
 
   const authHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -177,29 +293,11 @@ export default function TemplateEditorModal(props: {
     }
     setSaving(true);
     setError(null);
+    setSavedPulse(false);
     try {
       const exported = canvasRef.current?.exportDefinition() || definition;
-      const slide0 = exported.slides.find(s => s.slideIndex === 0) || exported.slides[0];
-
-      // Sync the 3 key text assets from form inputs.
-      const dn = ensureTextAsset(exported, 'display_name');
-      const h = ensureTextAsset(exported, 'handle');
-      const cta = ensureTextAsset(exported, 'cta_text');
-      dn.text = displayName;
-      h.text = handle;
-      cta.text = ctaText;
-
-      dn.style = { ...(dn.style || {}), fontFamily: textFont, fill: textColor };
-      h.style = { ...(h.style || {}), fontFamily: textFont, fill: textColor };
-      cta.style = { ...(cta.style || {}), fontFamily: textFont, fill: textColor };
-
-      slide0.assets = slide0.assets.map((a: any) => {
-        if (a.type !== 'text') return a;
-        if (a.kind === 'display_name') return dn;
-        if (a.kind === 'handle') return h;
-        if (a.kind === 'cta_text') return cta;
-        return a;
-      });
+      // NOTE: Template text layers are now treated as normal layers on the canvas.
+      // We do not "sync" special fields (display_name/handle/cta_text) from form inputs anymore.
 
       const headers = await authHeaders();
       const res = await fetch('/api/marketing/carousel/templates/update', {
@@ -216,6 +314,8 @@ export default function TemplateEditorModal(props: {
       setDefinition(exported);
       props.onTemplateSaved(activeTemplateId, exported);
       props.onRefreshTemplates();
+      setSavedPulse(true);
+      window.setTimeout(() => setSavedPulse(false), 1000);
     } catch (e: any) {
       setError(e?.message || 'Failed to save template');
     } finally {
@@ -316,7 +416,7 @@ export default function TemplateEditorModal(props: {
                 className="px-3 py-2 border border-gray-300 rounded bg-white text-sm font-medium text-black disabled:text-black"
                 disabled={loading || saving}
               >
-                <option value="">(select template)</option>
+                <option value="">Select Template</option>
                 {props.templates.map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
@@ -391,33 +491,163 @@ export default function TemplateEditorModal(props: {
               </div>
 
               <div className="border-t pt-3">
-                <div className="text-sm font-medium text-black mb-2">Template text</div>
-                <div className="space-y-2">
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">Display name</label>
-                    <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="w-full px-3 py-2 border rounded text-sm text-black placeholder:text-black/50" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">Handle</label>
-                    <input value={handle} onChange={(e) => setHandle(e.target.value)} className="w-full px-3 py-2 border rounded text-sm text-black placeholder:text-black/50" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">CTA text</label>
-                    <input value={ctaText} onChange={(e) => setCtaText(e.target.value)} className="w-full px-3 py-2 border rounded text-sm text-black placeholder:text-black/50" />
-                  </div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm font-medium text-black">Layers</div>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
+                    disabled={saving}
+                    onClick={() => {
+                      canvasRef.current?.addTextLayer?.();
+                      const next = canvasRef.current?.exportDefinition() || definition;
+                      setDefinition(next);
+                    }}
+                  >
+                    + Text
+                  </button>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">Font</label>
-                    <select value={textFont} onChange={(e) => setTextFont(e.target.value)} className="w-full px-3 py-2 border rounded text-sm text-black">
-                      {FONT_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-black mb-1">Color</label>
-                    <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} className="w-full h-10 border rounded" />
-                  </div>
+                <div className="border border-gray-200 rounded bg-white max-h-56 overflow-y-auto">
+                  {layers.length === 0 ? (
+                    <div className="p-3 text-sm text-black/60">No layers yet.</div>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {layers.map((l) => (
+                        <div
+                          key={l.id}
+                          className={[
+                            "w-full px-3 py-2 text-sm text-black hover:bg-gray-50 flex items-center justify-between gap-2",
+                            selectedLayerId === l.id ? "bg-gray-50" : "",
+                          ].join(" ")}
+                          onContextMenu={(e) => {
+                            // Right-click / two-finger click on a text layer row opens the Text Settings menu.
+                            if (l.type !== 'text') return;
+                            if (l.id === '__content_region__') return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSelectedLayerId(l.id);
+                            canvasRef.current?.selectLayer?.(l.id);
+                            openTextContextMenuForLayer(l.id, e.clientX, e.clientY);
+                          }}
+                          onDoubleClick={(e) => {
+                            // Double-click a TEXT layer row to start editing the text on canvas.
+                            // This works even if macOS/Chrome doesn't trigger dblclick reliably on the Fabric object.
+                            if (editingLayerId) return;
+                            if (l.type !== 'text') return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSelectedLayerId(l.id);
+                            canvasRef.current?.selectLayer?.(l.id);
+                            canvasRef.current?.startTextEditing?.(l.id);
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="flex-1 text-left truncate"
+                            onClick={() => {
+                              setSelectedLayerId(l.id);
+                              canvasRef.current?.selectLayer?.(l.id);
+                            }}
+                          >
+                            {editingLayerId === l.id ? (
+                              <input
+                                autoFocus
+                                value={editingLayerName}
+                                onChange={(e) => setEditingLayerName(e.target.value)}
+                                onBlur={commitLayerRename}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    commitLayerRename();
+                                  }
+                                  if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    setEditingLayerId(null);
+                                    setEditingLayerName('');
+                                  }
+                                }}
+                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm text-black bg-white"
+                              />
+                            ) : (
+                              <span
+                                className="truncate"
+                                onClick={(e) => {
+                                  // Single-click renaming, per spec.
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setEditingLayerId(l.id);
+                                  setEditingLayerName(l.name);
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setEditingLayerId(l.id);
+                                  setEditingLayerName(l.name);
+                                }}
+                                title="Click to rename"
+                              >
+                                {l.name}
+                              </span>
+                            )}
+                            <span className="ml-2 text-xs text-black/50">{l.type}</span>
+                          </button>
+                          {l.id !== "__content_region__" ? (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                className="h-7 w-7 border border-gray-200 rounded text-black/70 hover:bg-white"
+                                title="Move up"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  canvasRef.current?.reorderLayer?.(l.id, "up");
+                                  const next = canvasRef.current?.exportDefinition() || definition;
+                                  setDefinition(next);
+                                }}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                className="h-7 w-7 border border-gray-200 rounded text-black/70 hover:bg-white"
+                                title="Move down"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  canvasRef.current?.reorderLayer?.(l.id, "down");
+                                  const next = canvasRef.current?.exportDefinition() || definition;
+                                  setDefinition(next);
+                                }}
+                              >
+                                ↓
+                              </button>
+                              {selectedLayerId === l.id ? (
+                                <button
+                                  type="button"
+                                  className="h-7 w-7 border border-gray-200 rounded text-red-700 hover:bg-red-50"
+                                  title="Delete"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    canvasRef.current?.deleteLayer?.(l.id);
+                                    const next = canvasRef.current?.exportDefinition() || definition;
+                                    setDefinition(next);
+                                    const nextLayers = canvasRef.current?.getLayers?.() || [];
+                                    setLayers(nextLayers.map((x: any) => ({ id: x.id, type: x.type, name: x.name, zIndex: x.zIndex ?? 0 })));
+                                    setSelectedLayerId(null);
+                                  }}
+                                >
+                                  🗑
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 text-xs text-black/60">
+                  Click a layer to select it on the canvas.
                 </div>
               </div>
             </div>
@@ -436,6 +666,9 @@ export default function TemplateEditorModal(props: {
               >
                 {saving ? 'Saving...' : 'Save Template'}
               </button>
+              {savedPulse ? (
+                <span className="text-xs font-semibold text-green-700 animate-pulse">Saved ✓</span>
+              ) : null}
               <button
                 onClick={() => {
                   if (!activeTemplateId) return;
@@ -454,7 +687,157 @@ export default function TemplateEditorModal(props: {
           </div>
 
           <div className="flex items-start justify-center">
-            <TemplateEditorCanvas ref={canvasRef} initialDefinition={definition} />
+            <div
+              className="relative"
+              onContextMenu={(e) => {
+                // Context menu for text styling in Template Editor (right-click / two-finger click).
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Prefer current Fabric selection if available; fallback to selected layer in the list.
+                const activeId = canvasRef.current?.getActiveLayerId?.() || selectedLayerId;
+                if (!activeId) return;
+                openTextContextMenuForLayer(activeId, e.clientX, e.clientY);
+              }}
+            >
+              <TemplateEditorCanvas ref={canvasRef} initialDefinition={definition} />
+
+              {ctxMenu ? (
+                <div
+                  className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-[260px]"
+                  style={{ left: ctxMenu.x, top: ctxMenu.y }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="text-xs font-semibold text-black mb-2">Text settings</div>
+
+                  <div className="space-y-2">
+                    <div>
+                      <div className="text-[11px] font-semibold text-black/70 mb-1">Font</div>
+                      <select
+                        className="w-full h-9 rounded-md border border-gray-200 px-2 text-sm text-black bg-white"
+                        value={ctxFont}
+                        onChange={(e) => {
+                          const raw = e.target.value || '';
+                          setCtxFont(raw);
+                          const [family, w] = raw.split('@@');
+                          const weight = Number(w);
+                          canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, {
+                            fontFamily: family,
+                            fontWeight: Number.isFinite(weight) ? weight : 400,
+                          });
+                          const next = canvasRef.current?.exportDefinition() || definition;
+                          setDefinition(next);
+                        }}
+                      >
+                        {FONT_OPTIONS.map((f) => (
+                          <option key={fontKey(f.family, f.weight)} value={fontKey(f.family, f.weight)}>
+                            {f.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="text-[11px] font-semibold text-black/70 mb-1">Size</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="h-9 w-9 border border-gray-200 rounded text-black/70"
+                          onClick={() => {
+                            const nextSize = Math.max(1, Math.round((ctxSize || 1) - 1));
+                            setCtxSize(nextSize);
+                            canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, { fontSize: nextSize });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        >
+                          −
+                        </button>
+                        <input
+                          className="h-9 w-20 border border-gray-200 rounded px-2 text-sm text-black"
+                          value={String(ctxSize ?? '')}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            setCtxSize(n);
+                          }}
+                          onBlur={() => {
+                            const n = Number(ctxSize);
+                            if (!Number.isFinite(n)) return;
+                            const nextSize = Math.max(1, Math.round(n));
+                            setCtxSize(nextSize);
+                            canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, { fontSize: nextSize });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="h-9 w-9 border border-gray-200 rounded text-black/70"
+                          onClick={() => {
+                            const nextSize = Math.max(1, Math.round((ctxSize || 1) + 1));
+                            setCtxSize(nextSize);
+                            canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, { fontSize: nextSize });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        className="h-9 px-3 border border-gray-200 rounded text-sm text-black"
+                        onClick={() => {
+                          const style = canvasRef.current?.getTextLayerStyle?.(ctxMenu.layerId);
+                          const cur = style?.fontWeight;
+                          const isBold = cur === 'bold' || (typeof cur === 'number' && cur >= 600);
+                          const nextWeight = isBold ? 400 : 700;
+                          canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, { fontWeight: nextWeight });
+                          const next = canvasRef.current?.exportDefinition() || definition;
+                          setDefinition(next);
+                        }}
+                      >
+                        Bold
+                      </button>
+                      <button
+                        type="button"
+                        className="h-9 px-3 border border-gray-200 rounded text-sm text-black"
+                        onClick={() => {
+                          const nextItalic = !ctxItalic;
+                          setCtxItalic(nextItalic);
+                          canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, { fontStyle: nextItalic ? 'italic' : 'normal' });
+                          const next = canvasRef.current?.exportDefinition() || definition;
+                          setDefinition(next);
+                        }}
+                      >
+                        Italic
+                      </button>
+                      <button
+                        type="button"
+                        className="h-9 px-3 border border-gray-200 rounded text-sm text-black"
+                        onClick={() => {
+                          const [family, w] = (ctxFont || '').split('@@');
+                          const weight = Number(w);
+                          canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, {
+                            fontFamily: family || 'Inter',
+                            fontWeight: Number.isFinite(weight) ? weight : 400,
+                            fontStyle: 'normal',
+                          });
+                          setCtxItalic(false);
+                          const next = canvasRef.current?.exportDefinition() || definition;
+                          setDefinition(next);
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

@@ -282,6 +282,10 @@ export default function AICarouselPageVision() {
                     backgroundColor={inputData.settings?.backgroundColor || '#ffffff'}
                     textColor={inputData.settings?.textColor || '#000000'}
                     templateSnapshot={selectedTemplateSnapshot}
+                    headlineFontFamily={headlineFontFamily}
+                    bodyFontFamily={bodyFontFamily}
+                    headlineFontWeight={headlineFontWeight}
+                    bodyFontWeight={bodyFontWeight}
                   />
                 </div>
                 

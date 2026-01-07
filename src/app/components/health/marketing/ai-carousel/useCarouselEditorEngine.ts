@@ -43,6 +43,9 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
   // Project-wide typography (persisted with the carousel; canvas-only).
   const [headlineFontFamily, setHeadlineFontFamily] = useState<string>('Inter, sans-serif');
   const [bodyFontFamily, setBodyFontFamily] = useState<string>('Inter, sans-serif');
+  // NOTE: weights are not yet persisted to DB; used for UI selection (Phase 2) and canvas rendering (Phase 3).
+  const [headlineFontWeight, setHeadlineFontWeight] = useState<number>(700);
+  const [bodyFontWeight, setBodyFontWeight] = useState<number>(400);
 
   // Saved carousels list
   const [savedCarousels, setSavedCarousels] = useState<SavedCarousel[]>([]);
@@ -213,6 +216,8 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
       // Restore typography (project-wide)
       setHeadlineFontFamily(carousel.headlineFontFamily || 'Inter, sans-serif');
       setBodyFontFamily(carousel.bodyFontFamily || 'Inter, sans-serif');
+      setHeadlineFontWeight(700);
+      setBodyFontWeight(400);
 
       // Restore template snapshot (render from snapshot only)
       if (carousel.templateId && carousel.templateSnapshot) {
@@ -286,6 +291,8 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
     selectedTemplateSnapshot,
     headlineFontFamily,
     bodyFontFamily,
+    headlineFontWeight,
+    bodyFontWeight,
   ]);
 
   const performAutoSave = useCallback(async (
@@ -785,6 +792,8 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
     templateEditorOpen,
     headlineFontFamily,
     bodyFontFamily,
+    headlineFontWeight,
+    bodyFontWeight,
 
     // setters (used by UI)
     setShowDropdown,
@@ -803,6 +812,8 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
     setTemplateEditorOpen,
     setHeadlineFontFamily,
     setBodyFontFamily,
+    setHeadlineFontWeight,
+    setBodyFontWeight,
 
     // actions
     addLog,

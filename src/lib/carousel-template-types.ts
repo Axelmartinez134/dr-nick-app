@@ -20,7 +20,8 @@ export interface TemplateRect {
 export interface TemplateTextStyle {
   fontFamily: string;
   fontSize: number;
-  fontWeight?: 'normal' | 'bold';
+  // Fabric accepts string or numeric weights. We support numeric weights to allow entries like Open Sans Light (300).
+  fontWeight?: 'normal' | 'bold' | number;
   fill: string; // hex color
   textAlign?: 'left' | 'center' | 'right';
 }
@@ -58,6 +59,9 @@ export type TemplateAsset = TemplateImageAsset | TemplateTextAsset;
 export interface TemplateSlideDefinitionV1 {
   slideIndex: number; // slide 1 is 0
   contentRegion: TemplateRect; // OUTER safe box; placement clamps use inner padding
+  // Optional friendly name for the content region layer in the Template Editor.
+  // Stored in the template definition JSONB for persistence.
+  contentRegionName?: string;
   assets: TemplateAsset[];
 }
 

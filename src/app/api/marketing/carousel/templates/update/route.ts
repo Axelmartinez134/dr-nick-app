@@ -73,11 +73,19 @@ export async function POST(request: NextRequest) {
   if (typeof body.name === 'string') patch.name = body.name;
   if (body.definition !== undefined) patch.definition = body.definition;
 
-  const { error } = await authedClient
+  // IMPORTANT:
+  // The DB RLS policy for carousel_templates UPDATE is `(is_admin_user() AND auth.uid() = owner_user_id)`.
+  // Even though editor_users are included in is_admin_user(), that owner check prevents collaborative edits.
+  // We intentionally enforce editor access above, then use a service role client to perform the update.
+  const svc = serviceClient();
+  const client = svc || authedClient;
+
+  const { data: updated, error } = await client
     .from('carousel_templates')
     .update(patch)
     .eq('id', body.id)
-    .eq('owner_user_id', user.id);
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     const msg = String(error.message || 'Update failed');
@@ -85,6 +93,13 @@ export async function POST(request: NextRequest) {
       ? `${msg} (Hint: ensure your admin user exists in admin_users and that the 20251225_000001_create_carousel_templates.sql migration has been applied.)`
       : msg;
     return NextResponse.json({ success: false, error: hint } as UpdateTemplateResponse, { status: 400 });
+  }
+
+  if (!updated?.id) {
+    return NextResponse.json(
+      { success: false, error: 'Template not updated (permission or not found)' } as UpdateTemplateResponse,
+      { status: 400 }
+    );
   }
 
   return NextResponse.json({ success: true } as UpdateTemplateResponse);
