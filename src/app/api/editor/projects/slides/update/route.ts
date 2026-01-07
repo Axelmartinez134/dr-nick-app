@@ -10,6 +10,8 @@ type Body = {
   slideIndex: number;
   headline?: string | null;
   body?: string | null;
+  layoutSnapshot?: any | null;
+  inputSnapshot?: any | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -34,6 +36,8 @@ export async function POST(request: NextRequest) {
   const patch: any = {};
   if (body.headline !== undefined) patch.headline = body.headline;
   if (body.body !== undefined) patch.body = body.body;
+  if (body.layoutSnapshot !== undefined) patch.layout_snapshot = body.layoutSnapshot;
+  if (body.inputSnapshot !== undefined) patch.input_snapshot = body.inputSnapshot;
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ success: false, error: 'No fields to update' }, { status: 400 });
   }
@@ -43,7 +47,7 @@ export async function POST(request: NextRequest) {
     .update(patch)
     .eq('project_id', body.projectId)
     .eq('slide_index', body.slideIndex)
-    .select('id, project_id, slide_index, headline, body, updated_at')
+    .select('id, project_id, slide_index, headline, body, layout_snapshot, input_snapshot, updated_at')
     .single();
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });

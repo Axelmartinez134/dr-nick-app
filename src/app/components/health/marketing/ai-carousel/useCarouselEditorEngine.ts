@@ -16,7 +16,10 @@ interface SavedCarousel {
 type SaveStatus = 'idle' | 'editing' | 'saving' | 'saved' | 'error';
 type RealignmentModel = 'claude' | 'gemini' | 'gemini-computational';
 
-export function useCarouselEditorEngine() {
+export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean }) {
+  // Legacy autosave writes into `ai_carousels` (single-slide). `/editor` uses `carousel_projects` instead,
+  // so we disable this there to avoid noisy save attempts and validation errors.
+  const enableLegacyAutoSave = opts?.enableLegacyAutoSave !== false;
   const canvasRef = useRef<any>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef(0);
@@ -232,6 +235,7 @@ export function useCarouselEditorEngine() {
   }, [addLog]);
 
   const triggerAutoSave = useCallback(() => {
+    if (!enableLegacyAutoSave) return;
     // Clear existing timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -272,7 +276,17 @@ export function useCarouselEditorEngine() {
         capturedBodyFontFamily
       );
     }, 2000);
-  }, [layoutData, inputData, currentCarouselId, carouselTitle, selectedTemplateId, selectedTemplateSnapshot, headlineFontFamily, bodyFontFamily]);
+  }, [
+    enableLegacyAutoSave,
+    layoutData,
+    inputData,
+    currentCarouselId,
+    carouselTitle,
+    selectedTemplateId,
+    selectedTemplateSnapshot,
+    headlineFontFamily,
+    bodyFontFamily,
+  ]);
 
   const performAutoSave = useCallback(async (
     forceNew = false,
@@ -427,10 +441,11 @@ export function useCarouselEditorEngine() {
 
   // Trigger auto-save when layout or input changes (after generation or user edits)
   useEffect(() => {
+    if (!enableLegacyAutoSave) return;
     if (layoutData && inputData) {
       triggerAutoSave();
     }
-  }, [layoutData, inputData, carouselTitle, triggerAutoSave]);
+  }, [enableLegacyAutoSave, layoutData, inputData, carouselTitle, triggerAutoSave]);
 
   const handleGenerate = useCallback(async (data: CarouselTextRequest) => {
     setLoading(true);
@@ -676,9 +691,16 @@ export function useCarouselEditorEngine() {
         addLog('⚠️ CHECK: Does any text Y overlap with image Y range?');
       }
 
-      // Preserve the image URL from the current layout
-      if (layoutData.imageUrl) {
-        result.layout.image.url = layoutData.imageUrl;
+      // Preserve the image URL from the current layout.
+      // In /editor we often restore layouts from snapshots where the base64 URL lives on `layout.image.url`
+      // (and `layoutData.imageUrl` may be null). If we don't carry this forward, the image can "disappear"
+      // after realign (new layout comes back with image bounds but no url).
+      const existingImageUrl =
+        (layoutData as any)?.layout?.image?.url ||
+        (layoutData as any)?.imageUrl ||
+        null;
+      if (existingImageUrl && result.layout.image) {
+        result.layout.image.url = existingImageUrl;
       }
       // CRITICAL: Never allow realign to move the user's image. Preserve prior image bounds if present.
       // Use the CURRENT image position measured from the canvas (this is the source of truth after dragging/resizing).

@@ -109,9 +109,12 @@ export async function POST(request: NextRequest) {
   }
 
   // VALIDATE INPUT
-  if (!body.headline || !body.body) {
-    console.error('[Realign API] ❌ Missing required fields: headline or body');
-    return NextResponse.json({ success: false, error: 'Headline and body are required' } as RealignResponse, { status: 400 });
+  const headlineTrimmed = (body.headline || '').trim();
+  const bodyTrimmed = (body.body || '').trim();
+  // Regular mode supports body-only copy. Realign should not hard-require a headline.
+  if (!bodyTrimmed) {
+    console.error('[Realign API] ❌ Missing required field: body');
+    return NextResponse.json({ success: false, error: 'Body is required' } as RealignResponse, { status: 400 });
   }
 
   if (!body.canvasScreenshot || !body.canvasScreenshot.startsWith('data:image/png;base64,')) {
@@ -160,8 +163,8 @@ export async function POST(request: NextRequest) {
         : null;
 
       const { layout: wrapLayout, meta } = wrapFlowLayout(
-        body.headline.trim(),
-        body.body.trim(),
+        headlineTrimmed,
+        bodyTrimmed,
         body.imagePosition,
         {
           // If a template provides a contentRegion, we constrain layout to that inset rect.
@@ -210,8 +213,8 @@ export async function POST(request: NextRequest) {
       // Gemini with vision
       console.log('[Realign API] 👁️ Using Gemini VISION analysis');
       layout = await realignWithGemini(
-        body.headline.trim(),
-        body.body.trim(),
+        headlineTrimmed,
+        bodyTrimmed,
         body.canvasScreenshot,
         body.imagePosition
       );

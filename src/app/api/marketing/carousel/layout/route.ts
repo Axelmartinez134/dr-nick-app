@@ -71,6 +71,8 @@ export async function POST(request: NextRequest) {
 
     // Parse and validate request body
     const body = await request.json() as CarouselTextRequest;
+    const headlineTrimmed = (body.headline || '').trim();
+    const bodyTrimmed = (body.body || '').trim();
     console.log('[API] 📝 Request body:', {
       headlineLength: body.headline?.length,
       bodyLength: body.body?.length,
@@ -78,15 +80,17 @@ export async function POST(request: NextRequest) {
       textColor: body.settings?.textColor,
     });
 
-    if (!body.headline || !body.headline.trim()) {
-      console.log('[API] ❌ Missing headline');
+    // Regular mode supports body-only copy and always uses templates.
+    // Keep headline required for the legacy non-template flow.
+    if (!headlineTrimmed && !body.templateId) {
+      console.log('[API] ❌ Missing headline (non-template flow)');
       return NextResponse.json(
         { success: false, error: 'Headline is required' } as LayoutResponse,
         { status: 400 }
       );
     }
 
-    if (!body.body || !body.body.trim()) {
+    if (!bodyTrimmed) {
       console.log('[API] ❌ Missing body');
       return NextResponse.json(
         { success: false, error: 'Body text is required' } as LayoutResponse,
@@ -103,7 +107,7 @@ export async function POST(request: NextRequest) {
     console.log('[API] ✨ Native transparent background - no post-processing needed!');
     console.log('[API] 📝 Custom prompt provided?', !!body.settings?.imagePrompt);
     
-    const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(body.headline.trim(), body.body.trim());
+    const imagePrompt = body.settings?.imagePrompt || createMedicalImagePrompt(headlineTrimmed, bodyTrimmed);
     console.log('[API] 📝 Final image prompt length:', imagePrompt.length, 'characters (max 32000)');
     
     try {
@@ -190,8 +194,8 @@ export async function POST(request: NextRequest) {
       console.log('[API] 📐 Template imagePosition (deterministic):', imagePosition);
 
       const { layout: wrapLayout, meta } = wrapFlowLayout(
-        body.headline.trim(),
-        body.body.trim(),
+        headlineTrimmed,
+        bodyTrimmed,
         imagePosition,
         {
           contentRect: inset,
@@ -237,8 +241,8 @@ export async function POST(request: NextRequest) {
     console.log('[API] 📝 Body:', body.body.substring(0, 50) + '...');
     
       layout = await decideVisionBasedLayout(
-      body.headline.trim(),
-      body.body.trim(),
+      headlineTrimmed,
+      bodyTrimmed,
         imageBase64!,
       imagePosition
     );

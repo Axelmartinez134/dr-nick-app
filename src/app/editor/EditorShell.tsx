@@ -32,6 +32,7 @@ function SlideCard({
         "w-[420px] h-[560px]", // 1080x1440 scaled (3:4)
         active ? "ring-2 ring-violet-500 border-violet-300" : "",
         !active ? "opacity-75" : "",
+        !active ? "cursor-pointer" : "",
       ].join(" ")}
       aria-label={`Slide ${index}`}
     >
@@ -79,6 +80,8 @@ export default function EditorShell() {
   const projectSaveTimeoutRef = useRef<number | null>(null);
   const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const slideSaveTimeoutRef = useRef<number | null>(null);
+  const layoutDirtyRef = useRef(false);
+  const layoutSaveTimeoutRef = useRef<number | null>(null);
 
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
@@ -161,7 +164,7 @@ export default function EditorShell() {
     handleNewCarousel,
     addLog,
     loadTemplatesList,
-  } = useCarouselEditorEngine();
+  } = useCarouselEditorEngine({ enableLegacyAutoSave: false });
 
   // Project-wide colors (shared across all slides; affects canvas + generation).
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
@@ -185,6 +188,9 @@ export default function EditorShell() {
     error: string | null;
     debugLogs: string[];
     debugScreenshot: string | null;
+    // Last-saved text values (used to avoid saving on slide-switch / hydration).
+    savedHeadline: string;
+    savedBody: string;
     draftHeadline: string;
     draftBody: string;
     draftBg: string;
@@ -198,6 +204,8 @@ export default function EditorShell() {
     error: null,
     debugLogs: [],
     debugScreenshot: null,
+    savedHeadline: "",
+    savedBody: "",
     draftHeadline: "",
     draftBody: "",
     draftBg: "#ffffff",
@@ -218,20 +226,65 @@ export default function EditorShell() {
   useEffect(() => {
     if (!currentProjectId) return;
     if (switchingSlides) return;
+    const cur = slidesRef.current[activeSlideIndex];
+    if (!cur) return;
+    // Don't save if the user hasn't actually changed text (prevents save-on-slide-switch).
+    const desiredSavedHeadline = templateTypeId === "regular" ? "" : (cur.savedHeadline || "");
+    const desiredSavedBody = cur.savedBody || "";
+    if ((cur.draftHeadline || "") === desiredSavedHeadline && (cur.draftBody || "") === desiredSavedBody) return;
     // Debounced save on every change (overwrite everything model)
     if (slideSaveTimeoutRef.current) window.clearTimeout(slideSaveTimeoutRef.current);
     slideSaveTimeoutRef.current = window.setTimeout(() => {
       const headlineVal = templateTypeId === "regular" ? null : (activeDraftHeadline || null);
-      void saveSlideText(activeSlideIndex, {
-        headline: headlineVal,
-        body: activeDraftBody || null,
-      });
+      void (async () => {
+        const ok = await saveSlidePatch(activeSlideIndex, {
+          headline: headlineVal,
+          body: activeDraftBody || null,
+        });
+        if (!ok) return;
+        // Mark text as clean after a successful save.
+        setSlides((prev) =>
+          prev.map((s, i) =>
+            i !== activeSlideIndex
+              ? s
+              : {
+                  ...s,
+                  savedHeadline: templateTypeId === "regular" ? "" : (s.draftHeadline || ""),
+                  savedBody: s.draftBody || "",
+                }
+          )
+        );
+      })();
     }, 600);
     return () => {
       if (slideSaveTimeoutRef.current) window.clearTimeout(slideSaveTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId, activeSlideIndex, activeDraftHeadline, activeDraftBody, templateTypeId, switchingSlides]);
+
+  // Persist layout snapshots only when an explicit layout action happened (Generate Layout / Realign / Undo).
+  useEffect(() => {
+    if (!currentProjectId) return;
+    if (switchingSlides) return;
+    if (!layoutDirtyRef.current) return;
+    if (!layoutData?.layout || !inputData) return;
+
+    if (layoutSaveTimeoutRef.current) window.clearTimeout(layoutSaveTimeoutRef.current);
+    layoutSaveTimeoutRef.current = window.setTimeout(() => {
+      void (async () => {
+        const ok = await saveSlidePatch(activeSlideIndex, {
+          layoutSnapshot: layoutData.layout,
+          inputSnapshot: inputData,
+        });
+        if (ok) layoutDirtyRef.current = false;
+      })();
+    }, 400);
+
+    return () => {
+      if (layoutSaveTimeoutRef.current) window.clearTimeout(layoutSaveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, activeSlideIndex, layoutData, inputData, switchingSlides]);
 
   // Enforce project-wide BG/Text across all slide drafts.
   useEffect(() => {
@@ -375,16 +428,35 @@ export default function EditorShell() {
     setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
     setProjectPromptSnapshot(project.prompt_snapshot || '');
 
-    setSlides((prev) =>
-      prev.map((s, i) => {
-        const row = loadedSlides.find((r: any) => r.slide_index === i);
-        return {
-          ...s,
-          draftHeadline: row?.headline || '',
-          draftBody: row?.body || '',
-        };
-      })
-    );
+    const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
+      const prev = slidesRef.current[i] || initSlide();
+      const row = loadedSlides.find((r: any) => r.slide_index === i);
+      const layoutSnap = row?.layout_snapshot ?? null;
+      const inputSnap = row?.input_snapshot ?? null;
+      const loadedHeadline = row?.headline || '';
+      const loadedBody = row?.body || '';
+      return {
+        ...prev,
+        savedHeadline: loadedHeadline,
+        savedBody: loadedBody,
+        draftHeadline: loadedHeadline,
+        draftBody: loadedBody,
+        layoutData: layoutSnap ? { success: true, layout: layoutSnap, imageUrl: null } : null,
+        inputData: inputSnap || null,
+        layoutHistory: [],
+      };
+    });
+    setSlides(nextSlides);
+    slidesRef.current = nextSlides;
+    setActiveSlideIndex(0);
+    // Restore slide 1 (index 0) snapshots into the engine immediately.
+    if (nextSlides[0]?.layoutData && nextSlides[0]?.inputData) {
+      setLayoutData(nextSlides[0].layoutData);
+      setInputData(nextSlides[0].inputData);
+      setLayoutHistory(nextSlides[0].layoutHistory || []);
+    } else {
+      handleNewCarousel();
+    }
   };
 
   const createNewProject = async (type: 'regular' | 'enhanced') => {
@@ -402,15 +474,31 @@ export default function EditorShell() {
     setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
     setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
     setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
-    setSlides((prev) =>
-      prev.map((s, i) => {
-        const row = slidesRows.find((r: any) => r.slide_index === i);
-        return { ...s, draftHeadline: row?.headline || '', draftBody: row?.body || '' };
-      })
-    );
+    const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
+      const prev = slidesRef.current[i] || initSlide();
+      const row = slidesRows.find((r: any) => r.slide_index === i);
+      const loadedHeadline = row?.headline || '';
+      const loadedBody = row?.body || '';
+      return {
+        ...prev,
+        savedHeadline: loadedHeadline,
+        savedBody: loadedBody,
+        draftHeadline: loadedHeadline,
+        draftBody: loadedBody,
+        layoutData: null,
+        inputData: null,
+        layoutHistory: [],
+        error: null,
+        debugLogs: [],
+        debugScreenshot: null,
+      };
+    });
+    setSlides(nextSlides);
+    slidesRef.current = nextSlides;
     setActiveSlideIndex(0);
     setProjectsDropdownOpen(false);
     await refreshProjectsList();
+    handleNewCarousel();
   };
 
   const saveProjectMeta = async (patch: { title?: string; caption?: string | null }) => {
@@ -429,8 +517,16 @@ export default function EditorShell() {
     }
   };
 
-  const saveSlideText = async (slideIndex: number, patch: { headline?: string | null; body?: string | null }) => {
-    if (!currentProjectId) return;
+  const saveSlidePatch = async (
+    slideIndex: number,
+    patch: {
+      headline?: string | null;
+      body?: string | null;
+      layoutSnapshot?: any | null;
+      inputSnapshot?: any | null;
+    }
+  ): Promise<boolean> => {
+    if (!currentProjectId) return false;
     setSlideSaveStatus('saving');
     try {
       await fetchJson('/api/editor/projects/slides/update', {
@@ -439,9 +535,11 @@ export default function EditorShell() {
       });
       setSlideSaveStatus('saved');
       window.setTimeout(() => setSlideSaveStatus('idle'), 1200);
+      return true;
     } catch {
       setSlideSaveStatus('error');
       window.setTimeout(() => setSlideSaveStatus('idle'), 2000);
+      return false;
     }
   };
 
@@ -699,10 +797,38 @@ export default function EditorShell() {
           window.clearTimeout(slideSaveTimeoutRef.current);
           slideSaveTimeoutRef.current = null;
           const cur = slidesRef.current[activeSlideIndex] || initSlide();
-          void saveSlideText(activeSlideIndex, {
-            headline: cur.draftHeadline || null,
-            body: cur.draftBody || null,
-          });
+          // Only flush if text is actually dirty.
+          const desiredSavedHeadline = templateTypeId === "regular" ? "" : (cur.savedHeadline || "");
+          const desiredSavedBody = cur.savedBody || "";
+          if ((cur.draftHeadline || "") !== desiredSavedHeadline || (cur.draftBody || "") !== desiredSavedBody) {
+            void (async () => {
+              const ok = await saveSlidePatch(activeSlideIndex, {
+                headline: templateTypeId === "regular" ? null : (cur.draftHeadline || null),
+                body: cur.draftBody || null,
+              });
+              if (!ok) return;
+              setSlides((prev) =>
+                prev.map((s, i) =>
+                  i !== activeSlideIndex
+                    ? s
+                    : { ...s, savedHeadline: templateTypeId === "regular" ? "" : (s.draftHeadline || ""), savedBody: s.draftBody || "" }
+                )
+              );
+            })();
+          }
+        }
+        if (layoutSaveTimeoutRef.current) {
+          window.clearTimeout(layoutSaveTimeoutRef.current);
+          layoutSaveTimeoutRef.current = null;
+          if (layoutData?.layout && inputData && layoutDirtyRef.current) {
+            void (async () => {
+              const ok = await saveSlidePatch(activeSlideIndex, {
+                layoutSnapshot: layoutData.layout,
+                inputSnapshot: inputData,
+              });
+              if (ok) layoutDirtyRef.current = false;
+            })();
+          }
         }
       } catch {
         // ignore
@@ -1098,6 +1224,21 @@ export default function EditorShell() {
                         slideRefs[i].current = node;
                       }}
                       className="relative"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Select slide ${i + 1}`}
+                      onClick={() => {
+                        if (i === activeSlideIndex) return;
+                        if (switchingSlides || copyGenerating) return;
+                        void switchToSlide(i);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        if (i === activeSlideIndex) return;
+                        if (switchingSlides || copyGenerating) return;
+                        void switchToSlide(i);
+                      }}
                     >
                       <SlideCard index={i + 1} active={i === activeSlideIndex}>
                         <div
@@ -1124,7 +1265,9 @@ export default function EditorShell() {
                                 const tid = computeTemplateIdForSlide(i);
                                 const snap = (tid ? templateSnapshots[tid] : null) || null;
                                 const layoutForThisCard =
-                                  i === activeSlideIndex && layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT;
+                                  i === activeSlideIndex
+                                    ? (layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT)
+                                    : (slides[i]?.layoutData?.layout ? (slides[i].layoutData.layout as any) : EMPTY_LAYOUT);
 
                                 if (!tid) {
                                   return (
@@ -1243,6 +1386,7 @@ export default function EditorShell() {
                       !(slides[activeSlideIndex]?.draftBody || "").trim()
                     }
                     onClick={() => {
+                      layoutDirtyRef.current = true;
                       const cur = slidesRef.current[activeSlideIndex] || initSlide();
                       const req: CarouselTextRequest = {
                         headline: templateTypeId === "regular" ? "" : (cur.draftHeadline || "").trim(),
@@ -1276,14 +1420,20 @@ export default function EditorShell() {
 
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                    onClick={() => void handleRealign()}
+                    onClick={() => {
+                      layoutDirtyRef.current = true;
+                      void handleRealign();
+                    }}
                     disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
                   >
                     {realigning ? "Realigning..." : "Realign Text"}
                   </button>
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                    onClick={handleUndo}
+                    onClick={() => {
+                      layoutDirtyRef.current = true;
+                      handleUndo();
+                    }}
                     disabled={layoutHistory.length === 0 || realigning || switchingSlides || copyGenerating}
                   >
                     Undo

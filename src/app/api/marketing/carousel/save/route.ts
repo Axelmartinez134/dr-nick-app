@@ -80,7 +80,8 @@ export async function POST(request: NextRequest) {
   }
 
   // VALIDATE
-  if (!body.headline || !body.body || !body.layoutJson || !body.imageBase64 || !body.imagePosition) {
+  // Allow empty-string headline (Regular/body-only); only block truly missing fields.
+  if (body.headline == null || body.body == null || !body.layoutJson || !body.imageBase64 || !body.imagePosition) {
     console.error('[Save API] ❌ Missing required fields');
     return NextResponse.json({ success: false, error: 'Missing required fields' } as SaveCarouselResponse, { status: 400 });
   }
