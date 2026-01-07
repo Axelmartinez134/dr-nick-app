@@ -27,7 +27,7 @@ interface UploadTemplateAssetResponse {
 }
 
 export async function POST(req: NextRequest) {
-  // AUTH CHECK (admin-only)
+  // AUTH CHECK (editor users)
   const authHeader = req.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return NextResponse.json({ success: false, error: 'Unauthorized' } as UploadTemplateAssetResponse, { status: 401 });
@@ -38,13 +38,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Server configuration error' } as UploadTemplateAssetResponse, { status: 500 });
   }
 
-  const verificationClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const { data: { user }, error: userError } = await verificationClient.auth.getUser(token);
+  const authedClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data: { user }, error: userError } = await authedClient.auth.getUser();
   if (userError || !user) {
     return NextResponse.json({ success: false, error: 'Unauthorized' } as UploadTemplateAssetResponse, { status: 401 });
   }
-  if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return NextResponse.json({ success: false, error: 'Forbidden - Admin access required' } as UploadTemplateAssetResponse, { status: 403 });
+
+  // Must be an editor user (RLS on editor_users allows select self).
+  const { data: editorRow, error: editorErr } = await authedClient
+    .from('editor_users')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (editorErr || !editorRow?.user_id) {
+    return NextResponse.json({ success: false, error: 'Forbidden - Editor access required' } as UploadTemplateAssetResponse, { status: 403 });
   }
 
   const supabase = serviceClient();

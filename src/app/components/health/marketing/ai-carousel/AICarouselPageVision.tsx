@@ -115,7 +115,7 @@ export default function AICarouselPageVision() {
             <button
               onClick={() => setTemplateEditorOpen(true)}
               className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 text-sm font-medium flex items-center gap-2"
-              title="Open Template Editor (admin-only)"
+              title="Open Template Editor"
             >
               <span aria-hidden>⚙️</span>
               <span>Template Editor</span>

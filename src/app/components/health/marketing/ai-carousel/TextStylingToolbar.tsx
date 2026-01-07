@@ -153,13 +153,7 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
   };
 
   if (!selectionInfo) {
-    return (
-      <div className="bg-gray-100 rounded-lg p-4 text-center">
-        <p className="text-sm text-gray-600">
-          Select text to change styling
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return (

@@ -152,7 +152,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setEditorAccessChecked(false)
         lastEditorCheckUserIdRef.current = null
         setLoading(false)
-      })
+    })
 
     // Listen for auth changes
     const {

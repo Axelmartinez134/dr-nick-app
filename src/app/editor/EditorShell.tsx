@@ -8,6 +8,13 @@ import type { CarouselTextRequest } from "@/lib/carousel-types";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 
+// Minimal layout used to render templates even before any text/image layout is generated.
+const EMPTY_LAYOUT: any = {
+  canvas: { width: 1080, height: 1440 },
+  textLines: [],
+  margins: { top: 60, right: 60, bottom: 60, left: 60 },
+};
+
 function SlideCard({
   index,
   active,
@@ -61,6 +68,37 @@ export default function EditorShell() {
   const [activeSlideIndex, setActiveSlideIndex] = useState(0); // 0..5
   const [switchingSlides, setSwitchingSlides] = useState(false);
   const [topExporting, setTopExporting] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [projectTitle, setProjectTitle] = useState<string>("Untitled Project");
+  const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">("regular");
+  const [templateSettingsOpen, setTemplateSettingsOpen] = useState(false);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projects, setProjects] = useState<Array<{ id: string; title: string; template_type_id: string; updated_at: string }>>([]);
+  const [projectsDropdownOpen, setProjectsDropdownOpen] = useState(false);
+  const [projectSaveStatus, setProjectSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const projectSaveTimeoutRef = useRef<number | null>(null);
+  const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const slideSaveTimeoutRef = useRef<number | null>(null);
+
+  // Template type settings (global defaults + per-user overrides)
+  const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
+  const [templateTypeMappingSlide1, setTemplateTypeMappingSlide1] = useState<string | null>(null);
+  const [templateTypeMappingSlide2to5, setTemplateTypeMappingSlide2to5] = useState<string | null>(null);
+  const [templateTypeMappingSlide6, setTemplateTypeMappingSlide6] = useState<string | null>(null);
+
+  // Current project snapshots (so projects don't morph unexpectedly)
+  const [projectPromptSnapshot, setProjectPromptSnapshot] = useState<string>("");
+  const [projectMappingSlide1, setProjectMappingSlide1] = useState<string | null>(null);
+  const [projectMappingSlide2to5, setProjectMappingSlide2to5] = useState<string | null>(null);
+  const [projectMappingSlide6, setProjectMappingSlide6] = useState<string | null>(null);
+  const [templateSnapshots, setTemplateSnapshots] = useState<Record<string, any>>({});
+
+  const [promptModalOpen, setPromptModalOpen] = useState(false);
+  const promptDirtyRef = useRef(false);
+  const promptSaveTimeoutRef = useRef<number | null>(null);
+  const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [copyGenerating, setCopyGenerating] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   // Resizable left sidebar (desktop-only)
@@ -92,9 +130,6 @@ export default function EditorShell() {
     layoutData,
     inputData,
     layoutHistory,
-    currentCarouselId,
-    carouselTitle,
-    setCarouselTitle,
     saveStatus,
     saveError,
     debugLogs,
@@ -102,10 +137,6 @@ export default function EditorShell() {
     showDebugPreview,
     setShowDebugPreview,
     handleRetry,
-    savedCarousels,
-    loadingCarousels,
-    showDropdown,
-    setShowDropdown,
     realignmentModel,
     setRealignmentModel,
     templates,
@@ -121,15 +152,9 @@ export default function EditorShell() {
     setHeadlineFontFamily,
     setBodyFontFamily,
     loadTemplate,
-    loadCarousel,
-    performAutoSave,
     setLayoutData,
     setInputData,
     setLayoutHistory,
-    setCurrentCarouselId,
-    setSaveStatus,
-    setSaveError,
-    setError,
     handleGenerate,
     handleRealign,
     handleUndo,
@@ -143,15 +168,7 @@ export default function EditorShell() {
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
   const [captionDraft, setCaptionDraft] = useState<string>("");
 
-  const DEFAULT_REMIX_INSTRUCTIONS =
-    "I have an Instagram carousel post that has done very well and gone viral. The post is shared within the \"Viral Carousel Post\" group. I want you to remix the post so that I can post an entirely unique version of it, while ensuring that it maintains all elements that made it viral and highly resonant with the Instagram audience. No copy that you create should remain line by line verbatim compared to the original post shared within the \"Viral Carousel Post\". I want to have the copy you create for both the first slide AND the second slide of each carousel hook the viewer and entrap their attention such that they stop scrolling and continue to explore more of the new carousel post you have created for me. For slides 1-6, all the while using the attached \"'Challenging a commonly held belief' framework\" group, please create 10 different variations of the carousel post but only share with me the one amongst them that you analytically determine is the most likely to be resonant with the Instagram audience and go viral. In addition, list out all verbiage that would be present on each slide of a post and each caption that would accompany each post as well as ensuring that you retaining the core meaning and message being communicated through the original Instagram carousel I shared with you\n\nThe Carousel post will contain 6 slides so you should create the copy for each slide and each slide should have a Max of 250 characters of text in Tweet Like Text. Do not go past this character limitation it is very important to stay under 250 characters of text.\n\nSlide #1-2. The First Slide Copy should challenge a commonly held belief and should make an instagram user scrolling through their feed want to read what comes in next. The second slide copy should be just as jarring and make the Instagram user scrolling through their become absolutely obsessed with reading the rest of the carousel.\n\nSlide #3-#5. The following slides should be related to the subject matter.\n\nSlide #6. The final 6th slide should be a wrap up slide that uses the least amount of words of what was discussed and why what was discussed matters with a takeaway.\n\nDo:\nUse Newlines to separate Ideas in a slide to make it visually easy to read.\n\nDont do:\nNever use ** for any copy\nDon't surround your outputs with \"\" unless it is necessary to make a point within the sentence or to paraphrase something.\nuse dashes sparingly\nDon't ever use an em dash, \"—\", and always replace any appropriate usage of it with an ellipsis instead.\n\nIn addition, ensure each post variation has an accompanying post caption that is cohesive with and contributes more value to the carousel slides copy and is 900 characters long at most\n\nRemember, the copy of both the first slide and the second slide of the carousel, with the highest importance of entrapping the viewer's attention being placed on the first slide, is the most important to get the viewer to continue to read through the piece of content so I want to have the copy you create for both the first and second slide of the carousel hook the viewer and entrap their attention all the while using the instruction from the \"'Challenging a commonly held belief' framework\" group to keep it entirely cohesive with the rest of the copy for each of the slides.\n\nUsing the subject matter of the social media post deduced from the \"Viral Carousel Post\" group in addition to the copy for the slides you have created, generate the most effective social media caption hook for Instagram utilizing the '5-Caption Hooks' video within the connected \"Art Of Hooks\" group. Ensure that the social media caption hook presented is 125 characters or less.\n\nOnce again, ensure that the generated social media caption hook presented is 125 characters or less.\n\nEnd every caption with a line break followed by this:\n\"🫶🏾 Dr. Nick\n\n#metabolichealth #mindsetsmatter\"\n\nYou do not need to supply any hashtags.";
-
-  const [remixInstructions, setRemixInstructions] = useState<string>(DEFAULT_REMIX_INSTRUCTIONS);
-  const [remixLoaded, setRemixLoaded] = useState(false);
-  const remixSaveTimeoutRef = useRef<number | null>(null);
-  const [remixSaveStatus, setRemixSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [remixModalOpen, setRemixModalOpen] = useState(false);
-  const remixDirtyRef = useRef(false);
+  // Prompt text is now per Template Type (Regular/Enhanced) with global defaults + per-user overrides.
 
   // When a carousel is loaded/generated, sync project colors from it.
   useEffect(() => {
@@ -162,13 +179,9 @@ export default function EditorShell() {
   }, [inputData]);
 
   type SlideState = {
-    carouselId: string | null;
-    carouselTitle: string;
     layoutData: any | null;
     inputData: any | null;
     layoutHistory: any[];
-    saveStatus: any;
-    saveError: string | null;
     error: string | null;
     debugLogs: string[];
     debugScreenshot: string | null;
@@ -179,13 +192,9 @@ export default function EditorShell() {
   };
 
   const initSlide = (): SlideState => ({
-    carouselId: null,
-    carouselTitle: "Untitled Carousel",
     layoutData: null,
     inputData: null,
     layoutHistory: [],
-    saveStatus: "idle",
-    saveError: null,
     error: null,
     debugLogs: [],
     debugScreenshot: null,
@@ -202,6 +211,27 @@ export default function EditorShell() {
   useEffect(() => {
     slidesRef.current = slides;
   }, [slides]);
+
+  // Debounced autosave: active slide headline/body → Supabase (carousel_project_slides)
+  const activeDraftHeadline = slides[activeSlideIndex]?.draftHeadline || "";
+  const activeDraftBody = slides[activeSlideIndex]?.draftBody || "";
+  useEffect(() => {
+    if (!currentProjectId) return;
+    if (switchingSlides) return;
+    // Debounced save on every change (overwrite everything model)
+    if (slideSaveTimeoutRef.current) window.clearTimeout(slideSaveTimeoutRef.current);
+    slideSaveTimeoutRef.current = window.setTimeout(() => {
+      const headlineVal = templateTypeId === "regular" ? null : (activeDraftHeadline || null);
+      void saveSlideText(activeSlideIndex, {
+        headline: headlineVal,
+        body: activeDraftBody || null,
+      });
+    }, 600);
+    return () => {
+      if (slideSaveTimeoutRef.current) window.clearTimeout(slideSaveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, activeSlideIndex, activeDraftHeadline, activeDraftBody, templateTypeId, switchingSlides]);
 
   // Enforce project-wide BG/Text across all slide drafts.
   useEffect(() => {
@@ -226,82 +256,297 @@ export default function EditorShell() {
     }
   };
 
-  // Load + persist remix instructions (per-user) in Supabase.
+  async function getAuthToken(): Promise<string | null> {
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchJson(path: string, init?: RequestInit): Promise<any> {
+    const token = await getAuthToken();
+    const res = await fetch(path, {
+      ...(init || {}),
+      headers: {
+        ...(init?.headers || {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  const runGenerateCopy = async () => {
+    if (!currentProjectId) {
+      setCopyError('Create or load a project first.');
+      return;
+    }
+    setCopyError(null);
+    setCopyGenerating(true);
+    try {
+      const data = await fetchJson('/api/editor/projects/jobs/generate-copy', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: currentProjectId }),
+      });
+      const slidesOut = data.slides || [];
+      setSlides((prev) =>
+        prev.map((s, i) => {
+          const out = slidesOut[i];
+          if (!out) return s;
+          return {
+            ...s,
+            draftHeadline: out.headline ?? '',
+            draftBody: out.body ?? '',
+          };
+        })
+      );
+      if (typeof data.caption === 'string') setCaptionDraft(data.caption);
+      void refreshProjectsList();
+    } catch (e: any) {
+      setCopyError(e?.message || 'Generate Copy failed');
+    } finally {
+      setCopyGenerating(false);
+    }
+  };
+
+  const computeTemplateIdForSlide = (slideIndex: number) => {
+    const s1 = currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1;
+    const s25 = currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5;
+    const s6 = currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6;
+    if (slideIndex === 0) return s1;
+    if (slideIndex >= 1 && slideIndex <= 4) return s25;
+    return s6;
+  };
+
+  const ensureTemplateSnapshot = async (templateId: string | null) => {
+    if (!templateId) return;
+    if (templateSnapshots[templateId]) return;
+    try {
+      const { data, error } = await supabase
+        .from('carousel_templates')
+        .select('id, definition')
+        .eq('id', templateId)
+        .single();
+      if (error || !data) return;
+      setTemplateSnapshots((prev) => ({ ...prev, [templateId]: (data as any).definition }));
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadTemplateTypeEffective = async (type: 'regular' | 'enhanced') => {
+    const data = await fetchJson(`/api/editor/template-types/effective?type=${type}`);
+    const effective = data?.effective;
+    setTemplateTypePrompt(effective?.prompt || '');
+    setTemplateTypeMappingSlide1(effective?.slide1TemplateId ?? null);
+    setTemplateTypeMappingSlide2to5(effective?.slide2to5TemplateId ?? null);
+    setTemplateTypeMappingSlide6(effective?.slide6TemplateId ?? null);
+    // Reset prompt status on type switch
+    setPromptSaveStatus('idle');
+    promptDirtyRef.current = false;
+  };
+
+  const refreshProjectsList = async () => {
+    setProjectsLoading(true);
+    try {
+      const data = await fetchJson('/api/editor/projects/list');
+      setProjects(data.projects || []);
+    } finally {
+      setProjectsLoading(false);
+    }
+  };
+
+  const loadProject = async (projectId: string) => {
+    const data = await fetchJson(`/api/editor/projects/load?id=${encodeURIComponent(projectId)}`, { method: 'GET' });
+    const project = data.project;
+    const loadedSlides = data.slides || [];
+    setCurrentProjectId(project.id);
+    setProjectTitle(project.title || 'Untitled Project');
+    setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
+    setCaptionDraft(project.caption || '');
+
+    // Apply snapshot mapping for render/layout to avoid morphing
+    setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
+    setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
+    setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
+    setProjectPromptSnapshot(project.prompt_snapshot || '');
+
+    setSlides((prev) =>
+      prev.map((s, i) => {
+        const row = loadedSlides.find((r: any) => r.slide_index === i);
+        return {
+          ...s,
+          draftHeadline: row?.headline || '',
+          draftBody: row?.body || '',
+        };
+      })
+    );
+  };
+
+  const createNewProject = async (type: 'regular' | 'enhanced') => {
+    const data = await fetchJson('/api/editor/projects/create', {
+      method: 'POST',
+      body: JSON.stringify({ templateTypeId: type, title: 'Untitled Project' }),
+    });
+    const project = data.project;
+    const slidesRows = data.slides || [];
+    setCurrentProjectId(project.id);
+    setProjectTitle(project.title || 'Untitled Project');
+    setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
+    setCaptionDraft(project.caption || '');
+    setProjectPromptSnapshot(project.prompt_snapshot || '');
+    setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
+    setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
+    setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
+    setSlides((prev) =>
+      prev.map((s, i) => {
+        const row = slidesRows.find((r: any) => r.slide_index === i);
+        return { ...s, draftHeadline: row?.headline || '', draftBody: row?.body || '' };
+      })
+    );
+    setActiveSlideIndex(0);
+    setProjectsDropdownOpen(false);
+    await refreshProjectsList();
+  };
+
+  const saveProjectMeta = async (patch: { title?: string; caption?: string | null }) => {
+    if (!currentProjectId) return;
+    setProjectSaveStatus('saving');
+    try {
+      await fetchJson('/api/editor/projects/update', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: currentProjectId, ...patch }),
+      });
+      setProjectSaveStatus('saved');
+      window.setTimeout(() => setProjectSaveStatus('idle'), 1200);
+    } catch {
+      setProjectSaveStatus('error');
+      window.setTimeout(() => setProjectSaveStatus('idle'), 2000);
+    }
+  };
+
+  const saveSlideText = async (slideIndex: number, patch: { headline?: string | null; body?: string | null }) => {
+    if (!currentProjectId) return;
+    setSlideSaveStatus('saving');
+    try {
+      await fetchJson('/api/editor/projects/slides/update', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: currentProjectId, slideIndex, ...patch }),
+      });
+      setSlideSaveStatus('saved');
+      window.setTimeout(() => setSlideSaveStatus('idle'), 1200);
+    } catch {
+      setSlideSaveStatus('error');
+      window.setTimeout(() => setSlideSaveStatus('idle'), 2000);
+    }
+  };
+
+  const savePromptSettings = async () => {
+    // Simplified behavior: always write to global defaults (shared across editor users).
+    await fetchJson('/api/editor/template-types/defaults/update', {
+      method: 'POST',
+      body: JSON.stringify({
+        templateTypeId,
+        defaultPrompt: templateTypePrompt,
+        slide1TemplateId: templateTypeMappingSlide1,
+        slide2to5TemplateId: templateTypeMappingSlide2to5,
+        slide6TemplateId: templateTypeMappingSlide6,
+      }),
+    });
+  };
+
+  // Load template type defaults + saved projects on mount/login.
   useEffect(() => {
     if (!user?.id) return;
-    let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
-        // Don't show any "saved" state on initial load.
-        setRemixSaveStatus("idle");
-        remixDirtyRef.current = false;
-        const { data, error } = await supabase
-          .from("editor_preferences")
-          .select("carousel_remix_instructions")
-          .eq("user_id", user.id)
-          .maybeSingle();
-        if (cancelled) return;
-        if (error) {
-          console.warn("[EditorShell] Failed to load editor_preferences:", error);
-          setRemixLoaded(true);
-          return;
-        }
-        const text = (data as any)?.carousel_remix_instructions;
-        if (typeof text === "string" && text.length > 0) {
-          setRemixInstructions(text);
-          setRemixLoaded(true);
-          return;
-        }
-        // No row / empty: show default locally, but do NOT auto-write to Supabase.
-        setRemixInstructions(DEFAULT_REMIX_INSTRUCTIONS);
-        setRemixLoaded(true);
-      } catch (e) {
-        console.warn("[EditorShell] Failed to load/seed editor_preferences:", e);
-        setRemixLoaded(true);
+        await loadTemplateTypeEffective(templateTypeId);
+      } catch {
+        // ignore
       }
+      void refreshProjectsList();
     })();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Load effective settings when template type changes.
   useEffect(() => {
-    if (!user?.id || !remixLoaded) return;
-    // Only save after the user has actually changed the field in this session.
-    if (!remixDirtyRef.current) return;
-    // Debounced save on every change
-    if (remixSaveTimeoutRef.current) window.clearTimeout(remixSaveTimeoutRef.current);
-    remixSaveTimeoutRef.current = window.setTimeout(async () => {
+    if (!user?.id) return;
+    void loadTemplateTypeEffective(templateTypeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateTypeId, user?.id]);
+
+  // Keep active slide's template snapshot loaded.
+  useEffect(() => {
+    const tid = computeTemplateIdForSlide(activeSlideIndex);
+    void ensureTemplateSnapshot(tid);
+    if (tid) {
+      // Keep engine template selection in sync for layout endpoints.
+      void loadTemplate(tid);
+    } else {
+      setSelectedTemplateId(null);
+      setSelectedTemplateSnapshot(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSlideIndex, currentProjectId, projectMappingSlide1, projectMappingSlide2to5, projectMappingSlide6, templateTypeMappingSlide1, templateTypeMappingSlide2to5, templateTypeMappingSlide6]);
+
+  // Preload the 3 templates needed for the currently selected Template Type / project snapshot,
+  // so slides 1–6 can render their template visuals immediately.
+  useEffect(() => {
+    const ids = [
+      computeTemplateIdForSlide(0),
+      computeTemplateIdForSlide(1),
+      computeTemplateIdForSlide(5),
+    ].filter(Boolean) as string[];
+    const uniq = Array.from(new Set(ids));
+    uniq.forEach((id) => void ensureTemplateSnapshot(id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, projectMappingSlide1, projectMappingSlide2to5, projectMappingSlide6, templateTypeMappingSlide1, templateTypeMappingSlide2to5, templateTypeMappingSlide6]);
+
+  // Close the prompt modal on Escape.
+  useEffect(() => {
+    if (!promptModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPromptModalOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [promptModalOpen]);
+
+  // Debounced autosave: template type prompt + mapping → overrides/global (depending on scope)
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!promptDirtyRef.current) return;
+    if (promptSaveTimeoutRef.current) window.clearTimeout(promptSaveTimeoutRef.current);
+    promptSaveTimeoutRef.current = window.setTimeout(async () => {
       try {
-        setRemixSaveStatus("saving");
-        await supabase.from("editor_preferences").upsert(
-          { user_id: user.id, carousel_remix_instructions: remixInstructions },
-          { onConflict: "user_id" }
-        );
-        setRemixSaveStatus("saved");
-        remixDirtyRef.current = false;
-        window.setTimeout(() => setRemixSaveStatus("idle"), 1500);
+        setPromptSaveStatus('saving');
+        await savePromptSettings();
+        setPromptSaveStatus('saved');
+        promptDirtyRef.current = false;
+        window.setTimeout(() => setPromptSaveStatus('idle'), 1200);
       } catch (e) {
-        console.warn("[EditorShell] Failed to save remix instructions:", e);
-        setRemixSaveStatus("error");
-        window.setTimeout(() => setRemixSaveStatus("idle"), 2000);
+        console.warn('[EditorShell] Failed to save prompt settings:', e);
+        setPromptSaveStatus('error');
+        window.setTimeout(() => setPromptSaveStatus('idle'), 2000);
       }
     }, 600);
     return () => {
-      if (remixSaveTimeoutRef.current) window.clearTimeout(remixSaveTimeoutRef.current);
+      if (promptSaveTimeoutRef.current) window.clearTimeout(promptSaveTimeoutRef.current);
     };
-  }, [remixInstructions, remixLoaded, user?.id]);
-
-  // Close the remix modal on Escape.
-  useEffect(() => {
-    if (!remixModalOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRemixModalOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [remixModalOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    user?.id,
+    templateTypeId,
+    templateTypePrompt,
+    templateTypeMappingSlide1,
+    templateTypeMappingSlide2to5,
+    templateTypeMappingSlide6,
+  ]);
 
   // Load/persist sidebar width locally (best-effort)
   useEffect(() => {
@@ -373,13 +618,9 @@ export default function EditorShell() {
         if (i !== activeSlideIndex) return s;
         const next: SlideState = {
           ...s,
-          carouselId: currentCarouselId ?? s.carouselId,
-          carouselTitle,
           layoutData,
           inputData,
           layoutHistory,
-          saveStatus,
-          saveError,
           error,
           debugLogs,
           debugScreenshot,
@@ -396,13 +637,9 @@ export default function EditorShell() {
     );
   }, [
     activeSlideIndex,
-    carouselTitle,
-    currentCarouselId,
     inputData,
     layoutData,
     layoutHistory,
-    saveStatus,
-    saveError,
     error,
     debugLogs,
     debugScreenshot,
@@ -451,15 +688,24 @@ export default function EditorShell() {
 
     setSwitchingSlides(true);
     try {
-      // Force-save current slide before switching (best effort).
-      if (layoutData && inputData) {
-        const forceNew = !currentCarouselId;
-        const savedId = await performAutoSave(forceNew);
-        if (savedId) {
-          setSlides((prev) =>
-            prev.map((s, i) => (i === activeSlideIndex ? { ...s, carouselId: savedId } : s))
-          );
+      // Best-effort flush pending project/slide saves before switching.
+      try {
+        if (projectSaveTimeoutRef.current) {
+          window.clearTimeout(projectSaveTimeoutRef.current);
+          projectSaveTimeoutRef.current = null;
+          void saveProjectMeta({ title: projectTitle, caption: captionDraft });
         }
+        if (slideSaveTimeoutRef.current) {
+          window.clearTimeout(slideSaveTimeoutRef.current);
+          slideSaveTimeoutRef.current = null;
+          const cur = slidesRef.current[activeSlideIndex] || initSlide();
+          void saveSlideText(activeSlideIndex, {
+            headline: cur.draftHeadline || null,
+            body: cur.draftBody || null,
+          });
+        }
+      } catch {
+        // ignore
       }
 
       // Snapshot current engine state into the current slide slot.
@@ -468,13 +714,9 @@ export default function EditorShell() {
           i === activeSlideIndex
             ? {
                 ...s,
-                carouselId: currentCarouselId ?? s.carouselId,
-                carouselTitle,
                 layoutData,
                 inputData,
                 layoutHistory,
-                saveStatus,
-                saveError,
                 error,
                 debugLogs,
                 debugScreenshot,
@@ -486,20 +728,10 @@ export default function EditorShell() {
       setActiveSlideIndex(nextIndex);
 
       const next = slidesRef.current[nextIndex] || initSlide();
-      if (next.carouselId) {
-        await loadCarousel(next.carouselId);
-        return;
-      }
-
       if (next.layoutData || next.inputData) {
         setLayoutData(next.layoutData);
         setInputData(next.inputData);
         setLayoutHistory(next.layoutHistory || []);
-        setCurrentCarouselId(next.carouselId);
-        setCarouselTitle(next.carouselTitle || "Untitled Carousel");
-        setSaveStatus((next as any).saveStatus || "idle");
-        setSaveError((next as any).saveError || null);
-        setError((next as any).error || null);
       } else {
         handleNewCarousel();
       }
@@ -510,18 +742,6 @@ export default function EditorShell() {
 
   const goPrev = () => void switchToSlide(activeSlideIndex - 1);
   const goNext = () => void switchToSlide(activeSlideIndex + 1);
-
-  const handleTopSaveDraft = async () => {
-    if (switchingSlides) return;
-    // Match MVP behavior: if no current id, save as new; otherwise update current.
-    const forceNew = !currentCarouselId;
-    const savedId = await performAutoSave(forceNew);
-    if (savedId) {
-      setSlides((prev) =>
-        prev.map((s, i) => (i === activeSlideIndex ? { ...s, carouselId: savedId } : s))
-      );
-    }
-  };
 
   const handleTopDownload = async () => {
     if (topExporting) return;
@@ -565,7 +785,7 @@ export default function EditorShell() {
     }
   };
 
-  const activeSlideTitle = slides[activeSlideIndex]?.carouselTitle ?? carouselTitle;
+  const activeSlideTitle = projectTitle;
 
   const handleSignOut = async () => {
     await signOut();
@@ -582,16 +802,32 @@ export default function EditorShell() {
     return null;
   };
 
-  const RemixStatusPill = () => {
-    if (remixSaveStatus === "idle") return null;
+  const PromptStatusPill = () => {
+    if (promptSaveStatus === "idle") return null;
     const base = "px-3 py-1 rounded-full text-xs font-semibold border";
-    if (remixSaveStatus === "saving") {
-      return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Remix: Saving…</span>;
+    if (promptSaveStatus === "saving") {
+      return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Prompt: Saving…</span>;
     }
-    if (remixSaveStatus === "saved") {
-      return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Remix: Saved ✓</span>;
+    if (promptSaveStatus === "saved") {
+      return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Prompt: Saved ✓</span>;
     }
-    return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Remix: Save Failed</span>;
+    return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Prompt: Save Failed</span>;
+  };
+
+  const ProjectStatusPill = () => {
+    if (projectSaveStatus === "idle" && slideSaveStatus === "idle") return null;
+    const base = "px-3 py-1 rounded-full text-xs font-semibold border";
+    const status = projectSaveStatus === "saving" || slideSaveStatus === "saving"
+      ? "saving"
+      : projectSaveStatus === "error" || slideSaveStatus === "error"
+      ? "error"
+      : projectSaveStatus === "saved" || slideSaveStatus === "saved"
+      ? "saved"
+      : "idle";
+    if (status === "saving") return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Saving…</span>;
+    if (status === "saved") return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Saved ✓</span>;
+    if (status === "error") return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Save Failed</span>;
+    return null;
   };
 
   return (
@@ -610,25 +846,18 @@ export default function EditorShell() {
             value={activeSlideTitle}
             onChange={(e) => {
               const v = e.target.value;
-              setSlides((prev) =>
-                prev.map((s, i) => (i === activeSlideIndex ? { ...s, carouselTitle: v } : s))
-              );
-              setCarouselTitle(v);
+              setProjectTitle(v);
+              if (projectSaveTimeoutRef.current) window.clearTimeout(projectSaveTimeoutRef.current);
+              projectSaveTimeoutRef.current = window.setTimeout(() => {
+                void saveProjectMeta({ title: v });
+              }, 600);
             }}
-            placeholder="Untitled Carousel"
+            placeholder="Untitled Project"
             disabled={switchingSlides}
-            title="Slide title"
+            title="Project title"
           />
-          <StatusPill />
-          <RemixStatusPill />
-          <button
-            className="px-3 py-1.5 rounded-md border border-slate-200 text-slate-700 text-sm bg-white shadow-sm disabled:opacity-50"
-            onClick={() => void handleTopSaveDraft()}
-            disabled={saveStatus === "saving" || switchingSlides}
-            title={currentCarouselId ? "Update current carousel" : "Save as new carousel"}
-          >
-            Save Draft
-          </button>
+          <ProjectStatusPill />
+          <PromptStatusPill />
           <button
             className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
             onClick={() => void handleTopDownload()}
@@ -657,113 +886,95 @@ export default function EditorShell() {
             <button
               className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
               onClick={() => {
-                setSlides((prev) => prev.map((s, i) => (i === activeSlideIndex ? initSlide() : s)));
+                setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
                 handleNewCarousel();
+                void createNewProject(templateTypeId);
               }}
               disabled={switchingSlides}
             >
-              Create Carousel
+              New Project
             </button>
 
             <button
               type="button"
               className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-              onClick={() => setRemixModalOpen(true)}
-              disabled={!remixLoaded}
+              onClick={() => setPromptModalOpen(true)}
               title="Edit Prompt"
             >
               <div className="text-sm font-semibold text-slate-700">Prompt</div>
               <div className="mt-0.5 text-xs text-slate-500 truncate">
-                {remixLoaded ? (remixInstructions || DEFAULT_REMIX_INSTRUCTIONS).split("\n")[0] : "Loading..."}
+                {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
               </div>
             </button>
 
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-slate-900">Template Settings</div>
+              <button
+                className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+                onClick={() => setTemplateSettingsOpen(true)}
+                disabled={switchingSlides}
+                title="Edit template type settings"
+              >
+                Settings
+              </button>
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <select
-                  className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                  value={selectedTemplateId || ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (!v) {
-                      setSelectedTemplateId(null);
-                      setSelectedTemplateSnapshot(null);
-                      return;
-                    }
-                    void loadTemplate(v);
-                  }}
-                  disabled={loadingTemplates}
-                >
-                  <option value="">
-                    {loadingTemplates ? "Loading templates..." : "No template (legacy)"}
-                  </option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-                  title="Open Template Editor (admin-only)"
-                  onClick={() => setTemplateEditorOpen(true)}
-                >
-                  ⚙️
-                </button>
+              <div className="text-xs font-semibold text-slate-500 uppercase">Template Type</div>
+              <select
+                className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                value={templateTypeId}
+                onChange={(e) => setTemplateTypeId(e.target.value === "enhanced" ? "enhanced" : "regular")}
+                disabled={switchingSlides}
+              >
+                <option value="regular">Regular</option>
+                <option value="enhanced">Enhanced</option>
+              </select>
+              <div className="text-xs text-slate-500">
+                Slide 1: {(currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1) ? "Template set" : "Not set"} · Slides 2–5:{" "}
+                {(currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5) ? "Template set" : "Not set"} · Slide 6:{" "}
+                {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "Template set" : "Not set"}
               </div>
-              {selectedTemplateId && (
-                <div className="text-xs text-slate-500">
-                  {selectedTemplateSnapshot ? "Snapshot loaded" : "Loading..."}
-                </div>
-              )}
             </div>
 
-            {/* Saved carousels (loads into the current active slide) */}
+            {/* Saved projects */}
             <div className="border-t border-slate-100 pt-4 space-y-2">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-900">Saved Carousels</div>
-                <div className="text-xs text-slate-500">{savedCarousels.length}</div>
+                <div className="text-sm font-semibold text-slate-900">Saved Projects</div>
+                <div className="text-xs text-slate-500">{projects.length}</div>
               </div>
               <button
-                onClick={() => setShowDropdown(!showDropdown)}
+                onClick={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
                 className="w-full h-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm flex items-center justify-between px-3"
-                disabled={loadingCarousels || switchingSlides}
+                disabled={projectsLoading || switchingSlides}
               >
                 <span>
-                  {loadingCarousels ? "Loading..." : "Load saved…"}
+                  {projectsLoading ? "Loading..." : "Load project…"}
                 </span>
-                <span className="text-slate-400">{showDropdown ? "▴" : "▾"}</span>
+                <span className="text-slate-400">{projectsDropdownOpen ? "▴" : "▾"}</span>
               </button>
 
-              {showDropdown && (
+              {projectsDropdownOpen && (
                 <div className="w-full bg-white border border-slate-200 rounded-md shadow-sm max-h-64 overflow-y-auto">
-                  {savedCarousels.length === 0 ? (
-                    <div className="p-3 text-sm text-slate-500">No saved carousels yet</div>
+                  {projects.length === 0 ? (
+                    <div className="p-3 text-sm text-slate-500">No projects yet</div>
                   ) : (
                     <div className="divide-y divide-slate-100">
-                      {savedCarousels.map((c) => (
+                      {projects.map((p) => (
                         <button
-                          key={c.id}
+                          key={p.id}
                           className="w-full text-left px-3 py-2 hover:bg-slate-50"
                           onClick={() => {
-                            setShowDropdown(false);
-                            // Load into the currently active slide slot.
-                            setSlides((prev) =>
-                              prev.map((s, idx) =>
-                                idx === activeSlideIndex ? { ...s, carouselId: c.id } : s
-                              )
-                            );
-                            void loadCarousel(c.id);
+                            setProjectsDropdownOpen(false);
+                            void loadProject(p.id);
                           }}
                         >
-                          <div className="text-sm font-medium text-slate-900 truncate">{c.title}</div>
-                          <div className="text-xs text-slate-500 truncate">{c.headline}</div>
+                          <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
+                          <div className="text-xs text-slate-500 truncate">
+                            Type: {p.template_type_id}
+                          </div>
                           <div className="text-[11px] text-slate-400 mt-0.5">
-                            Updated: {new Date(c.updatedAt).toLocaleDateString()}
+                            Updated: {new Date(p.updated_at).toLocaleDateString()}
                           </div>
                         </button>
                       ))}
@@ -889,44 +1100,62 @@ export default function EditorShell() {
                       className="relative"
                     >
                       <SlideCard index={i + 1} active={i === activeSlideIndex}>
-                        {i === activeSlideIndex && layoutData?.layout && inputData ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center">
-                            {/* Scale the existing 540x720 preview down to fit 420x560 */}
+                        <div
+                          className="w-full h-full flex flex-col items-center justify-start"
+                          style={i === activeSlideIndex ? undefined : { pointerEvents: "none" }}
+                        >
+                          {/* Scale the existing 540x720 preview down to fit 420x560 */}
+                          <div
+                            style={{
+                              width: 420,
+                              height: 560,
+                              overflow: "hidden",
+                            }}
+                          >
                             <div
                               style={{
-                                width: 420,
-                                height: 560,
-                                overflow: "hidden",
+                                transform: "scale(0.7777778)",
+                                transformOrigin: "top left",
+                                width: 540,
+                                height: 720,
                               }}
                             >
-                              <div
-                                style={{
-                                  transform: "scale(0.7777778)",
-                                  transformOrigin: "top left",
-                                  width: 540,
-                                  height: 720,
-                                }}
-                              >
-                                <CarouselPreviewVision
-                                  ref={canvasRef}
-                                  layout={layoutData.layout as any}
-                                  backgroundColor={projectBackgroundColor}
-                                  textColor={projectTextColor}
-                                  templateSnapshot={selectedTemplateSnapshot}
-                                  headlineFontFamily={headlineFontFamily}
-                                  bodyFontFamily={bodyFontFamily}
-                                />
-                              </div>
-                            </div>
-                            <div className="mt-3">
-                              <TextStylingToolbar fabricCanvas={canvasRef.current?.canvas} />
+                              {(() => {
+                                const tid = computeTemplateIdForSlide(i);
+                                const snap = (tid ? templateSnapshots[tid] : null) || null;
+                                const layoutForThisCard =
+                                  i === activeSlideIndex && layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT;
+
+                                if (!tid) {
+                                  return (
+                                    <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                      No template selected
+                                    </div>
+                                  );
+                                }
+                                if (!snap) {
+                                  return (
+                                    <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                      Loading template…
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <CarouselPreviewVision
+                                    {...(i === activeSlideIndex ? { ref: canvasRef } : {})}
+                                    layout={layoutForThisCard}
+                                    backgroundColor={projectBackgroundColor}
+                                    textColor={projectTextColor}
+                                    templateSnapshot={snap}
+                                    headlineFontFamily={headlineFontFamily}
+                                    bodyFontFamily={bodyFontFamily}
+                                  />
+                                );
+                              })()}
                             </div>
                           </div>
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center text-slate-400 text-sm">
-                            {slides[i]?.carouselId ? `Slide ${i + 1} (saved)` : `Slide ${i + 1} (empty)`}
-                          </div>
-                        )}
+                        </div>
                       </SlideCard>
                     </div>
                   ))}
@@ -941,6 +1170,12 @@ export default function EditorShell() {
                 →
               </button>
             </div>
+            {/* Text styling toolbar (kept outside SlideCard so it never affects slide sizing/clipping) */}
+            {layoutData?.layout && inputData ? (
+              <div className="mt-4 flex justify-center">
+                <TextStylingToolbar fabricCanvas={canvasRef.current?.canvas} />
+              </div>
+            ) : null}
           </div>
 
           {/* Bottom panel */}
@@ -961,8 +1196,11 @@ export default function EditorShell() {
                           )
                         )
                       }
-                      disabled={loading || switchingSlides}
+                      disabled={loading || switchingSlides || copyGenerating || templateTypeId === "regular"}
                     />
+                    {templateTypeId === "regular" ? (
+                      <div className="mt-1 text-xs text-slate-500">Headline is disabled for Regular.</div>
+                    ) : null}
                   </div>
 
                   <div>
@@ -979,7 +1217,7 @@ export default function EditorShell() {
                           )
                         )
                       }
-                      disabled={loading || switchingSlides}
+                      disabled={loading || switchingSlides || copyGenerating}
                     />
                   </div>
 
@@ -988,17 +1226,26 @@ export default function EditorShell() {
                 <div className="space-y-3">
                   <div className="text-sm font-semibold text-slate-900">Controls</div>
                   <button
+                    className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+                    disabled={!currentProjectId || copyGenerating || switchingSlides}
+                    onClick={() => void runGenerateCopy()}
+                  >
+                    {copyGenerating ? "Generating Copy..." : "Generate Copy"}
+                  </button>
+                  {copyError ? <div className="text-xs text-red-600">❌ {copyError}</div> : null}
+                  <button
                     className="w-full h-10 rounded-lg bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-50"
                     disabled={
                       loading ||
                       switchingSlides ||
-                      !(slides[activeSlideIndex]?.draftHeadline || "").trim() ||
+                      copyGenerating ||
+                      (templateTypeId !== "regular" && !(slides[activeSlideIndex]?.draftHeadline || "").trim()) ||
                       !(slides[activeSlideIndex]?.draftBody || "").trim()
                     }
                     onClick={() => {
                       const cur = slidesRef.current[activeSlideIndex] || initSlide();
                       const req: CarouselTextRequest = {
-                        headline: (cur.draftHeadline || "").trim(),
+                        headline: templateTypeId === "regular" ? "" : (cur.draftHeadline || "").trim(),
                         body: (cur.draftBody || "").trim(),
                         settings: {
                           backgroundColor: projectBackgroundColor || "#ffffff",
@@ -1006,7 +1253,7 @@ export default function EditorShell() {
                           // Keep image generation off by default in this shell; can be revisited later.
                           includeImage: false,
                         },
-                        templateId: selectedTemplateId || undefined,
+                        templateId: computeTemplateIdForSlide(activeSlideIndex) || undefined,
                       } as any;
                       void handleGenerate(req);
                     }}
@@ -1019,7 +1266,7 @@ export default function EditorShell() {
                       className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold px-3"
                       value={realignmentModel}
                       onChange={(e) => setRealignmentModel(e.target.value as any)}
-                      disabled={realigning}
+                      disabled={realigning || copyGenerating}
                     >
                       <option value="gemini-computational">Gemini Computational</option>
                       <option value="gemini">Gemini 3 Vision</option>
@@ -1030,14 +1277,14 @@ export default function EditorShell() {
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                     onClick={() => void handleRealign()}
-                    disabled={loading || realigning || !layoutData || switchingSlides}
+                    disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
                   >
                     {realigning ? "Realigning..." : "Realign Text"}
                   </button>
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                     onClick={handleUndo}
-                    disabled={layoutHistory.length === 0 || realigning || switchingSlides}
+                    disabled={layoutHistory.length === 0 || realigning || switchingSlides || copyGenerating}
                   >
                     Undo
                   </button>
@@ -1070,7 +1317,15 @@ export default function EditorShell() {
                   rows={3}
                   placeholder="Write a caption..."
                   value={captionDraft}
-                  onChange={(e) => setCaptionDraft(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCaptionDraft(v);
+                    if (projectSaveTimeoutRef.current) window.clearTimeout(projectSaveTimeoutRef.current);
+                    projectSaveTimeoutRef.current = window.setTimeout(() => {
+                      void saveProjectMeta({ caption: v });
+                    }, 600);
+                  }}
+                  disabled={copyGenerating}
                 />
               </div>
 
@@ -1131,22 +1386,146 @@ export default function EditorShell() {
         onRefreshTemplates={loadTemplatesList}
       />
 
-      {/* Prompt modal */}
-      {remixModalOpen && (
+      {/* Template Settings modal */}
+      {templateSettingsOpen && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
           onMouseDown={(e) => {
             // Only close on true backdrop clicks (not inside the panel).
-            if (e.target === e.currentTarget) setRemixModalOpen(false);
+            if (e.target === e.currentTarget) setTemplateSettingsOpen(false);
+          }}
+        >
+          <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="text-base font-semibold text-slate-900">
+                Template Settings ({templateTypeId === "enhanced" ? "Enhanced" : "Regular"})
+              </div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setTemplateSettingsOpen(false)}
+                aria-label="Close"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-5 py-4">
+              <div className="mt-4">
+                <div className="text-sm font-semibold text-slate-900">Prompt</div>
+                <textarea
+                  className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                  rows={10}
+                  value={templateTypePrompt}
+                  onChange={(e) => {
+                    promptDirtyRef.current = true;
+                    setTemplateTypePrompt(e.target.value);
+                  }}
+                  placeholder="Enter the prompt for this template type..."
+                />
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Slide 1 Template</div>
+                  <select
+                    className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                    value={templateTypeMappingSlide1 || ""}
+                    onChange={(e) => {
+                      promptDirtyRef.current = true;
+                      setTemplateTypeMappingSlide1(e.target.value || null);
+                    }}
+                    disabled={loadingTemplates}
+                  >
+                    <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Slides 2–5 Template</div>
+                  <select
+                    className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                    value={templateTypeMappingSlide2to5 || ""}
+                    onChange={(e) => {
+                      promptDirtyRef.current = true;
+                      setTemplateTypeMappingSlide2to5(e.target.value || null);
+                    }}
+                    disabled={loadingTemplates}
+                  >
+                    <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Slide 6 Template</div>
+                  <select
+                    className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+                    value={templateTypeMappingSlide6 || ""}
+                    onChange={(e) => {
+                      promptDirtyRef.current = true;
+                      setTemplateTypeMappingSlide6(e.target.value || null);
+                    }}
+                    disabled={loadingTemplates}
+                  >
+                    <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <div className="text-xs text-slate-500">
+                  Changes auto-save (shared). New projects snapshot these settings. Existing projects keep their snapshot unless recreated.
+                </div>
+                <button
+                  className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+                  onClick={() => {
+                    // Avoid two stacked modals; template editor should be the only open overlay.
+                    setTemplateSettingsOpen(false);
+                    setPromptModalOpen(false);
+                    setTemplateEditorOpen(true);
+                  }}
+                  title="Open Template Editor"
+                >
+                  Template Editor
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prompt modal (quick edit) */}
+      {promptModalOpen && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPromptModalOpen(false);
           }}
         >
           <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div className="text-base font-semibold text-slate-900">Prompt</div>
+              <div className="text-base font-semibold text-slate-900">
+                Prompt ({templateTypeId === "enhanced" ? "Enhanced" : "Regular"})
+              </div>
               <button
                 type="button"
                 className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                onClick={() => setRemixModalOpen(false)}
+                onClick={() => setPromptModalOpen(false)}
                 aria-label="Close"
                 title="Close"
               >
@@ -1157,16 +1536,16 @@ export default function EditorShell() {
               <textarea
                 className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                 rows={18}
-                value={remixInstructions}
+                value={templateTypePrompt}
                 onChange={(e) => {
-                  remixDirtyRef.current = true;
-                  setRemixInstructions(e.target.value);
+                  promptDirtyRef.current = true;
+                  setTemplateTypePrompt(e.target.value);
                 }}
-                placeholder="Paste your remix instructions..."
+                placeholder="Enter the prompt for this template type..."
                 autoFocus
               />
               <div className="mt-2 text-xs text-slate-500">
-                Auto-saves to Supabase as you type. Press <span className="font-mono">Esc</span> to close.
+                Auto-saves as you type. Press <span className="font-mono">Esc</span> to close.
               </div>
             </div>
           </div>

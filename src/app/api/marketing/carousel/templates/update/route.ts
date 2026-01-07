@@ -29,7 +29,7 @@ interface UpdateTemplateResponse {
 }
 
 export async function POST(request: NextRequest) {
-  // AUTH CHECK (admin-only)
+  // AUTH CHECK (editor users)
   const authHeader = request.headers.get('authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return NextResponse.json({ success: false, error: 'Unauthorized' } as UpdateTemplateResponse, { status: 401 });
@@ -40,37 +40,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Server configuration error' } as UpdateTemplateResponse, { status: 500 });
   }
 
-  // Verify email matches configured admin (app-level guard).
-  const verificationClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const { data: { user }, error: userError } = await verificationClient.auth.getUser(token);
+  const authedClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data: { user }, error: userError } = await authedClient.auth.getUser();
   if (userError || !user) {
     return NextResponse.json({ success: false, error: 'Unauthorized' } as UpdateTemplateResponse, { status: 401 });
   }
-  if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return NextResponse.json({ success: false, error: 'Forbidden - Admin access required' } as UpdateTemplateResponse, { status: 403 });
-  }
 
-  // Ensure the admin user is present in admin_users so RLS writes succeed.
-  const svc = serviceClient();
-  if (!svc) {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          'Server missing Supabase service role env (needed to bootstrap admin_users for template writes). Set SUPABASE_SERVICE_ROLE_KEY.',
-      } as UpdateTemplateResponse,
-      { status: 500 }
-    );
+  // Must be an editor user (RLS on editor_users allows select self).
+  const { data: editorRow, error: editorErr } = await authedClient
+    .from('editor_users')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (editorErr || !editorRow?.user_id) {
+    return NextResponse.json({ success: false, error: 'Forbidden - Editor access required' } as UpdateTemplateResponse, { status: 403 });
   }
-  try {
-    await svc.from('admin_users').upsert({ user_id: user.id }, { onConflict: 'user_id' });
-  } catch {
-    // no-op; RLS error will surface below if needed.
-  }
-
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
 
   let body: UpdateTemplateRequest;
   try {
@@ -87,7 +73,7 @@ export async function POST(request: NextRequest) {
   if (typeof body.name === 'string') patch.name = body.name;
   if (body.definition !== undefined) patch.definition = body.definition;
 
-  const { error } = await supabase
+  const { error } = await authedClient
     .from('carousel_templates')
     .update(patch)
     .eq('id', body.id)

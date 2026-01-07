@@ -290,7 +290,7 @@ export default function TemplateEditorModal(props: {
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="text-lg font-semibold text-black">Template Editor (Slide 1)</h2>
-            <p className="text-xs text-black">Admin-only. Assets/text here are locked in normal editing.</p>
+            <p className="text-xs text-black">Assets/text here are locked in normal editing.</p>
           </div>
           <button onClick={onClose} className="text-black hover:text-black" title="Close">
             ✕
