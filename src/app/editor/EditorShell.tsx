@@ -88,6 +88,7 @@ export default function EditorShell() {
   const liveLayoutTimeoutsRef = useRef<Record<number, number | null>>({});
   const liveLayoutQueueRef = useRef<number[]>([]);
   const liveLayoutRunningRef = useRef(false);
+  const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
 
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
@@ -196,6 +197,17 @@ export default function EditorShell() {
     if (bg) setProjectBackgroundColor(bg);
     if (tc) setProjectTextColor(tc);
   }, [inputData]);
+
+  // Regular default: Montserrat Regular for Body (but never override a user-changed selection).
+  useEffect(() => {
+    if (templateTypeId !== "regular") return;
+    const isDefaultInter =
+      (bodyFontFamily || "").includes("Inter") &&
+      Number(bodyFontWeight) === 400;
+    if (!isDefaultInter) return;
+    setBodyFontFamily("Montserrat, sans-serif");
+    setBodyFontWeight(400);
+  }, [templateTypeId, bodyFontFamily, bodyFontWeight, setBodyFontFamily, setBodyFontWeight]);
 
   type SlideState = {
     layoutData: any | null;
@@ -527,12 +539,17 @@ export default function EditorShell() {
     body: string;
     templateSnapshot: any;
     image: any | null;
+    existingLayout?: any | null;
   }): VisionLayoutDecision | null => {
     const region = getTemplateContentRectRaw(params.templateSnapshot);
     if (!region) return null;
 
     const bodySize = Number.isFinite(bodyFontSizePx as any) ? Math.max(10, Math.round(bodyFontSizePx)) : 48;
     const imageUrl = (params.image as any)?.url || null;
+    const prevLine = params.existingLayout?.textLines?.[0] || null;
+    const preservedX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
+    const preservedY = typeof prevLine?.position?.y === "number" ? prevLine.position.y : region.y;
+    const preservedWidth = typeof prevLine?.maxWidth === "number" ? prevLine.maxWidth : region.width;
 
     const layout: VisionLayoutDecision = {
       canvas: { width: 1080, height: 1440 },
@@ -541,10 +558,10 @@ export default function EditorShell() {
         {
           text: params.body || "",
           baseSize: bodySize,
-          position: { x: region.x, y: region.y },
+          position: { x: preservedX, y: preservedY },
           textAlign: "left",
           lineHeight: 1.2,
-          maxWidth: region.width,
+          maxWidth: Math.max(1, preservedWidth),
           styles: [],
         },
       ],
@@ -597,6 +614,7 @@ export default function EditorShell() {
                 body,
                 templateSnapshot: snap,
                 image,
+                existingLayout: (slide as any)?.layoutData?.layout || null,
               })
             : computeDeterministicLayout({
                 slideIndex,
@@ -676,6 +694,81 @@ export default function EditorShell() {
     bodyFontSizeDebounceRef.current = window.setTimeout(() => {
       enqueueLiveLayout(Array.from({ length: slideCount }, (_, i) => i));
     }, LIVE_LAYOUT_DEBOUNCE_MS);
+  };
+
+  const handleRegularCanvasTextChange = (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => {
+    if (templateTypeId !== "regular") return;
+    const slideIndex = activeSlideIndex;
+    const curSlide = slidesRef.current[slideIndex] || initSlide();
+    const baseLayout: any =
+      (slideIndex === activeSlideIndex ? (layoutData as any)?.layout : null) ||
+      (curSlide as any)?.layoutData?.layout ||
+      null;
+    if (!baseLayout || !Array.isArray(baseLayout.textLines) || !baseLayout.textLines[change.lineIndex]) return;
+
+    const nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
+      if (idx !== change.lineIndex) return l;
+      return {
+        ...l,
+        text: change.text !== undefined ? change.text : l.text,
+        position: { x: change.x, y: change.y },
+        maxWidth: Math.max(1, Number(change.maxWidth) || l.maxWidth || 1),
+      };
+    });
+    const nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
+
+    const tid = computeTemplateIdForSlide(slideIndex);
+    const nextBody = change.text !== undefined ? change.text : (curSlide.draftBody || "");
+    const req: CarouselTextRequest = {
+      headline: "",
+      body: nextBody,
+      settings: {
+        backgroundColor: projectBackgroundColor || "#ffffff",
+        textColor: projectTextColor || "#000000",
+        includeImage: false,
+      },
+      templateId: tid || undefined,
+    } as any;
+
+    // Update local state so subsequent live-layout runs preserve the dragged position.
+    setSlides((prev) =>
+      prev.map((s, i) =>
+        i !== slideIndex
+          ? s
+          : {
+              ...s,
+              draftBody: change.text !== undefined ? nextBody : s.draftBody,
+              layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null },
+              inputData: req,
+            }
+      )
+    );
+    slidesRef.current = slidesRef.current.map((s, i) =>
+      i !== slideIndex
+        ? s
+        : {
+            ...s,
+            draftBody: change.text !== undefined ? nextBody : (s.draftBody || ""),
+            layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null },
+            inputData: req,
+          }
+    );
+
+    // If active, also update the engine so Fabric rerenders immediately.
+    if (slideIndex === activeSlideIndex) {
+      setLayoutData({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || null } as any);
+      setInputData(req as any);
+    }
+
+    // Debounced persist.
+    if (!currentProjectId) return;
+    if (regularCanvasSaveTimeoutRef.current) window.clearTimeout(regularCanvasSaveTimeoutRef.current);
+    regularCanvasSaveTimeoutRef.current = window.setTimeout(() => {
+      void saveSlidePatch(slideIndex, {
+        layoutSnapshot: nextLayoutSnap,
+        inputSnapshot: req,
+      });
+    }, 500);
   };
 
   const loadTemplateTypeEffective = async (type: 'regular' | 'enhanced') => {
@@ -1594,6 +1687,14 @@ export default function EditorShell() {
                                     bodyFontFamily={bodyFontFamily}
                                       headlineFontWeight={headlineFontWeight}
                                       bodyFontWeight={bodyFontWeight}
+                                    contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
+                                    clampUserTextToContentRect={templateTypeId !== "regular"}
+                                    pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                    onUserTextChange={
+                                      i === activeSlideIndex && templateTypeId === "regular"
+                                        ? handleRegularCanvasTextChange
+                                        : undefined
+                                    }
                                   />
                                 );
                               })()}

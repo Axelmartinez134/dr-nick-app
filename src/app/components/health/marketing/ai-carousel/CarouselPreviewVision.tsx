@@ -14,24 +14,61 @@ interface CarouselPreviewProps {
   bodyFontFamily?: string;
   headlineFontWeight?: number;
   bodyFontWeight?: number;
+  // Optional render/interaction tuning (used by /editor for template-type specific behavior).
+  // Defaults preserve existing behavior.
+  contentPaddingPx?: number; // default 40
+  clampUserTextToContentRect?: boolean; // default true
+  clampUserImageToContentRect?: boolean; // default true
+  pushTextOutOfUserImage?: boolean; // default true
+  onUserTextChange?: (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => void;
 }
 
 const DISPLAY_ZOOM = 0.5;
 
 const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
-  ({ layout, backgroundColor, textColor, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight }, ref) => {
+  (
+    {
+      layout,
+      backgroundColor,
+      textColor,
+      templateSnapshot,
+      headlineFontFamily,
+      bodyFontFamily,
+      headlineFontWeight,
+      bodyFontWeight,
+      contentPaddingPx,
+      clampUserTextToContentRect,
+      clampUserImageToContentRect,
+      pushTextOutOfUserImage,
+      onUserTextChange,
+    },
+    ref
+  ) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<any>(null);
     const fabricModuleRef = useRef<any>(null);
     const [fabricLoaded, setFabricLoaded] = useState(false);
     const constraintsRef = useRef<{ allowedRect: null | { x: number; y: number; width: number; height: number } }>({ allowedRect: null });
+    const interactionRef = useRef<{ clampText: boolean; clampImage: boolean; pushTextOut: boolean }>({ clampText: true, clampImage: true, pushTextOut: true });
+    const onUserTextChangeRef = useRef<CarouselPreviewProps["onUserTextChange"]>(undefined);
+
+    const PAD = Number.isFinite(contentPaddingPx as any) ? Math.max(0, Math.round(contentPaddingPx as any)) : 40;
+    const clampText = clampUserTextToContentRect !== false;
+    const clampImage = clampUserImageToContentRect !== false;
+    const pushTextOut = pushTextOutOfUserImage !== false;
+
+    useEffect(() => {
+      interactionRef.current = { clampText, clampImage, pushTextOut };
+    }, [clampText, clampImage, pushTextOut]);
+    useEffect(() => {
+      onUserTextChangeRef.current = onUserTextChange;
+    }, [onUserTextChange]);
 
     const computeAllowedRect = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
       if (!tpl?.slides?.length) return null;
       const slide0 = tpl.slides.find(s => s.slideIndex === 0) || tpl.slides[0];
       const r = slide0?.contentRegion as TemplateRect | undefined;
       if (!r) return null;
-      const PAD = 40;
       return {
         x: r.x + PAD,
         y: r.y + PAD,
@@ -191,6 +228,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         };
 
         const pushTextOutOfImage = (obj: any) => {
+          if (!interactionRef.current.pushTextOut) return;
           const allowed = constraintsRef.current.allowedRect;
           const blocked = getUserImageBlockedRect();
           if (!allowed || !blocked || !obj) return;
@@ -258,8 +296,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const obj = e?.target;
           const role = obj?.data?.role;
           if (role !== 'user-image' && role !== 'user-text') return;
-          clampObjectToRect(obj, rect);
-          if (role === 'user-text') pushTextOutOfImage(obj);
+          if (role === 'user-text') {
+            if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
+            if (interactionRef.current.clampText) pushTextOutOfImage(obj);
+          } else if (role === 'user-image') {
+            if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
+          }
           canvas.requestRenderAll?.();
         };
         const onObjectScaling = (e: any) => {
@@ -268,15 +310,48 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const obj = e?.target;
           const role = obj?.data?.role;
           if (role !== 'user-image' && role !== 'user-text') return;
-          clampObjectToRect(obj, rect);
-          if (role === 'user-text') pushTextOutOfImage(obj);
+          if (role === 'user-text') {
+            if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
+            if (interactionRef.current.clampText) pushTextOutOfImage(obj);
+          } else if (role === 'user-image') {
+            if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
+          }
           canvas.requestRenderAll?.();
+        };
+
+        const notifyUserText = (obj: any, includeText: boolean) => {
+          const cb = onUserTextChangeRef.current;
+          if (!cb) return;
+          if (!obj || obj?.data?.role !== 'user-text') return;
+          const lineIndex = Number(obj?.data?.lineIndex ?? 0);
+          const aabb = getAABBTopLeft(obj);
+          const next: any = {
+            lineIndex,
+            x: aabb.x,
+            y: aabb.y,
+            maxWidth: Math.max(1, aabb.width),
+          };
+          if (includeText) next.text = obj.text || '';
+          cb(next);
+        };
+
+        const onObjectModified = (e: any) => {
+          const obj = e?.target;
+          if (!obj || obj?.data?.role !== 'user-text') return;
+          notifyUserText(obj, false);
+        };
+        const onTextChanged = (e: any) => {
+          const obj = e?.target;
+          if (!obj || obj?.data?.role !== 'user-text') return;
+          notifyUserText(obj, true);
         };
 
         canvas.on('object:moving', onObjectMoving);
         canvas.on('object:scaling', onObjectScaling);
+        canvas.on('object:modified', onObjectModified);
+        canvas.on('text:changed', onTextChanged);
         // Store for cleanup
-        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling };
+        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextChanged };
       }).catch((error) => {
         console.error('[Preview Vision] ❌ Failed to load Fabric.js:', error);
       });
@@ -292,6 +367,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             if (h) {
               c.off('object:moving', h.onObjectMoving);
               c.off('object:scaling', h.onObjectScaling);
+              c.off('object:modified', h.onObjectModified);
+              c.off('text:changed', h.onTextChanged);
             }
           } catch {
             // ignore
@@ -839,7 +916,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       canvas.renderAll();
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx]);
 
     return (
       <div className="flex flex-col items-center space-y-4">
