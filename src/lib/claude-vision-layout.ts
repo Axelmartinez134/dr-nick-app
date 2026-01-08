@@ -493,4 +493,3 @@ RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
 
   throw new Error('Failed to realign text layout');
 }
-
