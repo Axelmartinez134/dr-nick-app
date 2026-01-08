@@ -188,6 +188,36 @@ export default function EditorShell() {
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
   const [captionDraft, setCaptionDraft] = useState<string>("");
+  const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fall back
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
 
   // Prompt text is now per Template Type (Regular/Enhanced) with global defaults + per-user overrides.
 
@@ -2017,7 +2047,29 @@ export default function EditorShell() {
 
               {/* Caption (UI-only for now) */}
               <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
-                <div className="text-sm font-semibold text-slate-900">Caption</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-slate-900">Caption</div>
+                  <div className="flex items-center gap-2">
+                    {captionCopyStatus === "copied" ? (
+                      <span className="text-xs text-emerald-700">Copied</span>
+                    ) : captionCopyStatus === "error" ? (
+                      <span className="text-xs text-red-600">Copy failed</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm disabled:opacity-50"
+                      onClick={async () => {
+                        const ok = await copyToClipboard(captionDraft || "");
+                        setCaptionCopyStatus(ok ? "copied" : "error");
+                        window.setTimeout(() => setCaptionCopyStatus("idle"), 1200);
+                      }}
+                      disabled={copyGenerating}
+                      title="Copy caption to clipboard"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                   rows={3}
