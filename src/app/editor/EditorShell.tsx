@@ -73,6 +73,7 @@ export default function EditorShell() {
   const [activeSlideIndex, setActiveSlideIndex] = useState(0); // 0..5
   const [switchingSlides, setSwitchingSlides] = useState(false);
   const [topExporting, setTopExporting] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(0);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [projectTitle, setProjectTitle] = useState<string>("Untitled Project");
   const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">("regular");
@@ -118,6 +119,17 @@ export default function EditorShell() {
   const SIDEBAR_MAX = 560;
   const SIDEBAR_DEFAULT = 400;
   const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [mobileSaveOpen, setMobileSaveOpen] = useState(false);
+  const [mobileSaveBusy, setMobileSaveBusy] = useState<number | null>(null); // slide index or null
+  const mobileGestureRef = useRef<{
+    mode: null | "drawer-open" | "drawer-close" | "slide";
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    fired: boolean;
+  }>({ mode: null, startX: 0, startY: 0, lastX: 0, lastY: 0, fired: false });
   const sidebarDragRef = useRef<{
     dragging: boolean;
     startX: number;
@@ -1279,6 +1291,14 @@ export default function EditorShell() {
     return () => ro.disconnect();
   }, []);
 
+  // Window width for mobile/desktop UI decisions (more reliable than viewportRef during first paint).
+  useEffect(() => {
+    const read = () => setWindowWidth(typeof window !== "undefined" ? window.innerWidth : 0);
+    read();
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
+  }, []);
+
   // Slide strip translation: no manual scrolling; arrows move slides.
   // We center the active slide in the viewport.
   const CARD_W = 420;
@@ -1292,6 +1312,17 @@ export default function EditorShell() {
   const minTranslate = Math.min(0, viewportContentWidth - totalW);
   const maxTranslate = 0;
   const translateX = Math.max(minTranslate, Math.min(maxTranslate, rawTranslate));
+  const isMobile = (windowWidth || viewportWidth) > 0 && (windowWidth || viewportWidth) < 768; // tailwind "md" breakpoint
+
+  const isEditableTarget = (target: any) => {
+    const el = target as HTMLElement | null;
+    if (!el) return false;
+    if (el.closest?.('[data-rte-root="1"]')) return true;
+    const tag = (el.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return true;
+    if ((el as any).isContentEditable) return true;
+    return false;
+  };
 
   const switchToSlide = async (nextIndex: number) => {
     if (switchingSlides) return;
@@ -1442,8 +1473,8 @@ export default function EditorShell() {
     }
   };
 
-  const handleDownloadAll = async () => {
-    if (topExporting) return;
+  const handleDownloadAll = async (opts?: { allowWhenExporting?: boolean }) => {
+    if (topExporting && !opts?.allowWhenExporting) return;
     setTopExporting(true);
     try {
       const baseName = sanitizeFileName(projectTitle);
@@ -1479,6 +1510,40 @@ export default function EditorShell() {
     }
   };
 
+  const shareSingleSlide = async (slideIndex: number) => {
+    const handle = slideCanvasRefs.current[slideIndex]?.current;
+    if (!getFabricCanvasFromHandle(handle)) {
+      alert("Slide is still rendering. Please wait a moment and try again.");
+      return;
+    }
+    if (typeof navigator === "undefined" || typeof (navigator as any).share !== "function") {
+      alert("Sharing is not supported on this device/browser.");
+      return;
+    }
+    setMobileSaveBusy(slideIndex);
+    try {
+      const baseName = sanitizeFileName(projectTitle);
+      const blob = await exportFabricCanvasPngBlob(handle);
+      const file = new File([blob], `${baseName}-slide-${slideIndex + 1}.png`, { type: "image/png" });
+      const canShareSingle =
+        typeof (navigator as any).canShare !== "function" || (navigator as any).canShare({ files: [file] });
+      if (!canShareSingle) {
+        alert("Sharing files is not supported on this device/browser.");
+        return;
+      }
+      await (navigator as any).share({
+        title: baseName,
+        text: `Slide ${slideIndex + 1}`,
+        files: [file],
+      });
+    } catch (e: any) {
+      if (String(e?.name || "").toLowerCase().includes("abort")) return;
+      alert("Share failed. Please try again.");
+    } finally {
+      setMobileSaveBusy(null);
+    }
+  };
+
   const handleShareAll = async () => {
     if (topExporting) return;
     setTopExporting(true);
@@ -1491,34 +1556,45 @@ export default function EditorShell() {
         return;
       }
 
-      // Build File objects for Share Sheet (iOS-friendly). If unsupported, fall back to ZIP download.
-      const files: File[] = [];
-      for (let i = 0; i < slideCount; i++) {
+      if (typeof navigator === "undefined" || typeof (navigator as any).share !== "function") {
+        // No share sheet at all -> fallback to ZIP (Files app).
+        await handleDownloadAll({ allowWhenExporting: true });
+        return;
+      }
+
+      // Capability probe: generate ONE file and see if multi-file share is supported via canShare().
+      // If it isn't, we prefer a per-slide Save flow (no ZIP) on mobile.
+      const blob0 = await exportFabricCanvasPngBlob(handles[0]);
+      const file0 = new File([blob0], `${bundleName}-slide-1.png`, { type: "image/png" });
+      const canShareSingle =
+        typeof (navigator as any).canShare !== "function" || (navigator as any).canShare({ files: [file0] });
+      if (!canShareSingle) {
+        await handleDownloadAll({ allowWhenExporting: true });
+        return;
+      }
+
+      const canShareMulti =
+        typeof (navigator as any).canShare === "function" ? (navigator as any).canShare({ files: [file0, file0] }) : false;
+
+      if (!canShareMulti) {
+        // Mobile-friendly fallback: per-slide share UI (no ZIP).
+        setMobileSaveOpen(true);
+        return;
+      }
+
+      // Multi-file sharing supported -> generate the rest and share all.
+      const files: File[] = [file0];
+      for (let i = 1; i < slideCount; i++) {
         const blob = await exportFabricCanvasPngBlob(handles[i]);
         files.push(new File([blob], `${bundleName}-slide-${i + 1}.png`, { type: "image/png" }));
       }
 
-      const canShareFiles =
-        typeof navigator !== "undefined" &&
-        typeof (navigator as any).share === "function" &&
-        (typeof (navigator as any).canShare !== "function" || (navigator as any).canShare({ files }));
-
-      if (!canShareFiles) {
-        // Fallback: ZIP (downloads to Files on iPhone).
-        await handleDownloadAll();
-        return;
-      }
-
-      await (navigator as any).share({
-        title: bundleName,
-        text: bundleName,
-        files,
-      });
+      await (navigator as any).share({ title: bundleName, text: bundleName, files });
     } catch (e: any) {
       console.error("[Editor] Share All failed:", e);
       // If user cancels share, don't show an error.
       if (String(e?.name || "").toLowerCase().includes("abort")) return;
-      alert("Share failed. Try Download All instead.");
+      alert("Save failed. Please try again.");
     } finally {
       setTopExporting(false);
     }
@@ -1569,6 +1645,194 @@ export default function EditorShell() {
     return null;
   };
 
+  const SidebarInner = (
+    <div className="p-4 space-y-4 overflow-auto">
+      <button
+        className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
+        onClick={() => {
+          setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
+          handleNewCarousel();
+          void createNewProject(templateTypeId);
+        }}
+        disabled={switchingSlides}
+      >
+        New Project
+      </button>
+
+      <button
+        type="button"
+        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+        onClick={() => setPromptModalOpen(true)}
+        title="Edit Prompt"
+      >
+        <div className="text-sm font-semibold text-slate-700">Prompt</div>
+        <div className="mt-0.5 text-xs text-slate-500 truncate">
+          {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
+        </div>
+      </button>
+
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-slate-900">Template Settings</div>
+        <button
+          className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+          onClick={() => setTemplateSettingsOpen(true)}
+          disabled={switchingSlides}
+          title="Edit template type settings"
+        >
+          Settings
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-slate-500 uppercase">Template Type</div>
+        <select
+          className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+          value={templateTypeId}
+          onChange={(e) => setTemplateTypeId(e.target.value === "enhanced" ? "enhanced" : "regular")}
+          disabled={switchingSlides}
+        >
+          <option value="regular">Regular</option>
+          <option value="enhanced">Enhanced</option>
+        </select>
+        <div className="text-xs text-slate-500">
+          Slide 1: {(currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1) ? "Template set" : "Not set"} · Slides 2–5:{" "}
+          {(currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5) ? "Template set" : "Not set"} · Slide 6:{" "}
+          {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "Template set" : "Not set"}
+        </div>
+      </div>
+
+      {/* Saved projects */}
+      <div className="border-t border-slate-100 pt-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold text-slate-900">Saved Projects</div>
+          <div className="text-xs text-slate-500">{projects.length}</div>
+        </div>
+        <button
+          onClick={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
+          className="w-full h-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm flex items-center justify-between px-3"
+          disabled={projectsLoading || switchingSlides}
+        >
+          <span>
+            {projectsLoading ? "Loading..." : "Load project…"}
+          </span>
+          <span className="text-slate-400">{projectsDropdownOpen ? "▴" : "▾"}</span>
+        </button>
+
+        {projectsDropdownOpen && (
+          <div className="w-full bg-white border border-slate-200 rounded-md shadow-sm max-h-64 overflow-y-auto">
+            {projects.length === 0 ? (
+              <div className="p-3 text-sm text-slate-500">No projects yet</div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                    onClick={() => {
+                      setProjectsDropdownOpen(false);
+                      void loadProject(p.id);
+                      if (isMobile) setMobileDrawerOpen(false);
+                    }}
+                  >
+                    <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
+                    <div className="text-xs text-slate-500 truncate">
+                      Type: {p.template_type_id}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Updated: {new Date(p.updated_at).toLocaleDateString()}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Typography (project-wide; canvas-only) */}
+      <div className="border-t border-slate-100 pt-4 space-y-3">
+        <div className="text-sm font-semibold text-slate-900">Fonts</div>
+        <div className="space-y-2">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline</div>
+            <select
+              className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+              value={fontKey(headlineFontFamily, headlineFontWeight)}
+              onChange={(e) => {
+                const raw = e.target.value || "";
+                const [family, w] = raw.split("@@");
+                const weight = Number(w);
+                setHeadlineFontFamily(family || "Inter, sans-serif");
+                setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
+              }}
+            >
+              {FONT_OPTIONS.map((o) => (
+                <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body</div>
+            <select
+              className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+              value={fontKey(bodyFontFamily, bodyFontWeight)}
+              onChange={(e) => {
+                const raw = e.target.value || "";
+                const [family, w] = raw.split("@@");
+                const weight = Number(w);
+                setBodyFontFamily(family || "Inter, sans-serif");
+                setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
+              }}
+            >
+              {FONT_OPTIONS.map((o) => (
+                <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Background Effects (project-wide colors) */}
+      <div className="border-t border-slate-100 pt-4 space-y-3">
+        <div className="text-sm font-semibold text-slate-900">Background Effects</div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Background</div>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
+                value={projectBackgroundColor || "#ffffff"}
+                onChange={(e) => updateProjectColors(e.target.value, projectTextColor)}
+                disabled={loading || switchingSlides}
+                aria-label="Background color"
+              />
+              <div className="text-sm text-slate-700 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
+                value={projectTextColor || "#000000"}
+                onChange={(e) => updateProjectColors(projectBackgroundColor, e.target.value)}
+                disabled={loading || switchingSlides}
+                aria-label="Text color"
+              />
+              <div className="text-sm text-slate-700 tabular-nums">{projectTextColor || "#000000"}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Top bar (visual only for now) */}
@@ -1597,22 +1861,25 @@ export default function EditorShell() {
           />
           <ProjectStatusPill />
           <PromptStatusPill />
-          <button
-            className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
-            onClick={() => void handleDownloadAll()}
-            disabled={topExporting}
-            title="Download all 6 slides as a ZIP"
-          >
-            {topExporting ? "Preparing..." : "Download All"}
-          </button>
-          <button
-            className="px-3 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm disabled:opacity-50"
-            onClick={() => void handleShareAll()}
-            disabled={topExporting}
-            title="Share all slides (mobile-friendly)"
-          >
-            Share All
-          </button>
+          {!isMobile ? (
+            <button
+              className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
+              onClick={() => void handleDownloadAll()}
+              disabled={topExporting}
+              title="Download all 6 slides as a ZIP"
+            >
+              {topExporting ? "Preparing..." : "Download All"}
+            </button>
+          ) : (
+            <button
+              className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
+              onClick={() => void handleShareAll()}
+              disabled={topExporting}
+              title="Download all slides (saves to Photos when supported)"
+            >
+              {topExporting ? "Preparing..." : "Download All"}
+            </button>
+          )}
           <button
             onClick={() => void handleSignOut()}
             className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
@@ -1625,345 +1892,497 @@ export default function EditorShell() {
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left sidebar */}
-        <aside
-          className="relative bg-white border-r border-slate-200 flex flex-col shrink-0"
-          style={{ width: sidebarWidth }}
-        >
-          <div className="p-4 space-y-4 overflow-auto">
-            <button
-              className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
-              onClick={() => {
-                setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
-                handleNewCarousel();
-                void createNewProject(templateTypeId);
-              }}
-              disabled={switchingSlides}
-            >
-              New Project
-            </button>
+        {!isMobile ? (
+          <aside
+            className="relative bg-white border-r border-slate-200 flex flex-col shrink-0"
+            style={{ width: sidebarWidth }}
+          >
+            {SidebarInner}
 
-            <button
-              type="button"
-              className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-              onClick={() => setPromptModalOpen(true)}
-              title="Edit Prompt"
-            >
-              <div className="text-sm font-semibold text-slate-700">Prompt</div>
-              <div className="mt-0.5 text-xs text-slate-500 truncate">
-                {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
-              </div>
-            </button>
-
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-slate-900">Template Settings</div>
-              <button
-                className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-                onClick={() => setTemplateSettingsOpen(true)}
-                disabled={switchingSlides}
-                title="Edit template type settings"
-              >
-                Settings
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-xs font-semibold text-slate-500 uppercase">Template Type</div>
-              <select
-                className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                value={templateTypeId}
-                onChange={(e) => setTemplateTypeId(e.target.value === "enhanced" ? "enhanced" : "regular")}
-                disabled={switchingSlides}
-              >
-                <option value="regular">Regular</option>
-                <option value="enhanced">Enhanced</option>
-              </select>
-              <div className="text-xs text-slate-500">
-                Slide 1: {(currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1) ? "Template set" : "Not set"} · Slides 2–5:{" "}
-                {(currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5) ? "Template set" : "Not set"} · Slide 6:{" "}
-                {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "Template set" : "Not set"}
-              </div>
-            </div>
-
-            {/* Saved projects */}
-            <div className="border-t border-slate-100 pt-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-900">Saved Projects</div>
-                <div className="text-xs text-slate-500">{projects.length}</div>
-              </div>
-              <button
-                onClick={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
-                className="w-full h-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm flex items-center justify-between px-3"
-                disabled={projectsLoading || switchingSlides}
-              >
-                <span>
-                  {projectsLoading ? "Loading..." : "Load project…"}
-                </span>
-                <span className="text-slate-400">{projectsDropdownOpen ? "▴" : "▾"}</span>
-              </button>
-
-              {projectsDropdownOpen && (
-                <div className="w-full bg-white border border-slate-200 rounded-md shadow-sm max-h-64 overflow-y-auto">
-                  {projects.length === 0 ? (
-                    <div className="p-3 text-sm text-slate-500">No projects yet</div>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {projects.map((p) => (
-                        <button
-                          key={p.id}
-                          className="w-full text-left px-3 py-2 hover:bg-slate-50"
-                          onClick={() => {
-                            setProjectsDropdownOpen(false);
-                            void loadProject(p.id);
-                          }}
-                        >
-                          <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
-                          <div className="text-xs text-slate-500 truncate">
-                            Type: {p.template_type_id}
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5">
-                            Updated: {new Date(p.updated_at).toLocaleDateString()}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Typography (project-wide; canvas-only) */}
-            <div className="border-t border-slate-100 pt-4 space-y-3">
-              <div className="text-sm font-semibold text-slate-900">Fonts</div>
-              <div className="space-y-2">
-                <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline</div>
-                  <select
-                    className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={fontKey(headlineFontFamily, headlineFontWeight)}
-                    onChange={(e) => {
-                      const raw = e.target.value || "";
-                      const [family, w] = raw.split("@@");
-                      const weight = Number(w);
-                      setHeadlineFontFamily(family || "Inter, sans-serif");
-                      setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
-                    }}
-                  >
-                    {FONT_OPTIONS.map((o) => (
-                      <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body</div>
-                  <select
-                    className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={fontKey(bodyFontFamily, bodyFontWeight)}
-                    onChange={(e) => {
-                      const raw = e.target.value || "";
-                      const [family, w] = raw.split("@@");
-                      const weight = Number(w);
-                      setBodyFontFamily(family || "Inter, sans-serif");
-                      setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
-                    }}
-                  >
-                    {FONT_OPTIONS.map((o) => (
-                      <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Background Effects (project-wide colors) */}
-            <div className="border-t border-slate-100 pt-4 space-y-3">
-              <div className="text-sm font-semibold text-slate-900">Background Effects</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Background</div>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
-                      value={projectBackgroundColor || "#ffffff"}
-                      onChange={(e) => updateProjectColors(e.target.value, projectTextColor)}
-                      disabled={loading || switchingSlides}
-                      aria-label="Background color"
-                    />
-                    <div className="text-sm text-slate-700 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
-                      value={projectTextColor || "#000000"}
-                      onChange={(e) => updateProjectColors(projectBackgroundColor, e.target.value)}
-                      disabled={loading || switchingSlides}
-                      aria-label="Text color"
-                    />
-                    <div className="text-sm text-slate-700 tabular-nums">{projectTextColor || "#000000"}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Resize handle */}
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize"
-            onPointerDown={onSidebarResizePointerDown}
-            className="absolute top-0 right-0 h-full w-2 cursor-col-resize bg-transparent hover:bg-slate-200/60 active:bg-slate-300/60"
-          />
-        </aside>
+            {/* Resize handle */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="Drag to resize"
+              onPointerDown={onSidebarResizePointerDown}
+              className="absolute top-0 right-0 h-full w-2 cursor-col-resize bg-transparent hover:bg-slate-200/60 active:bg-slate-300/60"
+            />
+          </aside>
+        ) : null}
 
         {/* Workspace */}
-        <main className={`flex-1 min-w-0 overflow-y-auto ${styles.workspace}`}>
-          {/* Slides row */}
-          <div className="flex flex-col items-center justify-center p-6">
-            <div className="w-full max-w-[1400px] flex items-center gap-3">
-              <button
-                className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
-                aria-label="Previous"
-                onClick={goPrev}
-                disabled={!canGoPrev || switchingSlides}
-              >
-                ←
-              </button>
-              <div
-                ref={viewportRef}
-                className="flex-1 overflow-x-hidden overflow-y-visible"
-                style={{ paddingLeft: VIEWPORT_PAD, paddingRight: VIEWPORT_PAD }}
-              >
-                <div
-                  className="flex items-center gap-6 px-2 py-6"
-                  style={{
-                    transform: `translateX(${translateX}px)`,
-                    transition: "transform 300ms ease",
-                    width: totalW,
-                  }}
+        <main
+          className={`flex-1 min-w-0 overflow-y-auto ${styles.workspace}`}
+          onPointerDown={(e) => {
+            if (!isMobile) return;
+            if (mobileDrawerOpen) return;
+            // Edge swipe to open drawer (manual-only; no automatic open otherwise)
+            if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
+            if (isEditableTarget(e.target)) return;
+            const x = (e as any).clientX ?? 0;
+            const y = (e as any).clientY ?? 0;
+            if (x > 20) return;
+            mobileGestureRef.current = { mode: "drawer-open", startX: x, startY: y, lastX: x, lastY: y, fired: false };
+          }}
+          onPointerMove={(e) => {
+            if (!isMobile) return;
+            const g = mobileGestureRef.current;
+            if (g.mode !== "drawer-open") return;
+            const x = (e as any).clientX ?? 0;
+            const y = (e as any).clientY ?? 0;
+            g.lastX = x;
+            g.lastY = y;
+            const dx = x - g.startX;
+            const dy = y - g.startY;
+            if (Math.abs(dy) > Math.abs(dx)) return; // likely scroll
+            if (!g.fired && dx > 60) {
+              g.fired = true;
+              setMobileDrawerOpen(true);
+            }
+          }}
+          onPointerUp={() => {
+            if (!isMobile) return;
+            const g = mobileGestureRef.current;
+            if (g.mode === "drawer-open") {
+              mobileGestureRef.current.mode = null;
+            }
+          }}
+          onPointerCancel={() => {
+            if (!isMobile) return;
+            const g = mobileGestureRef.current;
+            if (g.mode === "drawer-open") {
+              mobileGestureRef.current.mode = null;
+            }
+          }}
+        >
+          {/* Mobile: manual left drawer */}
+          {isMobile ? (
+            <>
+              {/* Open handle */}
+              {!mobileDrawerOpen ? (
+                <button
+                  type="button"
+                  className="fixed left-2 top-24 z-40 h-10 w-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
+                  onClick={() => setMobileDrawerOpen(true)}
+                  aria-label="Open menu"
+                  title="Open menu"
                 >
-                  {Array.from({ length: slideCount }).map((_, i) => (
-                    <div
-                      key={i}
-                      ref={(node) => {
-                        slideRefs[i].current = node;
-                      }}
-                      className="relative"
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Select slide ${i + 1}`}
-                      onClick={() => {
-                        if (i === activeSlideIndex) return;
-                        if (switchingSlides || copyGenerating) return;
-                        void switchToSlide(i);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter" && e.key !== " ") return;
-                        e.preventDefault();
-                        if (i === activeSlideIndex) return;
-                        if (switchingSlides || copyGenerating) return;
-                        void switchToSlide(i);
-                      }}
+                  ☰
+                </button>
+              ) : null}
+
+              {/* Backdrop */}
+              {mobileDrawerOpen ? (
+                <button
+                  type="button"
+                  className="fixed inset-0 z-40 bg-black/40"
+                  aria-label="Close menu"
+                  onClick={() => setMobileDrawerOpen(false)}
+                />
+              ) : null}
+
+              {/* Drawer */}
+              <aside
+                className="fixed top-0 left-0 z-50 h-full bg-white border-r border-slate-200 shadow-xl"
+                style={{
+                  width: "min(88vw, 420px)",
+                  transform: mobileDrawerOpen ? "translateX(0)" : "translateX(-110%)",
+                  transition: "transform 200ms ease",
+                }}
+                onPointerDown={(e) => {
+                  if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
+                  const x = (e as any).clientX ?? 0;
+                  const y = (e as any).clientY ?? 0;
+                  mobileGestureRef.current = { mode: "drawer-close", startX: x, startY: y, lastX: x, lastY: y, fired: false };
+                }}
+                onPointerMove={(e) => {
+                  const g = mobileGestureRef.current;
+                  if (g.mode !== "drawer-close") return;
+                  const x = (e as any).clientX ?? 0;
+                  const y = (e as any).clientY ?? 0;
+                  g.lastX = x;
+                  g.lastY = y;
+                  const dx = x - g.startX;
+                  const dy = y - g.startY;
+                  if (Math.abs(dy) > Math.abs(dx)) return;
+                  if (!g.fired && dx < -60) {
+                    g.fired = true;
+                    setMobileDrawerOpen(false);
+                  }
+                }}
+                onPointerUp={() => {
+                  const g = mobileGestureRef.current;
+                  if (g.mode === "drawer-close") mobileGestureRef.current.mode = null;
+                }}
+                onPointerCancel={() => {
+                  const g = mobileGestureRef.current;
+                  if (g.mode === "drawer-close") mobileGestureRef.current.mode = null;
+                }}
+              >
+                <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200">
+                  <div className="text-sm font-semibold text-slate-900">Menu</div>
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+                    onClick={() => setMobileDrawerOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+                {SidebarInner}
+              </aside>
+
+              {/* Mobile "Save slides" panel (per-slide share) */}
+              {mobileSaveOpen ? (
+                <>
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-[60] bg-black/50"
+                    aria-label="Close save panel"
+                    onClick={() => setMobileSaveOpen(false)}
+                  />
+                  <div
+                    className="fixed left-1/2 top-1/2 z-[70] w-[92vw] max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-slate-200 shadow-2xl overflow-hidden"
+                    role="dialog"
+                    aria-modal="true"
+                  >
+                    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                      <div className="text-sm font-semibold text-slate-900">Save slides</div>
+                      <button
+                        type="button"
+                        className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+                        onClick={() => setMobileSaveOpen(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="text-sm text-slate-700">
+                        Your browser can’t save all 6 images at once. Tap each slide below to open the Share Sheet, then choose <b>Save Image</b>/<b>Save to Photos</b>.
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Array.from({ length: slideCount }).map((_, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            className="h-11 rounded-md bg-[#6D28D9] text-white text-sm font-semibold disabled:opacity-50"
+                            disabled={mobileSaveBusy !== null || topExporting}
+                            onClick={() => void shareSingleSlide(i)}
+                          >
+                            {mobileSaveBusy === i ? "Preparing..." : `Save Slide ${i + 1}`}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="w-full h-11 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold disabled:opacity-50"
+                        disabled={topExporting}
+                        onClick={() => void handleDownloadAll()}
+                        title="Fallback: downloads a ZIP to the Files app"
+                      >
+                        Download ZIP (Files)
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </>
+          ) : null}
+          {/* Slides row */}
+          <div className="flex flex-col items-center justify-center p-3 md:p-6">
+            <div className="w-full max-w-[1400px]">
+              {isMobile ? (
+                <div className="w-full">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <button
+                      className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
+                      aria-label="Previous"
+                      onClick={goPrev}
+                      disabled={!canGoPrev || switchingSlides}
                     >
-                      <SlideCard index={i + 1} active={i === activeSlideIndex}>
-                        <div
-                          className="w-full h-full flex flex-col items-center justify-start"
-                          style={i === activeSlideIndex ? undefined : { pointerEvents: "none" }}
-                        >
-                          {/* Scale the existing 540x720 preview down to fit 420x560 */}
+                      ←
+                    </button>
+                    <div className="text-sm font-semibold text-slate-700">
+                      Slide {activeSlideIndex + 1} / {slideCount}
+                    </div>
+                    <button
+                      className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
+                      aria-label="Next"
+                      onClick={goNext}
+                      disabled={!canGoNext || switchingSlides}
+                    >
+                      →
+                    </button>
+                  </div>
+
+                  <div
+                    ref={viewportRef}
+                    className="w-full flex items-center justify-center"
+                    onPointerDown={(e) => {
+                      if (!isMobile) return;
+                      if (mobileDrawerOpen) return;
+                      if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
+                      if (switchingSlides || copyGenerating) return;
+                      if (isEditableTarget(e.target)) return;
+                      const x = (e as any).clientX ?? 0;
+                      const y = (e as any).clientY ?? 0;
+                      mobileGestureRef.current = { mode: "slide", startX: x, startY: y, lastX: x, lastY: y, fired: false };
+                    }}
+                    onPointerMove={(e) => {
+                      const g = mobileGestureRef.current;
+                      if (g.mode !== "slide") return;
+                      const x = (e as any).clientX ?? 0;
+                      const y = (e as any).clientY ?? 0;
+                      g.lastX = x;
+                      g.lastY = y;
+                      const dx = x - g.startX;
+                      const dy = y - g.startY;
+                      if (Math.abs(dy) > Math.abs(dx)) return;
+                      if (g.fired) return;
+                      if (dx < -60) {
+                        g.fired = true;
+                        void switchToSlide(activeSlideIndex + 1);
+                      } else if (dx > 60) {
+                        g.fired = true;
+                        void switchToSlide(activeSlideIndex - 1);
+                      }
+                    }}
+                    onPointerUp={() => {
+                      const g = mobileGestureRef.current;
+                      if (g.mode === "slide") mobileGestureRef.current.mode = null;
+                    }}
+                    onPointerCancel={() => {
+                      const g = mobileGestureRef.current;
+                      if (g.mode === "slide") mobileGestureRef.current.mode = null;
+                    }}
+                  >
+                    {(() => {
+                      const i = activeSlideIndex;
+                      const tid = computeTemplateIdForSlide(i);
+                      const snap = (tid ? templateSnapshots[tid] : null) || null;
+                      const layoutForThisCard =
+                        layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT;
+
+                      const maxW = Math.max(240, Math.min(540, (viewportWidth || 540) - 24));
+                      const scale = Math.max(0.35, Math.min(1, maxW / 540));
+
+                      return (
+                        <div style={{ width: maxW, height: 720 * scale, overflow: "hidden" }}>
                           <div
                             style={{
-                              width: 420,
-                              height: 560,
-                              overflow: "hidden",
+                              transform: `scale(${scale})`,
+                              transformOrigin: "top left",
+                              width: 540,
+                              height: 720,
                             }}
                           >
-                            <div
-                              style={{
-                                transform: "scale(0.7777778)",
-                                transformOrigin: "top left",
-                                width: 540,
-                                height: 720,
-                              }}
-                            >
-                              {(() => {
-                                const tid = computeTemplateIdForSlide(i);
-                                const snap = (tid ? templateSnapshots[tid] : null) || null;
-                                const layoutForThisCard =
-                                  i === activeSlideIndex
-                                    ? (layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT)
-                                    : (slides[i]?.layoutData?.layout ? (slides[i].layoutData.layout as any) : EMPTY_LAYOUT);
-
-                                if (!tid) {
-                                  return (
-                                    <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
-                                      No template selected
-                                    </div>
-                                  );
+                            {!tid ? (
+                              <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                No template selected
+                              </div>
+                            ) : !snap ? (
+                              <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                Loading template…
+                              </div>
+                            ) : (
+                              <CarouselPreviewVision
+                                ref={(node: any) => {
+                                  (canvasRef as any).current = node;
+                                  slideCanvasRefs.current[i]!.current = node;
+                                }}
+                                layout={layoutForThisCard}
+                                backgroundColor={projectBackgroundColor}
+                                textColor={projectTextColor}
+                                templateSnapshot={snap}
+                                hasHeadline={templateTypeId !== "regular"}
+                                headlineFontFamily={headlineFontFamily}
+                                bodyFontFamily={bodyFontFamily}
+                                  headlineFontWeight={headlineFontWeight}
+                                  bodyFontWeight={bodyFontWeight}
+                                contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
+                                clampUserTextToContentRect={templateTypeId !== "regular"}
+                                pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                onUserTextChange={
+                                  templateTypeId === "regular"
+                                    ? handleRegularCanvasTextChange
+                                    : undefined
                                 }
-                                if (!snap) {
-                                  return (
-                                    <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
-                                      Loading template…
-                                    </div>
-                                  );
-                                }
-
-                                const refProp =
-                                  i === activeSlideIndex
-                                    ? (node: any) => {
-                                        (canvasRef as any).current = node;
-                                        slideCanvasRefs.current[i]!.current = node;
-                                      }
-                                    : slideCanvasRefs.current[i];
-
-                                return (
-                                  <CarouselPreviewVision
-                                    ref={refProp as any}
-                                    layout={layoutForThisCard}
-                                    backgroundColor={projectBackgroundColor}
-                                    textColor={projectTextColor}
-                                    templateSnapshot={snap}
-                                    hasHeadline={templateTypeId !== "regular"}
-                                    headlineFontFamily={headlineFontFamily}
-                                    bodyFontFamily={bodyFontFamily}
-                                      headlineFontWeight={headlineFontWeight}
-                                      bodyFontWeight={bodyFontWeight}
-                                    contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
-                                    clampUserTextToContentRect={templateTypeId !== "regular"}
-                                    pushTextOutOfUserImage={templateTypeId !== "regular"}
-                                    onUserTextChange={
-                                      i === activeSlideIndex && templateTypeId === "regular"
-                                        ? handleRegularCanvasTextChange
-                                        : undefined
-                                    }
-                                  />
-                                );
-                              })()}
-                            </div>
+                              />
+                            )}
                           </div>
                         </div>
-                      </SlideCard>
-                    </div>
-                  ))}
+                      );
+                    })()}
+                  </div>
+                  {/* Hidden render of non-active slides so Download/Share All can export them on mobile. */}
+                  <div style={{ position: "absolute", left: -100000, top: -100000, width: 1, height: 1, overflow: "hidden" }}>
+                    {Array.from({ length: slideCount }).map((_, i) => {
+                      if (i === activeSlideIndex) return null;
+                      const tid = computeTemplateIdForSlide(i);
+                      const snap = (tid ? templateSnapshots[tid] : null) || null;
+                      const layoutForThisCard =
+                        slides[i]?.layoutData?.layout ? (slides[i].layoutData.layout as any) : EMPTY_LAYOUT;
+                      if (!tid || !snap) return null;
+                      return (
+                        <CarouselPreviewVision
+                          key={i}
+                          ref={slideCanvasRefs.current[i] as any}
+                          layout={layoutForThisCard}
+                          backgroundColor={projectBackgroundColor}
+                          textColor={projectTextColor}
+                          templateSnapshot={snap}
+                          hasHeadline={templateTypeId !== "regular"}
+                          headlineFontFamily={headlineFontFamily}
+                          bodyFontFamily={bodyFontFamily}
+                            headlineFontWeight={headlineFontWeight}
+                            bodyFontWeight={bodyFontWeight}
+                          contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
+                          clampUserTextToContentRect={templateTypeId !== "regular"}
+                          pushTextOutOfUserImage={templateTypeId !== "regular"}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-              <button
-                className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
-                aria-label="Next"
-                onClick={goNext}
-                disabled={!canGoNext || switchingSlides}
-              >
-                →
-              </button>
+              ) : (
+                <div className="w-full flex items-center gap-3">
+                  <button
+                    className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
+                    aria-label="Previous"
+                    onClick={goPrev}
+                    disabled={!canGoPrev || switchingSlides}
+                  >
+                    ←
+                  </button>
+                  <div
+                    ref={viewportRef}
+                    className="flex-1 overflow-x-hidden overflow-y-visible"
+                    style={{ paddingLeft: VIEWPORT_PAD, paddingRight: VIEWPORT_PAD }}
+                  >
+                    <div
+                      className="flex items-center gap-6 px-2 py-6"
+                      style={{
+                        transform: `translateX(${translateX}px)`,
+                        transition: "transform 300ms ease",
+                        width: totalW,
+                      }}
+                    >
+                      {Array.from({ length: slideCount }).map((_, i) => (
+                        <div
+                          key={i}
+                          ref={(node) => {
+                            slideRefs[i].current = node;
+                          }}
+                          className="relative"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Select slide ${i + 1}`}
+                          onClick={() => {
+                            if (i === activeSlideIndex) return;
+                            if (switchingSlides || copyGenerating) return;
+                            void switchToSlide(i);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            if (i === activeSlideIndex) return;
+                            if (switchingSlides || copyGenerating) return;
+                            void switchToSlide(i);
+                          }}
+                        >
+                          <SlideCard index={i + 1} active={i === activeSlideIndex}>
+                            <div
+                              className="w-full h-full flex flex-col items-center justify-start"
+                              style={i === activeSlideIndex ? undefined : { pointerEvents: "none" }}
+                            >
+                              {/* Scale the existing 540x720 preview down to fit 420x560 */}
+                              <div
+                                style={{
+                                  width: 420,
+                                  height: 560,
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    transform: "scale(0.7777778)",
+                                    transformOrigin: "top left",
+                                    width: 540,
+                                    height: 720,
+                                  }}
+                                >
+                                  {(() => {
+                                    const tid = computeTemplateIdForSlide(i);
+                                    const snap = (tid ? templateSnapshots[tid] : null) || null;
+                                    const layoutForThisCard =
+                                      i === activeSlideIndex
+                                        ? (layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT)
+                                        : (slides[i]?.layoutData?.layout ? (slides[i].layoutData.layout as any) : EMPTY_LAYOUT);
+
+                                    if (!tid) {
+                                      return (
+                                        <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                          No template selected
+                                        </div>
+                                      );
+                                    }
+                                    if (!snap) {
+                                      return (
+                                        <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                          Loading template…
+                                        </div>
+                                      );
+                                    }
+
+                                    const refProp =
+                                      i === activeSlideIndex
+                                        ? (node: any) => {
+                                            (canvasRef as any).current = node;
+                                            slideCanvasRefs.current[i]!.current = node;
+                                          }
+                                        : slideCanvasRefs.current[i];
+
+                                    return (
+                                      <CarouselPreviewVision
+                                        ref={refProp as any}
+                                        layout={layoutForThisCard}
+                                        backgroundColor={projectBackgroundColor}
+                                        textColor={projectTextColor}
+                                        templateSnapshot={snap}
+                                        hasHeadline={templateTypeId !== "regular"}
+                                        headlineFontFamily={headlineFontFamily}
+                                        bodyFontFamily={bodyFontFamily}
+                                          headlineFontWeight={headlineFontWeight}
+                                          bodyFontWeight={bodyFontWeight}
+                                        contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
+                                        clampUserTextToContentRect={templateTypeId !== "regular"}
+                                        pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                        onUserTextChange={
+                                          i === activeSlideIndex && templateTypeId === "regular"
+                                            ? handleRegularCanvasTextChange
+                                            : undefined
+                                        }
+                                      />
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            </div>
+                          </SlideCard>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
+                    aria-label="Next"
+                    onClick={goNext}
+                    disabled={!canGoNext || switchingSlides}
+                  >
+                    →
+                  </button>
+                </div>
+              )}
             </div>
             {/* Text styling toolbar (kept outside SlideCard so it never affects slide sizing/clipping) */}
             {layoutData?.layout && inputData ? (

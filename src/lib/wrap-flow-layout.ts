@@ -568,8 +568,8 @@ export function wrapFlowLayout(
           // If it didn't place due to constraints, try again on next loop; avoid infinite loops by advancing.
           if (res.nextIdx === bIdx) break;
         }
-        bIdx = res.nextIdx;
-      }
+      bIdx = res.nextIdx;
+    }
       if (!truncated && bIdx < tokens.length && tokens.slice(bIdx).some((t) => t.kind === 'word')) truncated = true;
 
       // Paragraph gap (new block)
