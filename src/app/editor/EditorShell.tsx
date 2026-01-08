@@ -1545,26 +1545,25 @@ export default function EditorShell() {
             <div className="max-w-[1400px] mx-auto px-6 py-4">
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-3">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
-                    <input
-                      className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                      placeholder="Enter headline..."
-                      value={slides[activeSlideIndex]?.draftHeadline || ""}
-                      onChange={(e) => {
-                        setSlides((prev) =>
-                          prev.map((s, i) =>
-                            i === activeSlideIndex ? { ...s, draftHeadline: e.target.value } : s
-                          )
-                        );
-                        scheduleLiveLayout(activeSlideIndex);
-                      }}
-                      disabled={loading || switchingSlides || copyGenerating || templateTypeId === "regular"}
-                    />
-                    {templateTypeId === "regular" ? (
-                      <div className="mt-1 text-xs text-slate-500">Headline is disabled for Regular.</div>
-                    ) : null}
-                  </div>
+                  {templateTypeId !== "regular" ? (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
+                      <input
+                        className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
+                        placeholder="Enter headline..."
+                        value={slides[activeSlideIndex]?.draftHeadline || ""}
+                        onChange={(e) => {
+                          setSlides((prev) =>
+                            prev.map((s, i) =>
+                              i === activeSlideIndex ? { ...s, draftHeadline: e.target.value } : s
+                            )
+                          );
+                          scheduleLiveLayout(activeSlideIndex);
+                        }}
+                        disabled={loading || switchingSlides || copyGenerating}
+                      />
+                    </div>
+                  ) : null}
 
                   <div>
                     <label className="block text-sm font-semibold text-slate-900 mb-1">Body</label>
@@ -1597,58 +1596,62 @@ export default function EditorShell() {
                     {copyGenerating ? "Generating Copy..." : "Generate Copy"}
                   </button>
                   {copyError ? <div className="text-xs text-red-600">❌ {copyError}</div> : null}
-                  <button
-                    className="w-full h-10 rounded-lg bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                    disabled={
-                      loading ||
-                      switchingSlides ||
-                      copyGenerating ||
-                      (templateTypeId !== "regular" && !(slides[activeSlideIndex]?.draftHeadline || "").trim()) ||
-                      !(slides[activeSlideIndex]?.draftBody || "").trim()
-                    }
-                    onClick={() => {
-                      layoutDirtyRef.current = true;
-                      const cur = slidesRef.current[activeSlideIndex] || initSlide();
-                      const req: CarouselTextRequest = {
-                        headline: templateTypeId === "regular" ? "" : (cur.draftHeadline || "").trim(),
-                        body: (cur.draftBody || "").trim(),
-                        settings: {
-                          backgroundColor: projectBackgroundColor || "#ffffff",
-                          textColor: projectTextColor || "#000000",
-                          // Keep image generation off by default in this shell; can be revisited later.
-                          includeImage: false,
-                        },
-                        templateId: computeTemplateIdForSlide(activeSlideIndex) || undefined,
-                      } as any;
-                      void handleGenerate(req);
-                    }}
-                  >
-                    {loading ? "Generating..." : "Generate Layout"}
-                  </button>
+                  {templateTypeId !== "regular" ? (
+                    <>
+                      <button
+                        className="w-full h-10 rounded-lg bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+                        disabled={
+                          loading ||
+                          switchingSlides ||
+                          copyGenerating ||
+                          !(slides[activeSlideIndex]?.draftHeadline || "").trim() ||
+                          !(slides[activeSlideIndex]?.draftBody || "").trim()
+                        }
+                        onClick={() => {
+                          layoutDirtyRef.current = true;
+                          const cur = slidesRef.current[activeSlideIndex] || initSlide();
+                          const req: CarouselTextRequest = {
+                            headline: (cur.draftHeadline || "").trim(),
+                            body: (cur.draftBody || "").trim(),
+                            settings: {
+                              backgroundColor: projectBackgroundColor || "#ffffff",
+                              textColor: projectTextColor || "#000000",
+                              // Keep image generation off by default in this shell; can be revisited later.
+                              includeImage: false,
+                            },
+                            templateId: computeTemplateIdForSlide(activeSlideIndex) || undefined,
+                          } as any;
+                          void handleGenerate(req);
+                        }}
+                      >
+                        {loading ? "Generating..." : "Generate Layout"}
+                      </button>
 
-                  <div className="flex items-center gap-2">
-                    <select
-                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold px-3"
-                      value={realignmentModel}
-                      onChange={(e) => setRealignmentModel(e.target.value as any)}
-                      disabled={realigning || copyGenerating}
-                    >
-                      <option value="gemini-computational">Gemini Computational</option>
-                      <option value="gemini">Gemini 3 Vision</option>
-                      <option value="claude">Claude Vision</option>
-                    </select>
-                  </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold px-3"
+                          value={realignmentModel}
+                          onChange={(e) => setRealignmentModel(e.target.value as any)}
+                          disabled={realigning || copyGenerating}
+                        >
+                          <option value="gemini-computational">Gemini Computational</option>
+                          <option value="gemini">Gemini 3 Vision</option>
+                          <option value="claude">Claude Vision</option>
+                        </select>
+                      </div>
 
-                  <button
-                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                    onClick={() => {
-                      layoutDirtyRef.current = true;
-                      void handleRealign();
-                    }}
-                    disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
-                  >
-                    {realigning ? "Realigning..." : "Realign Text"}
-                  </button>
+                      <button
+                        className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                        onClick={() => {
+                          layoutDirtyRef.current = true;
+                          void handleRealign();
+                        }}
+                        disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
+                      >
+                        {realigning ? "Realigning..." : "Realign Text"}
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                     onClick={() => {
