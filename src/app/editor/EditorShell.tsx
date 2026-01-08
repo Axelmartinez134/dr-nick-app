@@ -1683,6 +1683,7 @@ export default function EditorShell() {
                                     backgroundColor={projectBackgroundColor}
                                     textColor={projectTextColor}
                                     templateSnapshot={snap}
+                                    hasHeadline={templateTypeId !== "regular"}
                                     headlineFontFamily={headlineFontFamily}
                                     bodyFontFamily={bodyFontFamily}
                                       headlineFontWeight={headlineFontWeight}

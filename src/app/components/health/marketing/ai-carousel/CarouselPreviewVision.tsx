@@ -10,6 +10,7 @@ interface CarouselPreviewProps {
   backgroundColor: string;
   textColor: string;
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
+  hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   headlineFontFamily?: string;
   bodyFontFamily?: string;
   headlineFontWeight?: number;
@@ -32,6 +33,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       backgroundColor,
       textColor,
       templateSnapshot,
+      hasHeadline,
       headlineFontFamily,
       bodyFontFamily,
       headlineFontWeight,
@@ -832,6 +834,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Heuristic:
       // - If there are 2+ distinct font sizes, treat the largest baseSize lines as HEADLINE.
       // - If there is only 1 distinct font size, treat the first line as HEADLINE and the rest as BODY.
+      const effectiveHasHeadline = hasHeadline !== false;
       const sizesDesc = Array.from(new Set(layout.textLines.map((l) => l.baseSize))).sort((a, b) => b - a);
       const headlineSize = sizesDesc[0] ?? 0;
       const hasDistinctHeadlineSize = sizesDesc.length >= 2;
@@ -850,7 +853,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         });
 
         try {
-          const isHeadlineLine = hasDistinctHeadlineSize ? line.baseSize === headlineSize : index === 0;
+          const isHeadlineLine =
+            effectiveHasHeadline
+              ? (hasDistinctHeadlineSize ? line.baseSize === headlineSize : index === 0)
+              : false;
           const baseWeight = isHeadlineLine ? headlineWeight : bodyWeight;
           // Create Textbox object (enforces width constraint, supports mixed formatting)
           const textObj = new fabric.Textbox(line.text, {
