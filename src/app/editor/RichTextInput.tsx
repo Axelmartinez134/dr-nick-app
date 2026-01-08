@@ -136,7 +136,7 @@ function parseDomToTextAndRanges(root: HTMLElement): { text: string; ranges: Inl
   for (const el of effectiveParas) {
     const ranges: InlineStyleRange[] = [];
     let idx = 0;
-    let globalBase = 0; // applied later
+    // NOTE: paragraph ranges are shifted later when we merge paragraphs; no per-paragraph base needed here.
 
     const walk = (node: Node, marks: { b: boolean; i: boolean; u: boolean }) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
@@ -218,7 +218,7 @@ export function RichTextInput(props: Props) {
   const lastCommittedRef = useRef<{ text: string; rangesKey: string } | null>(null);
 
   const rangesKey = useMemo(() => JSON.stringify(mergeRanges(valueRanges)), [valueRanges]);
-  const html = useMemo(() => renderHtmlFromTextAndRanges(valueText, valueRanges), [valueText, rangesKey]);
+  const html = useMemo(() => renderHtmlFromTextAndRanges(valueText, valueRanges), [valueText, valueRanges]);
 
   useEffect(() => {
     const el = rootRef.current;
