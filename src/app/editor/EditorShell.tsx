@@ -121,6 +121,8 @@ export default function EditorShell() {
     startWidth: number;
   }>({ dragging: false, startX: 0, startWidth: SIDEBAR_DEFAULT });
   // Project-wide typography (shared across all slides; canvas-only).
+  const [bodyFontSizePx, setBodyFontSizePx] = useState<number>(48);
+  const bodyFontSizeDebounceRef = useRef<number | null>(null);
   const FONT_OPTIONS = useMemo(
     () => [
       { label: "Inter", family: "Inter, sans-serif", weight: 400 },
@@ -479,9 +481,9 @@ export default function EditorShell() {
       clearancePx: 1,
       lineHeight: 1.2,
       headlineFontSize: 76,
-      bodyFontSize: 48,
+      bodyFontSize: Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48,
       headlineMinFontSize: 56,
-      bodyMinFontSize: 36,
+      bodyMinFontSize: Math.max(10, Math.min(36, Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48)),
       blockGapPx: 24,
       laneTieBreak: "right",
       bodyPreferSideLane: true,
@@ -593,6 +595,13 @@ export default function EditorShell() {
     if (prev) window.clearTimeout(prev);
     liveLayoutTimeoutsRef.current[slideIndex] = window.setTimeout(() => {
       enqueueLiveLayout([slideIndex]);
+    }, LIVE_LAYOUT_DEBOUNCE_MS);
+  };
+
+  const scheduleLiveLayoutAll = () => {
+    if (bodyFontSizeDebounceRef.current) window.clearTimeout(bodyFontSizeDebounceRef.current);
+    bodyFontSizeDebounceRef.current = window.setTimeout(() => {
+      enqueueLiveLayout(Array.from({ length: slideCount }, (_, i) => i));
     }, LIVE_LAYOUT_DEBOUNCE_MS);
   };
 
@@ -1545,6 +1554,61 @@ export default function EditorShell() {
             <div className="max-w-[1400px] mx-auto px-6 py-4">
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-900 mb-1">
+                      Body font size (px)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                        onClick={() => {
+                          const next = Math.max(10, Math.round((bodyFontSizePx || 48) - 1));
+                          setBodyFontSizePx(next);
+                          scheduleLiveLayoutAll();
+                        }}
+                        disabled={loading || switchingSlides || copyGenerating}
+                        aria-label="Decrease body font size"
+                        title="Decrease"
+                      >
+                        −
+                      </button>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-28 h-10 rounded-md border border-slate-200 px-3 text-slate-900"
+                        value={Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48}
+                        min={10}
+                        max={200}
+                        step={1}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const n = Math.round(Number(raw));
+                          const next = Number.isFinite(n) ? Math.max(10, Math.min(200, n)) : 48;
+                          setBodyFontSizePx(next);
+                          scheduleLiveLayoutAll();
+                        }}
+                        disabled={loading || switchingSlides || copyGenerating}
+                      />
+                      <button
+                        type="button"
+                        className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                        onClick={() => {
+                          const next = Math.min(200, Math.round((bodyFontSizePx || 48) + 1));
+                          setBodyFontSizePx(next);
+                          scheduleLiveLayoutAll();
+                        }}
+                        disabled={loading || switchingSlides || copyGenerating}
+                        aria-label="Increase body font size"
+                        title="Increase"
+                      >
+                        +
+                      </button>
+                      <div className="text-xs text-slate-500">
+                        Updates all slides (debounced)
+                      </div>
+                    </div>
+                  </div>
                   {templateTypeId !== "regular" ? (
                     <div>
                       <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
