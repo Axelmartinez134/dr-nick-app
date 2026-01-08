@@ -72,6 +72,10 @@ function normalizeWhitespace(s: string) {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+type RichToken =
+  | { kind: 'word'; text: string; start: number; end: number } // [start,end) in ORIGINAL string
+  | { kind: 'break'; start: number; end: number }; // hard line break ("\n")
+
 function splitLongWord(word: string, maxChars: number): string[] {
   if (word.length <= maxChars) return [word];
   const parts: string[] = [];
@@ -87,6 +91,80 @@ function splitLongWord(word: string, maxChars: number): string[] {
     i += take;
   }
   return parts;
+}
+
+function tokenizeRich(text: string, maxChars: number): RichToken[] {
+  const out: RichToken[] = [];
+  const s = String(text || '');
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i]!;
+    if (ch === '\n') {
+      out.push({ kind: 'break', start: i, end: i + 1 });
+      i += 1;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < s.length && !/\s/.test(s[j]!) && s[j] !== '\n') j += 1;
+    const rawWord = s.slice(i, j);
+    if (rawWord.length > maxChars) {
+      const parts = splitLongWord(rawWord, maxChars);
+      let offset = 0;
+      for (const p of parts) {
+        const coreLen = p.endsWith('-') ? p.length - 1 : p.length;
+        out.push({
+          kind: 'word',
+          text: p,
+          start: i + offset,
+          end: i + offset + Math.max(1, coreLen),
+        });
+        offset += Math.max(1, coreLen);
+      }
+    } else {
+      out.push({ kind: 'word', text: rawWord, start: i, end: j });
+    }
+    i = j;
+  }
+  return out;
+}
+
+function takeLineRich(tokens: RichToken[], idx: number, maxChars: number): { line: string; consumed: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> } {
+  if (idx >= tokens.length) return { line: '', consumed: 0, parts: [] };
+  if (tokens[idx]?.kind === 'break') {
+    // Caller will handle advancing y; consume the break token.
+    return { line: '', consumed: 1, parts: [] };
+  }
+  let line = '';
+  let consumed = 0;
+  const parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> = [];
+  for (let i = idx; i < tokens.length; i++) {
+    const t = tokens[i]!;
+    if (t.kind === 'break') break;
+    const next = line ? `${line} ${t.text}` : t.text;
+    if (next.length <= maxChars) {
+      const startPos = line ? (line.length + 1) : 0;
+      line = next;
+      parts.push({ lineStart: startPos, lineEnd: startPos + t.text.length, sourceStart: t.start, sourceEnd: t.end });
+      consumed++;
+      continue;
+    }
+    break;
+  }
+  // Always consume at least one token if possible
+  if (!line) {
+    const t = tokens[idx]!;
+    if (t.kind === 'word') {
+      const clipped = t.text.slice(0, Math.max(1, maxChars - 1)) + '…';
+      line = clipped;
+      parts.push({ lineStart: 0, lineEnd: Math.max(0, clipped.replace(/…$/g, '').length), sourceStart: t.start, sourceEnd: t.end });
+      consumed = 1;
+    }
+  }
+  return { line, consumed, parts };
 }
 
 function tokenize(text: string, maxChars: number): string[] {
@@ -184,7 +262,7 @@ export function wrapFlowLayout(
   body: string,
   image: ImageBounds,
   opts?: WrapFlowOptions
-): { layout: VisionLayoutDecision; meta: { truncated: boolean; usedFonts: { headline: number; body: number } } } {
+): { layout: VisionLayoutDecision; meta: { truncated: boolean; usedFonts: { headline: number; body: number }; lineSources?: Array<{ block: 'HEADLINE' | 'BODY'; paragraphIndex?: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> }> } } {
   const o = { ...DEFAULTS, ...(opts || {}) } as (Required<Omit<WrapFlowOptions, 'contentRect'>> & { contentRect?: { x: number; y: number; width: number; height: number } });
 
   const contentRect = o.contentRect || {
@@ -252,6 +330,7 @@ export function wrapFlowLayout(
 
   let bestLines: TextLine[] = [];
   let bestTruncated = true;
+  let bestLineSources: Array<{ block: 'HEADLINE' | 'BODY'; paragraphIndex?: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> }> = [];
 
   const fontSeq = (start: number, min: number) => {
     const out: number[] = [];
@@ -269,23 +348,23 @@ export function wrapFlowLayout(
       bodyFont = bf;
 
       const lines: TextLine[] = [];
+      const lineSources: Array<{ block: 'HEADLINE' | 'BODY'; paragraphIndex?: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> }> = [];
       let y = content.top;
 
-      const headlineTokens = tokenize(headline, 60); // high ceiling; per-line maxChars computed later
-      const bodyTokens = tokenize(body, 120);
+      const headlineTokens = tokenizeRich(headline || '', 60); // per-line maxChars computed later
 
       let hIdx = 0;
-      let bIdx = 0;
-      let inHeadline = headlineTokens.length > 0;
+      let inHeadline = headlineTokens.some((t) => t.kind === 'word');
       let truncated = false;
       let headlineHitImage = false;
 
       const placeNextLine = (
         fontSize: number,
         lh: number,
-        tokens: string[],
+        tokens: RichToken[],
         idx: number,
-        block: 'HEADLINE' | 'BODY'
+        block: 'HEADLINE' | 'BODY',
+        paragraphIndex?: number
       ): { nextIdx: number; placed: boolean } => {
         const lhPx = lineHeightPx(fontSize, lh);
       // If out of vertical space, truncate
@@ -334,7 +413,13 @@ export function wrapFlowLayout(
         return { nextIdx: idx, placed: false };
       }
 
-      const { line, consumed } = takeLine(tokens.slice(idx), maxChars);
+      // Hard line breaks (Shift+Enter) are represented as break tokens.
+      if (tokens[idx]?.kind === 'break') {
+        y += lhPx;
+        return { nextIdx: idx + 1, placed: false };
+      }
+
+      const { line, consumed, parts } = takeLineRich(tokens, idx, maxChars);
       if (!line || consumed <= 0) {
         y += lhPx;
         return { nextIdx: idx, placed: false };
@@ -389,6 +474,7 @@ export function wrapFlowLayout(
       }
 
       lines.push(textLine);
+      lineSources.push({ block, paragraphIndex, parts });
       y += lhPx; // one object per y line
       return { nextIdx: idx + consumed, placed: true };
     };
@@ -406,7 +492,7 @@ export function wrapFlowLayout(
     }
 
     // If headline incomplete, truncate last available line
-    if (hIdx < headlineTokens.length) {
+    if (headlineTokens.slice(hIdx).some((t) => t.kind === 'word')) {
       truncated = true;
     } else {
       // Block gap before body
@@ -434,13 +520,62 @@ export function wrapFlowLayout(
       }
     }
 
-    // Body block
-    while (!truncated && bIdx < bodyTokens.length) {
-      const res = placeNextLine(bodyFont, o.bodyLineHeight, bodyTokens, bIdx, 'BODY');
-      if (!res.placed) break;
-      bIdx = res.nextIdx;
+    // BODY paragraphs: split on "\n\n" (blank line). Within a paragraph, "\n" acts as a hard line break.
+    const bodyStr = String(body || '');
+    const paragraphs: Array<{ start: number; text: string }> = [];
+    {
+      let start = 0;
+      let i = 0;
+      while (i < bodyStr.length) {
+        if (bodyStr[i] === '\n' && bodyStr[i + 1] === '\n') {
+          // consume all consecutive newlines as a paragraph break
+          const text = bodyStr.slice(start, i);
+          paragraphs.push({ start, text });
+          while (i < bodyStr.length && bodyStr[i] === '\n') i++;
+          start = i;
+          continue;
+        }
+        i++;
+      }
+      paragraphs.push({ start, text: bodyStr.slice(start) });
     }
-    if (bIdx < bodyTokens.length) truncated = true;
+
+    let paragraphIndex = 0;
+    for (const p of paragraphs) {
+      if (truncated) break;
+      const tokens = tokenizeRich(p.text, 120).map((t) => {
+        if (t.kind === 'word') return { ...t, start: t.start + p.start, end: t.end + p.start } as RichToken;
+        return { ...t, start: t.start + p.start, end: t.end + p.start } as RichToken;
+      });
+      let bIdx = 0;
+      const hasWords = tokens.some((t) => t.kind === 'word');
+      if (!hasWords) {
+        paragraphIndex++;
+        // Still respect blank paragraphs as a vertical gap
+        y += o.blockGapPx;
+        continue;
+      }
+
+      while (!truncated && bIdx < tokens.length) {
+        // Skip any leading hard breaks
+        if (tokens[bIdx]?.kind === 'break') {
+          bIdx += 1;
+          y += lineHeightPx(bodyFont, o.bodyLineHeight);
+          continue;
+        }
+        const res = placeNextLine(bodyFont, o.bodyLineHeight, tokens, bIdx, 'BODY', paragraphIndex);
+        if (!res.placed) {
+          // If it didn't place due to constraints, try again on next loop; avoid infinite loops by advancing.
+          if (res.nextIdx === bIdx) break;
+        }
+        bIdx = res.nextIdx;
+      }
+      if (!truncated && bIdx < tokens.length && tokens.slice(bIdx).some((t) => t.kind === 'word')) truncated = true;
+
+      // Paragraph gap (new block)
+      if (!truncated) y += o.blockGapPx;
+      paragraphIndex++;
+    }
 
     // If truncated and we have at least one line, ensure last line ends with ellipsis and fits
     if (truncated && lines.length > 0) {
@@ -456,6 +591,7 @@ export function wrapFlowLayout(
     if (!truncated) {
       assertNoOverlap(lines);
       bestLines = lines;
+      bestLineSources = lineSources;
       bestTruncated = false;
       break;
     }
@@ -465,6 +601,7 @@ export function wrapFlowLayout(
       // Best effort still must be overlap-safe; if it fails, throw.
       assertNoOverlap(lines);
       bestLines = lines;
+      bestLineSources = lineSources;
       bestTruncated = true;
     }
 
@@ -491,7 +628,7 @@ export function wrapFlowLayout(
 
   return {
     layout,
-    meta: { truncated: bestTruncated, usedFonts: { headline: headlineFont, body: bodyFont } },
+    meta: { truncated: bestTruncated, usedFonts: { headline: headlineFont, body: bodyFont }, lineSources: bestLineSources },
   };
 }
 

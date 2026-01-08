@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./EditorShell.module.css";
 import dynamic from "next/dynamic";
 import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
-import type { CarouselTextRequest } from "@/lib/carousel-types";
+import type { CarouselTextRequest, TextStyle } from "@/lib/carousel-types";
 import type { VisionLayoutDecision } from "@/lib/carousel-types";
 import { wrapFlowLayout } from "@/lib/wrap-flow-layout";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
 import { supabase, useAuth } from "../components/auth/AuthContext";
+import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
 
 // Minimal layout used to render templates even before any text/image layout is generated.
 const EMPTY_LAYOUT: any = {
@@ -221,6 +222,8 @@ export default function EditorShell() {
     savedBody: string;
     draftHeadline: string;
     draftBody: string;
+    draftHeadlineRanges: InlineStyleRange[];
+    draftBodyRanges: InlineStyleRange[];
     draftBg: string;
     draftText: string;
   };
@@ -236,6 +239,8 @@ export default function EditorShell() {
     savedBody: "",
     draftHeadline: "",
     draftBody: "",
+    draftHeadlineRanges: [],
+    draftBodyRanges: [],
     draftBg: "#ffffff",
     draftText: "#000000",
   });
@@ -383,6 +388,9 @@ export default function EditorShell() {
           ...prev,
           draftHeadline: nextHeadline,
           draftBody: nextBody,
+          // Fresh copy should start unformatted (style ranges cleared).
+          draftHeadlineRanges: [],
+          draftBodyRanges: [],
           // Mark as dirty vs saved so autosave of text works, but don't show "saving" just from switching.
         };
       });
@@ -471,6 +479,48 @@ export default function EditorShell() {
     };
   };
 
+  const mergeInlineRanges = (ranges: InlineStyleRange[]) => {
+    const sorted = [...(ranges || [])]
+      .filter((r) => typeof r?.start === "number" && typeof r?.end === "number" && r.end > r.start)
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+    const out: InlineStyleRange[] = [];
+    const same = (a: InlineStyleRange, b: InlineStyleRange) =>
+      !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.underline === !!b.underline;
+    for (const r of sorted) {
+      const prev = out[out.length - 1];
+      if (prev && same(prev, r) && r.start <= prev.end) {
+        prev.end = Math.max(prev.end, r.end);
+        continue;
+      }
+      out.push({ ...r });
+    }
+    return out;
+  };
+
+  const buildTextStylesForLine = (
+    parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }>,
+    ranges: InlineStyleRange[]
+  ): TextStyle[] => {
+    const merged = mergeInlineRanges(ranges);
+    if (!parts?.length || !merged.length) return [];
+    const out: TextStyle[] = [];
+    for (const p of parts) {
+      for (const r of merged) {
+        const a = Math.max(p.sourceStart, r.start);
+        const b = Math.min(p.sourceEnd, r.end);
+        if (b <= a) continue;
+        const start = p.lineStart + (a - p.sourceStart);
+        const end = p.lineStart + (b - p.sourceStart);
+        const style: TextStyle = { start, end };
+        if (r.bold) style.fontWeight = "bold";
+        if (r.italic) style.fontStyle = "italic";
+        if (r.underline) style.underline = true;
+        out.push(style);
+      }
+    }
+    return out;
+  };
+
   const getExistingImageForSlide = (slideIndex: number) => {
     // Prefer the active canvas measurement (source of truth if user dragged/resized).
     if (slideIndex === activeSlideIndex) {
@@ -494,6 +544,8 @@ export default function EditorShell() {
     body: string;
     templateSnapshot: any;
     image: any | null;
+    headlineRanges?: InlineStyleRange[];
+    bodyRanges?: InlineStyleRange[];
   }): VisionLayoutDecision | null => {
     const inset = getTemplateContentRectInset(params.templateSnapshot);
     const imageBounds = params.image
@@ -511,7 +563,7 @@ export default function EditorShell() {
           height: 1,
         };
 
-    const { layout } = wrapFlowLayout(params.headline, params.body, imageBounds, {
+    const { layout, meta } = wrapFlowLayout(params.headline, params.body, imageBounds, {
       ...(inset ? { contentRect: inset } : { margin: 40 }),
       clearancePx: 1,
       lineHeight: 1.2,
@@ -527,6 +579,18 @@ export default function EditorShell() {
       minBelowSpacePx: 240,
     });
 
+    // Apply inline style ranges (bold/italic/underline) to the computed line objects.
+    if (Array.isArray(meta?.lineSources) && Array.isArray(layout?.textLines)) {
+      const headlineRanges = params.headlineRanges || [];
+      const bodyRanges = params.bodyRanges || [];
+      layout.textLines = layout.textLines.map((l, idx) => {
+        const src = meta.lineSources?.[idx];
+        if (!src?.parts) return l;
+        const ranges = src.block === "HEADLINE" ? headlineRanges : bodyRanges;
+        return { ...l, styles: buildTextStylesForLine(src.parts, ranges) };
+      });
+    }
+
     // Preserve any existing image URL if present.
     if ((params.image as any)?.url && layout.image) {
       (layout.image as any).url = (params.image as any).url;
@@ -540,6 +604,7 @@ export default function EditorShell() {
     templateSnapshot: any;
     image: any | null;
     existingLayout?: any | null;
+    bodyRanges?: InlineStyleRange[];
   }): VisionLayoutDecision | null => {
     const region = getTemplateContentRectRaw(params.templateSnapshot);
     if (!region) return null;
@@ -562,7 +627,17 @@ export default function EditorShell() {
           textAlign: "left",
           lineHeight: 1.2,
           maxWidth: Math.max(1, preservedWidth),
-          styles: [],
+          styles: buildTextStylesForLine(
+            [
+              {
+                lineStart: 0,
+                lineEnd: String(params.body || "").length,
+                sourceStart: 0,
+                sourceEnd: String(params.body || "").length,
+              },
+            ],
+            params.bodyRanges || []
+          ),
         },
       ],
       ...(params.image && imageUrl
@@ -606,6 +681,9 @@ export default function EditorShell() {
           continue;
         }
 
+        const headlineRanges = Array.isArray(slide.draftHeadlineRanges) ? slide.draftHeadlineRanges : [];
+        const bodyRanges = Array.isArray(slide.draftBodyRanges) ? slide.draftBodyRanges : [];
+
         const image = getExistingImageForSlide(slideIndex);
         const nextLayout =
           templateTypeId === "regular"
@@ -615,6 +693,7 @@ export default function EditorShell() {
                 templateSnapshot: snap,
                 image,
                 existingLayout: (slide as any)?.layoutData?.layout || null,
+                bodyRanges,
               })
             : computeDeterministicLayout({
                 slideIndex,
@@ -622,10 +701,12 @@ export default function EditorShell() {
                 body,
                 templateSnapshot: snap,
                 image,
+                headlineRanges,
+                bodyRanges,
               });
         if (!nextLayout) continue;
 
-        const req: CarouselTextRequest = {
+        const req: any = {
           headline,
           body,
           settings: {
@@ -634,7 +715,9 @@ export default function EditorShell() {
             includeImage: false,
           },
           templateId: tid || undefined,
-        } as any;
+          headlineStyleRanges: headlineRanges,
+          bodyStyleRanges: bodyRanges,
+        } satisfies CarouselTextRequest as any;
 
         const nextLayoutData = {
           success: true,
@@ -719,7 +802,7 @@ export default function EditorShell() {
 
     const tid = computeTemplateIdForSlide(slideIndex);
     const nextBody = change.text !== undefined ? change.text : (curSlide.draftBody || "");
-    const req: CarouselTextRequest = {
+    const req: any = {
       headline: "",
       body: nextBody,
       settings: {
@@ -728,7 +811,9 @@ export default function EditorShell() {
         includeImage: false,
       },
       templateId: tid || undefined,
-    } as any;
+      headlineStyleRanges: Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [],
+      bodyStyleRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
+    } satisfies CarouselTextRequest as any;
 
     // Update local state so subsequent live-layout runs preserve the dragged position.
     setSlides((prev) =>
@@ -821,6 +906,8 @@ export default function EditorShell() {
         savedBody: loadedBody,
         draftHeadline: loadedHeadline,
         draftBody: loadedBody,
+        draftHeadlineRanges: Array.isArray(inputSnap?.headlineStyleRanges) ? inputSnap.headlineStyleRanges : [],
+        draftBodyRanges: Array.isArray(inputSnap?.bodyStyleRanges) ? inputSnap.bodyStyleRanges : [],
         layoutData: layoutSnap ? { success: true, layout: layoutSnap, imageUrl: null } : null,
         inputData: inputSnap || null,
         layoutHistory: [],
@@ -865,6 +952,8 @@ export default function EditorShell() {
         savedBody: loadedBody,
         draftHeadline: loadedHeadline,
         draftBody: loadedBody,
+        draftHeadlineRanges: [],
+        draftBodyRanges: [],
         layoutData: null,
         inputData: null,
         layoutHistory: [],
@@ -1787,39 +1876,46 @@ export default function EditorShell() {
                   {templateTypeId !== "regular" ? (
                     <div>
                       <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
-                      <input
-                        className="w-full h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                        placeholder="Enter headline..."
-                        value={slides[activeSlideIndex]?.draftHeadline || ""}
-                        onChange={(e) => {
+                      <RichTextInput
+                        valueText={slides[activeSlideIndex]?.draftHeadline || ""}
+                        valueRanges={slides[activeSlideIndex]?.draftHeadlineRanges || []}
+                        onChange={(next) => {
                           setSlides((prev) =>
                             prev.map((s, i) =>
-                              i === activeSlideIndex ? { ...s, draftHeadline: e.target.value } : s
+                              i === activeSlideIndex
+                                ? { ...s, draftHeadline: next.text, draftHeadlineRanges: next.ranges }
+                                : s
                             )
                           );
                           scheduleLiveLayout(activeSlideIndex);
                         }}
                         disabled={loading || switchingSlides || copyGenerating}
+                        placeholder="Enter headline..."
+                        minHeightPx={40}
+                        className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                       />
                     </div>
                   ) : null}
 
                   <div>
                     <label className="block text-sm font-semibold text-slate-900 mb-1">Body</label>
-                    <textarea
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
-                      rows={3}
-                      placeholder="Enter body..."
-                      value={slides[activeSlideIndex]?.draftBody || ""}
-                      onChange={(e) => {
+                    <RichTextInput
+                      valueText={slides[activeSlideIndex]?.draftBody || ""}
+                      valueRanges={slides[activeSlideIndex]?.draftBodyRanges || []}
+                      onChange={(next) => {
                         setSlides((prev) =>
                           prev.map((s, i) =>
-                            i === activeSlideIndex ? { ...s, draftBody: e.target.value } : s
+                            i === activeSlideIndex
+                              ? { ...s, draftBody: next.text, draftBodyRanges: next.ranges }
+                              : s
                           )
                         );
                         scheduleLiveLayout(activeSlideIndex);
                       }}
                       disabled={loading || switchingSlides || copyGenerating}
+                      placeholder="Enter body..."
+                      minHeightPx={96}
+                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                     />
                   </div>
 
@@ -1848,19 +1944,7 @@ export default function EditorShell() {
                         }
                         onClick={() => {
                           layoutDirtyRef.current = true;
-                          const cur = slidesRef.current[activeSlideIndex] || initSlide();
-                          const req: CarouselTextRequest = {
-                            headline: (cur.draftHeadline || "").trim(),
-                            body: (cur.draftBody || "").trim(),
-                            settings: {
-                              backgroundColor: projectBackgroundColor || "#ffffff",
-                              textColor: projectTextColor || "#000000",
-                              // Keep image generation off by default in this shell; can be revisited later.
-                              includeImage: false,
-                            },
-                            templateId: computeTemplateIdForSlide(activeSlideIndex) || undefined,
-                          } as any;
-                          void handleGenerate(req);
+                          enqueueLiveLayout([activeSlideIndex]);
                         }}
                       >
                         {loading ? "Generating..." : "Generate Layout"}
