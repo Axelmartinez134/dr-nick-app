@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createRef, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./EditorShell.module.css";
 import dynamic from "next/dynamic";
 import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
@@ -10,6 +10,7 @@ import { wrapFlowLayout } from "@/lib/wrap-flow-layout";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
+import JSZip from "jszip";
 
 // Minimal layout used to render templates even before any text/image layout is generated.
 const EMPTY_LAYOUT: any = {
@@ -189,6 +190,11 @@ export default function EditorShell() {
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+
+  // One ref per slide preview canvas so we can export all slides.
+  const slideCanvasRefs = useRef<Array<React.RefObject<any>>>(
+    Array.from({ length: slideCount }, () => createRef<any>())
+  );
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -1378,42 +1384,141 @@ export default function EditorShell() {
   const goNext = () => void switchToSlide(activeSlideIndex + 1);
 
   const handleTopDownload = async () => {
-    if (topExporting) return;
-    // Reuse the same approach as ExportButton (works with the vision canvasRef handle).
-    const fabricCanvas = canvasRef.current?.canvas || canvasRef.current;
-    if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") {
-      alert("Canvas not ready. Please generate or load a slide first.");
-      return;
-    }
+    // Replaced by "Download All" ZIP in the top bar (kept function name for minimal UI churn).
+    void handleDownloadAll();
+  };
 
-    setTopExporting(true);
+  const sanitizeFileName = (s: string) => {
+    const base = String(s || "").trim() || "Project";
+    // Remove characters that are invalid in common filesystems.
+    const cleaned = base.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ").trim();
+    return cleaned.slice(0, 80) || "Project";
+  };
+
+  const getNextBundleName = (baseName: string) => {
     try {
-      const currentZoom = fabricCanvas.getZoom?.() ?? 1;
+      const key = `editor.downloadAll.bundleIndex:${baseName}`;
+      const raw = localStorage.getItem(key);
+      const n = raw ? Number(raw) : 0;
+      const next = Number.isFinite(n) && n > 0 ? n : 0;
+      const name = next === 0 ? baseName : `${baseName}_${next}`;
+      localStorage.setItem(key, String(next + 1));
+      return name;
+    } catch {
+      // Fallback to timestamp if localStorage is unavailable.
+      return `${baseName}_${Date.now()}`;
+    }
+  };
+
+  const getFabricCanvasFromHandle = (handle: any) => {
+    return handle?.canvas || handle || null;
+  };
+
+  const exportFabricCanvasPngBlob = async (handle: any) => {
+    const fabricCanvas = getFabricCanvasFromHandle(handle);
+    if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") {
+      throw new Error("Canvas not ready");
+    }
+    const currentZoom = fabricCanvas.getZoom?.() ?? 1;
+    try {
       try {
         fabricCanvas.discardActiveObject?.();
       } catch {
         // ignore
       }
-
-      // Full-res export
       fabricCanvas.setZoom?.(1);
       fabricCanvas.renderAll?.();
-      await new Promise((r) => setTimeout(r, 100));
-
+      await new Promise((r) => setTimeout(r, 80));
       const dataURL = fabricCanvas.toDataURL({
         format: "png",
         quality: 1.0,
         multiplier: 1,
       });
-
-      const link = document.createElement("a");
-      link.download = `carousel-${Date.now()}.png`;
-      link.href = dataURL;
-      link.click();
-
-      // Restore zoom
+      const res = await fetch(dataURL);
+      return await res.blob();
+    } finally {
       fabricCanvas.setZoom?.(currentZoom);
       fabricCanvas.renderAll?.();
+    }
+  };
+
+  const handleDownloadAll = async () => {
+    if (topExporting) return;
+    setTopExporting(true);
+    try {
+      const baseName = sanitizeFileName(projectTitle);
+      const bundleName = getNextBundleName(baseName);
+
+      // Ensure all slide canvases are mounted.
+      const handles = slideCanvasRefs.current.map((r) => r.current);
+      if (handles.some((h) => !getFabricCanvasFromHandle(h))) {
+        alert("Slides are still rendering. Please wait a moment and try again.");
+        return;
+      }
+
+      const zip = new JSZip();
+      const folder = zip.folder(bundleName) || zip;
+
+      for (let i = 0; i < slideCount; i++) {
+        const blob = await exportFabricCanvasPngBlob(handles[i]);
+        folder.file(`slide-${i + 1}.png`, blob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.download = `${bundleName}.zip`;
+      link.href = url;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e: any) {
+      console.error("[Editor] Download All failed:", e);
+      alert(e?.message || "Download failed. Please try again.");
+    } finally {
+      setTopExporting(false);
+    }
+  };
+
+  const handleShareAll = async () => {
+    if (topExporting) return;
+    setTopExporting(true);
+    try {
+      const baseName = sanitizeFileName(projectTitle);
+      const bundleName = getNextBundleName(baseName);
+      const handles = slideCanvasRefs.current.map((r) => r.current);
+      if (handles.some((h) => !getFabricCanvasFromHandle(h))) {
+        alert("Slides are still rendering. Please wait a moment and try again.");
+        return;
+      }
+
+      // Build File objects for Share Sheet (iOS-friendly). If unsupported, fall back to ZIP download.
+      const files: File[] = [];
+      for (let i = 0; i < slideCount; i++) {
+        const blob = await exportFabricCanvasPngBlob(handles[i]);
+        files.push(new File([blob], `${bundleName}-slide-${i + 1}.png`, { type: "image/png" }));
+      }
+
+      const canShareFiles =
+        typeof navigator !== "undefined" &&
+        typeof (navigator as any).share === "function" &&
+        (typeof (navigator as any).canShare !== "function" || (navigator as any).canShare({ files }));
+
+      if (!canShareFiles) {
+        // Fallback: ZIP (downloads to Files on iPhone).
+        await handleDownloadAll();
+        return;
+      }
+
+      await (navigator as any).share({
+        title: bundleName,
+        text: bundleName,
+        files,
+      });
+    } catch (e: any) {
+      console.error("[Editor] Share All failed:", e);
+      // If user cancels share, don't show an error.
+      if (String(e?.name || "").toLowerCase().includes("abort")) return;
+      alert("Share failed. Try Download All instead.");
     } finally {
       setTopExporting(false);
     }
@@ -1494,11 +1599,19 @@ export default function EditorShell() {
           <PromptStatusPill />
           <button
             className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
-            onClick={() => void handleTopDownload()}
+            onClick={() => void handleDownloadAll()}
             disabled={topExporting}
-            title="Download PNG (1080×1440)"
+            title="Download all 6 slides as a ZIP"
           >
-            {topExporting ? "Downloading..." : "Download"}
+            {topExporting ? "Preparing..." : "Download All"}
+          </button>
+          <button
+            className="px-3 py-1.5 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm disabled:opacity-50"
+            onClick={() => void handleShareAll()}
+            disabled={topExporting}
+            title="Share all slides (mobile-friendly)"
+          >
+            Share All
           </button>
           <button
             onClick={() => void handleSignOut()}
@@ -1804,9 +1917,17 @@ export default function EditorShell() {
                                   );
                                 }
 
+                                const refProp =
+                                  i === activeSlideIndex
+                                    ? (node: any) => {
+                                        (canvasRef as any).current = node;
+                                        slideCanvasRefs.current[i]!.current = node;
+                                      }
+                                    : slideCanvasRefs.current[i];
+
                                 return (
                                   <CarouselPreviewVision
-                                    {...(i === activeSlideIndex ? { ref: canvasRef } : {})}
+                                    ref={refProp as any}
                                     layout={layoutForThisCard}
                                     backgroundColor={projectBackgroundColor}
                                     textColor={projectTextColor}

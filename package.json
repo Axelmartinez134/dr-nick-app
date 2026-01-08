@@ -17,6 +17,7 @@
     "echarts": "^5.6.0",
     "echarts-for-react": "^3.0.2",
     "fabric": "^7.0.0",
+    "jszip": "^3.10.1",
     "next": "15.3.8",
     "pdfjs-dist": "^3.11.174",
     "react": "^19.0.0",

@@ -4,6 +4,10 @@ export interface CarouselTextRequest {
   headline: string;
   body: string;
   templateId?: string; // Optional carousel template to constrain layout (templates MVP)
+  // Optional rich-text styling (used by /editor): keep headline/body as plain text,
+  // store formatting as ranges in the input snapshot.
+  headlineStyleRanges?: any[];
+  bodyStyleRanges?: any[];
   settings?: {
     backgroundColor?: string;
     textColor?: string;
@@ -27,6 +31,9 @@ export interface TextLine {
   text: string;
   baseSize: number;  // Base font size for the line
   position: { x: number; y: number };
+  // Optional anchor hint for renderers (JSON snapshot only).
+  // When set to 'center', the renderer should interpret position.y as centerY.
+  positionAnchorY?: 'top' | 'center';
   textAlign: 'left' | 'center' | 'right';
   lineHeight: number;  // Claude decides spacing
   maxWidth?: number;   // Optional width constraint
