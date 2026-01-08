@@ -613,7 +613,14 @@ export default function EditorShell() {
     const imageUrl = (params.image as any)?.url || null;
     const prevLine = params.existingLayout?.textLines?.[0] || null;
     const preservedX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
-    const preservedY = typeof prevLine?.position?.y === "number" ? prevLine.position.y : region.y;
+    // For Regular we anchor Y by CENTER so the box grows up/down.
+    // - If we already have an anchored snapshot, preserve it.
+    // - Otherwise default to center of contentRegion (ignores old top-anchored snapshots).
+    const regionCenterY = region.y + (region.height / 2);
+    const preservedCenterY =
+      prevLine?.positionAnchorY === "center" && typeof prevLine?.position?.y === "number"
+        ? prevLine.position.y
+        : regionCenterY;
     const preservedWidth = typeof prevLine?.maxWidth === "number" ? prevLine.maxWidth : region.width;
 
     const layout: VisionLayoutDecision = {
@@ -623,7 +630,9 @@ export default function EditorShell() {
         {
           text: params.body || "",
           baseSize: bodySize,
-          position: { x: preservedX, y: preservedY },
+          position: { x: preservedX, y: preservedCenterY },
+          // Non-standard field (JSON snapshot only): used by renderer to interpret `position.y` as centerY.
+          positionAnchorY: "center",
           textAlign: "left",
           lineHeight: 1.2,
           maxWidth: Math.max(1, preservedWidth),

@@ -329,8 +329,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const aabb = getAABBTopLeft(obj);
           const next: any = {
             lineIndex,
-            x: aabb.x,
-            y: aabb.y,
+            // Persist x/y in the same coordinate system the layout uses:
+            // - For center-anchored Y, store obj.top (centerY).
+            // - Otherwise store AABB top-left y.
+            x: typeof obj?.left === 'number' ? obj.left : aabb.x,
+            y: (obj?.originY === 'center' && typeof obj?.top === 'number') ? obj.top : aabb.y,
             maxWidth: Math.max(1, aabb.width),
           };
           if (includeText) next.text = obj.text || '';
@@ -858,6 +861,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               ? (hasDistinctHeadlineSize ? line.baseSize === headlineSize : index === 0)
               : false;
           const baseWeight = isHeadlineLine ? headlineWeight : bodyWeight;
+          const originY =
+            (line as any)?.positionAnchorY === 'center'
+              ? 'center'
+              : 'top';
           // Create Textbox object (enforces width constraint, supports mixed formatting)
           const textObj = new fabric.Textbox(line.text, {
             left: line.position.x,
@@ -870,7 +877,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             textAlign: line.textAlign,
             lineHeight: line.lineHeight,
             originX: line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left',
-            originY: 'top',
+            originY,
             selectable: true,
             editable: true,
             splitByGrapheme: false, // Wrap at word boundaries, not mid-word
