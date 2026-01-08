@@ -436,6 +436,29 @@ export default function EditorShell() {
     };
   };
 
+  const getTemplateContentRectRaw = (templateSnapshot: any | null) => {
+    const slide0 =
+      Array.isArray(templateSnapshot?.slides)
+        ? (templateSnapshot.slides.find((s: any) => s?.slideIndex === 0) || templateSnapshot.slides[0])
+        : null;
+    const region = slide0?.contentRegion;
+    if (!region) return null;
+    if (
+      typeof region.x !== "number" ||
+      typeof region.y !== "number" ||
+      typeof region.width !== "number" ||
+      typeof region.height !== "number"
+    ) {
+      return null;
+    }
+    return {
+      x: region.x,
+      y: region.y,
+      width: Math.max(1, region.width),
+      height: Math.max(1, region.height),
+    };
+  };
+
   const getExistingImageForSlide = (slideIndex: number) => {
     // Prefer the active canvas measurement (source of truth if user dragged/resized).
     if (slideIndex === activeSlideIndex) {
@@ -499,6 +522,48 @@ export default function EditorShell() {
     return layout;
   };
 
+  const computeRegularBodyTextboxLayout = (params: {
+    slideIndex: number;
+    body: string;
+    templateSnapshot: any;
+    image: any | null;
+  }): VisionLayoutDecision | null => {
+    const region = getTemplateContentRectRaw(params.templateSnapshot);
+    if (!region) return null;
+
+    const bodySize = Number.isFinite(bodyFontSizePx as any) ? Math.max(10, Math.round(bodyFontSizePx)) : 48;
+    const imageUrl = (params.image as any)?.url || null;
+
+    const layout: VisionLayoutDecision = {
+      canvas: { width: 1080, height: 1440 },
+      margins: { top: 60, right: 60, bottom: 60, left: 60 },
+      textLines: [
+        {
+          text: params.body || "",
+          baseSize: bodySize,
+          position: { x: region.x, y: region.y },
+          textAlign: "left",
+          lineHeight: 1.2,
+          maxWidth: region.width,
+          styles: [],
+        },
+      ],
+      ...(params.image && imageUrl
+        ? {
+            image: {
+              x: Number((params.image as any).x) || 0,
+              y: Number((params.image as any).y) || 0,
+              width: Number((params.image as any).width) || 0,
+              height: Number((params.image as any).height) || 0,
+              url: String(imageUrl),
+            },
+          }
+        : {}),
+    };
+
+    return layout;
+  };
+
   const enqueueLiveLayout = (indices: number[]) => {
     indices.forEach((i) => {
       if (i < 0 || i >= slideCount) return;
@@ -525,13 +590,21 @@ export default function EditorShell() {
         }
 
         const image = getExistingImageForSlide(slideIndex);
-        const nextLayout = computeDeterministicLayout({
-          slideIndex,
-          headline,
-          body,
-          templateSnapshot: snap,
-          image,
-        });
+        const nextLayout =
+          templateTypeId === "regular"
+            ? computeRegularBodyTextboxLayout({
+                slideIndex,
+                body,
+                templateSnapshot: snap,
+                image,
+              })
+            : computeDeterministicLayout({
+                slideIndex,
+                headline,
+                body,
+                templateSnapshot: snap,
+                image,
+              });
         if (!nextLayout) continue;
 
         const req: CarouselTextRequest = {
