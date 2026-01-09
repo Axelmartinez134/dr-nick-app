@@ -8,6 +8,7 @@ export const maxDuration = 10;
 type Body = {
   templateTypeId: TemplateTypeId;
   defaultPrompt?: string;
+  defaultEmphasisPrompt?: string;
   slide1TemplateId?: string | null;
   slide2to5TemplateId?: string | null;
   slide6TemplateId?: string | null;
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
 
   const patch: any = {};
   if (typeof body.defaultPrompt === 'string') patch.default_prompt = body.defaultPrompt;
+  if (typeof body.defaultEmphasisPrompt === 'string') patch.default_emphasis_prompt = body.defaultEmphasisPrompt;
   if (body.slide1TemplateId !== undefined) patch.default_slide1_template_id = body.slide1TemplateId;
   if (body.slide2to5TemplateId !== undefined) patch.default_slide2_5_template_id = body.slide2to5TemplateId;
   if (body.slide6TemplateId !== undefined) patch.default_slide6_template_id = body.slide6TemplateId;
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
     .update(patch)
     .eq('id', body.templateTypeId)
     .select(
-      'id, label, default_prompt, default_slide1_template_id, default_slide2_5_template_id, default_slide6_template_id, updated_at, updated_by'
+      'id, label, default_prompt, default_emphasis_prompt, default_slide1_template_id, default_slide2_5_template_id, default_slide6_template_id, updated_at, updated_by'
     )
     .single();
 

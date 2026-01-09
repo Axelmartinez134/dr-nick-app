@@ -68,7 +68,11 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
 
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+    setDebugLogs(prev => {
+      const next = [...prev, `[${timestamp}] ${message}`];
+      // Prevent unbounded growth (debug can get chatty).
+      return next.length > 400 ? next.slice(next.length - 400) : next;
+    });
     console.log(`[AI Carousel Vision] ${message}`);
   }, []);
 

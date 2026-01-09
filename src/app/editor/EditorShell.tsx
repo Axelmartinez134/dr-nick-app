@@ -35,7 +35,7 @@ function SlideCard({
         "relative flex-shrink-0 bg-white rounded-sm shadow-[0_10px_30px_rgba(2,6,23,0.10)] border border-slate-200 overflow-hidden",
         "w-[420px] h-[560px]", // 1080x1440 scaled (3:4)
         active ? "ring-2 ring-violet-500 border-violet-300" : "",
-        !active ? "opacity-75" : "",
+        // Keep non-selected slides fully opaque; selection is indicated via ring only.
         !active ? "cursor-pointer" : "",
       ].join(" ")}
       aria-label={`Slide ${index}`}
@@ -95,6 +95,7 @@ export default function EditorShell() {
 
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
+  const [templateTypeEmphasisPrompt, setTemplateTypeEmphasisPrompt] = useState<string>("");
   const [templateTypeMappingSlide1, setTemplateTypeMappingSlide1] = useState<string | null>(null);
   const [templateTypeMappingSlide2to5, setTemplateTypeMappingSlide2to5] = useState<string | null>(null);
   const [templateTypeMappingSlide6, setTemplateTypeMappingSlide6] = useState<string | null>(null);
@@ -107,11 +108,16 @@ export default function EditorShell() {
   const [templateSnapshots, setTemplateSnapshots] = useState<Record<string, any>>({});
 
   const [promptModalOpen, setPromptModalOpen] = useState(false);
+  const [promptModalSection, setPromptModalSection] = useState<"prompt" | "emphasis">("prompt");
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
   const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [copyGenerating, setCopyGenerating] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [copyProgressState, setCopyProgressState] = useState<"idle" | "running" | "success" | "error">("idle");
+  const [copyProgressLabel, setCopyProgressLabel] = useState<string>("");
+  const copyProgressPollRef = useRef<number | null>(null);
+  const copyProgressResetRef = useRef<number | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   // Resizable left sidebar (desktop-only)
@@ -421,24 +427,103 @@ export default function EditorShell() {
     }
     setCopyError(null);
     setCopyGenerating(true);
+    // Progress indicator: poll job status for true step updates (no schema changes).
+    if (copyProgressPollRef.current) window.clearInterval(copyProgressPollRef.current);
+    if (copyProgressResetRef.current) window.clearTimeout(copyProgressResetRef.current);
+    setCopyProgressState("running");
+    setCopyProgressLabel("Starting…");
+    const stepLabelFor = (progressCode: string) => {
+      const code = String(progressCode || "").toLowerCase();
+      if (code.includes("poppy")) return "Poppy is Cooking...";
+      if (code.includes("parse")) return "Parsing output…";
+      if (code.includes("emphasis")) return "Generating emphasis styles…";
+      if (code.includes("save")) return "Saving…";
+      return "Working…";
+    };
+    const pollOnce = async () => {
+      if (!currentProjectId) return;
+      try {
+        const j = await fetchJson(`/api/editor/projects/jobs/status?projectId=${encodeURIComponent(currentProjectId)}`, { method: "GET" });
+        const job = j?.activeJob || null;
+        if (!job) return;
+        const status = String(job.status || "");
+        const err = String(job.error || "");
+        // We reuse `error` while running to store "progress:<step>".
+        if ((status === "pending" || status === "running") && err.startsWith("progress:")) {
+          setCopyProgressLabel(stepLabelFor(err.slice("progress:".length)));
+        } else if (status === "pending") {
+          setCopyProgressLabel("Queued…");
+        } else if (status === "running") {
+          setCopyProgressLabel("Working…");
+        } else if (status === "completed") {
+          setCopyProgressLabel("Done");
+        } else if (status === "failed") {
+          setCopyProgressLabel("Error");
+        }
+      } catch {
+        // ignore polling errors; Debug panel has details
+      }
+    };
+    void pollOnce();
+    copyProgressPollRef.current = window.setInterval(() => {
+      void pollOnce();
+    }, 500);
     try {
+      addLog(`🤖 Generate Copy start: project=${currentProjectId} type=${templateTypeId.toUpperCase()}`);
       const data = await fetchJson('/api/editor/projects/jobs/generate-copy', {
         method: 'POST',
         body: JSON.stringify({ projectId: currentProjectId }),
       });
+      const typeOut = data?.templateTypeId === "enhanced" ? "enhanced" : "regular";
+      addLog(
+        `🤖 Generate Copy response: type=${String(typeOut).toUpperCase()} slides=${Array.isArray(data?.slides) ? data.slides.length : 0} captionLen=${String(data?.caption || "").length}`
+      );
       const slidesOut = data.slides || [];
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
         const out = slidesOut[i] || {};
         const nextHeadline = out.headline ?? '';
         const nextBody = out.body ?? '';
+        const nextHeadlineRanges = Array.isArray(out.headlineStyleRanges) ? out.headlineStyleRanges : [];
+        const nextBodyRanges = Array.isArray(out.bodyStyleRanges) ? out.bodyStyleRanges : [];
+        addLog(
+          `🧾 Slide ${i + 1} text: headlineLen=${String(nextHeadline).length} bodyLen=${String(nextBody).length} headlineRanges=${nextHeadlineRanges.length} bodyRanges=${nextBodyRanges.length}`
+        );
+
+        const previewRanges = (label: string, text: string, ranges: any[]) => {
+          if (!Array.isArray(ranges) || !ranges.length || !text) return;
+          // Show up to 6 ranges so logs stay readable.
+          const max = Math.min(6, ranges.length);
+          for (let r = 0; r < max; r++) {
+            const rr = ranges[r] || {};
+            const start = Number(rr.start);
+            const end = Number(rr.end);
+            if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+            const marks = [
+              rr.bold ? "bold" : null,
+              rr.italic ? "italic" : null,
+              rr.underline ? "underline" : null,
+            ].filter(Boolean).join("+") || "style";
+            const slice = String(text).slice(start, end).replace(/\s+/g, " ").trim();
+            addLog(`   ↳ ${label} ${marks}: "${slice}" (${start}-${end})`);
+          }
+          if (ranges.length > max) addLog(`   ↳ ${label} … +${ranges.length - max} more range(s)`);
+        };
+
+        if (typeOut === "enhanced") {
+          previewRanges("headline", String(nextHeadline), nextHeadlineRanges);
+        }
+        previewRanges("body", String(nextBody), nextBodyRanges);
+
         return {
           ...prev,
           draftHeadline: nextHeadline,
           draftBody: nextBody,
-          // Fresh copy should start unformatted (style ranges cleared).
-          draftHeadlineRanges: [],
-          draftBodyRanges: [],
+          // Use AI-provided emphasis ranges so the editor + canvas show the final emphasized result immediately.
+          // - Regular: body ranges
+          // - Enhanced: headline + body ranges
+          draftHeadlineRanges: typeOut === "enhanced" ? nextHeadlineRanges : [],
+          draftBodyRanges: nextBodyRanges,
           // Mark as dirty vs saved so autosave of text works, but don't show "saving" just from switching.
         };
       });
@@ -447,12 +532,65 @@ export default function EditorShell() {
       if (typeof data.caption === 'string') setCaptionDraft(data.caption);
       void refreshProjectsList();
       // Auto-layout all 6 slides sequentially (queued).
+      addLog(`📐 Queue live layout for slides 1–6`);
+      setCopyProgressLabel("Applying layouts…");
       enqueueLiveLayout([0, 1, 2, 3, 4, 5]);
+      setCopyProgressState("success");
     } catch (e: any) {
       setCopyError(e?.message || 'Generate Copy failed');
+      addLog(`❌ Generate Copy failed: ${e?.message || "unknown error"}`);
+      setCopyProgressState("error");
+      setCopyProgressLabel("Error");
     } finally {
       setCopyGenerating(false);
+      if (copyProgressPollRef.current) window.clearInterval(copyProgressPollRef.current);
+      copyProgressPollRef.current = null;
+      // Leave a brief success/error state so users see completion.
+      copyProgressResetRef.current = window.setTimeout(() => {
+        setCopyProgressState("idle");
+        setCopyProgressLabel("");
+      }, 1400);
     }
+  };
+
+  const CopyProgressIcon = () => {
+    if (copyProgressState === "idle") return null;
+    const title =
+      copyProgressState === "running"
+        ? (copyProgressLabel || "Working…")
+        : copyProgressState === "success"
+          ? "Done"
+          : "Error";
+    if (copyProgressState === "running") {
+      return (
+        <span className="inline-flex items-center gap-2" title={title} aria-label={title}>
+          <span className="inline-flex items-center justify-center w-4 h-4">
+            <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
+          </span>
+          <span className="text-xs font-medium text-slate-500">{title}</span>
+        </span>
+      );
+    }
+    if (copyProgressState === "success") {
+      return (
+        <span
+          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] leading-none"
+          title={title}
+          aria-label={title}
+        >
+          ✓
+        </span>
+      );
+    }
+    return (
+      <span
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] leading-none"
+        title={title}
+        aria-label={title}
+      >
+        !
+      </span>
+    );
   };
 
   const computeTemplateIdForSlide = (slideIndex: number) => {
@@ -730,16 +868,24 @@ export default function EditorShell() {
         const slide = slidesRef.current[slideIndex] || initSlide();
         const tid = computeTemplateIdForSlide(slideIndex);
         const snap = (tid ? templateSnapshots[tid] : null) || null;
-        if (!snap) continue;
+        if (!snap) {
+          addLog(`⚠️ Live layout skipped slide ${slideIndex + 1}: missing template snapshot`);
+          continue;
+        }
 
         const headline = templateTypeId === "regular" ? "" : (slide.draftHeadline || "");
         const body = slide.draftBody || "";
         if (!String(body).trim() && !String(headline).trim()) {
+          addLog(`⏭️ Live layout skipped slide ${slideIndex + 1}: empty text`);
           continue;
         }
 
         const headlineRanges = Array.isArray(slide.draftHeadlineRanges) ? slide.draftHeadlineRanges : [];
         const bodyRanges = Array.isArray(slide.draftBodyRanges) ? slide.draftBodyRanges : [];
+
+        addLog(
+          `📐 Live layout slide ${slideIndex + 1} start: template=${tid || "none"} headlineLen=${headline.length} bodyLen=${body.length} headlineRanges=${headlineRanges.length} bodyRanges=${bodyRanges.length}`
+        );
 
         const image = getExistingImageForSlide(slideIndex);
         const nextLayout =
@@ -762,6 +908,12 @@ export default function EditorShell() {
                 bodyRanges,
               });
         if (!nextLayout) continue;
+
+        const textLineCount = Array.isArray((nextLayout as any)?.textLines) ? (nextLayout as any).textLines.length : 0;
+        const styleCount = Array.isArray((nextLayout as any)?.textLines)
+          ? (nextLayout as any).textLines.reduce((acc: number, l: any) => acc + (Array.isArray(l?.styles) ? l.styles.length : 0), 0)
+          : 0;
+        addLog(`✅ Live layout slide ${slideIndex + 1} done: lines=${textLineCount} styles=${styleCount}`);
 
         const req: any = {
           headline,
@@ -914,12 +1066,17 @@ export default function EditorShell() {
   };
 
   const loadTemplateTypeEffective = async (type: 'regular' | 'enhanced') => {
+    addLog(`🧾 Loading template-type settings: ${type.toUpperCase()}`);
     const data = await fetchJson(`/api/editor/template-types/effective?type=${type}`);
     const effective = data?.effective;
     setTemplateTypePrompt(effective?.prompt || '');
+    setTemplateTypeEmphasisPrompt(effective?.emphasisPrompt || '');
     setTemplateTypeMappingSlide1(effective?.slide1TemplateId ?? null);
     setTemplateTypeMappingSlide2to5(effective?.slide2to5TemplateId ?? null);
     setTemplateTypeMappingSlide6(effective?.slide6TemplateId ?? null);
+    addLog(
+      `✅ Settings loaded: promptLen=${String(effective?.prompt || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}`
+    );
     // Reset prompt status on type switch
     setPromptSaveStatus('idle');
     promptDirtyRef.current = false;
@@ -1055,32 +1212,44 @@ export default function EditorShell() {
     if (!currentProjectId) return false;
     setSlideSaveStatus('saving');
     try {
+      addLog(
+        `🧩 Persist slide ${slideIndex + 1}: ${Object.keys(patch)
+          .filter((k) => (patch as any)[k] !== undefined)
+          .join(", ")}`
+      );
       await fetchJson('/api/editor/projects/slides/update', {
         method: 'POST',
         body: JSON.stringify({ projectId: currentProjectId, slideIndex, ...patch }),
       });
       setSlideSaveStatus('saved');
       window.setTimeout(() => setSlideSaveStatus('idle'), 1200);
+      addLog(`✅ Persisted slide ${slideIndex + 1}`);
       return true;
     } catch {
       setSlideSaveStatus('error');
       window.setTimeout(() => setSlideSaveStatus('idle'), 2000);
+      addLog(`❌ Persist slide ${slideIndex + 1} failed`);
       return false;
     }
   };
 
   const savePromptSettings = async () => {
     // Simplified behavior: always write to global defaults (shared across editor users).
+    addLog(
+      `💾 Saving template-type prompts: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length}`
+    );
     await fetchJson('/api/editor/template-types/defaults/update', {
       method: 'POST',
       body: JSON.stringify({
         templateTypeId,
         defaultPrompt: templateTypePrompt,
+        defaultEmphasisPrompt: templateTypeEmphasisPrompt,
         slide1TemplateId: templateTypeMappingSlide1,
         slide2to5TemplateId: templateTypeMappingSlide2to5,
         slide6TemplateId: templateTypeMappingSlide6,
       }),
     });
+    addLog(`✅ Saved template-type prompts`);
   };
 
   // Load template type defaults + saved projects on mount/login.
@@ -1141,6 +1310,23 @@ export default function EditorShell() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [promptModalOpen]);
 
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const emphasisTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    if (!promptModalOpen) return;
+    // Focus the correct textarea based on which button opened the modal.
+    window.setTimeout(() => {
+      const el = promptModalSection === "emphasis" ? emphasisTextareaRef.current : promptTextareaRef.current;
+      if (!el) return;
+      try {
+        el.focus();
+        el.scrollIntoView({ block: "center" });
+      } catch {
+        // ignore
+      }
+    }, 0);
+  }, [promptModalOpen, promptModalSection]);
+
   // Debounced autosave: template type prompt + mapping → overrides/global (depending on scope)
   useEffect(() => {
     if (!user?.id) return;
@@ -1167,6 +1353,7 @@ export default function EditorShell() {
     user?.id,
     templateTypeId,
     templateTypePrompt,
+    templateTypeEmphasisPrompt,
     templateTypeMappingSlide1,
     templateTypeMappingSlide2to5,
     templateTypeMappingSlide6,
@@ -1662,12 +1849,30 @@ export default function EditorShell() {
       <button
         type="button"
         className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-        onClick={() => setPromptModalOpen(true)}
+        onClick={() => {
+          setPromptModalSection("prompt");
+          setPromptModalOpen(true);
+        }}
         title="Edit Prompt"
       >
         <div className="text-sm font-semibold text-slate-700">Prompt</div>
         <div className="mt-0.5 text-xs text-slate-500 truncate">
           {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+        onClick={() => {
+          setPromptModalSection("emphasis");
+          setPromptModalOpen(true);
+        }}
+        title="Edit Emphasis Prompt"
+      >
+        <div className="text-sm font-semibold text-slate-700">Emphasis Prompt</div>
+        <div className="mt-0.5 text-xs text-slate-500 truncate">
+          {`${templateTypeId.toUpperCase()}: ${(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}`}
         </div>
       </button>
 
@@ -1792,6 +1997,60 @@ export default function EditorShell() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body Font Size (px)</div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                onClick={() => {
+                  const next = Math.max(10, Math.round((bodyFontSizePx || 48) - 1));
+                  setBodyFontSizePx(next);
+                  scheduleLiveLayoutAll();
+                }}
+                disabled={loading || switchingSlides || copyGenerating}
+                aria-label="Decrease body font size"
+                title="Decrease"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                inputMode="numeric"
+                className="w-28 h-10 rounded-md border border-slate-200 px-3 text-slate-900"
+                value={Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48}
+                min={10}
+                max={200}
+                step={1}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const n = Math.round(Number(raw));
+                  const next = Number.isFinite(n) ? Math.max(10, Math.min(200, n)) : 48;
+                  setBodyFontSizePx(next);
+                  scheduleLiveLayoutAll();
+                }}
+                disabled={loading || switchingSlides || copyGenerating}
+              />
+              <button
+                type="button"
+                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                onClick={() => {
+                  const next = Math.min(200, Math.round((bodyFontSizePx || 48) + 1));
+                  setBodyFontSizePx(next);
+                  scheduleLiveLayoutAll();
+                }}
+                disabled={loading || switchingSlides || copyGenerating}
+                aria-label="Increase body font size"
+                title="Increase"
+              >
+                +
+              </button>
+              <div className="text-xs text-slate-500">
+                Updates all slides
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2397,61 +2656,6 @@ export default function EditorShell() {
             <div className="max-w-[1400px] mx-auto px-6 py-4">
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-3">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-900 mb-1">
-                      Body font size (px)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => {
-                          const next = Math.max(10, Math.round((bodyFontSizePx || 48) - 1));
-                          setBodyFontSizePx(next);
-                          scheduleLiveLayoutAll();
-                        }}
-                        disabled={loading || switchingSlides || copyGenerating}
-                        aria-label="Decrease body font size"
-                        title="Decrease"
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        className="w-28 h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                        value={Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48}
-                        min={10}
-                        max={200}
-                        step={1}
-                        onChange={(e) => {
-                          const raw = e.target.value;
-                          const n = Math.round(Number(raw));
-                          const next = Number.isFinite(n) ? Math.max(10, Math.min(200, n)) : 48;
-                          setBodyFontSizePx(next);
-                          scheduleLiveLayoutAll();
-                        }}
-                        disabled={loading || switchingSlides || copyGenerating}
-                      />
-                      <button
-                        type="button"
-                        className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => {
-                          const next = Math.min(200, Math.round((bodyFontSizePx || 48) + 1));
-                          setBodyFontSizePx(next);
-                          scheduleLiveLayoutAll();
-                        }}
-                        disabled={loading || switchingSlides || copyGenerating}
-                        aria-label="Increase body font size"
-                        title="Increase"
-                      >
-                        +
-                      </button>
-                      <div className="text-xs text-slate-500">
-                        Updates all slides (debounced)
-                      </div>
-                    </div>
-                  </div>
                   {templateTypeId !== "regular" ? (
                     <div>
                       <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
@@ -2501,7 +2705,10 @@ export default function EditorShell() {
                 </div>
 
                 <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-900">Controls</div>
+                  <div className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    <span>Controls</span>
+                    <CopyProgressIcon />
+                  </div>
                   <button
                     className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
                     disabled={!currentProjectId || copyGenerating || switchingSlides}
@@ -2824,7 +3031,7 @@ export default function EditorShell() {
           <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="text-base font-semibold text-slate-900">
-                Prompt ({templateTypeId === "enhanced" ? "Enhanced" : "Regular"})
+                Prompts ({templateTypeId === "enhanced" ? "Enhanced" : "Regular"})
               </div>
               <button
                 type="button"
@@ -2837,17 +3044,43 @@ export default function EditorShell() {
               </button>
             </div>
             <div className="px-5 py-4">
-              <textarea
-                className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
-                rows={18}
-                value={templateTypePrompt}
-                onChange={(e) => {
-                  promptDirtyRef.current = true;
-                  setTemplateTypePrompt(e.target.value);
-                }}
-                placeholder="Enter the prompt for this template type..."
-                autoFocus
-              />
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Prompt</div>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    Used for generating the 6-slide copy for this template type (shared across editor users).
+                  </div>
+                  <textarea
+                    ref={promptTextareaRef}
+                    className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                    rows={10}
+                    value={templateTypePrompt}
+                    onChange={(e) => {
+                      promptDirtyRef.current = true;
+                      setTemplateTypePrompt(e.target.value);
+                    }}
+                    placeholder="Enter the prompt for this template type..."
+                  />
+                </div>
+
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Emphasis Prompt</div>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    Controls bold/italic/underline styling for scannability. It never changes characters—only formatting ranges (shared across editor users).
+                  </div>
+                  <textarea
+                    ref={emphasisTextareaRef}
+                    className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                    rows={10}
+                    value={templateTypeEmphasisPrompt}
+                    onChange={(e) => {
+                      promptDirtyRef.current = true;
+                      setTemplateTypeEmphasisPrompt(e.target.value);
+                    }}
+                    placeholder="Enter the emphasis prompt for this template type..."
+                  />
+                </div>
+              </div>
               <div className="mt-2 text-xs text-slate-500">
                 Auto-saves as you type. Press <span className="font-mono">Esc</span> to close.
               </div>
