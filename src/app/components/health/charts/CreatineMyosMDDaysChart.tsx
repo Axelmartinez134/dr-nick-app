@@ -161,7 +161,27 @@ export default function CreatineMyosMDDaysChart({ data, hideTrendPill = false }:
           />
         )}
       </div>
-      <p className="text-sm text-gray-600">Weekly days you took creatine / MyosMD—consistency supports muscle retention and performance</p>
+      <p className="text-sm text-gray-600">
+        Weekly days you took{' '}
+        <a
+          href="https://blonyx.com/products/blonyx-hmb-creatine/?ref=THEFITTESTDOC&utm_source=affiliate"
+          target="_blank"
+          rel="noreferrer"
+          className="underline text-blue-600 hover:text-blue-700"
+        >
+          HMB + Creatine
+        </a>
+        {' / and or '}
+        <a
+          href="https://myosmd.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="underline text-blue-600 hover:text-blue-700"
+        >
+          MyosMD
+        </a>
+        —consistency supports muscle retention and performance
+      </p>
 
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={enhancedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
