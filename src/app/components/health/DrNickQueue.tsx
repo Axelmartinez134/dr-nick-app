@@ -89,6 +89,7 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [submissionChartData, setSubmissionChartData] = useState<any[]>([])
+  const [clearingSystemQueue, setClearingSystemQueue] = useState(false)
   
   // Analysis form state
   const [weeklyAnalysis, setWeeklyAnalysis] = useState('')
@@ -99,8 +100,27 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
   const [monthlyPdfUrl, setMonthlyPdfUrl] = useState('')
   
   // Image viewer
-  const [viewingImage, setViewingImage] = useState<{url: string, title: string} | null>(null)
+  const [viewingImage, setViewingImage] = useState<{url: string, title: string, showCreatinePill?: boolean} | null>(null)
   const [signedUrls, setSignedUrls] = useState<{[key: string]: string}>({})
+
+  const didTakeCreatineOn = (sub: any, index0: number) => {
+    const raw = sub?.creatine_myosmd_days_selected
+    const selected = Array.isArray(raw)
+      ? raw.map((s: any) => String(s).toLowerCase())
+      : (typeof raw === 'string'
+        ? (() => {
+            try {
+              const parsed = JSON.parse(raw)
+              return Array.isArray(parsed) ? parsed.map((s: any) => String(s).toLowerCase()) : []
+            } catch {
+              return []
+            }
+          })()
+        : [])
+    const keys = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    const key = keys[index0]
+    return !!key && selected.includes(key)
+  }
 
   const formatFastingMinutes = (mins: number | null | undefined) => {
     if (mins === null || mins === undefined) return 'N/A'
@@ -133,6 +153,61 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleClearSystemQueue = async () => {
+    if (clearingSystemQueue) return
+
+    const confirmText = window.prompt(
+      "Type CLEAR to remove ALL system-created missed check-ins from Dr. Nick's review queue.\n\nThis will set needs_review=false (it will not delete data)."
+    )
+    if (confirmText !== 'CLEAR') {
+      alert('Cancelled — confirmation text did not match.')
+      return
+    }
+
+    try {
+      setClearingSystemQueue(true)
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+
+      const token = sessionData?.session?.access_token
+      if (!token) {
+        alert('Not authenticated.')
+        return
+      }
+
+      const res = await fetch('/api/admin/clear-system-review-queue', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirm: 'CLEAR' }),
+      })
+
+      const payload = await res.json().catch(() => null)
+      if (!res.ok || !payload?.success) {
+        const msg = payload?.error || `Request failed (${res.status})`
+        throw new Error(msg)
+      }
+
+      // If the currently selected submission was system-generated, close it (it may no longer be in queue).
+      if ((selectedSubmission as any)?.data_entered_by === 'system') {
+        setSelectedSubmission(null)
+        setSubmissionChartData([])
+        setSignedUrls({})
+      }
+
+      await loadQueueSubmissions()
+      alert(`Cleared ${payload.clearedCount ?? 0} system-created queue item(s).`)
+    } catch (err: any) {
+      console.error('Failed to clear system queue:', err)
+      alert(`Failed to clear system queue: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setClearingSystemQueue(false)
     }
   }
 
@@ -332,12 +407,31 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Review Queue</h2>
-        <button 
-          onClick={loadQueueSubmissions}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Refresh Queue
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleClearSystemQueue}
+            disabled={loading || clearingSystemQueue}
+            className={`px-4 py-2 rounded border ${
+              loading || clearingSystemQueue
+                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                : 'bg-white text-red-700 border-red-200 hover:bg-red-50'
+            }`}
+            title="Bulk-clear system-created missed check-ins from the queue (requires typing CLEAR)"
+          >
+            {clearingSystemQueue ? 'Clearing…' : 'Clear System Queue'}
+          </button>
+          <button 
+            onClick={loadQueueSubmissions}
+            disabled={loading || clearingSystemQueue}
+            className={`px-4 py-2 rounded ${
+              loading || clearingSystemQueue
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            Refresh Queue
+          </button>
+        </div>
       </div>
 
       {queueSubmissions.length === 0 ? (
@@ -519,7 +613,8 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                                 className="w-full h-16 object-cover rounded border cursor-pointer hover:opacity-80"
                                 onClick={() => setViewingImage({
                                   url: displayUrl,
-                                  title: `${day} Lumen Screenshot`
+                                title: `${day} Lumen Screenshot`,
+                                showCreatinePill: didTakeCreatineOn(selectedSubmission as any, index)
                                 })}
                               />
                             ) : (
@@ -552,7 +647,8 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
                                 className="w-full h-16 object-cover rounded border cursor-pointer hover:opacity-80"
                                 onClick={() => setViewingImage({
                                   url: displayUrl,
-                                  title: `${day} Food Log Screenshot`
+                                title: `${day} Food Log Screenshot`,
+                                showCreatinePill: didTakeCreatineOn(selectedSubmission as any, index)
                                 })}
                               />
                             ) : (
@@ -682,7 +778,14 @@ export default function DrNickQueue({ onSubmissionSelect }: DrNickQueueProps) {
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="relative max-w-4xl max-h-full bg-white rounded-lg overflow-hidden">
             <div className="bg-gray-100 px-4 py-3 border-b flex items-center justify-between">
-              <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
+                {viewingImage.showCreatinePill ? (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
+                    Creatine taken
+                  </span>
+                ) : null}
+              </div>
               <button
                 onClick={() => setViewingImage(null)}
                 className="text-gray-400 hover:text-gray-600 text-2xl font-bold"

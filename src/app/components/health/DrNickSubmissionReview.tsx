@@ -2617,7 +2617,16 @@ export default function DrNickSubmissionReview({
               </button>
               
               {/* Side-by-Side Images Container */}
-              <div className="flex justify-center items-center space-x-8 flex-1">
+              <div className="flex-1">
+                {didTakeCreatineOn(viewingDayImageSet.currentIndex) ? (
+                  <div className="flex justify-center mb-4">
+                    <span className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
+                      Creatine taken
+                    </span>
+                  </div>
+                ) : null}
+
+                <div className="flex justify-center items-center space-x-8">
                 {/* Lumen Image */}
                 <div className="flex-1 text-center">
                   <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium mb-4 inline-block">
@@ -2662,6 +2671,7 @@ export default function DrNickSubmissionReview({
                       </div>
                     )}
                   </div>
+                </div>
                 </div>
               </div>
               
@@ -2710,9 +2720,22 @@ export default function DrNickSubmissionReview({
             {/* Modal Header */}
             <div className="bg-gray-100 px-6 py-4 border-b flex items-center justify-between">
               <div className="flex items-center space-x-4">
-                <h3 className="text-lg font-medium text-gray-900">
-                  {viewingImageSet.images[viewingImageSet.currentIndex].title}
-                </h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    {viewingImageSet.images[viewingImageSet.currentIndex].title}
+                  </h3>
+                  {(() => {
+                    if (viewingImageSet.imageType !== 'lumen' && viewingImageSet.imageType !== 'food_log') return null
+                    const fieldName = viewingImageSet.images[viewingImageSet.currentIndex]?.fieldName
+                    const match = /_(?:day)(\d+)_image$/.exec(String(fieldName || ''))
+                    const dayIndex0 = match ? Math.max(0, parseInt(match[1]) - 1) : null
+                    return dayIndex0 !== null && didTakeCreatineOn(dayIndex0) ? (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
+                        Creatine taken
+                      </span>
+                    ) : null
+                  })()}
+                </div>
                 <div className="text-sm text-gray-600 bg-gray-200 px-3 py-1 rounded-full">
                   {viewingImageSet.currentIndex + 1} of {viewingImageSet.images.length} 
                   {viewingImageSet.imageType === 'lumen' ? ' Lumen' : viewingImageSet.imageType === 'food_log' ? ' Food Log' : ' Fasting'} images

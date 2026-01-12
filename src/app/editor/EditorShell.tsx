@@ -1808,12 +1808,12 @@ export default function EditorShell() {
     if (promptSaveStatus === "idle") return null;
     const base = "px-3 py-1 rounded-full text-xs font-semibold border";
     if (promptSaveStatus === "saving") {
-      return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Prompt: Saving…</span>;
+      return <span className={`${base} bg-blue-50 text-blue-700 border-blue-200`}>Poppy Prompt: Saving…</span>;
     }
     if (promptSaveStatus === "saved") {
-      return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Prompt: Saved ✓</span>;
+      return <span className={`${base} bg-green-50 text-green-700 border-green-200`}>Poppy Prompt: Saved ✓</span>;
     }
-    return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Prompt: Save Failed</span>;
+    return <span className={`${base} bg-red-50 text-red-700 border-red-200`}>Poppy Prompt: Save Failed</span>;
   };
 
   const ProjectStatusPill = () => {
@@ -1846,48 +1846,6 @@ export default function EditorShell() {
         New Project
       </button>
 
-      <button
-        type="button"
-        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-        onClick={() => {
-          setPromptModalSection("prompt");
-          setPromptModalOpen(true);
-        }}
-        title="Edit Prompt"
-      >
-        <div className="text-sm font-semibold text-slate-700">Prompt</div>
-        <div className="mt-0.5 text-xs text-slate-500 truncate">
-          {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
-        </div>
-      </button>
-
-      <button
-        type="button"
-        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-        onClick={() => {
-          setPromptModalSection("emphasis");
-          setPromptModalOpen(true);
-        }}
-        title="Edit Emphasis Prompt"
-      >
-        <div className="text-sm font-semibold text-slate-700">Emphasis Prompt</div>
-        <div className="mt-0.5 text-xs text-slate-500 truncate">
-          {`${templateTypeId.toUpperCase()}: ${(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}`}
-        </div>
-      </button>
-
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-slate-900">Template Settings</div>
-        <button
-          className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-          onClick={() => setTemplateSettingsOpen(true)}
-          disabled={switchingSlides}
-          title="Edit template type settings"
-        >
-          Settings
-        </button>
-      </div>
-
       <div className="space-y-2">
         <div className="text-xs font-semibold text-slate-500 uppercase">Template Type</div>
         <select
@@ -1905,6 +1863,48 @@ export default function EditorShell() {
           {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "Template set" : "Not set"}
         </div>
       </div>
+
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold text-slate-900">Template Settings</div>
+        <button
+          className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
+          onClick={() => setTemplateSettingsOpen(true)}
+          disabled={switchingSlides}
+          title="Edit template type settings"
+        >
+          Settings
+        </button>
+      </div>
+
+      <button
+        type="button"
+        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+        onClick={() => {
+          setPromptModalSection("prompt");
+          setPromptModalOpen(true);
+        }}
+        title="Edit Poppy Prompt"
+      >
+        <div className="text-sm font-semibold text-slate-700">Poppy Prompt</div>
+        <div className="mt-0.5 text-xs text-slate-500 truncate">
+          {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+        onClick={() => {
+          setPromptModalSection("emphasis");
+          setPromptModalOpen(true);
+        }}
+        title="Edit Text Styling Prompt"
+      >
+        <div className="text-sm font-semibold text-slate-700">Text Styling Prompt</div>
+        <div className="mt-0.5 text-xs text-slate-500 truncate">
+          {`${templateTypeId.toUpperCase()}: ${(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}`}
+        </div>
+      </button>
 
       {/* Saved projects */}
       <div className="border-t border-slate-100 pt-4 space-y-2">
@@ -3020,7 +3020,7 @@ export default function EditorShell() {
         </div>
       )}
 
-      {/* Prompt modal (quick edit) */}
+      {/* Prompts modal (quick edit) */}
       {promptModalOpen && (
         <div
           className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-6"
@@ -3046,7 +3046,7 @@ export default function EditorShell() {
             <div className="px-5 py-4">
               <div className="space-y-4">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Prompt</div>
+                  <div className="text-sm font-semibold text-slate-900">Poppy Prompt</div>
                   <div className="mt-0.5 text-xs text-slate-500">
                     Used for generating the 6-slide copy for this template type (shared across editor users).
                   </div>
@@ -3059,14 +3059,14 @@ export default function EditorShell() {
                       promptDirtyRef.current = true;
                       setTemplateTypePrompt(e.target.value);
                     }}
-                    placeholder="Enter the prompt for this template type..."
+                    placeholder="Enter the Poppy prompt for this template type..."
                   />
                 </div>
 
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Emphasis Prompt</div>
+                  <div className="text-sm font-semibold text-slate-900">Text Styling Prompt</div>
                   <div className="mt-0.5 text-xs text-slate-500">
-                    Controls bold/italic/underline styling for scannability. It never changes characters—only formatting ranges (shared across editor users).
+                    Controls bold/italic/underline for scannability. It never changes characters—only formatting ranges (shared across editor users).
                   </div>
                   <textarea
                     ref={emphasisTextareaRef}
@@ -3077,7 +3077,7 @@ export default function EditorShell() {
                       promptDirtyRef.current = true;
                       setTemplateTypeEmphasisPrompt(e.target.value);
                     }}
-                    placeholder="Enter the emphasis prompt for this template type..."
+                    placeholder="Enter the text styling prompt for this template type..."
                   />
                 </div>
               </div>

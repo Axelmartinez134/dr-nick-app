@@ -615,6 +615,7 @@ export default function HealthForm() {
   const [viewingImage, setViewingImage] = useState<{
     url: string
     title: string
+    showCreatinePill?: boolean
   } | null>(null)
   
   // Signed URLs for displaying images
@@ -1373,7 +1374,14 @@ export default function HealthForm() {
                   className="w-full h-32 object-cover rounded border shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => setViewingImage({
                     url: displayUrl,
-                    title: `${dayName} ${imageType === 'lumen' ? 'Lumen Screenshot' : 'Food Log Screenshot'}`
+                    title: `${dayName} ${imageType === 'lumen' ? 'Lumen Screenshot' : 'Food Log Screenshot'}`,
+                    showCreatinePill: (() => {
+                      const selected = Array.isArray((formData as any).creatine_myosmd_days_selected)
+                        ? (formData as any).creatine_myosmd_days_selected.map((s: any) => String(s).toLowerCase())
+                        : ([] as string[])
+                      const key = creatineDayKeys[dayNumber - 1]
+                      return !!key && selected.includes(key)
+                    })()
                   })}
                   title="Click to view full size"
                   onError={() => {
@@ -1402,7 +1410,14 @@ export default function HealthForm() {
               <button
                 onClick={() => displayUrl && setViewingImage({
                   url: displayUrl,
-                  title: `${dayName} ${imageType === 'lumen' ? 'Lumen Screenshot' : 'Food Log Screenshot'}`
+                  title: `${dayName} ${imageType === 'lumen' ? 'Lumen Screenshot' : 'Food Log Screenshot'}`,
+                  showCreatinePill: (() => {
+                    const selected = Array.isArray((formData as any).creatine_myosmd_days_selected)
+                      ? (formData as any).creatine_myosmd_days_selected.map((s: any) => String(s).toLowerCase())
+                      : ([] as string[])
+                    const key = creatineDayKeys[dayNumber - 1]
+                    return !!key && selected.includes(key)
+                  })()
                 })}
                 disabled={!displayUrl}
                 className="absolute bottom-1 right-1 bg-blue-500 text-white rounded px-2 py-1 text-xs hover:bg-blue-600 transition-colors disabled:bg-gray-400"
@@ -2648,7 +2663,14 @@ export default function HealthForm() {
         <div className="relative max-w-4xl max-h-full bg-white rounded-lg overflow-hidden">
           {/* Modal Header */}
           <div className="bg-gray-100 px-4 py-3 border-b flex items-center justify-between">
-            <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-medium text-gray-900">{viewingImage.title}</h3>
+              {viewingImage.showCreatinePill ? (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
+                  Creatine taken
+                </span>
+              ) : null}
+            </div>
             <button
               onClick={() => setViewingImage(null)}
               className="text-gray-400 hover:text-gray-600 text-2xl font-bold"

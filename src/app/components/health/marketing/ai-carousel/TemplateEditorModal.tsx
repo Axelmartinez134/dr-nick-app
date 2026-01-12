@@ -286,6 +286,32 @@ export default function TemplateEditorModal(props: {
     }
   };
 
+  const duplicateTemplate = async () => {
+    if (!activeTemplateId) {
+      setError('Select a template first.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch('/api/marketing/carousel/templates/duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ sourceTemplateId: activeTemplateId }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Failed to duplicate template');
+      props.onRefreshTemplates();
+      // Auto-open the duplicate for editing immediately.
+      await loadTemplateById(json.id);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to duplicate template');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveTemplate = async () => {
     if (!activeTemplateId) {
       setError('No template selected');
@@ -385,12 +411,21 @@ export default function TemplateEditorModal(props: {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+      onMouseDown={(e) => {
+        // Backdrop click closes (same behavior as ✕).
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="w-full max-w-5xl bg-white rounded-lg shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
-            <h2 className="text-lg font-semibold text-black">Template Editor (Slide 1)</h2>
+            <h2 className="text-lg font-semibold text-black">Template Editor</h2>
             <p className="text-xs text-black">Assets/text here are locked in normal editing.</p>
+            <p className="mt-1 text-[11px] text-black/70">
+              Edits affect all projects using this template. Use <span className="font-medium">Duplicate</span> for a project-specific version.
+            </p>
           </div>
           <button onClick={onClose} className="text-black hover:text-black" title="Close">
             ✕
@@ -425,20 +460,30 @@ export default function TemplateEditorModal(props: {
 
             <div className="bg-gray-50 rounded-lg p-4 border">
               <div className="text-sm font-medium text-black mb-2">Create new template</div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={newTemplateName}
-                  onChange={(e) => setNewTemplateName(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-black placeholder:text-black/50 disabled:text-black"
-                  placeholder="Template name..."
-                  disabled={saving}
-                />
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={newTemplateName}
+                    onChange={(e) => setNewTemplateName(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-black placeholder:text-black/50 disabled:text-black"
+                    placeholder="Template name..."
+                    disabled={saving}
+                  />
+                  <button
+                    onClick={createTemplate}
+                    disabled={saving || !newTemplateName.trim()}
+                    className="px-4 py-2 bg-black text-white rounded text-sm font-medium disabled:bg-black/30 disabled:text-white"
+                  >
+                    Create
+                  </button>
+                </div>
                 <button
-                  onClick={createTemplate}
-                  disabled={saving || !newTemplateName.trim()}
-                  className="px-4 py-2 bg-black text-white rounded text-sm font-medium disabled:bg-black/30 disabled:text-white"
+                  onClick={duplicateTemplate}
+                  disabled={saving || !activeTemplateId}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 text-black rounded text-sm font-medium disabled:opacity-50"
+                  title={activeTemplateId ? 'Duplicate selected template' : 'Select a template first'}
                 >
-                  Create
+                  Duplicate selected
                 </button>
               </div>
               <p className="text-xs text-black mt-2">
