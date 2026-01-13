@@ -42,7 +42,7 @@ export interface ImageBounds {
 
 type Rect = { left: number; top: number; right: number; bottom: number };
 
-const DEFAULTS: Required<Omit<WrapFlowOptions, 'contentRect'>> = {
+const DEFAULTS: Required<Omit<WrapFlowOptions, 'contentRect' | 'headlineAvgCharWidthEm' | 'bodyAvgCharWidthEm'>> = {
   canvasWidth: 1080,
   canvasHeight: 1440,
   margin: 40,
