@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
   const canSkip = found.ext === 'png' && pngHasAnyTransparency(found.bytes);
 
   let processedBytes: Uint8Array;
-  let status: Resp['bgRemovalStatus'];
+  let status: 'succeeded' | 'skipped-alpha';
   if (canSkip) {
     processedBytes = found.bytes;
     status = 'skipped-alpha';
