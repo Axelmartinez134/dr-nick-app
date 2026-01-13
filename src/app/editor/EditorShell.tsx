@@ -3184,7 +3184,13 @@ export default function EditorShell() {
                         className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                         onClick={() => {
                           layoutDirtyRef.current = true;
-                          void handleRealign();
+                          // Speed: for /editor we can do deterministic wrap-flow locally for the "Computational" option.
+                          // The server realign route can be slow due to model calls (styles/vision).
+                          if (realignmentModel === "gemini-computational") {
+                            enqueueLiveLayout([activeSlideIndex]);
+                          } else {
+                            void handleRealign();
+                          }
                         }}
                         disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
                       >
