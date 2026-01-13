@@ -8,6 +8,12 @@ export interface CarouselTextRequest {
   // store formatting as ranges in the input snapshot.
   headlineStyleRanges?: any[];
   bodyStyleRanges?: any[];
+  // Optional: client-measured font metrics to make deterministic layout robust across fonts.
+  // When provided, server-side wrap-flow uses these instead of an "Arial-ish" average width guess.
+  fontMetrics?: {
+    headlineAvgCharWidthEm?: number;
+    bodyAvgCharWidthEm?: number;
+  };
   settings?: {
     backgroundColor?: string;
     textColor?: string;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../../auth/AuthContext';
 import { CarouselTextRequest, LayoutResponse } from '@/lib/carousel-types';
 import type { CarouselTemplateDefinitionV1 } from '@/lib/carousel-template-types';
+import { ensureTypographyFontsLoaded, estimateAvgCharWidthEm } from './fontMetrics';
 
 interface SavedCarousel {
   id: string;
@@ -41,10 +42,10 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Project-wide typography (persisted with the carousel; canvas-only).
-  const [headlineFontFamily, setHeadlineFontFamily] = useState<string>('Inter, sans-serif');
+  const [headlineFontFamily, setHeadlineFontFamily] = useState<string>('"Droid Serif", serif');
   const [bodyFontFamily, setBodyFontFamily] = useState<string>('Inter, sans-serif');
   // NOTE: weights are not yet persisted to DB; used for UI selection (Phase 2) and canvas rendering (Phase 3).
-  const [headlineFontWeight, setHeadlineFontWeight] = useState<number>(700);
+  const [headlineFontWeight, setHeadlineFontWeight] = useState<number>(400);
   const [bodyFontWeight, setBodyFontWeight] = useState<number>(400);
 
   // Saved carousels list
@@ -492,10 +493,22 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
       addLog('⏳ Step 2: Analyzing image with Claude Vision...');
       addLog('⏳ Step 3: Generating text layout...');
 
+      // Ensure fonts are loaded before we (a) measure metrics and (b) render Fabric text.
+      await ensureTypographyFontsLoaded({
+        headlineFontFamily,
+        headlineFontWeight,
+        bodyFontFamily,
+        bodyFontWeight,
+      });
+
       const apiStartTime = Date.now();
       const requestBody: CarouselTextRequest = {
         ...data,
         templateId: selectedTemplateId || undefined,
+        fontMetrics: {
+          headlineAvgCharWidthEm: estimateAvgCharWidthEm(headlineFontFamily, headlineFontWeight),
+          bodyAvgCharWidthEm: estimateAvgCharWidthEm(bodyFontFamily, bodyFontWeight),
+        },
       };
 
       const response = await fetch('/api/marketing/carousel/layout', {
@@ -641,6 +654,13 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
       const timeoutId = setTimeout(() => controller.abort(), 190_000);
       let response: Response;
       try {
+        await ensureTypographyFontsLoaded({
+          headlineFontFamily,
+          headlineFontWeight,
+          bodyFontFamily,
+          bodyFontWeight,
+        });
+
         response = await fetch('/api/marketing/carousel/realign', {
           method: 'POST',
           headers: {
@@ -655,6 +675,10 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
             contentRegion: selectedTemplateSnapshot?.slides?.[0]?.contentRegion || null,
             contentPadding: 40,
             model: realignmentModel, // Pass selected model
+            fontMetrics: {
+              headlineAvgCharWidthEm: estimateAvgCharWidthEm(headlineFontFamily, headlineFontWeight),
+              bodyAvgCharWidthEm: estimateAvgCharWidthEm(bodyFontFamily, bodyFontWeight),
+            },
           }),
           signal: controller.signal,
         });

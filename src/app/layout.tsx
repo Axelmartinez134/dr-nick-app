@@ -28,7 +28,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Montserrat:wght@400;700&family=Poppins:wght@400;600;700&family=Playfair+Display:wght@400;700&family=Open+Sans:wght@300&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Montserrat:wght@400;700&family=Poppins:wght@400;600;700&family=Playfair+Display:wght@400;700&family=Open+Sans:wght@300&family=Noto+Serif:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&family=Droid+Serif:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Serif+Condensed:wght@500&display=swap"
         />
         {/* Supabase Storage/CDN perf hints */}
         <link rel="dns-prefetch" href="https://pobkamvdnbxhmyfwbnsj.supabase.co" />

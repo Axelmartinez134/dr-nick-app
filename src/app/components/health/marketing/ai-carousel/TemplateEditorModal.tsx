@@ -17,6 +17,9 @@ const FONT_OPTIONS = [
   { label: 'Montserrat (Bold)', family: 'Montserrat', weight: 700 },
   { label: 'Playfair Display', family: 'Playfair Display', weight: 400 },
   { label: 'Open Sans (Light)', family: 'Open Sans', weight: 300 },
+  { label: 'Noto Serif (Regular)', family: 'Noto Serif', weight: 400 },
+  { label: 'Droid Serif (Regular)', family: 'Droid Serif', weight: 400 },
+  { label: 'Noto Serif Condensed (Medium)', family: 'Noto Serif Condensed', weight: 500 },
 ];
 
 const fontKey = (family: string, weight: number) => `${family}@@${weight}`;

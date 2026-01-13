@@ -4,6 +4,7 @@ import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 're
 import { VisionLayoutDecision } from '@/lib/carousel-types';
 import type { CarouselTemplateDefinitionV1, TemplateAsset, TemplateImageAsset, TemplateTextAsset, TemplateRect } from '@/lib/carousel-template-types';
 import { supabase } from '../../../auth/AuthContext';
+import { ensureTypographyFontsLoaded } from './fontMetrics';
 
 interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
@@ -22,6 +23,7 @@ interface CarouselPreviewProps {
   clampUserImageToContentRect?: boolean; // default true
   pushTextOutOfUserImage?: boolean; // default true
   onUserTextChange?: (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => void;
+  onUserImageChange?: (change: { x: number; y: number; width: number; height: number }) => void;
 }
 
 const DISPLAY_ZOOM = 0.5;
@@ -43,6 +45,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       clampUserImageToContentRect,
       pushTextOutOfUserImage,
       onUserTextChange,
+      onUserImageChange,
     },
     ref
   ) => {
@@ -53,6 +56,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const constraintsRef = useRef<{ allowedRect: null | { x: number; y: number; width: number; height: number } }>({ allowedRect: null });
     const interactionRef = useRef<{ clampText: boolean; clampImage: boolean; pushTextOut: boolean }>({ clampText: true, clampImage: true, pushTextOut: true });
     const onUserTextChangeRef = useRef<CarouselPreviewProps["onUserTextChange"]>(undefined);
+    const onUserImageChangeRef = useRef<CarouselPreviewProps["onUserImageChange"]>(undefined);
 
     const PAD = Number.isFinite(contentPaddingPx as any) ? Math.max(0, Math.round(contentPaddingPx as any)) : 40;
     const clampText = clampUserTextToContentRect !== false;
@@ -65,6 +69,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     useEffect(() => {
       onUserTextChangeRef.current = onUserTextChange;
     }, [onUserTextChange]);
+    useEffect(() => {
+      onUserImageChangeRef.current = onUserImageChange;
+    }, [onUserImageChange]);
 
     const computeAllowedRect = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
       if (!tpl?.slides?.length) return null;
@@ -340,10 +347,24 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           cb(next);
         };
 
+        const notifyUserImage = (obj: any) => {
+          const cb = onUserImageChangeRef.current;
+          if (!cb) return;
+          if (!obj || obj?.data?.role !== 'user-image') return;
+          const aabb = getAABBTopLeft(obj);
+          cb({
+            x: aabb.x,
+            y: aabb.y,
+            width: Math.max(1, aabb.width),
+            height: Math.max(1, aabb.height),
+          });
+        };
+
         const onObjectModified = (e: any) => {
           const obj = e?.target;
-          if (!obj || obj?.data?.role !== 'user-text') return;
-          notifyUserText(obj, false);
+          if (!obj) return;
+          if (obj?.data?.role === 'user-text') notifyUserText(obj, false);
+          if (obj?.data?.role === 'user-image') notifyUserImage(obj);
         };
         const onTextChanged = (e: any) => {
           const obj = e?.target;
@@ -480,7 +501,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         const objects = canvas.getObjects();
         const imageObj =
           objects.find((obj: any) => obj?.type === 'image' && obj?.data?.role === 'user-image') ||
-          objects.find((obj: any) => obj?.type === 'image'); // fallback for legacy canvases
+          // Legacy fallback: allow images with no role, but never template assets.
+          objects.find((obj: any) => obj?.type === 'image' && !obj?.data?.role);
         
         if (!imageObj) {
           console.error('[Preview Vision] ❌ No image found on canvas');
@@ -575,22 +597,35 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
     // Re-render when layout or colors change
     useEffect(() => {
-      console.log('[Preview Vision] 🎨 Render triggered');
-      const canvas = fabricCanvasRef.current;
-      const fabric = fabricModuleRef.current;
-      
-      if (!canvas || !fabricLoaded || !fabric) {
-        console.log('[Preview Vision] ⏳ Waiting... Canvas:', !!canvas, 'Fabric loaded:', fabricLoaded, 'Fabric module:', !!fabric);
-        return;
-      }
+      let cancelled = false;
+      void (async () => {
+        console.log('[Preview Vision] 🎨 Render triggered');
+        const canvas = fabricCanvasRef.current;
+        const fabric = fabricModuleRef.current;
+        
+        if (!canvas || !fabricLoaded || !fabric) {
+          console.log('[Preview Vision] ⏳ Waiting... Canvas:', !!canvas, 'Fabric loaded:', fabricLoaded, 'Fabric module:', !!fabric);
+          return;
+        }
 
-      console.log('[Preview Vision] 🖌️ Rendering vision-based layout on canvas...');
+        // Ensure fonts (including italic/bold variants) are loaded before creating Textbox objects.
+        // This prevents fallback rendering that can cause odd spacing/kerning and unexpected wraps.
+        await ensureTypographyFontsLoaded({
+          headlineFontFamily: headlineFontFamily || 'Inter, sans-serif',
+          headlineFontWeight: Number.isFinite(headlineFontWeight as any) ? (headlineFontWeight as number) : 700,
+          bodyFontFamily: bodyFontFamily || 'Inter, sans-serif',
+          bodyFontWeight: Number.isFinite(bodyFontWeight as any) ? (bodyFontWeight as number) : 400,
+        });
+        if (cancelled) return;
+
+        console.log('[Preview Vision] 🖌️ Rendering vision-based layout on canvas...');
 
       // Preserve current image position so realign can NEVER move the user's image.
       // Use origin-aware top-left (getPointByOrigin) so we preserve the user's intended placement.
       const existingImageObj =
         canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && obj?.data?.role === 'user-image') ||
-        canvas.getObjects?.().find((obj: any) => obj?.type === 'image');
+        // Legacy fallback: allow images that have no role at all, but NEVER use template assets.
+        canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && !obj?.data?.role);
       let preservedImage: null | { left: number; top: number; scaleX: number; scaleY: number } = null;
       if (existingImageObj) {
         try {
@@ -746,6 +781,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         console.log('[Preview Vision] 📐 Image position:', layout.image);
         
         const imgElement = new Image();
+        // Required so the canvas can be exported (download/share) when using Storage public URLs.
+        imgElement.crossOrigin = 'anonymous';
         
         imgElement.onload = () => {
           console.log('[Preview Vision] ✅ Image loaded successfully');
@@ -929,6 +966,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       canvas.renderAll();
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
+      })();
+
+      return () => {
+        cancelled = true;
+      };
     }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx]);
 
     return (

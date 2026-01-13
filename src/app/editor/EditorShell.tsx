@@ -8,6 +8,7 @@ import type { CarouselTextRequest, TextStyle } from "@/lib/carousel-types";
 import type { VisionLayoutDecision } from "@/lib/carousel-types";
 import { wrapFlowLayout } from "@/lib/wrap-flow-layout";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
+import { ensureTypographyFontsLoaded, estimateAvgCharWidthEm } from "../components/health/marketing/ai-carousel/fontMetrics";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
 import JSZip from "jszip";
@@ -128,6 +129,13 @@ export default function EditorShell() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mobileSaveOpen, setMobileSaveOpen] = useState(false);
   const [mobileSaveBusy, setMobileSaveBusy] = useState<number | null>(null); // slide index or null
+  const [imageMenuOpen, setImageMenuOpen] = useState(false);
+  const [imageMenuPos, setImageMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [activeImageSelected, setActiveImageSelected] = useState(false);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageLongPressRef = useRef<number | null>(null);
+  const imageMoveSaveTimeoutRef = useRef<number | null>(null);
   const mobileGestureRef = useRef<{
     mode: null | "drawer-open" | "drawer-close" | "slide";
     startX: number;
@@ -152,6 +160,9 @@ export default function EditorShell() {
       { label: "Montserrat (Bold)", family: "Montserrat, sans-serif", weight: 700 },
       { label: "Playfair Display", family: "\"Playfair Display\", serif", weight: 400 },
       { label: "Open Sans (Light)", family: "\"Open Sans\", sans-serif", weight: 300 },
+      { label: "Noto Serif (Regular)", family: "\"Noto Serif\", serif", weight: 400 },
+      { label: "Droid Serif (Regular)", family: "\"Droid Serif\", serif", weight: 400 },
+      { label: "Noto Serif Condensed (Medium)", family: "\"Noto Serif Condensed\", serif", weight: 500 },
     ],
     []
   );
@@ -419,6 +430,174 @@ export default function EditorShell() {
     if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
     return data;
   }
+
+  const uploadImageForActiveSlide = async (file: File) => {
+    if (!currentProjectId) throw new Error("Create or load a project first.");
+    if (!file) return;
+    if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
+
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const t = String((file as any)?.type || "");
+    if (!allowedTypes.has(t)) {
+      throw new Error("Unsupported file type. Please upload JPG, PNG, or WebP.");
+    }
+    if (Number((file as any)?.size || 0) > 10 * 1024 * 1024) {
+      throw new Error("File too large. Max 10MB.");
+    }
+
+    setImageBusy(true);
+    closeImageMenu();
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error("Not authenticated. Please sign in again.");
+
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("projectId", currentProjectId);
+      fd.append("slideIndex", String(activeSlideIndex));
+
+      const res = await fetch("/api/editor/projects/slides/image/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.success) throw new Error(j?.error || `Upload failed (${res.status})`);
+
+      const url = String(j?.url || "");
+      const path = String(j?.path || "");
+      if (!url) throw new Error("Upload succeeded but no URL was returned.");
+
+      // Load image dimensions for initial centered placement.
+      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
+        img.onerror = () => resolve({ w: 1, h: 1 });
+        img.src = url;
+      });
+
+      const tid = computeTemplateIdForSlide(activeSlideIndex);
+      const snap = (tid ? templateSnapshots[tid] : null) || null;
+      const placement = computeDefaultUploadedImagePlacement(snap, dims.w, dims.h);
+
+      // Patch the CURRENT active layout snapshot so Realign can see the image and preserve movement.
+      const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+      const nextLayout = {
+        ...baseLayout,
+        image: {
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
+          height: placement.height,
+          url,
+          storage: { bucket: "carousel-project-images", path },
+        },
+      };
+
+      setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== activeSlideIndex
+            ? s
+            : {
+                ...s,
+                layoutData: { success: true, layout: nextLayout, imageUrl: url } as any,
+              }
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s, i) =>
+        i !== activeSlideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
+      );
+
+      // Persist to Supabase (per-slide snapshot).
+      await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout });
+      addLog(`🖼️ Uploaded image → slide ${activeSlideIndex + 1}`);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const deleteImageForActiveSlide = async (reason: "menu" | "button") => {
+    if (!currentProjectId) return;
+    setImageBusy(true);
+    closeImageMenu();
+    try {
+      const curLayout = (layoutData as any)?.layout || null;
+      const path = String(curLayout?.image?.storage?.path || "");
+      // Best-effort delete from storage
+      try {
+        await fetchJson("/api/editor/projects/slides/image/delete", {
+          method: "POST",
+          body: JSON.stringify({ projectId: currentProjectId, slideIndex: activeSlideIndex, path: path || undefined }),
+        });
+      } catch (e) {
+        // If storage delete fails, still remove from the slide snapshot so the UI unblocks.
+        console.warn("[EditorShell] Image storage delete failed:", e);
+      }
+
+      const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+      const nextLayout = { ...baseLayout };
+      if (nextLayout.image) delete (nextLayout as any).image;
+
+      setLayoutData({ success: true, layout: nextLayout, imageUrl: null } as any);
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== activeSlideIndex ? s : { ...s, layoutData: { success: true, layout: nextLayout, imageUrl: null } as any }
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s, i) =>
+        i !== activeSlideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: null } as any } as any)
+      );
+
+      await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout });
+      setActiveImageSelected(false);
+      addLog(`🗑️ Removed image (slide ${activeSlideIndex + 1}) via ${reason}`);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const handleUserImageChange = (change: { x: number; y: number; width: number; height: number }) => {
+    if (!currentProjectId) return;
+    // Update in-memory layout snapshot so Realign sees the current image bounds immediately.
+    const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+    const prevImage = (baseLayout as any)?.image || null;
+    if (!prevImage || !prevImage.url) return; // no user image to update
+
+    const nextLayout = {
+      ...baseLayout,
+      image: {
+        ...prevImage,
+        x: Math.round(Number(change.x) || 0),
+        y: Math.round(Number(change.y) || 0),
+        width: Math.max(1, Math.round(Number(change.width) || 1)),
+        height: Math.max(1, Math.round(Number(change.height) || 1)),
+      },
+    };
+
+    setLayoutData({ success: true, layout: nextLayout, imageUrl: prevImage.url } as any);
+    setSlides((prev) =>
+      prev.map((s, i) =>
+        i !== activeSlideIndex
+          ? s
+          : {
+              ...s,
+              layoutData: { success: true, layout: nextLayout, imageUrl: prevImage.url } as any,
+            }
+      )
+    );
+    slidesRef.current = slidesRef.current.map((s, i) =>
+      i !== activeSlideIndex
+        ? s
+        : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: prevImage.url } as any } as any)
+    );
+
+    // Debounced persist (500ms) after user finishes moving/resizing the image.
+    if (imageMoveSaveTimeoutRef.current) window.clearTimeout(imageMoveSaveTimeoutRef.current);
+    imageMoveSaveTimeoutRef.current = window.setTimeout(() => {
+      void saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout });
+    }, 500);
+  };
 
   const runGenerateCopy = async () => {
     if (!currentProjectId) {
@@ -749,6 +928,9 @@ export default function EditorShell() {
           height: 1,
         };
 
+    const headlineAvg = estimateAvgCharWidthEm(headlineFontFamily, headlineFontWeight);
+    const bodyAvg = estimateAvgCharWidthEm(bodyFontFamily, bodyFontWeight);
+
     const { layout, meta } = wrapFlowLayout(params.headline, params.body, imageBounds, {
       ...(inset ? { contentRect: inset } : { margin: 40 }),
       clearancePx: 1,
@@ -763,6 +945,8 @@ export default function EditorShell() {
       minUsableLaneWidthPx: 300,
       skinnyLaneWidthPx: 380,
       minBelowSpacePx: 240,
+      headlineAvgCharWidthEm: headlineAvg,
+      bodyAvgCharWidthEm: bodyAvg,
     });
 
     // Apply inline style ranges (bold/italic/underline) to the computed line objects.
@@ -863,6 +1047,15 @@ export default function EditorShell() {
     if (liveLayoutRunningRef.current) return;
     liveLayoutRunningRef.current = true;
     try {
+      // Ensure fonts (including italic/bold variants) are loaded before measuring/wrapping.
+      // This prevents Fabric from falling back mid-render (which causes odd spacing/kerning and unexpected wraps).
+      await ensureTypographyFontsLoaded({
+        headlineFontFamily,
+        headlineFontWeight,
+        bodyFontFamily,
+        bodyFontWeight,
+      });
+
       while (liveLayoutQueueRef.current.length > 0) {
         const slideIndex = liveLayoutQueueRef.current.shift() as number;
         const slide = slidesRef.current[slideIndex] || initSlide();
@@ -1486,6 +1679,54 @@ export default function EditorShell() {
     return () => window.removeEventListener("resize", read);
   }, []);
 
+  // Track whether the active canvas selection is the user image, so we can show a Delete button.
+  useEffect(() => {
+    const c = (canvasRef as any)?.current?.canvas;
+    if (!c || typeof c.on !== "function") return;
+    const onSel = () => syncActiveImageSelected();
+    try {
+      c.on("selection:created", onSel);
+      c.on("selection:updated", onSel);
+      c.on("selection:cleared", onSel);
+      c.on("mouse:down", onSel);
+    } catch {
+      // ignore
+    }
+    // Initialize
+    onSel();
+    return () => {
+      try {
+        c.off("selection:created", onSel);
+        c.off("selection:updated", onSel);
+        c.off("selection:cleared", onSel);
+        c.off("mouse:down", onSel);
+      } catch {
+        // ignore
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSlideIndex, (layoutData as any)?.layout]);
+
+  // Close the image menu on outside click or Escape.
+  useEffect(() => {
+    if (!imageMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.("[data-image-menu='1']")) return;
+      closeImageMenu();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeImageMenu();
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageMenuOpen]);
+
   // Slide strip translation: no manual scrolling; arrows move slides.
   // We center the active slide in the viewport.
   const CARD_W = 420;
@@ -1509,6 +1750,56 @@ export default function EditorShell() {
     if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return true;
     if ((el as any).isContentEditable) return true;
     return false;
+  };
+
+  const computeDefaultUploadedImagePlacement = (templateSnapshot: any | null, imageW: number, imageH: number) => {
+    const region = getTemplateContentRectRaw(templateSnapshot);
+    const outer = region || { x: 0, y: 0, width: 1080, height: 1440 };
+    // Keep inside content region with a bit of padding.
+    const PAD = 40;
+    const inset = {
+      x: outer.x + PAD,
+      y: outer.y + PAD,
+      width: Math.max(1, outer.width - PAD * 2),
+      height: Math.max(1, outer.height - PAD * 2),
+    };
+    const maxW = inset.width * 0.7;
+    const maxH = inset.height * 0.7;
+    const iw = Math.max(1, Number(imageW) || 1);
+    const ih = Math.max(1, Number(imageH) || 1);
+    const scale = Math.min(maxW / iw, maxH / ih, 1);
+    const w = Math.max(1, Math.round(iw * scale));
+    const h = Math.max(1, Math.round(ih * scale));
+    const x = Math.round(inset.x + (inset.width - w) / 2);
+    const y = Math.round(inset.y + (inset.height - h) / 2);
+    return { x, y, width: w, height: h };
+  };
+
+  const openImageMenu = (x: number, y: number) => {
+    setImageMenuPos({ x, y });
+    setImageMenuOpen(true);
+  };
+
+  const closeImageMenu = () => {
+    setImageMenuOpen(false);
+    setImageMenuPos(null);
+  };
+
+  const hasImageForActiveSlide = () => {
+    const curLayout = (layoutData as any)?.layout || null;
+    const url = curLayout?.image?.url || null;
+    return !!String(url || "").trim();
+  };
+
+  const syncActiveImageSelected = () => {
+    try {
+      const c = (canvasRef as any)?.current?.canvas;
+      const obj = c?.getActiveObject?.() || null;
+      const role = obj?.data?.role || null;
+      setActiveImageSelected(role === "user-image");
+    } catch {
+      setActiveImageSelected(false);
+    }
   };
 
   const switchToSlide = async (nextIndex: number) => {
@@ -2350,6 +2641,40 @@ export default function EditorShell() {
           {/* Slides row */}
           <div className="flex flex-col items-center justify-center p-3 md:p-6">
             <div className="w-full max-w-[1400px]">
+              {/* Hidden file input for per-slide image upload */}
+              <input
+                ref={imageFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  // Reset input so selecting the same file again triggers onChange.
+                  e.currentTarget.value = "";
+                  void uploadImageForActiveSlide(f);
+                }}
+              />
+
+              {/* Image context menu (active slide only) */}
+              {imageMenuOpen && imageMenuPos ? (
+                <div
+                  data-image-menu="1"
+                  className="fixed z-[200] bg-white border border-slate-200 rounded-lg shadow-xl p-2 w-[200px]"
+                  style={{ left: imageMenuPos.x, top: imageMenuPos.y }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
+                    disabled={imageBusy || !hasImageForActiveSlide()}
+                    onClick={() => void deleteImageForActiveSlide("menu")}
+                  >
+                    Remove image
+                  </button>
+                </div>
+              ) : null}
+
               {isMobile ? (
                 <div className="w-full">
                   <div className="flex items-center justify-between gap-3 mb-3">
@@ -2466,6 +2791,7 @@ export default function EditorShell() {
                                     ? handleRegularCanvasTextChange
                                     : undefined
                                 }
+                                onUserImageChange={handleUserImageChange}
                               />
                             )}
                           </div>
@@ -2549,6 +2875,54 @@ export default function EditorShell() {
                             void switchToSlide(i);
                           }}
                         >
+                          {/* Per-slide image upload trigger (active slide only). */}
+                          {i === activeSlideIndex && currentProjectId ? (
+                            <button
+                              type="button"
+                              className="absolute left-2 -bottom-10 w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
+                              title={imageBusy ? "Working…" : "Upload image"}
+                              aria-label="Upload image"
+                              disabled={imageBusy || switchingSlides || copyGenerating}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                imageFileInputRef.current?.click();
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                openImageMenu(e.clientX, e.clientY);
+                              }}
+                              onPointerDown={(e) => {
+                                // Long-press to open menu
+                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                const x = (e as any).clientX ?? 0;
+                                const y = (e as any).clientY ?? 0;
+                                imageLongPressRef.current = window.setTimeout(() => {
+                                  openImageMenu(x, y);
+                                }, 520);
+                              }}
+                              onPointerUp={() => {
+                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                imageLongPressRef.current = null;
+                              }}
+                              onPointerCancel={() => {
+                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                imageLongPressRef.current = null;
+                              }}
+                              onPointerLeave={() => {
+                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                imageLongPressRef.current = null;
+                              }}
+                            >
+                              <svg viewBox="0 0 24 24" className="w-9 h-9">
+                                <path
+                                  fill="currentColor"
+                                  d="M19 15a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a1 1 0 1 1 2 0v3h12v-3a1 1 0 0 1 1-1ZM12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Z"
+                                />
+                              </svg>
+                            </button>
+                          ) : null}
                           <SlideCard index={i + 1} active={i === activeSlideIndex}>
                             <div
                               className="w-full h-full flex flex-col items-center justify-start"
@@ -2620,6 +2994,9 @@ export default function EditorShell() {
                                           i === activeSlideIndex && templateTypeId === "regular"
                                             ? handleRegularCanvasTextChange
                                             : undefined
+                                        }
+                                        onUserImageChange={
+                                          i === activeSlideIndex ? handleUserImageChange : undefined
                                         }
                                       />
                                     );
@@ -2716,6 +3093,16 @@ export default function EditorShell() {
                   >
                     {copyGenerating ? "Generating Copy..." : "Generate Copy"}
                   </button>
+                  {activeImageSelected ? (
+                    <button
+                      className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                      onClick={() => void deleteImageForActiveSlide("button")}
+                      disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                      title="Delete the selected image from this slide"
+                    >
+                      {imageBusy ? "Working…" : "Delete Image"}
+                    </button>
+                  ) : null}
                   {copyError ? <div className="text-xs text-red-600">❌ {copyError}</div> : null}
                   {templateTypeId !== "regular" ? (
                     <>

@@ -26,6 +26,11 @@ export interface WrapFlowOptions {
   // prefer continuing body below the image at full width for readability.
   skinnyLaneWidthPx?: number;
   minBelowSpacePx?: number;
+  // Optional override: average character width (in "em" units) for the chosen fonts.
+  // This is used to estimate max characters per line. If omitted, we fall back to a conservative default.
+  // Provide per-block values when headline/body fonts differ.
+  headlineAvgCharWidthEm?: number;
+  bodyAvgCharWidthEm?: number;
 }
 
 export interface ImageBounds {
@@ -179,8 +184,9 @@ function tokenize(text: string, maxChars: number): string[] {
   return out;
 }
 
-function maxCharsForWidth(fontSize: number, widthPx: number) {
-  const estCharPx = fontSize * AVG_CHAR_WIDTH_EM;
+function maxCharsForWidth(fontSize: number, widthPx: number, avgCharWidthEm?: number) {
+  const avg = Number.isFinite(avgCharWidthEm as any) ? (avgCharWidthEm as number) : AVG_CHAR_WIDTH_EM;
+  const estCharPx = fontSize * avg;
   return Math.max(1, Math.floor(widthPx / estCharPx));
 }
 
@@ -263,7 +269,21 @@ export function wrapFlowLayout(
   image: ImageBounds,
   opts?: WrapFlowOptions
 ): { layout: VisionLayoutDecision; meta: { truncated: boolean; usedFonts: { headline: number; body: number }; lineSources?: Array<{ block: 'HEADLINE' | 'BODY'; paragraphIndex?: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> }> } } {
-  const o = { ...DEFAULTS, ...(opts || {}) } as (Required<Omit<WrapFlowOptions, 'contentRect'>> & { contentRect?: { x: number; y: number; width: number; height: number } });
+  const o = {
+    ...DEFAULTS,
+    ...(opts || {}),
+  } as (Required<Omit<WrapFlowOptions, 'contentRect' | 'headlineAvgCharWidthEm' | 'bodyAvgCharWidthEm'>> & {
+    contentRect?: { x: number; y: number; width: number; height: number };
+    headlineAvgCharWidthEm?: number;
+    bodyAvgCharWidthEm?: number;
+  });
+
+  const headlineAvgCharWidthEm = Number.isFinite(opts?.headlineAvgCharWidthEm as any)
+    ? (opts!.headlineAvgCharWidthEm as number)
+    : undefined;
+  const bodyAvgCharWidthEm = Number.isFinite(opts?.bodyAvgCharWidthEm as any)
+    ? (opts!.bodyAvgCharWidthEm as number)
+    : undefined;
 
   const contentRect = o.contentRect || {
     x: o.margin,
@@ -402,7 +422,10 @@ export function wrapFlowLayout(
       }
 
       // If lane is unusably narrow, skip below image if we're intersecting it.
-      const maxChars = maxCharsForWidth(fontSize, lane.width);
+      const maxChars =
+        block === 'HEADLINE'
+          ? maxCharsForWidth(fontSize, lane.width, headlineAvgCharWidthEm)
+          : maxCharsForWidth(fontSize, lane.width, bodyAvgCharWidthEm);
       if (lane.width <= 0 || maxChars < 4) {
         if (intersectsYBand(y, y + lhPx, blocked)) {
           y = Math.max(y, blocked.bottom);
@@ -580,7 +603,8 @@ export function wrapFlowLayout(
     // If truncated and we have at least one line, ensure last line ends with ellipsis and fits
     if (truncated && lines.length > 0) {
       const last = lines[lines.length - 1];
-      const maxChars = Math.max(1, maxCharsForWidth(last.baseSize, last.maxWidth ?? 0));
+      const avg = last.baseSize === headlineFont ? headlineAvgCharWidthEm : bodyAvgCharWidthEm;
+      const maxChars = Math.max(1, maxCharsForWidth(last.baseSize, last.maxWidth ?? 0, avg));
       const base = last.text.replace(/…+$/g, '').trim();
       const trimmed = base.length >= maxChars ? base.slice(0, Math.max(1, maxChars - 1)).trimEnd() : base;
       const withEllipsis = trimmed.endsWith('…') ? trimmed : `${trimmed}…`;

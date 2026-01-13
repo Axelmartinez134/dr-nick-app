@@ -23,6 +23,11 @@ interface RealignRequest {
     width: number;
     height: number;
   };
+  // Optional client-measured font metrics (avg char width in em) to make wrap-flow robust across fonts.
+  fontMetrics?: {
+    headlineAvgCharWidthEm?: number;
+    bodyAvgCharWidthEm?: number;
+  };
   // Optional template contentRegion (outer), used to constrain deterministic wrap-flow.
   contentRegion?: { x: number; y: number; width: number; height: number };
   contentPadding?: number; // defaults to 40
@@ -183,6 +188,8 @@ export async function POST(request: NextRequest) {
           // If the image is short or lane is skinny, use space below instead of a tall narrow column.
           skinnyLaneWidthPx: 380,
           minBelowSpacePx: 240,
+          headlineAvgCharWidthEm: (body as any)?.fontMetrics?.headlineAvgCharWidthEm,
+          bodyAvgCharWidthEm: (body as any)?.fontMetrics?.bodyAvgCharWidthEm,
         }
       );
 

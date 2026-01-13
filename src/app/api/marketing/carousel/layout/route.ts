@@ -210,6 +210,8 @@ export async function POST(request: NextRequest) {
           minUsableLaneWidthPx: 300,
           skinnyLaneWidthPx: 380,
           minBelowSpacePx: 240,
+          headlineAvgCharWidthEm: body?.fontMetrics?.headlineAvgCharWidthEm,
+          bodyAvgCharWidthEm: body?.fontMetrics?.bodyAvgCharWidthEm,
         }
       );
 
