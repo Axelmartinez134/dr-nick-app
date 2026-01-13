@@ -679,6 +679,7 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
               headlineAvgCharWidthEm: estimateAvgCharWidthEm(headlineFontFamily, headlineFontWeight),
               bodyAvgCharWidthEm: estimateAvgCharWidthEm(bodyFontFamily, bodyFontWeight),
             },
+            imageAlphaMask: (layoutData as any)?.layout?.image?.mask || undefined,
           }),
           signal: controller.signal,
         });

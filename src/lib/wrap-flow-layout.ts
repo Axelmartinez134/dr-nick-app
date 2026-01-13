@@ -31,6 +31,11 @@ export interface WrapFlowOptions {
   // Provide per-block values when headline/body fonts differ.
   headlineAvgCharWidthEm?: number;
   bodyAvgCharWidthEm?: number;
+  // Optional: low-res alpha mask for the image (used to avoid blocking text with the image's full bounding box).
+  // The mask is defined in the image's local space (0..w-1, 0..h-1) and should correspond to the image
+  // as rendered with the provided ImageBounds (x/y/width/height).
+  // `dataB64` should decode into a Uint8Array of length w*h where each byte is 0 (empty) or 1 (solid).
+  imageAlphaMask?: { w: number; h: number; dataB64: string; alphaThreshold?: number };
 }
 
 export interface ImageBounds {
@@ -67,6 +72,29 @@ const AVG_CHAR_WIDTH_EM = 0.56; // Arial-ish conservative
 
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
+}
+
+function decodeB64ToU8(dataB64: string): Uint8Array | null {
+  const s = String(dataB64 || '');
+  if (!s) return null;
+  try {
+    // Node
+    if (typeof Buffer !== 'undefined') {
+      return new Uint8Array(Buffer.from(s, 'base64'));
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    // Browser
+    // eslint-disable-next-line no-undef
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 function lineHeightPx(fontSize: number, lh: number) {
@@ -284,6 +312,11 @@ export function wrapFlowLayout(
   const bodyAvgCharWidthEm = Number.isFinite(opts?.bodyAvgCharWidthEm as any)
     ? (opts!.bodyAvgCharWidthEm as number)
     : undefined;
+  const mask = opts?.imageAlphaMask || null;
+  const maskU8 = mask?.dataB64 ? decodeB64ToU8(mask.dataB64) : null;
+  const maskW = mask?.w || 0;
+  const maskH = mask?.h || 0;
+  const hasMask = !!(maskU8 && maskW > 0 && maskH > 0 && maskU8.length >= maskW * maskH);
 
   const contentRect = o.contentRect || {
     x: o.margin,
@@ -316,17 +349,78 @@ export function wrapFlowLayout(
   const imgBottomF = imgTopF + image.height;
 
   // Expand by clearance, then snap OUTWARDS to integer pixels
-  const blocked: Rect = {
+  const blockedRaw: Rect = {
     left: Math.floor(imgLeftF - o.clearancePx),
     top: Math.floor(imgTopF - o.clearancePx),
     right: Math.ceil(imgRightF + o.clearancePx),
     bottom: Math.ceil(imgBottomF + o.clearancePx),
   };
 
+  // IMPORTANT: Intersection-only blocking.
+  // The image is allowed to live anywhere on the canvas, but text is constrained to `content`.
+  // Therefore, only the portion of the image that intersects `content` should block text.
+  const intersectRect = (a: Rect, b: Rect): Rect | null => {
+    const left = Math.max(a.left, b.left);
+    const top = Math.max(a.top, b.top);
+    const right = Math.min(a.right, b.right);
+    const bottom = Math.min(a.bottom, b.bottom);
+    if (right <= left || bottom <= top) return null;
+    return { left, top, right, bottom };
+  };
+  const blocked = intersectRect(blockedRaw, content) || { left: 999999, top: 999999, right: 1000000, bottom: 1000000 };
+
+  const blockedForYBand = (yTop: number, yBottom: number): Rect | null => {
+    // Start from intersection-only global blocked rect to avoid any effect outside content rect.
+    const band = intersectRect({ left: content.left, top: yTop, right: content.right, bottom: yBottom }, blocked);
+    if (!band) return null;
+    if (!hasMask) return band;
+
+    // Compute the occupied x-span within this y band using the alpha mask.
+    // We treat the mask as mapping to the image's rendered bounds (without clearance).
+    const imgX = clamp(image.x, -10000, 10000);
+    const imgY = clamp(image.y, -10000, 10000);
+    const imgW = clamp(image.width, 0, 20000);
+    const imgH = clamp(image.height, 0, 20000);
+    if (imgW <= 1 || imgH <= 1) return band;
+
+    // Intersect band with the image rectangle
+    const iyTop = Math.max(yTop, imgY);
+    const iyBottom = Math.min(yBottom, imgY + imgH);
+    if (iyBottom <= iyTop) return null;
+
+    const r0 = Math.max(0, Math.min(maskH - 1, Math.floor(((iyTop - imgY) / imgH) * maskH)));
+    const r1 = Math.max(0, Math.min(maskH, Math.ceil(((iyBottom - imgY) / imgH) * maskH)));
+
+    let minC = maskW;
+    let maxC = -1;
+    for (let r = r0; r < r1; r++) {
+      const rowOff = r * maskW;
+      for (let c = 0; c < maskW; c++) {
+        if (maskU8![rowOff + c] > 0) {
+          if (c < minC) minC = c;
+          if (c > maxC) maxC = c;
+        }
+      }
+    }
+    if (maxC < minC) {
+      // No occupied pixels in this band; it does not block text.
+      return null;
+    }
+
+    const leftPx = imgX + (minC / maskW) * imgW;
+    const rightPx = imgX + ((maxC + 1) / maskW) * imgW;
+    const leftI = Math.floor(leftPx - o.clearancePx);
+    const rightI = Math.ceil(rightPx + o.clearancePx);
+
+    const out = intersectRect({ left: leftI, top: band.top, right: rightI, bottom: band.bottom }, content);
+    return out;
+  };
+
   const assertNoOverlap = (lines: TextLine[]) => {
     for (let i = 0; i < lines.length; i++) {
       const lr = lineRect(lines[i]);
-      if (overlapsRect(lr, blocked)) {
+      const b = blockedForYBand(lr.top, lr.bottom);
+      if (b && overlapsRect(lr, b)) {
         throw new Error(
           `Wrap-flow overlap detected for line ${i + 1} at (${lr.left},${lr.top})-(${lr.right},${lr.bottom}) intersects image AABB+${o.clearancePx}px`
         );
@@ -395,12 +489,13 @@ export function wrapFlowLayout(
 
       // Typography polish: do not allow headline to enter the image vertical span.
       // If the next headline line would overlap the image span, signal and force smaller headline font.
-      if (block === 'HEADLINE' && intersectsYBand(y, y + lhPx, blocked)) {
+      if (block === 'HEADLINE' && !!blockedForYBand(y, y + lhPx)) {
         headlineHitImage = true;
         return { nextIdx: idx, placed: false };
       }
 
-      const lane = laneForYBand(y, y + lhPx, content, blocked, o.laneTieBreak);
+      const bandBlocked = blockedForYBand(y, y + lhPx);
+      const lane = laneForYBand(y, y + lhPx, content, bandBlocked || { left: 999999, top: 999999, right: 1000000, bottom: 1000000 }, o.laneTieBreak);
       if (!lane) {
         // Shouldn't happen, but be safe
         y = Math.max(y, blocked.bottom);
@@ -427,7 +522,7 @@ export function wrapFlowLayout(
           ? maxCharsForWidth(fontSize, lane.width, headlineAvgCharWidthEm)
           : maxCharsForWidth(fontSize, lane.width, bodyAvgCharWidthEm);
       if (lane.width <= 0 || maxChars < 4) {
-        if (intersectsYBand(y, y + lhPx, blocked)) {
+        if (!!blockedForYBand(y, y + lhPx)) {
           y = Math.max(y, blocked.bottom);
           return { nextIdx: idx, placed: false };
         }
@@ -486,9 +581,10 @@ export function wrapFlowLayout(
 
       // Hard guarantee check: line AABB must NOT overlap blocked rect.
       const lr = lineRect(textLine);
-      if (overlapsRect(lr, blocked)) {
+      const b2 = blockedForYBand(lr.top, lr.bottom);
+      if (b2 && overlapsRect(lr, b2)) {
         // If we're in the image vertical band, jump below and retry; else move down.
-        if (intersectsYBand(y, y + lhPx, blocked)) {
+        if (!!blockedForYBand(y, y + lhPx)) {
           y = Math.max(y, blocked.bottom);
         } else {
           y += lhPx;

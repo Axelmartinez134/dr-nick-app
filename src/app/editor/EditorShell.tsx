@@ -468,6 +468,42 @@ export default function EditorShell() {
       const path = String(j?.path || "");
       if (!url) throw new Error("Upload succeeded but no URL was returned.");
 
+      const computeAlphaMask128 = async (imageUrl: string) => {
+        const MASK_W = 128;
+        const MASK_H = 128;
+        const THRESH = 32;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        const loaded = await new Promise<boolean>((resolve) => {
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(false);
+          img.src = imageUrl;
+        });
+        if (!loaded) return null;
+        try {
+          const c = document.createElement("canvas");
+          c.width = MASK_W;
+          c.height = MASK_H;
+          const ctx = c.getContext("2d", { willReadFrequently: true } as any);
+          if (!ctx) return null;
+          ctx.clearRect(0, 0, MASK_W, MASK_H);
+          ctx.drawImage(img, 0, 0, MASK_W, MASK_H);
+          const data = ctx.getImageData(0, 0, MASK_W, MASK_H).data;
+          const out = new Uint8Array(MASK_W * MASK_H);
+          for (let i = 0; i < MASK_W * MASK_H; i++) {
+            const a = data[i * 4 + 3] || 0;
+            out[i] = a > THRESH ? 1 : 0;
+          }
+          // base64 encode
+          let bin = "";
+          for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+          const dataB64 = btoa(bin);
+          return { w: MASK_W, h: MASK_H, dataB64, alphaThreshold: THRESH };
+        } catch {
+          return null;
+        }
+      };
+
       // Load image dimensions for initial centered placement.
       const dims = await new Promise<{ w: number; h: number }>((resolve) => {
         const img = new Image();
@@ -479,6 +515,7 @@ export default function EditorShell() {
       const tid = computeTemplateIdForSlide(activeSlideIndex);
       const snap = (tid ? templateSnapshots[tid] : null) || null;
       const placement = computeDefaultUploadedImagePlacement(snap, dims.w, dims.h);
+      const mask = await computeAlphaMask128(url);
 
       // Patch the CURRENT active layout snapshot so Realign can see the image and preserve movement.
       const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
@@ -491,6 +528,7 @@ export default function EditorShell() {
           height: placement.height,
           url,
           storage: { bucket: "carousel-project-images", path },
+          ...(mask ? { mask } : {}),
         },
       };
 
@@ -895,7 +933,9 @@ export default function EditorShell() {
           (layoutData as any)?.layout?.image?.url ||
           (layoutData as any)?.imageUrl ||
           null;
-        return { ...pos, url };
+        const mask = (layoutData as any)?.layout?.image?.mask || null;
+        const storage = (layoutData as any)?.layout?.image?.storage || null;
+        return { ...pos, url, ...(mask ? { mask } : {}), ...(storage ? { storage } : {}) };
       }
     }
     const img = (slidesRef.current[slideIndex] as any)?.layoutData?.layout?.image;
@@ -947,6 +987,7 @@ export default function EditorShell() {
       minBelowSpacePx: 240,
       headlineAvgCharWidthEm: headlineAvg,
       bodyAvgCharWidthEm: bodyAvg,
+      imageAlphaMask: (params.image as any)?.mask || undefined,
     });
 
     // Apply inline style ranges (bold/italic/underline) to the computed line objects.
@@ -2785,6 +2826,7 @@ export default function EditorShell() {
                                   bodyFontWeight={bodyFontWeight}
                                 contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
                                 clampUserTextToContentRect={templateTypeId !== "regular"}
+                                clampUserImageToContentRect={false}
                                 pushTextOutOfUserImage={templateTypeId !== "regular"}
                                 onUserTextChange={
                                   templateTypeId === "regular"
@@ -2823,6 +2865,7 @@ export default function EditorShell() {
                             bodyFontWeight={bodyFontWeight}
                           contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
                           clampUserTextToContentRect={templateTypeId !== "regular"}
+                          clampUserImageToContentRect={false}
                           pushTextOutOfUserImage={templateTypeId !== "regular"}
                         />
                       );
@@ -2989,6 +3032,7 @@ export default function EditorShell() {
                                           bodyFontWeight={bodyFontWeight}
                                         contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
                                         clampUserTextToContentRect={templateTypeId !== "regular"}
+                                        clampUserImageToContentRect={false}
                                         pushTextOutOfUserImage={templateTypeId !== "regular"}
                                         onUserTextChange={
                                           i === activeSlideIndex && templateTypeId === "regular"

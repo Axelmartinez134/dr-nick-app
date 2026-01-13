@@ -28,6 +28,8 @@ interface RealignRequest {
     headlineAvgCharWidthEm?: number;
     bodyAvgCharWidthEm?: number;
   };
+  // Optional low-res alpha mask for the image (enables silhouette wrapping inside the contentRegion).
+  imageAlphaMask?: { w: number; h: number; dataB64: string; alphaThreshold?: number };
   // Optional template contentRegion (outer), used to constrain deterministic wrap-flow.
   contentRegion?: { x: number; y: number; width: number; height: number };
   contentPadding?: number; // defaults to 40
@@ -190,6 +192,7 @@ export async function POST(request: NextRequest) {
           minBelowSpacePx: 240,
           headlineAvgCharWidthEm: (body as any)?.fontMetrics?.headlineAvgCharWidthEm,
           bodyAvgCharWidthEm: (body as any)?.fontMetrics?.bodyAvgCharWidthEm,
+          imageAlphaMask: (body as any)?.imageAlphaMask,
         }
       );
 
