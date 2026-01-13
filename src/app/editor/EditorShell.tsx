@@ -455,6 +455,8 @@ export default function EditorShell() {
       fd.append("file", file);
       fd.append("projectId", currentProjectId);
       fd.append("slideIndex", String(activeSlideIndex));
+      // Phase 3: background removal is ON by default for new uploads (toggle lives on selected image).
+      fd.append("bgRemovalEnabled", "1");
 
       const res = await fetch("/api/editor/projects/slides/image/upload", {
         method: "POST",
@@ -468,42 +470,6 @@ export default function EditorShell() {
       const path = String(j?.path || "");
       if (!url) throw new Error("Upload succeeded but no URL was returned.");
 
-      const computeAlphaMask128 = async (imageUrl: string) => {
-        const MASK_W = 128;
-        const MASK_H = 128;
-        const THRESH = 32;
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        const loaded = await new Promise<boolean>((resolve) => {
-          img.onload = () => resolve(true);
-          img.onerror = () => resolve(false);
-          img.src = imageUrl;
-        });
-        if (!loaded) return null;
-        try {
-          const c = document.createElement("canvas");
-          c.width = MASK_W;
-          c.height = MASK_H;
-          const ctx = c.getContext("2d", { willReadFrequently: true } as any);
-          if (!ctx) return null;
-          ctx.clearRect(0, 0, MASK_W, MASK_H);
-          ctx.drawImage(img, 0, 0, MASK_W, MASK_H);
-          const data = ctx.getImageData(0, 0, MASK_W, MASK_H).data;
-          const out = new Uint8Array(MASK_W * MASK_H);
-          for (let i = 0; i < MASK_W * MASK_H; i++) {
-            const a = data[i * 4 + 3] || 0;
-            out[i] = a > THRESH ? 1 : 0;
-          }
-          // base64 encode
-          let bin = "";
-          for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
-          const dataB64 = btoa(bin);
-          return { w: MASK_W, h: MASK_H, dataB64, alphaThreshold: THRESH };
-        } catch {
-          return null;
-        }
-      };
-
       // Load image dimensions for initial centered placement.
       const dims = await new Promise<{ w: number; h: number }>((resolve) => {
         const img = new Image();
@@ -515,7 +481,10 @@ export default function EditorShell() {
       const tid = computeTemplateIdForSlide(activeSlideIndex);
       const snap = (tid ? templateSnapshots[tid] : null) || null;
       const placement = computeDefaultUploadedImagePlacement(snap, dims.w, dims.h);
-      const mask = await computeAlphaMask128(url);
+      const mask = (j?.mask as any) || null;
+      const bgRemovalStatus = String(j?.bgRemovalStatus || "idle");
+      const original = j?.original || null;
+      const processed = j?.processed || null;
 
       // Patch the CURRENT active layout snapshot so Realign can see the image and preserve movement.
       const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
@@ -528,6 +497,10 @@ export default function EditorShell() {
           height: placement.height,
           url,
           storage: { bucket: "carousel-project-images", path },
+          bgRemovalEnabled: true,
+          bgRemovalStatus,
+          ...(original ? { original: { url: String(original.url || ""), storage: original.storage || { bucket: "carousel-project-images", path: String(original.path || "") } } } : {}),
+          ...(processed ? { processed: { url: String(processed.url || ""), storage: processed.storage || { bucket: "carousel-project-images", path: String(processed.path || "") } } } : {}),
           ...(mask ? { mask } : {}),
         },
       };
@@ -555,18 +528,110 @@ export default function EditorShell() {
     }
   };
 
+  const setActiveSlideImageBgRemoval = async (nextEnabled: boolean) => {
+    if (!currentProjectId) throw new Error("Create or load a project first.");
+    if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
+    const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : null;
+    const img = baseLayout?.image ? { ...(baseLayout.image as any) } : null;
+    if (!img || !String(img?.url || "").trim()) return;
+
+    // Ensure we always keep a pointer to the original upload for retries (Phase 2+).
+    const orig = (img as any).original || null;
+    if (!orig) {
+      (img as any).original = {
+        url: String((img as any)?.url || ""),
+        storage: (img as any)?.storage || null,
+      };
+    }
+
+    (img as any).bgRemovalEnabled = !!nextEnabled;
+    if (!nextEnabled) {
+      // When disabling, revert to original visually and clear mask so wrapping falls back to rectangle.
+      (img as any).bgRemovalStatus = "disabled";
+      const o = (img as any).original || null;
+      if (o?.url) (img as any).url = String(o.url);
+      if (o?.storage) (img as any).storage = o.storage;
+      if ((img as any).mask) delete (img as any).mask;
+      if ((img as any).processed) delete (img as any).processed;
+    } else {
+      // When enabling, kick off reprocess from stored original and update to processed PNG + server mask.
+      (img as any).bgRemovalStatus = "processing";
+    }
+
+    const nextLayout = { ...baseLayout, image: img };
+    setLayoutData((prev: any) => (prev?.layout ? ({ ...prev, layout: nextLayout }) : prev));
+    setSlides((prev) => prev.map((s, i) => (i === activeSlideIndex ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout } as any }) : s)));
+    slidesRef.current = slidesRef.current.map((s, i) => (i === activeSlideIndex ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout } as any } as any) : s));
+
+    await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout });
+
+    if (nextEnabled) {
+      try {
+        const j = await fetchJson("/api/editor/projects/slides/image/reprocess", {
+          method: "POST",
+          body: JSON.stringify({ projectId: currentProjectId, slideIndex: activeSlideIndex }),
+        });
+        if (!j?.success) throw new Error(j?.error || "Reprocess failed");
+
+        const processedUrl = String(j?.processed?.url || "");
+        const processedPath = String(j?.processed?.path || "");
+        const mask = j?.mask || null;
+        const bgRemovalStatus = String(j?.bgRemovalStatus || "succeeded");
+
+        const base2 = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+        const prevImg = (base2 as any)?.image ? { ...(base2 as any).image } : null;
+        if (!prevImg) return;
+
+        const nextImg = {
+          ...prevImg,
+          bgRemovalEnabled: true,
+          bgRemovalStatus,
+          url: processedUrl || prevImg.url,
+          storage: processedPath ? { bucket: "carousel-project-images", path: processedPath } : prevImg.storage,
+          original: j?.original
+            ? { url: String(j.original.url || ""), storage: { bucket: "carousel-project-images", path: String(j.original.path || "") } }
+            : (prevImg as any).original,
+          processed: j?.processed
+            ? { url: String(j.processed.url || ""), storage: { bucket: "carousel-project-images", path: String(j.processed.path || "") } }
+            : { url: processedUrl, storage: processedPath ? { bucket: "carousel-project-images", path: processedPath } : prevImg.storage },
+          ...(mask ? { mask } : {}),
+        };
+        const nextLayout2 = { ...base2, image: nextImg };
+        setLayoutData((prev: any) => (prev?.layout ? ({ ...prev, layout: nextLayout2, imageUrl: nextImg.url } as any) : prev));
+        setSlides((prev) => prev.map((s, i) => (i === activeSlideIndex ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: nextImg.url } as any }) : s)));
+        slidesRef.current = slidesRef.current.map((s, i) => (i === activeSlideIndex ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: nextImg.url } as any } as any) : s));
+        await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout2 });
+      } catch (e) {
+        // Mark failed but keep original visible.
+        const base2 = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : null;
+        const prevImg = base2?.image ? { ...(base2.image as any) } : null;
+        if (!base2 || !prevImg) return;
+        const o = (prevImg as any).original || null;
+        const failedImg: any = { ...prevImg, bgRemovalEnabled: true, bgRemovalStatus: "failed" };
+        if (o?.url) failedImg.url = String(o.url);
+        if (o?.storage) failedImg.storage = o.storage;
+        if (failedImg.mask) delete failedImg.mask;
+        if (failedImg.processed) delete failedImg.processed;
+        const nextLayout2 = { ...base2, image: failedImg };
+        setLayoutData((prev: any) => (prev?.layout ? ({ ...prev, layout: nextLayout2, imageUrl: failedImg.url } as any) : prev));
+        setSlides((prev) => prev.map((s, i) => (i === activeSlideIndex ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: failedImg.url } as any }) : s)));
+        slidesRef.current = slidesRef.current.map((s, i) => (i === activeSlideIndex ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: failedImg.url } as any } as any) : s));
+        await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout2 });
+      }
+    }
+  };
+
   const deleteImageForActiveSlide = async (reason: "menu" | "button") => {
     if (!currentProjectId) return;
     setImageBusy(true);
     closeImageMenu();
     try {
       const curLayout = (layoutData as any)?.layout || null;
-      const path = String(curLayout?.image?.storage?.path || "");
       // Best-effort delete from storage
       try {
         await fetchJson("/api/editor/projects/slides/image/delete", {
           method: "POST",
-          body: JSON.stringify({ projectId: currentProjectId, slideIndex: activeSlideIndex, path: path || undefined }),
+          body: JSON.stringify({ projectId: currentProjectId, slideIndex: activeSlideIndex }),
         });
       } catch (e) {
         // If storage delete fails, still remove from the slide snapshot so the UI unblocks.
@@ -987,7 +1052,7 @@ export default function EditorShell() {
       minBelowSpacePx: 240,
       headlineAvgCharWidthEm: headlineAvg,
       bodyAvgCharWidthEm: bodyAvg,
-      imageAlphaMask: (params.image as any)?.mask || undefined,
+      imageAlphaMask: (params.image as any)?.bgRemovalEnabled === false ? undefined : (params.image as any)?.mask || undefined,
     });
 
     // Apply inline style ranges (bold/italic/underline) to the computed line objects.
@@ -1005,6 +1070,16 @@ export default function EditorShell() {
     // Preserve any existing image URL if present.
     if ((params.image as any)?.url && layout.image) {
       (layout.image as any).url = (params.image as any).url;
+    }
+    // Preserve editor-specific image metadata (mask + bg removal fields + storage pointers) so
+    // live-layout/Realign (computational) doesn't "forget" the image state and regress UI to idle.
+    if (params.image && layout.image) {
+      const keys = ["mask", "storage", "bgRemovalEnabled", "bgRemovalStatus", "original", "processed"] as const;
+      for (const k of keys) {
+        if (typeof (params.image as any)?.[k] !== "undefined") {
+          (layout.image as any)[k] = (params.image as any)[k];
+        }
+      }
     }
     return layout;
   };
@@ -2820,6 +2895,8 @@ export default function EditorShell() {
                                 textColor={projectTextColor}
                                 templateSnapshot={snap}
                                 hasHeadline={templateTypeId !== "regular"}
+                                tightUserTextWidth={templateTypeId !== "regular"}
+                                onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
                                 headlineFontFamily={headlineFontFamily}
                                 bodyFontFamily={bodyFontFamily}
                                   headlineFontWeight={headlineFontWeight}
@@ -2859,6 +2936,7 @@ export default function EditorShell() {
                           textColor={projectTextColor}
                           templateSnapshot={snap}
                           hasHeadline={templateTypeId !== "regular"}
+                          tightUserTextWidth={templateTypeId !== "regular"}
                           headlineFontFamily={headlineFontFamily}
                           bodyFontFamily={bodyFontFamily}
                             headlineFontWeight={headlineFontWeight}
@@ -3026,6 +3104,8 @@ export default function EditorShell() {
                                         textColor={projectTextColor}
                                         templateSnapshot={snap}
                                         hasHeadline={templateTypeId !== "regular"}
+                                        tightUserTextWidth={templateTypeId !== "regular"}
+                                        onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
                                         headlineFontFamily={headlineFontFamily}
                                         bodyFontFamily={bodyFontFamily}
                                           headlineFontWeight={headlineFontWeight}
@@ -3138,14 +3218,63 @@ export default function EditorShell() {
                     {copyGenerating ? "Generating Copy..." : "Generate Copy"}
                   </button>
                   {activeImageSelected ? (
-                    <button
-                      className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                      onClick={() => void deleteImageForActiveSlide("button")}
-                      disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
-                      title="Delete the selected image from this slide"
-                    >
-                      {imageBusy ? "Working…" : "Delete Image"}
-                    </button>
+                    <>
+                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">Background removal (recommended)</div>
+                            <div className="text-xs text-slate-500">
+                              Improves Realign wrapping so text hugs the subject silhouette.
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className={[
+                              "h-8 w-14 rounded-full transition-colors",
+                              ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "bg-black" : "bg-slate-300",
+                            ].join(" ")}
+                            onClick={() => {
+                              const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
+                              void setActiveSlideImageBgRemoval(!cur);
+                            }}
+                            disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                            title="Toggle background removal for this image (persists per slide)"
+                          >
+                            <span
+                              className={[
+                                "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "translate-x-6" : "translate-x-1",
+                              ].join(" ")}
+                            />
+                          </button>
+                        </div>
+                        <div className="mt-2 text-xs text-slate-600">
+                          Status:{" "}
+                          <span className="font-semibold">
+                            {String((layoutData as any)?.layout?.image?.bgRemovalStatus || (((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "idle" : "disabled"))}
+                          </span>
+                        </div>
+                        {String((layoutData as any)?.layout?.image?.bgRemovalStatus || "") === "failed" ? (
+                          <button
+                            type="button"
+                            className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
+                            onClick={() => void setActiveSlideImageBgRemoval(true)}
+                            disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                            title="Try background removal again (Phase 2 will run the API call)"
+                          >
+                            Try again
+                          </button>
+                        ) : null}
+                      </div>
+                      <button
+                        className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm disabled:opacity-50"
+                        onClick={() => void deleteImageForActiveSlide("button")}
+                        disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                        title="Delete the selected image from this slide"
+                      >
+                        {imageBusy ? "Working…" : "Delete Image"}
+                      </button>
+                    </>
                   ) : null}
                   {copyError ? <div className="text-xs text-red-600">❌ {copyError}</div> : null}
                   {templateTypeId !== "regular" ? (

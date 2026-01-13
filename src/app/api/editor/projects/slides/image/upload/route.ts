@@ -2,6 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthedSupabase } from '../../../../_utils';
+import { computeAlphaMask128FromPngBytes, pngHasAnyTransparency } from '../_mask';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -26,8 +27,18 @@ type UploadResponse = {
   path?: string;
   url?: string;
   contentType?: string;
+  mask?: { w: number; h: number; dataB64: string; alphaThreshold: number };
+  bgRemovalEnabled?: boolean;
+  bgRemovalStatus?: 'disabled' | 'processing' | 'succeeded' | 'failed' | 'skipped-alpha';
+  original?: { bucket: typeof BUCKET; path: string; url: string; contentType: string };
+  processed?: { bucket: typeof BUCKET; path: string; url: string; contentType: string };
   error?: string;
 };
+
+function withVersion(url: string, v: string) {
+  if (!url) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}`;
+}
 
 export async function POST(req: NextRequest) {
   const authed = await getAuthedSupabase(req);
@@ -41,6 +52,7 @@ export async function POST(req: NextRequest) {
   const projectId = String(form.get('projectId') || '');
   const slideIndexRaw = String(form.get('slideIndex') || '');
   const slideIndex = Number(slideIndexRaw);
+  const bgRemovalEnabled = String(form.get('bgRemovalEnabled') || '1') !== '0';
   if (!file || !projectId || !Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex > 5) {
     return NextResponse.json(
       { success: false, error: 'Missing file, projectId, or slideIndex (0..5)' } as UploadResponse,
@@ -108,22 +120,107 @@ export async function POST(req: NextRequest) {
     // ignore; upload will still error meaningfully
   }
 
-  // Stable per-slide path; replace via upsert.
-  const objectPath = `projects/${projectId}/slides/${slideIndex}/image.${ext}`.replace(/^\/+/, '');
+  const baseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
+  const activePath = `${baseDir}/image.${ext}`;
+  const originalPath = `${baseDir}/original.${ext}`;
+  const processedPath = `${baseDir}/image.png`; // active when bg removal succeeds
+
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const { error: upErr } = await svc.storage.from(BUCKET).upload(objectPath, buffer, { contentType, upsert: true });
-  if (upErr) {
-    return NextResponse.json({ success: false, error: upErr.message } as UploadResponse, { status: 400 });
+  // Always store original for retries (Phase 3 requirement).
+  const { error: upOrigErr } = await svc.storage.from(BUCKET).upload(originalPath, buffer, { contentType, upsert: true });
+  if (upOrigErr) {
+    return NextResponse.json({ success: false, error: upOrigErr.message } as UploadResponse, { status: 400 });
+  }
+  const { data: origUrl } = svc.storage.from(BUCKET).getPublicUrl(originalPath);
+  const v = String(Date.now());
+  const original = { bucket: BUCKET, path: originalPath, url: withVersion(origUrl.publicUrl, v), contentType };
+
+  // Default: active is the original upload (rectangle wrapping; toggle OFF path).
+  let outPath = activePath;
+  let outContentType = contentType;
+  let outBytes: Uint8Array | null = null;
+  let outMask: UploadResponse['mask'] | undefined = undefined;
+  let status: UploadResponse['bgRemovalStatus'] = bgRemovalEnabled ? 'processing' : 'disabled';
+  let processed: UploadResponse['processed'] | undefined = undefined;
+
+  const apiKey = String(process.env.REMOVEBG_API_KEY || '').trim();
+
+  try {
+    if (!bgRemovalEnabled) {
+      // Store active as-is for compatibility.
+      const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: true });
+      if (upActiveErr) throw new Error(upActiveErr.message);
+      status = 'disabled';
+    } else {
+      // Token-saver: if PNG already has transparency, skip API and compute mask server-side from original bytes.
+      // NOTE: For webp we do not have a server decoder; we intentionally do NOT skip there.
+      const canSkip = ext === 'png' && pngHasAnyTransparency(new Uint8Array(buffer));
+      if (canSkip) {
+        outPath = activePath;
+        outContentType = contentType;
+        outMask = computeAlphaMask128FromPngBytes(new Uint8Array(buffer), 32, 128, 128);
+        // Ensure active object exists too.
+        const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: true });
+        if (upActiveErr) throw new Error(upActiveErr.message);
+        status = 'skipped-alpha';
+      } else {
+        if (!apiKey) throw new Error('Server missing REMOVEBG_API_KEY');
+
+        const upstream = new FormData();
+        upstream.append('image_file', file);
+        upstream.append('format', 'png');
+
+        const r = await fetch('https://removebgapi.com/api/v1/remove', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: upstream,
+        });
+        if (!r.ok) {
+          throw new Error(`RemoveBG failed (${r.status})`);
+        }
+
+        const ab = await r.arrayBuffer();
+        outBytes = new Uint8Array(ab);
+        outMask = computeAlphaMask128FromPngBytes(outBytes, 32, 128, 128);
+
+        // Upload processed PNG as the ACTIVE image.
+        outPath = processedPath;
+        outContentType = 'image/png';
+        const { error: upProcErr } = await svc.storage.from(BUCKET).upload(processedPath, Buffer.from(outBytes), { contentType: 'image/png', upsert: true });
+        if (upProcErr) throw new Error(upProcErr.message);
+        const { data: procUrl } = svc.storage.from(BUCKET).getPublicUrl(processedPath);
+        processed = { bucket: BUCKET, path: processedPath, url: withVersion(procUrl.publicUrl, v), contentType: 'image/png' };
+        status = 'succeeded';
+      }
+    }
+  } catch (e: any) {
+    // Keep original visible if removal fails; still store active as the original upload.
+    try {
+      const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: true });
+      if (upActiveErr) throw upActiveErr;
+    } catch {
+      // If even this fails, treat as fatal below.
+      return NextResponse.json({ success: false, error: e?.message || 'Upload failed' } as UploadResponse, { status: 400 });
+    }
+    outPath = activePath;
+    outContentType = contentType;
+    status = bgRemovalEnabled ? 'failed' : 'disabled';
+    outMask = undefined;
   }
 
-  const { data } = svc.storage.from(BUCKET).getPublicUrl(objectPath);
+  const { data } = svc.storage.from(BUCKET).getPublicUrl(outPath);
   return NextResponse.json({
     success: true,
     bucket: BUCKET,
-    path: objectPath,
-    url: data.publicUrl,
-    contentType,
+    path: outPath,
+    url: withVersion(data.publicUrl, v),
+    contentType: outContentType,
+    bgRemovalEnabled,
+    bgRemovalStatus: status,
+    ...(outMask ? { mask: outMask } : {}),
+    original,
+    ...(processed ? { processed } : {}),
   } as UploadResponse);
 }
 

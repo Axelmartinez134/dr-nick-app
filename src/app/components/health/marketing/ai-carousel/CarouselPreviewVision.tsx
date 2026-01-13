@@ -12,6 +12,11 @@ interface CarouselPreviewProps {
   textColor: string;
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
+  // When true, shrink each user text object's width to hug the rendered text (plus small padding),
+  // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
+  tightUserTextWidth?: boolean;
+  // Optional debug hook used by /editor to surface Fabric sizing details in the Debug panel.
+  onDebugLog?: (message: string) => void;
   headlineFontFamily?: string;
   bodyFontFamily?: string;
   headlineFontWeight?: number;
@@ -44,6 +49,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       clampUserTextToContentRect,
       clampUserImageToContentRect,
       pushTextOutOfUserImage,
+      tightUserTextWidth,
+      onDebugLog,
       onUserTextChange,
       onUserImageChange,
     },
@@ -62,6 +69,17 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const clampText = clampUserTextToContentRect !== false;
     const clampImage = clampUserImageToContentRect !== false;
     const pushTextOut = pushTextOutOfUserImage !== false;
+
+    // Debug hook: confirm wiring regardless of Fabric lifecycle.
+    useEffect(() => {
+      if (onDebugLog && tightUserTextWidth && hasHeadline !== false) {
+        try {
+          onDebugLog('🧪 TightText debug hook active (pre-fabric)');
+        } catch {
+          // ignore
+        }
+      }
+    }, [onDebugLog, tightUserTextWidth, hasHeadline]);
 
     useEffect(() => {
       interactionRef.current = { clampText, clampImage, pushTextOut };
@@ -602,10 +620,21 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         console.log('[Preview Vision] 🎨 Render triggered');
         const canvas = fabricCanvasRef.current;
         const fabric = fabricModuleRef.current;
+        const dbg = onDebugLog;
         
         if (!canvas || !fabricLoaded || !fabric) {
           console.log('[Preview Vision] ⏳ Waiting... Canvas:', !!canvas, 'Fabric loaded:', fabricLoaded, 'Fabric module:', !!fabric);
           return;
+        }
+
+        // Surface a single high-signal debug line into /editor's Debug panel so we can confirm wiring.
+        // This is intentionally before any per-line logs.
+        if (dbg && tightUserTextWidth && (hasHeadline !== false)) {
+          try {
+            dbg(`🧪 TightText enabled: lines=${Array.isArray(layout?.textLines) ? layout.textLines.length : 0}`);
+          } catch {
+            // ignore
+          }
         }
 
         // Ensure fonts (including italic/bold variants) are loaded before creating Textbox objects.
@@ -902,23 +931,49 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             (line as any)?.positionAnchorY === 'center'
               ? 'center'
               : 'top';
-          // Create Textbox object (enforces width constraint, supports mixed formatting)
-          const textObj = new fabric.Textbox(line.text, {
-            left: line.position.x,
-            top: line.position.y,
-            width: line.maxWidth, // CRITICAL: Hard width constraint that forces wrapping
-            fontSize: line.baseSize,
-            fill: textColor,
-            fontFamily: isHeadlineLine ? headlineFont : bodyFont,
-            fontWeight: baseWeight,
-            textAlign: line.textAlign,
-            lineHeight: line.lineHeight,
-            originX: line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left',
-            originY,
-            selectable: true,
-            editable: true,
-            splitByGrapheme: false, // Wrap at word boundaries, not mid-word
-          });
+          const originX = line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left';
+
+          // Enhanced (/editor) UX: make each line's selection box hug the text.
+          // Since Enhanced is already pre-wrapped into separate lines, use IText (content-sized) instead of Textbox (lane-sized).
+          const useTight = !!tightUserTextWidth && effectiveHasHeadline;
+          const isSingleLine = !String(line.text || '').includes('\n');
+          const laneW = Math.max(1, Math.floor(Number(line.maxWidth || 1)));
+
+          const textObj = (useTight && isSingleLine && typeof fabric.IText === 'function')
+            ? new fabric.IText(line.text, {
+                left: line.position.x,
+                top: line.position.y,
+                fontSize: line.baseSize,
+                fill: textColor,
+                fontFamily: isHeadlineLine ? headlineFont : bodyFont,
+                fontWeight: baseWeight,
+                textAlign: line.textAlign,
+                lineHeight: line.lineHeight,
+                originX,
+                originY,
+                selectable: true,
+                editable: true,
+                // 12px total horizontal padding (6px each side) via Fabric's padding.
+                // NOTE: padding applies uniformly; acceptable per spec (width, not height, was the main concern).
+                padding: 6,
+                splitByGrapheme: false,
+              })
+            : new fabric.Textbox(line.text, {
+                left: line.position.x,
+                top: line.position.y,
+                width: laneW, // Hard width constraint for wrap layout.
+                fontSize: line.baseSize,
+                fill: textColor,
+                fontFamily: isHeadlineLine ? headlineFont : bodyFont,
+                fontWeight: baseWeight,
+                textAlign: line.textAlign,
+                lineHeight: line.lineHeight,
+                originX,
+                originY,
+                selectable: true,
+                editable: true,
+                splitByGrapheme: false, // Wrap at word boundaries, not mid-word
+              });
           (textObj as any).data = { role: 'user-text', lineIndex: index };
           disableRotationControls(textObj);
 
@@ -957,6 +1012,80 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             });
           }
 
+          // Debug (only when the parent requests it): report Fabric sizing and which object type we used.
+          // Keep it low-noise: only log first few lines per render.
+          if (dbg && useTight && index < 8) {
+            try {
+              if (typeof (textObj as any).initDimensions === 'function') (textObj as any).initDimensions();
+              const rawWidth = Number((textObj as any).width || 0);
+              const scaledWidth = typeof (textObj as any).getScaledWidth === 'function' ? Number((textObj as any).getScaledWidth()) : rawWidth;
+              const lineW0 = typeof (textObj as any).getLineWidth === 'function' ? Number((textObj as any).getLineWidth(0)) : null;
+              const br = typeof (textObj as any).getBoundingRect === 'function' ? (textObj as any).getBoundingRect(true, true) : null;
+              dbg(
+                `🧪 TightText line ${index + 1}: type=${String((textObj as any).type)} align=${String(line.textAlign)} ` +
+                  `laneW=${laneW} textW=${lineW0 ?? 'n/a'} objW=${Math.round(rawWidth)} scaledW=${Math.round(scaledWidth)} ` +
+                  `padding=${Number((textObj as any).padding || 0)} ` +
+                  `bboxW=${br?.width ? Math.round(br.width) : 'n/a'} text="${String(line.text || '').slice(0, 32)}"`
+              );
+            } catch (e: any) {
+              dbg(`🧪 TightText line ${index + 1}: debug failed: ${String(e?.message || e)}`);
+            }
+          }
+
+          // Hard clamp: if the tight object ends up wider than its lane due to font metrics, fall back to lane width.
+          try {
+            if (useTight && (textObj as any)?.type !== 'textbox') {
+              if (typeof (textObj as any).initDimensions === 'function') (textObj as any).initDimensions();
+              const w = typeof (textObj as any).getScaledWidth === 'function' ? Number((textObj as any).getScaledWidth()) : Number((textObj as any).width || 0);
+              if (Number.isFinite(w) && w > laneW) {
+                if (onDebugLog && index < 8) {
+                  onDebugLog(
+                    `🧪 TightText line ${index + 1}: IText measured wider than lane (w=${Math.round(w)} > laneW=${laneW}) → fallback to Textbox`
+                  );
+                }
+                // Convert to a textbox at lane width so we never violate content margins.
+                const tb = new fabric.Textbox(line.text, {
+                  left: line.position.x,
+                  top: line.position.y,
+                  width: laneW,
+                  fontSize: line.baseSize,
+                  fill: textColor,
+                  fontFamily: isHeadlineLine ? headlineFont : bodyFont,
+                  fontWeight: baseWeight,
+                  textAlign: line.textAlign,
+                  lineHeight: line.lineHeight,
+                  originX,
+                  originY,
+                  selectable: true,
+                  editable: true,
+                  splitByGrapheme: false,
+                });
+                (tb as any).data = (textObj as any).data;
+                disableRotationControls(tb);
+                // Re-apply styles if any
+                if (line.styles && line.styles.length > 0) {
+                  line.styles.forEach((style: any) => {
+                    const styleObj: any = {};
+                    if (style.fontWeight) {
+                      if (style.fontWeight === 'bold') styleObj.fontWeight = 700;
+                      else if (style.fontWeight === 'normal') styleObj.fontWeight = baseWeight;
+                      else styleObj.fontWeight = style.fontWeight as any;
+                    }
+                    if (style.fontStyle) styleObj.fontStyle = style.fontStyle;
+                    if (style.fill) styleObj.fill = style.fill;
+                    if (style.underline) styleObj.underline = style.underline;
+                    tb.setSelectionStyles(styleObj, style.start, style.end);
+                  });
+                }
+                canvas.add(tb);
+                console.log(`[Preview Vision] ✅ Line ${index + 1} added to canvas (fallback textbox)`);
+                return;
+              }
+            }
+          } catch {
+            // ignore
+          }
+
           canvas.add(textObj);
           console.log(`[Preview Vision] ✅ Line ${index + 1} added to canvas`);
         } catch (error) {
@@ -971,7 +1100,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       return () => {
         cancelled = true;
       };
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog]);
 
     return (
       <div className="flex flex-col items-center space-y-4">

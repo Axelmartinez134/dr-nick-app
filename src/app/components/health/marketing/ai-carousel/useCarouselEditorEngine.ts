@@ -731,6 +731,11 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
       // In /editor we often restore layouts from snapshots where the base64 URL lives on `layout.image.url`
       // (and `layoutData.imageUrl` may be null). If we don't carry this forward, the image can "disappear"
       // after realign (new layout comes back with image bounds but no url).
+      //
+      // ALSO: Preserve editor-specific image metadata (mask + bg removal fields). The server layout engine
+      // only returns canonical bounds and text lines; if we drop these fields, subsequent Realign/Layout
+      // calls lose silhouette wrapping and the Controls UI regresses to "idle".
+      const prevImageMeta = (layoutData as any)?.layout?.image || null;
       const existingImageUrl =
         (layoutData as any)?.layout?.image?.url ||
         (layoutData as any)?.imageUrl ||
@@ -745,6 +750,16 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
         result.layout.image.y = imagePosition.y;
         result.layout.image.width = imagePosition.width;
         result.layout.image.height = imagePosition.height;
+      }
+
+      // Preserve editor image metadata fields (mask + bg removal toggle/state + storage pointers).
+      if (result.layout.image && prevImageMeta) {
+        const fields = ['mask', 'storage', 'bgRemovalEnabled', 'bgRemovalStatus', 'original', 'processed'] as const;
+        for (const k of fields) {
+          if (typeof (prevImageMeta as any)?.[k] !== 'undefined') {
+            (result.layout.image as any)[k] = (prevImageMeta as any)[k];
+          }
+        }
       }
 
       // Update layout data with new realigned layout

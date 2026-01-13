@@ -71,14 +71,17 @@ export async function POST(req: NextRequest) {
 
   // Prefer explicit path (from stored metadata). Fallback to known prefixes (best-effort).
   const path = String(body.path || '').trim();
-  const candidates = path
-    ? [path]
-    : [
-        `projects/${projectId}/slides/${slideIndex}/image.png`,
-        `projects/${projectId}/slides/${slideIndex}/image.webp`,
-        `projects/${projectId}/slides/${slideIndex}/image.jpg`,
-        `projects/${projectId}/slides/${slideIndex}/image.jpeg`,
-      ];
+  const defaults = [
+    `projects/${projectId}/slides/${slideIndex}/image.png`,
+    `projects/${projectId}/slides/${slideIndex}/image.webp`,
+    `projects/${projectId}/slides/${slideIndex}/image.jpg`,
+    `projects/${projectId}/slides/${slideIndex}/image.jpeg`,
+    `projects/${projectId}/slides/${slideIndex}/original.png`,
+    `projects/${projectId}/slides/${slideIndex}/original.webp`,
+    `projects/${projectId}/slides/${slideIndex}/original.jpg`,
+    `projects/${projectId}/slides/${slideIndex}/original.jpeg`,
+  ];
+  const candidates = Array.from(new Set([...(path ? [path] : []), ...defaults]));
 
   const { error: rmErr } = await svc.storage.from(BUCKET).remove(candidates);
   // Supabase remove returns error if none found in some cases; treat as best-effort.

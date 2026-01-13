@@ -46,6 +46,7 @@ export interface ImageBounds {
 }
 
 type Rect = { left: number; top: number; right: number; bottom: number };
+type Span = { left: number; right: number };
 
 const DEFAULTS: Required<Omit<WrapFlowOptions, 'contentRect' | 'headlineAvgCharWidthEm' | 'bodyAvgCharWidthEm'>> = {
   canvasWidth: 1080,
@@ -274,6 +275,14 @@ function overlapsRect(a: Rect, b: Rect) {
   return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
 }
 
+function overlapsAnySpanX(lr: Rect, spans: Span[]) {
+  // Caller typically ensures Y-band intersection already; we only need X overlap checks.
+  for (const s of spans) {
+    if (lr.right > s.left && lr.left < s.right) return true;
+  }
+  return false;
+}
+
 function lineRect(line: TextLine): Rect {
   const maxWidth = line.maxWidth ?? 0;
   // Integer-safe rect:
@@ -369,58 +378,121 @@ export function wrapFlowLayout(
   };
   const blocked = intersectRect(blockedRaw, content) || { left: 999999, top: 999999, right: 1000000, bottom: 1000000 };
 
-  const blockedForYBand = (yTop: number, yBottom: number): Rect | null => {
+  const mergeSpans = (spans: Span[]): Span[] => {
+    const s = spans
+      .filter((x) => Number.isFinite(x.left) && Number.isFinite(x.right) && x.right > x.left)
+      .sort((a, b) => a.left - b.left || a.right - b.right);
+    if (s.length <= 1) return s;
+    const out: Span[] = [];
+    for (const cur of s) {
+      const prev = out[out.length - 1];
+      if (!prev || cur.left > prev.right) {
+        out.push({ left: cur.left, right: cur.right });
+      } else {
+        prev.right = Math.max(prev.right, cur.right);
+      }
+    }
+    return out;
+  };
+
+  const blockedSpansForYBand = (yTop: number, yBottom: number): Span[] => {
     // Start from intersection-only global blocked rect to avoid any effect outside content rect.
     const band = intersectRect({ left: content.left, top: yTop, right: content.right, bottom: yBottom }, blocked);
-    if (!band) return null;
-    if (!hasMask) return band;
+    if (!band) return [];
+    if (!hasMask) return [{ left: band.left, right: band.right }];
 
-    // Compute the occupied x-span within this y band using the alpha mask.
+    // Compute occupied x-spans within this y band using the alpha mask.
     // We treat the mask as mapping to the image's rendered bounds (without clearance).
     const imgX = clamp(image.x, -10000, 10000);
     const imgY = clamp(image.y, -10000, 10000);
     const imgW = clamp(image.width, 0, 20000);
     const imgH = clamp(image.height, 0, 20000);
-    if (imgW <= 1 || imgH <= 1) return band;
+    if (imgW <= 1 || imgH <= 1) return [{ left: band.left, right: band.right }];
 
     // Intersect band with the image rectangle
     const iyTop = Math.max(yTop, imgY);
     const iyBottom = Math.min(yBottom, imgY + imgH);
-    if (iyBottom <= iyTop) return null;
+    if (iyBottom <= iyTop) return [];
 
     const r0 = Math.max(0, Math.min(maskH - 1, Math.floor(((iyTop - imgY) / imgH) * maskH)));
     const r1 = Math.max(0, Math.min(maskH, Math.ceil(((iyBottom - imgY) / imgH) * maskH)));
 
-    let minC = maskW;
-    let maxC = -1;
+    // OR the mask across the y-band, then compute contiguous runs across X.
+    // This supports multiple separate spans (e.g., legs/arms creating gaps) so text can "hug" curves better.
+    const colSolid = new Uint8Array(maskW);
     for (let r = r0; r < r1; r++) {
       const rowOff = r * maskW;
       for (let c = 0; c < maskW; c++) {
-        if (maskU8![rowOff + c] > 0) {
-          if (c < minC) minC = c;
-          if (c > maxC) maxC = c;
-        }
+        if (maskU8![rowOff + c] > 0) colSolid[c] = 1;
       }
     }
-    if (maxC < minC) {
-      // No occupied pixels in this band; it does not block text.
-      return null;
+
+    const spans: Span[] = [];
+    let c = 0;
+    while (c < maskW) {
+      while (c < maskW && colSolid[c] === 0) c++;
+      if (c >= maskW) break;
+      const start = c;
+      while (c < maskW && colSolid[c] === 1) c++;
+      const end = c; // exclusive
+      const leftPx = imgX + (start / maskW) * imgW;
+      const rightPx = imgX + (end / maskW) * imgW;
+      const leftI = Math.floor(leftPx - o.clearancePx);
+      const rightI = Math.ceil(rightPx + o.clearancePx);
+      const left = Math.max(content.left, leftI);
+      const right = Math.min(content.right, rightI);
+      if (right > left) spans.push({ left, right });
     }
 
-    const leftPx = imgX + (minC / maskW) * imgW;
-    const rightPx = imgX + ((maxC + 1) / maskW) * imgW;
-    const leftI = Math.floor(leftPx - o.clearancePx);
-    const rightI = Math.ceil(rightPx + o.clearancePx);
+    return mergeSpans(spans);
+  };
 
-    const out = intersectRect({ left: leftI, top: band.top, right: rightI, bottom: band.bottom }, content);
-    return out;
+  const freeSpansForYBand = (yTop: number, yBottom: number): Span[] => {
+    const blockedSpans = blockedSpansForYBand(yTop, yBottom);
+    if (blockedSpans.length === 0) return [{ left: content.left, right: content.right }];
+    const out: Span[] = [];
+    let cursor = content.left;
+    for (const b of blockedSpans) {
+      if (b.left > cursor) out.push({ left: cursor, right: b.left });
+      cursor = Math.max(cursor, b.right);
+      if (cursor >= content.right) break;
+    }
+    if (cursor < content.right) out.push({ left: cursor, right: content.right });
+    return out.filter((s) => s.right > s.left);
+  };
+
+  const pickLaneForYBand = (
+    yTop: number,
+    yBottom: number,
+    tieBreak: 'left' | 'right'
+  ): { x: number; width: number; kind: 'FULL' | 'LEFT' | 'RIGHT' | 'GAP' } | null => {
+    const free = freeSpansForYBand(yTop, yBottom);
+    if (!free.length) return null;
+    // Prefer widest free span; if equal, use tieBreak side preference.
+    let best = free[0]!;
+    for (let i = 1; i < free.length; i++) {
+      const s = free[i]!;
+      const w = s.right - s.left;
+      const bw = best.right - best.left;
+      if (w > bw) best = s;
+      else if (w === bw) {
+        best = tieBreak === 'right' ? (s.left > best.left ? s : best) : (s.left < best.left ? s : best);
+      }
+    }
+    const isFull = best.left <= content.left && best.right >= content.right;
+    const kind: 'FULL' | 'LEFT' | 'RIGHT' | 'GAP' =
+      isFull ? 'FULL' :
+      best.left <= content.left ? 'LEFT' :
+      best.right >= content.right ? 'RIGHT' :
+      'GAP';
+    return { x: best.left, width: Math.max(0, best.right - best.left), kind };
   };
 
   const assertNoOverlap = (lines: TextLine[]) => {
     for (let i = 0; i < lines.length; i++) {
       const lr = lineRect(lines[i]);
-      const b = blockedForYBand(lr.top, lr.bottom);
-      if (b && overlapsRect(lr, b)) {
+      const spans = blockedSpansForYBand(lr.top, lr.bottom);
+      if (spans.length > 0 && overlapsAnySpanX(lr, spans)) {
         throw new Error(
           `Wrap-flow overlap detected for line ${i + 1} at (${lr.left},${lr.top})-(${lr.right},${lr.bottom}) intersects image AABB+${o.clearancePx}px`
         );
@@ -489,13 +561,12 @@ export function wrapFlowLayout(
 
       // Typography polish: do not allow headline to enter the image vertical span.
       // If the next headline line would overlap the image span, signal and force smaller headline font.
-      if (block === 'HEADLINE' && !!blockedForYBand(y, y + lhPx)) {
+      if (block === 'HEADLINE' && blockedSpansForYBand(y, y + lhPx).length > 0) {
         headlineHitImage = true;
         return { nextIdx: idx, placed: false };
       }
 
-      const bandBlocked = blockedForYBand(y, y + lhPx);
-      const lane = laneForYBand(y, y + lhPx, content, bandBlocked || { left: 999999, top: 999999, right: 1000000, bottom: 1000000 }, o.laneTieBreak);
+      const lane = pickLaneForYBand(y, y + lhPx, o.laneTieBreak);
       if (!lane) {
         // Shouldn't happen, but be safe
         y = Math.max(y, blocked.bottom);
@@ -522,7 +593,7 @@ export function wrapFlowLayout(
           ? maxCharsForWidth(fontSize, lane.width, headlineAvgCharWidthEm)
           : maxCharsForWidth(fontSize, lane.width, bodyAvgCharWidthEm);
       if (lane.width <= 0 || maxChars < 4) {
-        if (!!blockedForYBand(y, y + lhPx)) {
+        if (blockedSpansForYBand(y, y + lhPx).length > 0) {
           y = Math.max(y, blocked.bottom);
           return { nextIdx: idx, placed: false };
         }
@@ -581,10 +652,10 @@ export function wrapFlowLayout(
 
       // Hard guarantee check: line AABB must NOT overlap blocked rect.
       const lr = lineRect(textLine);
-      const b2 = blockedForYBand(lr.top, lr.bottom);
-      if (b2 && overlapsRect(lr, b2)) {
+      const spans2 = blockedSpansForYBand(lr.top, lr.bottom);
+      if (spans2.length > 0 && overlapsAnySpanX(lr, spans2)) {
         // If we're in the image vertical band, jump below and retry; else move down.
-        if (!!blockedForYBand(y, y + lhPx)) {
+        if (blockedSpansForYBand(y, y + lhPx).length > 0) {
           y = Math.max(y, blocked.bottom);
         } else {
           y += lhPx;
@@ -626,10 +697,23 @@ export function wrapFlowLayout(
       // Only makes sense if image overlaps the content area vertically at all
       const overlapsVertically = blocked.bottom > content.top && blocked.top < content.bottom;
       if (overlapsVertically) {
-        const rightLaneWidth = content.right - blocked.right;
-        const leftLaneWidth = blocked.left - content.left;
-        const preferRight = rightLaneWidth >= leftLaneWidth;
-        const preferredLaneWidth = preferRight ? rightLaneWidth : leftLaneWidth;
+        const preferRight = (content.right - blocked.right) >= (blocked.left - content.left);
+        const y0 = Math.max(y, blocked.top);
+        const y1 = y0 + lineHeightPx(bodyFont, o.bodyLineHeight);
+        const free = freeSpansForYBand(y0, y1);
+        const bestOnSide = (side: 'left' | 'right') => {
+          let best = 0;
+          for (const s of free) {
+            const w = s.right - s.left;
+            if (side === 'right') {
+              if (s.left >= blocked.right && w > best) best = w;
+            } else {
+              if (s.right <= blocked.left && w > best) best = w;
+            }
+          }
+          return best;
+        };
+        const preferredLaneWidth = preferRight ? bestOnSide('right') : bestOnSide('left');
 
         if (preferredLaneWidth >= o.minUsableLaneWidthPx) {
           // Jump down to the image top so the first body line is forced into a side lane.
