@@ -11,12 +11,20 @@ interface CarouselPreviewProps {
   backgroundColor: string;
   textColor: string;
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
+  // Optional: template ID (for debug overlays/logging).
+  templateId?: string | null;
+  // Which slide within the templateSnapshot this canvas represents (0-based).
+  // Used for debug overlays + contentRegion clamping.
+  slideIndex?: number;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   // When true, shrink each user text object's width to hug the rendered text (plus small padding),
   // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
   tightUserTextWidth?: boolean;
   // Optional debug hook used by /editor to surface Fabric sizing details in the Debug panel.
   onDebugLog?: (message: string) => void;
+  // Optional debug overlays (content rect + image bounds + mask overlay).
+  // Intended for /editor to help visualize wrap boundaries.
+  showLayoutOverlays?: boolean;
   headlineFontFamily?: string;
   bodyFontFamily?: string;
   headlineFontWeight?: number;
@@ -40,6 +48,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       backgroundColor,
       textColor,
       templateSnapshot,
+      templateId,
+      slideIndex,
       hasHeadline,
       headlineFontFamily,
       bodyFontFamily,
@@ -51,6 +61,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       pushTextOutOfUserImage,
       tightUserTextWidth,
       onDebugLog,
+      showLayoutOverlays,
       onUserTextChange,
       onUserImageChange,
     },
@@ -60,10 +71,26 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const fabricCanvasRef = useRef<any>(null);
     const fabricModuleRef = useRef<any>(null);
     const [fabricLoaded, setFabricLoaded] = useState(false);
-    const constraintsRef = useRef<{ allowedRect: null | { x: number; y: number; width: number; height: number } }>({ allowedRect: null });
+    const constraintsRef = useRef<{
+      contentRectRaw: null | { x: number; y: number; width: number; height: number };
+      allowedRect: null | { x: number; y: number; width: number; height: number };
+    }>({ contentRectRaw: null, allowedRect: null });
     const interactionRef = useRef<{ clampText: boolean; clampImage: boolean; pushTextOut: boolean }>({ clampText: true, clampImage: true, pushTextOut: true });
     const onUserTextChangeRef = useRef<CarouselPreviewProps["onUserTextChange"]>(undefined);
     const onUserImageChangeRef = useRef<CarouselPreviewProps["onUserImageChange"]>(undefined);
+    const showLayoutOverlaysRef = useRef<boolean>(false);
+    const lastOverlayDebugRef = useRef<boolean | null>(null);
+    const overlayDataRef = useRef<{
+      enabled: boolean;
+      contentRect: null | { x: number; y: number; width: number; height: number };
+      allowedRect: null | { x: number; y: number; width: number; height: number };
+      imageRect: null | { x: number; y: number; width: number; height: number };
+      maskCanvas: HTMLCanvasElement | null;
+      maskU8: Uint8Array | null;
+      maskW: number;
+      maskH: number;
+    }>({ enabled: false, contentRect: null, allowedRect: null, imageRect: null, maskCanvas: null, maskU8: null, maskW: 0, maskH: 0 });
+    const invalidCheckRef = useRef<{ raf: number | null; obj: any | null }>({ raf: null, obj: null });
 
     const PAD = Number.isFinite(contentPaddingPx as any) ? Math.max(0, Math.round(contentPaddingPx as any)) : 40;
     const clampText = clampUserTextToContentRect !== false;
@@ -90,17 +117,400 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     useEffect(() => {
       onUserImageChangeRef.current = onUserImageChange;
     }, [onUserImageChange]);
+    useEffect(() => {
+      showLayoutOverlaysRef.current = !!showLayoutOverlays;
+    }, [showLayoutOverlays]);
 
-    const computeAllowedRect = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
+    const computeContentRectRaw = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
       if (!tpl?.slides?.length) return null;
-      const slide0 = tpl.slides.find(s => s.slideIndex === 0) || tpl.slides[0];
-      const r = slide0?.contentRegion as TemplateRect | undefined;
+      const targetIdx = Number.isInteger(slideIndex as any) ? (slideIndex as number) : 0;
+      const slide = tpl.slides.find(s => s.slideIndex === targetIdx) || tpl.slides[targetIdx] || tpl.slides[0];
+      const r = slide?.contentRegion as TemplateRect | undefined;
       if (!r) return null;
       return {
-        x: r.x + PAD,
-        y: r.y + PAD,
-        width: Math.max(1, r.width - (PAD * 2)),
-        height: Math.max(1, r.height - (PAD * 2)),
+        x: r.x,
+        y: r.y,
+        width: Math.max(1, r.width),
+        height: Math.max(1, r.height),
+      };
+    };
+
+    const computeAllowedRect = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
+      const raw = computeContentRectRaw(tpl);
+      if (!raw) return null;
+      return {
+        x: raw.x + PAD,
+        y: raw.y + PAD,
+        width: Math.max(1, raw.width - (PAD * 2)),
+        height: Math.max(1, raw.height - (PAD * 2)),
+      };
+    };
+
+    const decodeB64ToU8Browser = (b64: string): Uint8Array | null => {
+      const s = String(b64 || '');
+      if (!s) return null;
+      try {
+        // Browser
+        // eslint-disable-next-line no-undef
+        const bin = atob(s);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      } catch {
+        return null;
+      }
+    };
+
+    const buildMaskCanvas = (mask: any): HTMLCanvasElement | null => {
+      try {
+        const w = Math.max(1, Math.floor(Number(mask?.w) || 0));
+        const h = Math.max(1, Math.floor(Number(mask?.h) || 0));
+        const dataB64 = String(mask?.dataB64 || '');
+        if (!w || !h || !dataB64) return null;
+        const u8 = decodeB64ToU8Browser(dataB64);
+        if (!u8 || u8.length < (w * h)) return null;
+
+        const off = document.createElement('canvas');
+        off.width = w;
+        off.height = h;
+        const ctx = off.getContext('2d');
+        if (!ctx) return null;
+        const img = ctx.createImageData(w, h);
+        for (let i = 0; i < w * h; i++) {
+          const solid = u8[i] > 0;
+          const p = i * 4;
+          if (solid) {
+            img.data[p + 0] = 255;
+            img.data[p + 1] = 0;
+            img.data[p + 2] = 0;
+            img.data[p + 3] = 110;
+          } else {
+            img.data[p + 3] = 0;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+        return off;
+      } catch {
+        return null;
+      }
+    };
+
+    const getCurrentUserImageRect = (canvas: any): null | { x: number; y: number; width: number; height: number } => {
+      try {
+        const objs = canvas?.getObjects?.() || [];
+        const img = objs.find((o: any) => o?.type === 'image' && o?.data?.role === 'user-image');
+        if (!img) return null;
+        const aabb = getAABBTopLeft(img);
+        return { x: aabb.x, y: aabb.y, width: Math.max(1, aabb.width), height: Math.max(1, aabb.height) };
+      } catch {
+        return null;
+      }
+    };
+
+    const rectsOverlapAABB = (
+      a: { left: number; top: number; right: number; bottom: number },
+      b: { left: number; top: number; right: number; bottom: number }
+    ) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+
+    const aabbIntersectsMask = (
+      aabb: { left: number; top: number; right: number; bottom: number },
+      imageRect: { x: number; y: number; width: number; height: number },
+      maskU8: Uint8Array,
+      maskW: number,
+      maskH: number
+    ): boolean => {
+      // Intersect AABB with image rect first (cheap reject).
+      const imgAabb = { left: imageRect.x, top: imageRect.y, right: imageRect.x + imageRect.width, bottom: imageRect.y + imageRect.height };
+      if (!rectsOverlapAABB(aabb, imgAabb)) return false;
+      if (imageRect.width <= 1 || imageRect.height <= 1 || maskW <= 0 || maskH <= 0) return true;
+
+      const ixL = Math.max(aabb.left, imgAabb.left);
+      const ixR = Math.min(aabb.right, imgAabb.right);
+      const ixT = Math.max(aabb.top, imgAabb.top);
+      const ixB = Math.min(aabb.bottom, imgAabb.bottom);
+      if (ixR <= ixL || ixB <= ixT) return false;
+
+      const toCol = (x: number) => Math.floor(((x - imageRect.x) / imageRect.width) * maskW);
+      const toColCeil = (x: number) => Math.ceil(((x - imageRect.x) / imageRect.width) * maskW);
+      const toRow = (y: number) => Math.floor(((y - imageRect.y) / imageRect.height) * maskH);
+      const toRowCeil = (y: number) => Math.ceil(((y - imageRect.y) / imageRect.height) * maskH);
+
+      const c0 = Math.max(0, Math.min(maskW - 1, toCol(ixL)));
+      const c1 = Math.max(0, Math.min(maskW, toColCeil(ixR)));
+      const r0 = Math.max(0, Math.min(maskH - 1, toRow(ixT)));
+      const r1 = Math.max(0, Math.min(maskH, toRowCeil(ixB)));
+
+      for (let r = r0; r < r1; r++) {
+        const rowOff = r * maskW;
+        for (let c = c0; c < c1; c++) {
+          if (maskU8[rowOff + c] > 0) return true;
+        }
+      }
+      return false;
+    };
+
+    const findNearestValidTopLeft = (canvas: any, obj: any): null | { x: number; y: number } => {
+      const allowed = constraintsRef.current.allowedRect;
+      if (!allowed) return null;
+      if (!obj) return null;
+
+      // Current AABB + origin offsets
+      const a = getAABBTopLeft(obj);
+      const w = Math.max(1, a.width);
+      const h = Math.max(1, a.height);
+      const cur = { x: a.x, y: a.y };
+
+      const withinAllowed = (p: { x: number; y: number }) =>
+        p.x >= allowed.x &&
+        p.y >= allowed.y &&
+        (p.x + w) <= (allowed.x + allowed.width) &&
+        (p.y + h) <= (allowed.y + allowed.height);
+
+      const data = overlayDataRef.current;
+      const imageRect = getCurrentUserImageRect(canvas) || data.imageRect;
+      const maskU8 = data.maskU8;
+      const maskW = data.maskW;
+      const maskH = data.maskH;
+
+      const isInvalidAt = (p: { x: number; y: number }) => {
+        if (!imageRect) return false;
+        const aabb = { left: p.x, top: p.y, right: p.x + w, bottom: p.y + h };
+        if (maskU8 && maskW > 0 && maskH > 0) return aabbIntersectsMask(aabb, imageRect, maskU8, maskW, maskH);
+        const imgAabb = { left: imageRect.x, top: imageRect.y, right: imageRect.x + imageRect.width, bottom: imageRect.y + imageRect.height };
+        return rectsOverlapAABB(aabb, imgAabb);
+      };
+
+      // If current is valid, keep it.
+      if (withinAllowed(cur) && !isInvalidAt(cur)) return cur;
+
+      // Search outward in a diamond (Manhattan distance) so the first hit is "minimal nudge".
+      const step = 4; // px
+      const maxRadius = 640; // bounded to keep editor responsive
+
+      for (let r = step; r <= maxRadius; r += step) {
+        for (let dx = -r; dx <= r; dx += step) {
+          const dy = r - Math.abs(dx);
+          const candidates: Array<{ x: number; y: number }> = [
+            { x: cur.x + dx, y: cur.y + dy },
+            { x: cur.x + dx, y: cur.y - dy },
+          ];
+          // If dy is 0, the two candidates are identical.
+          for (const p of candidates) {
+            if (!withinAllowed(p)) continue;
+            if (!isInvalidAt(p)) return p;
+          }
+        }
+      }
+      return null;
+    };
+
+    const setInvalidHighlight = (obj: any, invalid: boolean) => {
+      if (!obj || obj?.data?.role !== 'user-text') return;
+      try {
+        // Cache original styling once so we can restore it cleanly.
+        if (!obj.data.__dnInvalidCache) {
+          obj.data.__dnInvalidCache = {
+            stroke: obj.stroke,
+            strokeWidth: obj.strokeWidth,
+            paintFirst: obj.paintFirst,
+            backgroundColor: obj.backgroundColor,
+            opacity: obj.opacity,
+          };
+        }
+        const prev = !!obj.data.__dnInvalid;
+        if (invalid) {
+          obj.set?.('stroke', 'rgba(239,68,68,0.95)'); // red-500-ish
+          obj.set?.('strokeWidth', 3);
+          obj.set?.('paintFirst', 'stroke'); // keep fill readable
+          // Make it unmistakable even when selected: tint the text box background + slightly reduce opacity.
+          obj.set?.('backgroundColor', 'rgba(239,68,68,0.18)');
+          obj.set?.('opacity', 0.9);
+          obj.data.__dnInvalid = true;
+        } else {
+          const c = obj.data.__dnInvalidCache || {};
+          obj.set?.('stroke', c.stroke ?? null);
+          obj.set?.('strokeWidth', c.strokeWidth ?? 0);
+          obj.set?.('paintFirst', c.paintFirst ?? 'fill');
+          obj.set?.('backgroundColor', c.backgroundColor ?? null);
+          obj.set?.('opacity', typeof c.opacity === 'number' ? c.opacity : 1);
+          obj.data.__dnInvalid = false;
+        }
+        if (typeof obj.setCoords === 'function') obj.setCoords();
+
+        // Low-noise debug log only when the invalid state flips.
+        if (prev !== !!obj.data.__dnInvalid) {
+          try {
+            const lineIndex = Number(obj?.data?.lineIndex ?? 0);
+            onDebugLog?.(`🚦 Drag validity: line ${lineIndex + 1} ${invalid ? 'INVALID (over silhouette)' : 'valid'}`);
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const computeInvalidForUserText = (canvas: any, obj: any): boolean => {
+      const data = overlayDataRef.current;
+      try {
+        if (typeof obj?.initDimensions === 'function') obj.initDimensions();
+        if (typeof obj?.setCoords === 'function') obj.setCoords();
+      } catch {
+        // ignore
+      }
+      const a = getAABBTopLeft(obj);
+      const aabb = { left: a.x, top: a.y, right: a.x + a.width, bottom: a.y + a.height };
+      const maskU8 = data.maskU8;
+      const maskW = data.maskW;
+      const maskH = data.maskH;
+      const imageRect = getCurrentUserImageRect(canvas) || data.imageRect;
+      if (!imageRect) return false;
+      // If we have a real mask, use it (silhouette-based).
+      if (maskU8 && maskW > 0 && maskH > 0) {
+        return aabbIntersectsMask(aabb, imageRect, maskU8, maskW, maskH);
+      }
+      // Fallback: rectangle overlap with image AABB.
+      const imgAabb = { left: imageRect.x, top: imageRect.y, right: imageRect.x + imageRect.width, bottom: imageRect.y + imageRect.height };
+      return rectsOverlapAABB(aabb, imgAabb);
+    };
+
+    const scheduleInvalidCheck = (canvas: any, obj: any) => {
+      if (!canvas || !obj || obj?.data?.role !== 'user-text') return;
+      invalidCheckRef.current.obj = obj;
+      if (invalidCheckRef.current.raf != null) return;
+      invalidCheckRef.current.raf = window.requestAnimationFrame(() => {
+        invalidCheckRef.current.raf = null;
+        const target = invalidCheckRef.current.obj;
+        invalidCheckRef.current.obj = null;
+        if (!target) return;
+        const invalid = computeInvalidForUserText(canvas, target);
+        setInvalidHighlight(target, invalid);
+        canvas.requestRenderAll?.();
+      });
+    };
+
+    const clearDebugOverlays = (canvas: any) => {
+      try {
+        const objs = canvas?.getObjects?.() || [];
+        objs.forEach((o: any) => {
+          if (o?.data?.role === 'debug-overlay') {
+            try { canvas.remove(o); } catch { /* ignore */ }
+          }
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    const addAllowedRectOverlay = (canvas: any, fabric: any, rect: { x: number; y: number; width: number; height: number }) => {
+      try {
+        const r = new fabric.Rect({
+          left: rect.x,
+          top: rect.y,
+          width: Math.max(1, rect.width),
+          height: Math.max(1, rect.height),
+          // Slight tint so it's obvious even if a template asset sits on top.
+          fill: 'rgba(6,182,212,0.10)', // cyan tint (inset/allowed rect)
+          stroke: 'rgba(6,182,212,0.85)', // cyan
+          strokeWidth: 4,
+          strokeDashArray: [8, 6],
+          selectable: false,
+          evented: false,
+          hoverCursor: 'default',
+          excludeFromExport: true as any,
+        });
+        (r as any).data = { role: 'debug-overlay', kind: 'allowed-rect' };
+        canvas.add(r);
+
+        const label = new fabric.Text('ALLOWED (INSET)', {
+          left: rect.x + 10,
+          top: rect.y + 10,
+          fontSize: 22,
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 700,
+          fill: 'rgba(6,182,212,0.95)',
+          selectable: false,
+          evented: false,
+          excludeFromExport: true as any,
+        });
+        (label as any).data = { role: 'debug-overlay', kind: 'allowed-label' };
+        canvas.add(label);
+      } catch {
+        // ignore
+      }
+    };
+
+    const addContentRectOverlay = (canvas: any, fabric: any, rect: { x: number; y: number; width: number; height: number }) => {
+      try {
+        const r = new fabric.Rect({
+          left: rect.x,
+          top: rect.y,
+          width: Math.max(1, rect.width),
+          height: Math.max(1, rect.height),
+          fill: 'rgba(34,197,94,0.08)', // green tint (outer content region)
+          stroke: 'rgba(34,197,94,0.9)', // green
+          strokeWidth: 4,
+          strokeDashArray: [6, 6],
+          selectable: false,
+          evented: false,
+          hoverCursor: 'default',
+          excludeFromExport: true as any,
+        });
+        (r as any).data = { role: 'debug-overlay', kind: 'content-rect' };
+        canvas.add(r);
+
+        const label = new fabric.Text('CONTENT REGION', {
+          left: rect.x + 10,
+          top: rect.y + 10,
+          fontSize: 22,
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 700,
+          fill: 'rgba(34,197,94,0.95)',
+          selectable: false,
+          evented: false,
+          excludeFromExport: true as any,
+        });
+        (label as any).data = { role: 'debug-overlay', kind: 'content-label' };
+        canvas.add(label);
+      } catch {
+        // ignore
+      }
+    };
+
+    const updateOverlayData = () => {
+      const enabled = !!showLayoutOverlays;
+      const raw = constraintsRef.current.contentRectRaw;
+      const allowed = constraintsRef.current.allowedRect;
+
+      // Layout image bounds + mask are driven by wrap-engine output.
+      const li = (layout as any)?.image || null;
+      const hasMask = !!li?.mask;
+      const hasUrl = !!String(li?.url || '');
+      const imageRect =
+        (hasMask || hasUrl) && li && Number.isFinite(li.x) && Number.isFinite(li.y) && Number.isFinite(li.width) && Number.isFinite(li.height)
+          ? {
+              x: Number(li.x) || 0,
+              y: Number(li.y) || 0,
+              width: Math.max(1, Number(li.width) || 1),
+              height: Math.max(1, Number(li.height) || 1),
+            }
+          : null;
+
+      const mask = li?.mask || null;
+      const maskW = Math.max(0, Math.floor(Number(mask?.w) || 0));
+      const maskH = Math.max(0, Math.floor(Number(mask?.h) || 0));
+      const maskU8 = mask?.dataB64 ? decodeB64ToU8Browser(String(mask.dataB64)) : null;
+
+      overlayDataRef.current = {
+        enabled,
+        contentRect: raw,
+        allowedRect: allowed,
+        imageRect,
+        maskCanvas: hasMask ? buildMaskCanvas(li.mask) : null,
+        maskU8: (maskU8 && maskW > 0 && maskH > 0 && maskU8.length >= maskW * maskH) ? maskU8 : null,
+        maskW,
+        maskH,
       };
     };
 
@@ -229,6 +639,114 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         setFabricLoaded(true);
         console.log('[Preview Vision] ✅ Canvas created and ready');
 
+        // Debug overlays: draw in Fabric's top overlay layer so they can't be occluded by objects.
+        const onAfterRender = () => {
+          try {
+            const data = overlayDataRef.current;
+            const c = fabricCanvasRef.current;
+            if (!c || !data?.enabled) {
+              // Clear top overlay layer if disabled.
+              const ctx = c?.contextTop;
+              if (ctx) {
+                const retina = typeof c.getRetinaScaling === 'function' ? (c.getRetinaScaling() || 1) : 1;
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, (c.getWidth?.() || 1080) * retina, (c.getHeight?.() || 1440) * retina);
+                ctx.restore();
+              }
+              return;
+            }
+            const ctx = c.contextTop;
+            if (!ctx) return;
+
+            // Clear overlay layer
+            const retina = typeof c.getRetinaScaling === 'function' ? (c.getRetinaScaling() || 1) : 1;
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, (c.getWidth?.() || 1080) * retina, (c.getHeight?.() || 1440) * retina);
+            ctx.restore();
+
+            // Ensure transform matches viewportTransform (but avoid double-applying).
+            const vpt = c.viewportTransform || [1, 0, 0, 1, 0, 0];
+            const cur = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+            const want = {
+              a: vpt[0] * retina,
+              b: vpt[1] * retina,
+              c: vpt[2] * retina,
+              d: vpt[3] * retina,
+              e: vpt[4] * retina,
+              f: vpt[5] * retina,
+            };
+            const matches =
+              !!cur &&
+              Math.abs(cur.a - want.a) < 1e-6 &&
+              Math.abs(cur.b - want.b) < 1e-6 &&
+              Math.abs(cur.c - want.c) < 1e-6 &&
+              Math.abs(cur.d - want.d) < 1e-6 &&
+              Math.abs(cur.e - want.e) < 1e-3 &&
+              Math.abs(cur.f - want.f) < 1e-3;
+            if (!matches && typeof ctx.setTransform === 'function') {
+              ctx.setTransform(want.a, want.b, want.c, want.d, want.e, want.f);
+            }
+
+            const drawRect = (
+              r: { x: number; y: number; width: number; height: number },
+              stroke: string,
+              fill: string,
+              dash: number[]
+            ) => {
+              ctx.save();
+              ctx.setLineDash(dash);
+              ctx.lineWidth = 4;
+              ctx.strokeStyle = stroke;
+              ctx.fillStyle = fill;
+              ctx.beginPath();
+              ctx.rect(r.x, r.y, r.width, r.height);
+              ctx.fill();
+              ctx.stroke();
+              ctx.restore();
+            };
+
+            // Content region (outer) + allowed rect (inset)
+            if (data.contentRect) {
+              drawRect(data.contentRect, 'rgba(34,197,94,0.95)', 'rgba(34,197,94,0.08)', [6, 6]);
+              ctx.save();
+              ctx.fillStyle = 'rgba(34,197,94,0.95)';
+              ctx.font = '700 22px Inter, sans-serif';
+              ctx.fillText('CONTENT REGION', data.contentRect.x + 10, data.contentRect.y + 28);
+              ctx.restore();
+            }
+            if (data.allowedRect) {
+              drawRect(data.allowedRect, 'rgba(6,182,212,0.95)', 'rgba(6,182,212,0.10)', [8, 6]);
+              ctx.save();
+              ctx.fillStyle = 'rgba(6,182,212,0.95)';
+              ctx.font = '700 22px Inter, sans-serif';
+              ctx.fillText('ALLOWED (INSET)', data.allowedRect.x + 10, data.allowedRect.y + 28);
+              ctx.restore();
+            }
+
+            // Image bounds + mask overlay
+            if (data.imageRect) {
+              ctx.save();
+              ctx.setLineDash([6, 4]);
+              ctx.lineWidth = 3;
+              ctx.strokeStyle = 'rgba(217,70,239,0.95)';
+              ctx.strokeRect(data.imageRect.x, data.imageRect.y, data.imageRect.width, data.imageRect.height);
+              ctx.restore();
+            }
+            if (data.imageRect && data.maskCanvas) {
+              ctx.save();
+              ctx.globalAlpha = 0.55;
+              ctx.drawImage(data.maskCanvas, data.imageRect.x, data.imageRect.y, data.imageRect.width, data.imageRect.height);
+              ctx.restore();
+            }
+          } catch {
+            // ignore
+          }
+        };
+        canvas.on('after:render', onAfterRender);
+        (canvas as any).__dnOverlayRender = { onAfterRender };
+
         // Enforce hard-clamps for user content when a template contentRegion exists.
         // We attach listeners once and consult constraintsRef (updated on render).
         const getUserImageBlockedRect = (): null | { left: number; top: number; right: number; bottom: number } => {
@@ -325,7 +843,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (role !== 'user-image' && role !== 'user-text') return;
           if (role === 'user-text') {
             if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
-            if (interactionRef.current.clampText) pushTextOutOfImage(obj);
+            // Phase 2: allow overlap but mark invalid against silhouette (mask) while dragging.
+            // Only use the legacy rectangle push-out when there is no mask available.
+            const hasMask = !!overlayDataRef.current.maskU8;
+            if (interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
+            scheduleInvalidCheck(canvas, obj);
           } else if (role === 'user-image') {
             if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
@@ -339,7 +861,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (role !== 'user-image' && role !== 'user-text') return;
           if (role === 'user-text') {
             if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
-            if (interactionRef.current.clampText) pushTextOutOfImage(obj);
+            const hasMask = !!overlayDataRef.current.maskU8;
+            if (interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
+            scheduleInvalidCheck(canvas, obj);
           } else if (role === 'user-image') {
             if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
@@ -381,7 +905,26 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         const onObjectModified = (e: any) => {
           const obj = e?.target;
           if (!obj) return;
-          if (obj?.data?.role === 'user-text') notifyUserText(obj, false);
+          if (obj?.data?.role === 'user-text') {
+            // Phase 3: on release, if invalid, nudge the dragged line minimally until it is valid.
+            try {
+              const invalid = computeInvalidForUserText(canvas, obj);
+              if (invalid) {
+                const next = findNearestValidTopLeft(canvas, obj);
+                if (next) {
+                  const aabbNow = getAABBTopLeft(obj);
+                  obj.left = next.x + aabbNow.originOffsetX;
+                  obj.top = next.y + aabbNow.originOffsetY;
+                  if (typeof obj.setCoords === 'function') obj.setCoords();
+                }
+              }
+              const invalidAfter = computeInvalidForUserText(canvas, obj);
+              setInvalidHighlight(obj, invalidAfter);
+            } catch {
+              // ignore
+            }
+            notifyUserText(obj, false);
+          }
           if (obj?.data?.role === 'user-image') notifyUserImage(obj);
         };
         const onTextChanged = (e: any) => {
@@ -390,12 +933,37 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           notifyUserText(obj, true);
         };
 
+        // Debug overlay stacking: template/user images load async and can be added after overlays.
+        // Ensure overlays remain visible by bringing them to front any time a non-overlay object is added.
+        const onObjectAdded = (e: any) => {
+          try {
+            if (!showLayoutOverlaysRef.current) return;
+            const obj = e?.target;
+            if (!obj) return;
+            if (obj?.data?.role === 'debug-overlay') return;
+            const overlays = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'debug-overlay');
+            if (!overlays.length) return;
+            overlays.forEach((o: any) => {
+              try {
+                if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
+                else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
+              } catch {
+                // ignore per-object
+              }
+            });
+            canvas.requestRenderAll?.();
+          } catch {
+            // ignore
+          }
+        };
+
         canvas.on('object:moving', onObjectMoving);
         canvas.on('object:scaling', onObjectScaling);
         canvas.on('object:modified', onObjectModified);
         canvas.on('text:changed', onTextChanged);
+        canvas.on('object:added', onObjectAdded);
         // Store for cleanup
-        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextChanged };
+        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextChanged, onObjectAdded };
       }).catch((error) => {
         console.error('[Preview Vision] ❌ Failed to load Fabric.js:', error);
       });
@@ -408,11 +976,16 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           try {
             const c = fabricCanvasRef.current;
             const h = (c as any).__dnClampHandlers;
+            const ov = (c as any).__dnOverlayRender;
             if (h) {
               c.off('object:moving', h.onObjectMoving);
               c.off('object:scaling', h.onObjectScaling);
               c.off('object:modified', h.onObjectModified);
               c.off('text:changed', h.onTextChanged);
+              c.off('object:added', h.onObjectAdded);
+            }
+            if (ov) {
+              c.off('after:render', ov.onAfterRender);
             }
           } catch {
             // ignore
@@ -697,7 +1270,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       console.log('[Preview Vision] 🧹 Canvas cleared, background set to', backgroundColor);
 
       // Update clamp constraints based on template snapshot (contentRegion inset by 40px).
+      constraintsRef.current.contentRectRaw = computeContentRectRaw(templateSnapshot || null);
       constraintsRef.current.allowedRect = computeAllowedRect(templateSnapshot || null);
+      updateOverlayData();
 
       const addTemplateAssets = () => {
         if (!templateSnapshot?.slides?.length) return;
@@ -815,6 +1390,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         
         imgElement.onload = () => {
           console.log('[Preview Vision] ✅ Image loaded successfully');
+          if (cancelled) return;
           
           // Verify canvas still exists and has required methods
           if (!canvas || typeof canvas.add !== 'function') {
@@ -841,7 +1417,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
             console.log('[Preview Vision] 📐 Image positioned and scaled');
             canvas.add(fabricImage);
-            
+
             // Stacking: template assets (locked layer) should be behind user content.
             // Place user image above template assets but below user text.
             const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
@@ -883,6 +1459,14 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             
             console.log('[Preview Vision] ✅ Image added to canvas');
             canvas.renderAll();
+
+            // Re-draw overlay layer now that images may have loaded (overlays are drawn in contextTop).
+            try {
+              updateOverlayData();
+              canvas.requestRenderAll?.();
+            } catch {
+              // ignore
+            }
           } catch (error) {
             console.error('[Preview Vision] ❌ Error creating Fabric image:', error);
           }
@@ -1093,14 +1677,50 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         }
       });
 
+      // Debug overlays (content rect + image AABB + mask) — purely visual.
+      // Also emit a low-noise debug log when toggled or when overlays are enabled (helps verify wiring).
+      if (dbg && lastOverlayDebugRef.current !== !!showLayoutOverlays) {
+        lastOverlayDebugRef.current = !!showLayoutOverlays;
+        try {
+          const allowed = constraintsRef.current.allowedRect;
+          const raw = constraintsRef.current.contentRectRaw;
+          const hasAllowed = !!allowed;
+          const hasRaw = !!raw;
+          const li = (layout as any)?.image || null;
+          const hasMask = !!li?.mask;
+          const hasUrl = !!String(li?.url || '');
+          const hasFabricUserImage = !!(canvas.getObjects?.() || []).find((o: any) => o?.type === 'image' && o?.data?.role === 'user-image');
+          dbg(
+            `🧩 Overlays ${showLayoutOverlays ? "ON" : "OFF"}: ` +
+              `templateId=${templateId ? String(templateId) : "n/a"} ` +
+              `slideIndex=${Number.isInteger(slideIndex as any) ? String(slideIndex) : "n/a"} ` +
+              `contentRect=${hasRaw ? `${Math.round(raw!.x)},${Math.round(raw!.y)} ${Math.round(raw!.width)}x${Math.round(raw!.height)}` : "null"} ` +
+              `allowedRect=${hasAllowed ? `${Math.round(allowed!.x)},${Math.round(allowed!.y)} ${Math.round(allowed!.width)}x${Math.round(allowed!.height)}` : "null"} ` +
+              `layoutImage=${hasUrl ? "yes" : "no"} mask=${hasMask ? "yes" : "no"} fabricUserImage=${hasFabricUserImage ? "yes" : "no"}`
+          );
+        } catch {
+          // ignore
+        }
+      }
+      // Clear legacy object-based overlays (we now draw overlays in the top overlay layer).
+      clearDebugOverlays(canvas);
+
       canvas.renderAll();
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
       })();
 
       return () => {
         cancelled = true;
+        try {
+          const raf = invalidCheckRef.current.raf;
+          if (raf != null) window.cancelAnimationFrame(raf);
+          invalidCheckRef.current.raf = null;
+          invalidCheckRef.current.obj = null;
+        } catch {
+          // ignore
+        }
       };
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays]);
 
     return (
       <div className="flex flex-col items-center space-y-4">

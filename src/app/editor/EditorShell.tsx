@@ -93,6 +93,7 @@ export default function EditorShell() {
   const liveLayoutQueueRef = useRef<number[]>([]);
   const liveLayoutRunningRef = useRef(false);
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
+  const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
 
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
@@ -219,6 +220,7 @@ export default function EditorShell() {
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [showLayoutOverlays, setShowLayoutOverlays] = useState(false);
 
   // One ref per slide preview canvas so we can export all slides.
   const slideCanvasRefs = useRef<Array<React.RefObject<any>>>(
@@ -1371,6 +1373,56 @@ export default function EditorShell() {
         layoutSnapshot: nextLayoutSnap,
         inputSnapshot: req,
       });
+    }, 500);
+  };
+
+  const handleEnhancedCanvasTextChange = (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => {
+    if (templateTypeId !== "enhanced") return;
+    if (!currentProjectId) return;
+    const slideIndex = activeSlideIndex;
+    const curSlide = slidesRef.current[slideIndex] || initSlide();
+    const baseLayout: any =
+      (slideIndex === activeSlideIndex ? (layoutData as any)?.layout : null) ||
+      (curSlide as any)?.layoutData?.layout ||
+      null;
+    if (!baseLayout || !Array.isArray(baseLayout.textLines) || !baseLayout.textLines[change.lineIndex]) return;
+
+    const nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
+      if (idx !== change.lineIndex) return l;
+      return {
+        ...l,
+        text: change.text !== undefined ? change.text : l.text,
+        position: { x: change.x, y: change.y },
+        maxWidth: Math.max(1, Number(change.maxWidth) || l.maxWidth || 1),
+      };
+    });
+    const nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
+
+    // Keep state in sync so the current slide preserves the nudged position immediately.
+    setSlides((prev) =>
+      prev.map((s, i) =>
+        i !== slideIndex
+          ? s
+          : {
+              ...s,
+              layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } as any,
+            }
+      )
+    );
+    slidesRef.current = slidesRef.current.map((s, i) =>
+      i !== slideIndex
+        ? s
+        : ({ ...s, layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } as any } as any)
+    );
+
+    if (slideIndex === activeSlideIndex) {
+      setLayoutData({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || null } as any);
+    }
+
+    // Debounced persist.
+    if (enhancedCanvasSaveTimeoutRef.current) window.clearTimeout(enhancedCanvasSaveTimeoutRef.current);
+    enhancedCanvasSaveTimeoutRef.current = window.setTimeout(() => {
+      void saveSlidePatch(slideIndex, { layoutSnapshot: nextLayoutSnap });
     }, 500);
   };
 
@@ -2890,6 +2942,8 @@ export default function EditorShell() {
                                   (canvasRef as any).current = node;
                                   slideCanvasRefs.current[i]!.current = node;
                                 }}
+                                templateId={tid}
+                                slideIndex={i}
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}
@@ -2897,6 +2951,7 @@ export default function EditorShell() {
                                 hasHeadline={templateTypeId !== "regular"}
                                 tightUserTextWidth={templateTypeId !== "regular"}
                                 onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
+                                showLayoutOverlays={templateTypeId !== "regular" ? showLayoutOverlays : false}
                                 headlineFontFamily={headlineFontFamily}
                                 bodyFontFamily={bodyFontFamily}
                                   headlineFontWeight={headlineFontWeight}
@@ -2908,7 +2963,7 @@ export default function EditorShell() {
                                 onUserTextChange={
                                   templateTypeId === "regular"
                                     ? handleRegularCanvasTextChange
-                                    : undefined
+                                    : handleEnhancedCanvasTextChange
                                 }
                                 onUserImageChange={handleUserImageChange}
                               />
@@ -2931,12 +2986,15 @@ export default function EditorShell() {
                         <CarouselPreviewVision
                           key={i}
                           ref={slideCanvasRefs.current[i] as any}
+                          templateId={tid}
+                          slideIndex={i}
                           layout={layoutForThisCard}
                           backgroundColor={projectBackgroundColor}
                           textColor={projectTextColor}
                           templateSnapshot={snap}
                           hasHeadline={templateTypeId !== "regular"}
                           tightUserTextWidth={templateTypeId !== "regular"}
+                          showLayoutOverlays={templateTypeId !== "regular" ? showLayoutOverlays : false}
                           headlineFontFamily={headlineFontFamily}
                           bodyFontFamily={bodyFontFamily}
                             headlineFontWeight={headlineFontWeight}
@@ -3099,6 +3157,8 @@ export default function EditorShell() {
                                     return (
                                       <CarouselPreviewVision
                                         ref={refProp as any}
+                                        templateId={tid}
+                                        slideIndex={i}
                                         layout={layoutForThisCard}
                                         backgroundColor={projectBackgroundColor}
                                         textColor={projectTextColor}
@@ -3106,6 +3166,7 @@ export default function EditorShell() {
                                         hasHeadline={templateTypeId !== "regular"}
                                         tightUserTextWidth={templateTypeId !== "regular"}
                                         onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
+                                        showLayoutOverlays={templateTypeId !== "regular" ? showLayoutOverlays : false}
                                         headlineFontFamily={headlineFontFamily}
                                         bodyFontFamily={bodyFontFamily}
                                           headlineFontWeight={headlineFontWeight}
@@ -3115,8 +3176,8 @@ export default function EditorShell() {
                                         clampUserImageToContentRect={false}
                                         pushTextOutOfUserImage={templateTypeId !== "regular"}
                                         onUserTextChange={
-                                          i === activeSlideIndex && templateTypeId === "regular"
-                                            ? handleRegularCanvasTextChange
+                                          i === activeSlideIndex
+                                            ? (templateTypeId === "regular" ? handleRegularCanvasTextChange : handleEnhancedCanvasTextChange)
                                             : undefined
                                         }
                                         onUserImageChange={
@@ -3405,6 +3466,24 @@ export default function EditorShell() {
                   Debug
                 </summary>
                 <div className="px-3 pb-3 space-y-3">
+                  {templateTypeId !== "regular" && (
+                    <label className="flex items-center gap-2 text-xs text-slate-700 select-none">
+                      <input
+                        type="checkbox"
+                        checked={showLayoutOverlays}
+                        onChange={(e) => {
+                          const next = e.target.checked;
+                          setShowLayoutOverlays(next);
+                          try {
+                            addLog(`🧩 Overlays: ${next ? "ON" : "OFF"}`);
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      />
+                      Show layout overlays (content rect / image bounds / mask)
+                    </label>
+                  )}
                   {debugScreenshot && (
                     <div>
                       <button
