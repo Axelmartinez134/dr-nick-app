@@ -42,7 +42,7 @@ interface CarouselPreviewProps {
   clampUserImageToContentRect?: boolean; // default true
   pushTextOutOfUserImage?: boolean; // default true
   onUserTextChange?: (change: { lineIndex: number; lineKey?: string; x: number; y: number; maxWidth: number; text?: string }) => void;
-  onUserImageChange?: (change: { x: number; y: number; width: number; height: number }) => void;
+  onUserImageChange?: (change: { x: number; y: number; width: number; height: number; angle?: number }) => void;
   // Display sizing (CSS pixels). The canvas internal resolution remains 1080×1440.
   // Avoid using parent CSS transforms for scaling; they break Fabric hit-testing.
   displayWidthPx?: number;  // default 540
@@ -857,11 +857,15 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (!cb) return;
           if (!obj || obj?.data?.role !== 'user-image') return;
           const aabb = getAABBTopLeft(obj);
+          // For rotation: save angle separately, but use AABB for position/size
+          // so text wrapping works correctly around the rotated bounding box
+          const angle = typeof obj.angle === 'number' ? obj.angle : 0;
           cb({
             x: aabb.x,
             y: aabb.y,
             width: Math.max(1, aabb.width),
             height: Math.max(1, aabb.height),
+            angle,
           });
         };
 
@@ -1156,7 +1160,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       },
       
       // Get current image position from canvas
-      getImagePosition: (): { x: number; y: number; width: number; height: number } | null => {
+      getImagePosition: (): { x: number; y: number; width: number; height: number; angle?: number } | null => {
         const canvas = fabricCanvasRef.current;
         if (!canvas) {
           console.error('[Preview Vision] ❌ Cannot get image position: canvas not initialized');
@@ -1246,6 +1250,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
         const chosen = looksReasonable(cand1) ? cand1 : cand2;
 
+        // Get angle for rotation support
+        const angle = typeof imageObj.angle === 'number' ? imageObj.angle : 0;
+
         console.log('[Preview Vision] 🔎 Image bounds debug:', {
           zoom,
           viewportTransform: vpt,
@@ -1256,11 +1263,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           computedTopLeft: topLeft,
           cand1,
           cand2,
-          chosen
+          chosen,
+          angle
         });
-        console.log(`[Preview Vision] 🧮 Image AABB SENT: x=${Math.round(chosen.x)} y=${Math.round(chosen.y)} w=${Math.round(chosen.width)} h=${Math.round(chosen.height)}`);
+        console.log(`[Preview Vision] 🧮 Image AABB SENT: x=${Math.round(chosen.x)} y=${Math.round(chosen.y)} w=${Math.round(chosen.width)} h=${Math.round(chosen.height)} angle=${Math.round(angle)}`);
         console.log('[Preview Vision] 📍 Image extends to:', { right: chosen.x + chosen.width, bottom: chosen.y + chosen.height });
-        return chosen;
+        return { ...chosen, angle };
       },
     }), [fabricLoaded]);
 
@@ -1310,7 +1318,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && obj?.data?.role === 'user-image') ||
         // Legacy fallback: allow images that have no role at all, but NEVER use template assets.
         canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && !obj?.data?.role);
-      let preservedImage: null | { left: number; top: number; scaleX: number; scaleY: number } = null;
+      let preservedImage: null | { left: number; top: number; scaleX: number; scaleY: number; angle: number } = null;
       const shouldPreserveUserImagePosition = !onUserImageChangeRef.current;
       if (shouldPreserveUserImagePosition && existingImageObj) {
         try {
@@ -1323,6 +1331,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             top: tl ? tl.y : (existingImageObj.top || 0),
             scaleX: existingImageObj.scaleX || 1,
             scaleY: existingImageObj.scaleY || 1,
+            angle: existingImageObj.angle || 0,
           };
         } catch {
           preservedImage = {
@@ -1330,6 +1339,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             top: existingImageObj.top || 0,
             scaleX: existingImageObj.scaleX || 1,
             scaleY: existingImageObj.scaleY || 1,
+            angle: existingImageObj.angle || 0,
           };
         }
       }
@@ -1484,6 +1494,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           try {
             const desiredLeft = preservedImage ? preservedImage.left : layout.image!.x;
             const desiredTop = preservedImage ? preservedImage.top : layout.image!.y;
+            // Restore angle from preserved image or layout
+            const desiredAngle = preservedImage?.angle ?? (layout.image as any)?.angle ?? 0;
 
             const fabricImage = new fabric.Image(imgElement, {
               left: desiredLeft,
@@ -1493,10 +1505,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               // If we preserved an existing image, keep its exact scale so it never "jumps".
               scaleX: preservedImage ? preservedImage.scaleX : (layout.image!.width / imgElement.width),
               scaleY: preservedImage ? preservedImage.scaleY : (layout.image!.height / imgElement.height),
+              angle: desiredAngle,
               selectable: true,
             });
             (fabricImage as any).data = { role: 'user-image' };
-            disableRotationControls(fabricImage);
+            // NOTE: Rotation controls enabled for user images
 
             console.log('[Preview Vision] 📐 Image positioned and scaled');
             canvas.add(fabricImage);

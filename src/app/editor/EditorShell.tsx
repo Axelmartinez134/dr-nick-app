@@ -736,14 +736,14 @@ export default function EditorShell() {
     }
   };
 
-  const handleUserImageChange = (change: { x: number; y: number; width: number; height: number }) => {
+  const handleUserImageChange = (change: { x: number; y: number; width: number; height: number; angle?: number }) => {
     if (!currentProjectId) return;
     // Update in-memory layout snapshot so Realign sees the current image bounds immediately.
     const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
     const prevImage = (baseLayout as any)?.image || null;
     if (!prevImage || !prevImage.url) return; // no user image to update
 
-    // Enable Undo for image moves/resizes too. Push only when bounds actually changed.
+    // Enable Undo for image moves/resizes/rotations too. Push only when bounds actually changed.
     try {
       const eps = 0.5;
       const didMove =
@@ -752,7 +752,9 @@ export default function EditorShell() {
       const didResize =
         Math.abs(Number(prevImage?.width ?? 0) - Number(change.width ?? 0)) > eps ||
         Math.abs(Number(prevImage?.height ?? 0) - Number(change.height ?? 0)) > eps;
-      if (didMove || didResize) pushUndoSnapshot();
+      const didRotate =
+        Math.abs(Number(prevImage?.angle ?? 0) - Number(change.angle ?? 0)) > eps;
+      if (didMove || didResize || didRotate) pushUndoSnapshot();
     } catch {
       pushUndoSnapshot();
     }
@@ -765,6 +767,7 @@ export default function EditorShell() {
         y: Math.round(Number(change.y) || 0),
         width: Math.max(1, Math.round(Number(change.width) || 1)),
         height: Math.max(1, Math.round(Number(change.height) || 1)),
+        angle: Number(change.angle) || 0,
       },
     };
 
@@ -3145,11 +3148,6 @@ export default function EditorShell() {
               <option value="regular">Regular</option>
               <option value="enhanced">Enhanced</option>
             </select>
-            <div className="mt-1 text-xs text-slate-500">
-              Slide 1: {(currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1) ? "✓" : "—"} · 2–5:{" "}
-              {(currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5) ? "✓" : "—"} · 6:{" "}
-              {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "✓" : "—"}
-            </div>
           </div>
 
           <div className="flex items-center justify-between">
