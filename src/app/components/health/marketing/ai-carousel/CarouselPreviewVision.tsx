@@ -5,6 +5,12 @@ import { VisionLayoutDecision } from '@/lib/carousel-types';
 import type { CarouselTemplateDefinitionV1, TemplateAsset, TemplateImageAsset, TemplateTextAsset, TemplateRect } from '@/lib/carousel-template-types';
 import { supabase } from '../../../auth/AuthContext';
 import { ensureTypographyFontsLoaded } from './fontMetrics';
+import {
+  rectsOverlapAABB,
+  aabbIntersectsMask,
+  findNearestValidTopLeft as findNearestValidTopLeftPure,
+  enforceTextInvariantsSequential,
+} from '@/lib/text-placement';
 
 interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
@@ -225,48 +231,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       }
     };
 
-    const rectsOverlapAABB = (
-      a: { left: number; top: number; right: number; bottom: number },
-      b: { left: number; top: number; right: number; bottom: number }
-    ) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
-
-    const aabbIntersectsMask = (
-      aabb: { left: number; top: number; right: number; bottom: number },
-      imageRect: { x: number; y: number; width: number; height: number },
-      maskU8: Uint8Array,
-      maskW: number,
-      maskH: number
-    ): boolean => {
-      // Intersect AABB with image rect first (cheap reject).
-      const imgAabb = { left: imageRect.x, top: imageRect.y, right: imageRect.x + imageRect.width, bottom: imageRect.y + imageRect.height };
-      if (!rectsOverlapAABB(aabb, imgAabb)) return false;
-      if (imageRect.width <= 1 || imageRect.height <= 1 || maskW <= 0 || maskH <= 0) return true;
-
-      const ixL = Math.max(aabb.left, imgAabb.left);
-      const ixR = Math.min(aabb.right, imgAabb.right);
-      const ixT = Math.max(aabb.top, imgAabb.top);
-      const ixB = Math.min(aabb.bottom, imgAabb.bottom);
-      if (ixR <= ixL || ixB <= ixT) return false;
-
-      const toCol = (x: number) => Math.floor(((x - imageRect.x) / imageRect.width) * maskW);
-      const toColCeil = (x: number) => Math.ceil(((x - imageRect.x) / imageRect.width) * maskW);
-      const toRow = (y: number) => Math.floor(((y - imageRect.y) / imageRect.height) * maskH);
-      const toRowCeil = (y: number) => Math.ceil(((y - imageRect.y) / imageRect.height) * maskH);
-
-      const c0 = Math.max(0, Math.min(maskW - 1, toCol(ixL)));
-      const c1 = Math.max(0, Math.min(maskW, toColCeil(ixR)));
-      const r0 = Math.max(0, Math.min(maskH - 1, toRow(ixT)));
-      const r1 = Math.max(0, Math.min(maskH, toRowCeil(ixB)));
-
-      for (let r = r0; r < r1; r++) {
-        const rowOff = r * maskW;
-        for (let c = c0; c < c1; c++) {
-          if (maskU8[rowOff + c] > 0) return true;
-        }
-      }
-      return false;
-    };
-
     const getOtherUserTextAABBs = (canvas: any, self: any): Array<{ left: number; top: number; right: number; bottom: number }> => {
       try {
         const out: Array<{ left: number; top: number; right: number; bottom: number }> = [];
@@ -300,62 +264,23 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       if (!allowed) return null;
       if (!obj) return null;
 
-      // Current AABB + origin offsets
       const a = getAABBTopLeft(obj);
-      const w = Math.max(1, a.width);
-      const h = Math.max(1, a.height);
-      const cur = { x: a.x, y: a.y };
-
-      const withinAllowed = (p: { x: number; y: number }) =>
-        p.x >= allowed.x &&
-        p.y >= allowed.y &&
-        (p.x + w) <= (allowed.x + allowed.width) &&
-        (p.y + h) <= (allowed.y + allowed.height);
-
       const data = overlayDataRef.current;
       const imageRect = getCurrentUserImageRect(canvas) || data.imageRect;
       const maskU8 = data.maskU8;
       const maskW = data.maskW;
       const maskH = data.maskH;
 
-      const isInvalidAt = (p: { x: number; y: number }) => {
-        if (!imageRect) return false;
-        const aabb = { left: p.x, top: p.y, right: p.x + w, bottom: p.y + h };
-        if (maskU8 && maskW > 0 && maskH > 0) return aabbIntersectsMask(aabb, imageRect, maskU8, maskW, maskH);
-        const imgAabb = { left: imageRect.x, top: imageRect.y, right: imageRect.x + imageRect.width, bottom: imageRect.y + imageRect.height };
-        return rectsOverlapAABB(aabb, imgAabb);
-      };
-      const overlapsOtherTextAt = (p: { x: number; y: number }) => {
-        if (!avoidAabbs || avoidAabbs.length === 0) return false;
-        const aabb = { left: p.x, top: p.y, right: p.x + w, bottom: p.y + h };
-        for (const other of avoidAabbs) {
-          if (rectsOverlapAABB(aabb, other)) return true;
-        }
-        return false;
-      };
-
-      // If current is valid, keep it.
-      if (withinAllowed(cur) && !isInvalidAt(cur) && !overlapsOtherTextAt(cur)) return cur;
-
-      // Search outward in a diamond (Manhattan distance) so the first hit is "minimal nudge".
-      const step = 4; // px
-      const maxRadius = 640; // bounded to keep editor responsive
-
-      for (let r = step; r <= maxRadius; r += step) {
-        for (let dx = -r; dx <= r; dx += step) {
-          const dy = r - Math.abs(dx);
-          const candidates: Array<{ x: number; y: number }> = [
-            { x: cur.x + dx, y: cur.y + dy },
-            { x: cur.x + dx, y: cur.y - dy },
-          ];
-          // If dy is 0, the two candidates are identical.
-          for (const p of candidates) {
-            if (!withinAllowed(p)) continue;
-            if (!isInvalidAt(p) && !overlapsOtherTextAt(p)) return p;
-          }
-        }
-      }
-      return null;
+      return findNearestValidTopLeftPure({
+        curTopLeft: { x: a.x, y: a.y },
+        boxSize: { w: Math.max(1, a.width), h: Math.max(1, a.height) },
+        allowedRect: allowed,
+        imageRect: imageRect,
+        mask: (maskU8 && maskW > 0 && maskH > 0) ? { u8: maskU8, w: maskW, h: maskH } : null,
+        avoidAabbs: avoidAabbs,
+        stepPx: 4,
+        maxRadiusPx: 640,
+      });
     };
 
     const setInvalidHighlight = (obj: any, invalid: boolean) => {
@@ -452,81 +377,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             try { canvas.remove(o); } catch { /* ignore */ }
           }
         });
-      } catch {
-        // ignore
-      }
-    };
-
-    const addAllowedRectOverlay = (canvas: any, fabric: any, rect: { x: number; y: number; width: number; height: number }) => {
-      try {
-        const r = new fabric.Rect({
-          left: rect.x,
-          top: rect.y,
-          width: Math.max(1, rect.width),
-          height: Math.max(1, rect.height),
-          // Slight tint so it's obvious even if a template asset sits on top.
-          fill: 'rgba(6,182,212,0.10)', // cyan tint (inset/allowed rect)
-          stroke: 'rgba(6,182,212,0.85)', // cyan
-          strokeWidth: 4,
-          strokeDashArray: [8, 6],
-          selectable: false,
-          evented: false,
-          hoverCursor: 'default',
-          excludeFromExport: true as any,
-        });
-        (r as any).data = { role: 'debug-overlay', kind: 'allowed-rect' };
-        canvas.add(r);
-
-        const label = new fabric.Text('ALLOWED (INSET)', {
-          left: rect.x + 10,
-          top: rect.y + 10,
-          fontSize: 22,
-          fontFamily: 'Inter, sans-serif',
-          fontWeight: 700,
-          fill: 'rgba(6,182,212,0.95)',
-          selectable: false,
-          evented: false,
-          excludeFromExport: true as any,
-        });
-        (label as any).data = { role: 'debug-overlay', kind: 'allowed-label' };
-        canvas.add(label);
-      } catch {
-        // ignore
-      }
-    };
-
-    const addContentRectOverlay = (canvas: any, fabric: any, rect: { x: number; y: number; width: number; height: number }) => {
-      try {
-        const r = new fabric.Rect({
-          left: rect.x,
-          top: rect.y,
-          width: Math.max(1, rect.width),
-          height: Math.max(1, rect.height),
-          fill: 'rgba(34,197,94,0.08)', // green tint (outer content region)
-          stroke: 'rgba(34,197,94,0.9)', // green
-          strokeWidth: 4,
-          strokeDashArray: [6, 6],
-          selectable: false,
-          evented: false,
-          hoverCursor: 'default',
-          excludeFromExport: true as any,
-        });
-        (r as any).data = { role: 'debug-overlay', kind: 'content-rect' };
-        canvas.add(r);
-
-        const label = new fabric.Text('CONTENT REGION', {
-          left: rect.x + 10,
-          top: rect.y + 10,
-          fontSize: 22,
-          fontFamily: 'Inter, sans-serif',
-          fontWeight: 700,
-          fill: 'rgba(34,197,94,0.95)',
-          selectable: false,
-          evented: false,
-          excludeFromExport: true as any,
-        });
-        (label as any).data = { role: 'debug-overlay', kind: 'content-label' };
-        canvas.add(label);
       } catch {
         // ignore
       }
@@ -1340,13 +1190,18 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         console.log('[Preview Vision] 🖌️ Rendering vision-based layout on canvas...');
 
       // Preserve current image position so realign can NEVER move the user's image.
-      // Use origin-aware top-left (getPointByOrigin) so we preserve the user's intended placement.
+      //
+      // IMPORTANT: In `/editor`, image moves are persisted into the layout snapshot via `onUserImageChange`.
+      // In that mode, `layout.image` is the source of truth (so Undo can restore image bounds).
+      // Therefore we ONLY preserve the live Fabric position when `onUserImageChange` is NOT provided
+      // (legacy single-slide generator).
       const existingImageObj =
         canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && obj?.data?.role === 'user-image') ||
         // Legacy fallback: allow images that have no role at all, but NEVER use template assets.
         canvas.getObjects?.().find((obj: any) => obj?.type === 'image' && !obj?.data?.role);
       let preservedImage: null | { left: number; top: number; scaleX: number; scaleY: number } = null;
-      if (existingImageObj) {
+      const shouldPreserveUserImagePosition = !onUserImageChangeRef.current;
+      if (shouldPreserveUserImagePosition && existingImageObj) {
         try {
           if (typeof existingImageObj.setCoords === 'function') existingImageObj.setCoords();
           const tl = typeof existingImageObj.getPointByOrigin === 'function'
@@ -1828,57 +1683,93 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Option A (hybrid, product-safe): after any reflow/render, enforce invariants for user text:
       // - Must stay inside allowed rect
       // - Must NOT intersect the silhouette mask (when available)
-      // We apply the same "minimal nudge" strategy used on drag release (Phase 3).
+      // - Must NOT overlap other text lines
       // IMPORTANT: Skip while the user is actively editing text to avoid disrupting typing.
       try {
         const cb = onUserTextChangeRef.current;
-        const objs = canvas.getObjects?.() || [];
-        let changed = false;
-        for (const o of objs) {
-          if (!o || o?.data?.role !== 'user-text') continue;
-          // Fabric IText/Textbox sets `isEditing` while actively editing.
-          if ((o as any).isEditing) continue;
-          const invalid = computeInvalidForUserText(canvas, o);
-          if (!invalid) {
-            setInvalidHighlight(o, false);
-            continue;
-          }
-          const before = getAABBTopLeft(o);
-          const next = findNearestValidTopLeft(canvas, o, getOtherUserTextAABBs(canvas, o));
-          if (!next) {
-            // Could not find a valid position; keep highlight so it is visible.
-            setInvalidHighlight(o, true);
-            continue;
-          }
-          const aabbNow = getAABBTopLeft(o);
-          o.left = next.x + aabbNow.originOffsetX;
-          o.top = next.y + aabbNow.originOffsetY;
-          if (typeof o.setCoords === 'function') o.setCoords();
-          setInvalidHighlight(o, false);
-          const after = getAABBTopLeft(o);
-          const moved = Math.abs(after.x - before.x) > 0.5 || Math.abs(after.y - before.y) > 0.5;
-          if (moved) {
-            changed = true;
-            // Persist corrected geometry for the active slide only (cb is only wired for active).
-            if (cb) {
-              try {
-                // geometry only; text is unchanged here
-                const lineIndex = Number(o?.data?.lineIndex ?? 0);
-                cb({
-                  lineIndex,
-                  lineKey: typeof o?.data?.lineKey === 'string' ? o.data.lineKey : undefined,
-                  x: typeof o?.left === 'number' ? o.left : after.x,
-                  y: (o?.originY === 'center' && typeof o?.top === 'number') ? o.top : after.y,
-                  maxWidth: Math.max(1, after.width),
-                } as any);
-              } catch {
-                // ignore
+        const allowed = constraintsRef.current.allowedRect;
+        if (allowed) {
+          const objsAll = canvas.getObjects?.() || [];
+          const textObjs = objsAll.filter((o: any) => o?.data?.role === 'user-text');
+          const byId = new Map<string, any>();
+
+          const data = overlayDataRef.current;
+          const imageRect = getCurrentUserImageRect(canvas) || data.imageRect;
+          const maskU8 = data.maskU8;
+          const maskW = data.maskW;
+          const maskH = data.maskH;
+          const mask = (maskU8 && maskW > 0 && maskH > 0) ? { u8: maskU8, w: maskW, h: maskH } : null;
+
+          const items = textObjs.map((o: any, idx: number) => {
+            try {
+              if (typeof o?.initDimensions === 'function') o.initDimensions();
+              if (typeof o?.setCoords === 'function') o.setCoords();
+            } catch {
+              // ignore
+            }
+            const a = getAABBTopLeft(o);
+            const id = String(o?.data?.lineKey || o?.data?.lineIndex || idx);
+            byId.set(id, o);
+            return {
+              id,
+              aabb: { left: a.x, top: a.y, right: a.x + a.width, bottom: a.y + a.height },
+              isEditing: !!(o as any).isEditing,
+            };
+          });
+
+          const results = enforceTextInvariantsSequential({
+            items,
+            allowedRect: allowed,
+            imageRect,
+            mask,
+            stepPx: 4,
+            maxRadiusPx: 640,
+            textPaddingPx: 2,
+          });
+
+          let changed = false;
+          for (const r of results) {
+            const o = byId.get(r.id);
+            if (!o) continue;
+            if ((o as any).isEditing) continue;
+
+            if (r.stillInvalid) {
+              setInvalidHighlight(o, true);
+              continue;
+            }
+
+            if (r.moved && r.newTopLeft) {
+              const before = getAABBTopLeft(o);
+              const aabbNow = getAABBTopLeft(o);
+              o.left = r.newTopLeft.x + aabbNow.originOffsetX;
+              o.top = r.newTopLeft.y + aabbNow.originOffsetY;
+              if (typeof o.setCoords === 'function') o.setCoords();
+              setInvalidHighlight(o, false);
+              const after = getAABBTopLeft(o);
+              const moved = Math.abs(after.x - before.x) > 0.5 || Math.abs(after.y - before.y) > 0.5;
+              if (moved) {
+                changed = true;
+                if (cb) {
+                  try {
+                    const lineIndex = Number(o?.data?.lineIndex ?? 0);
+                    cb({
+                      lineIndex,
+                      lineKey: typeof o?.data?.lineKey === 'string' ? o.data.lineKey : undefined,
+                      x: typeof o?.left === 'number' ? o.left : after.x,
+                      y: (o?.originY === 'center' && typeof o?.top === 'number') ? o.top : after.y,
+                      maxWidth: Math.max(1, after.width),
+                    } as any);
+                  } catch {
+                    // ignore
+                  }
+                }
               }
+            } else {
+              setInvalidHighlight(o, false);
             }
           }
-        }
-        if (changed) {
-          canvas.requestRenderAll?.();
+
+          if (changed) canvas.requestRenderAll?.();
         }
       } catch {
         // ignore

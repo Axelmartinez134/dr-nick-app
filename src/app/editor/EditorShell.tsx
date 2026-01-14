@@ -1,6 +1,6 @@
 "use client";
 
-import { createRef, useEffect, useMemo, useRef, useState } from "react";
+import { createRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./EditorShell.module.css";
 import dynamic from "next/dynamic";
 import { useCarouselEditorEngine } from "../components/health/marketing/ai-carousel/useCarouselEditorEngine";
@@ -11,6 +11,7 @@ import TemplateEditorModal from "../components/health/marketing/ai-carousel/Temp
 import { ensureTypographyFontsLoaded, estimateAvgCharWidthEm } from "../components/health/marketing/ai-carousel/fontMetrics";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
+import { remapRangesByDiff } from "@/lib/text-placement";
 import JSZip from "jszip";
 
 // Minimal layout used to render templates even before any text/image layout is generated.
@@ -232,6 +233,14 @@ export default function EditorShell() {
     addLog,
     loadTemplatesList,
   } = useCarouselEditorEngine({ enableLegacyAutoSave: false });
+
+  // Undo snapshots should restore BOTH layout and underlying text/styling state.
+  // We push snapshots only for explicit layout actions (Generate Layout / Realign),
+  // not for background live-layout as you type.
+  const pushUndoSnapshot = useCallback(() => {
+    if (!layoutData || !inputData) return;
+    setLayoutHistory((prev) => [...(prev || []), { layoutData, inputData }]);
+  }, [inputData, layoutData, setLayoutHistory]);
 
   // Project-wide colors (shared across all slides; affects canvas + generation).
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
@@ -686,6 +695,20 @@ export default function EditorShell() {
     const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
     const prevImage = (baseLayout as any)?.image || null;
     if (!prevImage || !prevImage.url) return; // no user image to update
+
+    // Enable Undo for image moves/resizes too. Push only when bounds actually changed.
+    try {
+      const eps = 0.5;
+      const didMove =
+        Math.abs(Number(prevImage?.x ?? 0) - Number(change.x ?? 0)) > eps ||
+        Math.abs(Number(prevImage?.y ?? 0) - Number(change.y ?? 0)) > eps;
+      const didResize =
+        Math.abs(Number(prevImage?.width ?? 0) - Number(change.width ?? 0)) > eps ||
+        Math.abs(Number(prevImage?.height ?? 0) - Number(change.height ?? 0)) > eps;
+      if (didMove || didResize) pushUndoSnapshot();
+    } catch {
+      pushUndoSnapshot();
+    }
 
     const nextLayout = {
       ...baseLayout,
@@ -1447,6 +1470,21 @@ export default function EditorShell() {
       null;
     if (!baseLayout || !Array.isArray(baseLayout.textLines) || !baseLayout.textLines[change.lineIndex]) return;
 
+    // Enable Undo after on-canvas commits (move/resize/text edit). Only push when something truly changed.
+    try {
+      const curLine = baseLayout.textLines?.[change.lineIndex] as any;
+      const eps = 0.5;
+      const didMove =
+        Math.abs(Number(curLine?.position?.x ?? 0) - Number(change.x ?? 0)) > eps ||
+        Math.abs(Number(curLine?.position?.y ?? 0) - Number(change.y ?? 0)) > eps;
+      const didResize = Math.abs(Number(curLine?.maxWidth ?? 0) - Number(change.maxWidth ?? 0)) > eps;
+      const didEditText = typeof change.text === "string" && String(change.text) !== String(curLine?.text ?? "");
+      if (didMove || didResize || didEditText) pushUndoSnapshot();
+    } catch {
+      // If diffing fails for any reason, err on the side of enabling Undo.
+      pushUndoSnapshot();
+    }
+
     const nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
       if (idx !== change.lineIndex) return l;
       return {
@@ -1530,6 +1568,26 @@ export default function EditorShell() {
       (baseLayout.textLines?.[change.lineIndex] as any)?.lineKey ||
       null;
 
+    // Enable Undo after on-canvas commits (move/resize/text edit). Only push when something truly changed.
+    try {
+      const eps = 0.5;
+      const idxByKey =
+        changeKey && Array.isArray(baseLayout.textLines)
+          ? baseLayout.textLines.findIndex((l: any) => String((l as any)?.lineKey || "") === String(changeKey))
+          : -1;
+      const targetIdx = idxByKey >= 0 ? idxByKey : change.lineIndex;
+      const curLine = baseLayout.textLines?.[targetIdx] as any;
+      const didMove =
+        Math.abs(Number(curLine?.position?.x ?? 0) - Number(change.x ?? 0)) > eps ||
+        Math.abs(Number(curLine?.position?.y ?? 0) - Number(change.y ?? 0)) > eps;
+      const didResize = Math.abs(Number(curLine?.maxWidth ?? 0) - Number(change.maxWidth ?? 0)) > eps;
+      const didEditText = typeof change.text === "string" && String(change.text) !== String(curLine?.text ?? "");
+      if (didMove || didResize || didEditText) pushUndoSnapshot();
+    } catch {
+      // If diffing fails for any reason, err on the side of enabling Undo.
+      pushUndoSnapshot();
+    }
+
     const nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
       const lk = (l as any)?.lineKey;
       const hit = (changeKey && lk && lk === changeKey) || idx === change.lineIndex;
@@ -1592,8 +1650,17 @@ export default function EditorShell() {
     // v1 styling behavior: if the user edits a block on-canvas, drop styling ranges for that block.
     const prevHeadlineRanges = Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [];
     const prevBodyRanges = Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [];
-    const nextHeadlineRanges = didEditText && editedBlock === "HEADLINE" ? [] : prevHeadlineRanges;
-    const nextBodyRanges = didEditText && editedBlock === "BODY" ? [] : prevBodyRanges;
+    const prevHeadlineText = String((curInput && typeof curInput === "object" ? (curInput as any).headline : null) ?? (curSlide.draftHeadline || ""));
+    const prevBodyText = String((curInput && typeof curInput === "object" ? (curInput as any).body : null) ?? (curSlide.draftBody || ""));
+
+    const nextHeadlineRanges =
+      didEditText && editedBlock === "HEADLINE"
+        ? remapRangesByDiff({ oldText: prevHeadlineText, newText: nextHeadlineText, ranges: prevHeadlineRanges })
+        : prevHeadlineRanges;
+    const nextBodyRanges =
+      didEditText && editedBlock === "BODY"
+        ? remapRangesByDiff({ oldText: prevBodyText, newText: nextBodyText, ranges: prevBodyRanges })
+        : prevBodyRanges;
 
     // Best-effort cleanup: once we move to block-level text as source-of-truth, strip any legacy per-line
     // text overrides so they don't fight future repacks.
@@ -3568,6 +3635,7 @@ export default function EditorShell() {
                         }
                         onClick={() => {
                           layoutDirtyRef.current = true;
+                          pushUndoSnapshot();
                           enqueueLiveLayout([activeSlideIndex]);
                         }}
                       >
@@ -3591,6 +3659,8 @@ export default function EditorShell() {
                         className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                         onClick={() => {
                           layoutDirtyRef.current = true;
+                          // Save a full snapshot BEFORE wiping overrides so Undo truly restores the prior state.
+                          pushUndoSnapshot();
                           // Realign should repack line breaks like the original behavior.
                           // Wipe per-line overrides so wrap-flow can start fresh from the current text.
                           wipeLineOverridesForActiveSlide();
@@ -3599,7 +3669,7 @@ export default function EditorShell() {
                           if (realignmentModel === "gemini-computational") {
                             enqueueLiveLayout([activeSlideIndex]);
                           } else {
-                            void handleRealign();
+                            void handleRealign({ skipHistory: true });
                           }
                         }}
                         disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}

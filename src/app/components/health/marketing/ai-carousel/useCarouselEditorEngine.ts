@@ -17,6 +17,11 @@ interface SavedCarousel {
 type SaveStatus = 'idle' | 'editing' | 'saving' | 'saved' | 'error';
 type RealignmentModel = 'claude' | 'gemini' | 'gemini-computational';
 
+type UndoSnapshot = {
+  layoutData: LayoutResponse;
+  inputData: CarouselTextRequest;
+};
+
 export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean }) {
   // Legacy autosave writes into `ai_carousels` (single-slide). `/editor` uses `carousel_projects` instead,
   // so we disable this there to avoid noisy save attempts and validation errors.
@@ -33,7 +38,7 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
 
   // Layout history for undo functionality
-  const [layoutHistory, setLayoutHistory] = useState<LayoutResponse[]>([]);
+  const [layoutHistory, setLayoutHistory] = useState<UndoSnapshot[]>([]);
 
   // Auto-save states
   const [currentCarouselId, setCurrentCarouselId] = useState<string | null>(null);
@@ -597,7 +602,9 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
     setSaveError(null);
   }, [addLog]);
 
-  const handleRealign = useCallback(async () => {
+  const handleRealign = useCallback(async (arg?: any) => {
+    const opts: { skipHistory?: boolean } | undefined =
+      arg && typeof arg === 'object' && 'skipHistory' in arg ? (arg as any) : undefined;
     if (!layoutData || !inputData || !canvasRef.current) {
       addLog('❌ Cannot realign: missing data or canvas');
       return;
@@ -643,8 +650,14 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
       addLog('✅ Authentication successful');
 
       // Save current layout to history before realigning
-      addLog('💾 Saving current layout to history...');
-      setLayoutHistory(prev => [...prev, layoutData]);
+      if (!opts?.skipHistory) {
+        addLog('💾 Saving current layout to history...');
+        if (layoutData && inputData) {
+          setLayoutHistory(prev => [...prev, { layoutData, inputData }]);
+        } else {
+          addLog('⚠️ Skipping history snapshot: missing layoutData or inputData');
+        }
+      }
 
       // Call realign API with selected model
       addLog(`📡 Sending realignment request to API using ${realignmentModel.toUpperCase()}...`);
@@ -789,14 +802,15 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
 
     addLog('⏮️ Undoing to previous layout...');
 
-    // Get the last layout from history
-    const previousLayout = layoutHistory[layoutHistory.length - 1];
+    // Get the last snapshot from history
+    const previous = layoutHistory[layoutHistory.length - 1];
 
     // Remove it from history
     setLayoutHistory(prev => prev.slice(0, -1));
 
-    // Restore previous layout
-    setLayoutData(previousLayout);
+    // Restore previous layout + input (text + style ranges)
+    setLayoutData(previous.layoutData);
+    setInputData(previous.inputData);
 
     addLog('✅ Reverted to previous layout');
   }, [addLog, layoutHistory]);
