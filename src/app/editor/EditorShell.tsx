@@ -184,8 +184,7 @@ export default function EditorShell() {
     startWidth: number;
   }>({ dragging: false, startX: 0, startWidth: SIDEBAR_DEFAULT });
   // Project-wide typography (shared across all slides; canvas-only).
-  const [bodyFontSizePx, setBodyFontSizePx] = useState<number>(48);
-  const bodyFontSizeDebounceRef = useRef<number | null>(null);
+  // NOTE: bodyFontSizePx is now per-slide (draftBodyFontSizePx in SlideState)
   const FONT_OPTIONS = useMemo(
     () => [
       { label: "Inter", family: "Inter, sans-serif", weight: 400 },
@@ -335,7 +334,8 @@ export default function EditorShell() {
     draftBodyRanges: InlineStyleRange[];
     draftHeadlineFontSizePx: number; // Enhanced only; persisted via input_snapshot.headlineFontSizePx
     draftHeadlineTextAlign: "left" | "center" | "right"; // Enhanced only; persisted via input_snapshot.headlineTextAlign
-    draftBodyTextAlign: "left" | "center" | "right"; // persisted via input_snapshot.bodyTextAlign (future)
+    draftBodyFontSizePx: number; // Per-slide body font size; persisted via input_snapshot.bodyFontSizePx
+    draftBodyTextAlign: "left" | "center" | "right"; // persisted via input_snapshot.bodyTextAlign
     draftBg: string;
     draftText: string;
     // AI Image Prompt (Enhanced only) - per-slide prompt for image generation
@@ -358,6 +358,7 @@ export default function EditorShell() {
     draftBodyRanges: [],
     draftHeadlineFontSizePx: 76,
     draftHeadlineTextAlign: "left",
+    draftBodyFontSizePx: 48,
     draftBodyTextAlign: "left",
     draftBg: "#ffffff",
     draftText: "#000000",
@@ -1112,6 +1113,7 @@ export default function EditorShell() {
     bodyRanges?: InlineStyleRange[];
     lineOverridesByKey?: Record<string, any> | null;
     headlineFontSizePx?: number;
+    bodyFontSizePx?: number;
     headlineTextAlign?: "left" | "center" | "right";
     bodyTextAlign?: "left" | "center" | "right";
   }): VisionLayoutDecision | null => {
@@ -1197,15 +1199,16 @@ export default function EditorShell() {
 
     const wrapOnce = (headlineAvg: number, bodyAvg: number) => {
       const headlineSizePx = Math.max(24, Math.min(120, Math.round(Number(params.headlineFontSizePx) || 76)));
+      const bodySizePx = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
       return wrapFlowLayout(params.headline, params.body, imageBounds, {
         ...(inset ? { contentRect: inset } : { margin: 40 }),
         clearancePx: 1,
         lineHeight: 1.2,
         headlineFontSize: headlineSizePx,
-        bodyFontSize: Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48,
+        bodyFontSize: bodySizePx,
         // Only allow auto-shrink down to 56 unless the user explicitly chose smaller.
         headlineMinFontSize: Math.min(56, headlineSizePx),
-        bodyMinFontSize: Math.max(10, Math.min(36, Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48)),
+        bodyMinFontSize: Math.max(10, Math.min(36, bodySizePx)),
         blockGapPx: 24,
         laneTieBreak: "right",
         bodyPreferSideLane: true,
@@ -1373,11 +1376,12 @@ export default function EditorShell() {
     image: any | null;
     existingLayout?: any | null;
     bodyRanges?: InlineStyleRange[];
+    bodyFontSizePx?: number;
   }): VisionLayoutDecision | null => {
     const region = getTemplateContentRectRaw(params.templateSnapshot);
     if (!region) return null;
 
-    const bodySize = Number.isFinite(bodyFontSizePx as any) ? Math.max(10, Math.round(bodyFontSizePx)) : 48;
+    const bodySize = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
     const imageUrl = (params.image as any)?.url || null;
     const prevLine = params.existingLayout?.textLines?.[0] || null;
     const preservedX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
@@ -1478,9 +1482,11 @@ export default function EditorShell() {
             ? Math.max(24, Math.min(120, Math.round(Number((slide as any).draftHeadlineFontSizePx))))
             : 76;
         const headlineTextAlign = (slide as any)?.draftHeadlineTextAlign || "left";
-        const bodyTextAlign = (slide as any)?.draftBodyTextAlign || "left";
         const bodyFontSizePxSnap =
-          Number.isFinite(bodyFontSizePx as any) ? Math.max(10, Math.min(200, Math.round(Number(bodyFontSizePx)))) : 48;
+          Number.isFinite((slide as any)?.draftBodyFontSizePx as any)
+            ? Math.max(24, Math.min(120, Math.round(Number((slide as any).draftBodyFontSizePx))))
+            : 48;
+        const bodyTextAlign = (slide as any)?.draftBodyTextAlign || "left";
 
         addLog(
           `📐 Live layout slide ${slideIndex + 1} start: template=${tid || "none"} headlineLen=${headline.length} bodyLen=${body.length} headlineRanges=${headlineRanges.length} bodyRanges=${bodyRanges.length}`
@@ -1502,6 +1508,7 @@ export default function EditorShell() {
                 image,
                 existingLayout: (slide as any)?.layoutData?.layout || null,
                 bodyRanges,
+                bodyFontSizePx: bodyFontSizePxSnap,
               })
             : computeDeterministicLayout({
                 slideIndex,
@@ -1513,6 +1520,7 @@ export default function EditorShell() {
                 bodyRanges,
                 lineOverridesByKey,
                 headlineFontSizePx,
+                bodyFontSizePx: bodyFontSizePxSnap,
                 headlineTextAlign,
                 bodyTextAlign,
               });
@@ -1595,12 +1603,7 @@ export default function EditorShell() {
     }, LIVE_LAYOUT_DEBOUNCE_MS);
   };
 
-  const scheduleLiveLayoutAll = () => {
-    if (bodyFontSizeDebounceRef.current) window.clearTimeout(bodyFontSizeDebounceRef.current);
-    bodyFontSizeDebounceRef.current = window.setTimeout(() => {
-      enqueueLiveLayout(Array.from({ length: slideCount }, (_, i) => i));
-    }, LIVE_LAYOUT_DEBOUNCE_MS);
-  };
+  // NOTE: scheduleLiveLayoutAll was removed since body font size is now per-slide
 
   const wipeLineOverridesForActiveSlide = (): { nextInput: any | null } => {
     if (templateTypeId !== "enhanced") return { nextInput: null };
@@ -1990,6 +1993,9 @@ export default function EditorShell() {
             : String((inputSnap as any)?.headlineTextAlign || "left") === "right"
               ? "right"
               : "left"),
+          draftBodyFontSizePx: Number.isFinite((inputSnap as any)?.bodyFontSizePx as any)
+            ? Math.max(24, Math.min(120, Math.round(Number((inputSnap as any).bodyFontSizePx))))
+            : 48,
           draftBodyTextAlign: (String((inputSnap as any)?.bodyTextAlign || "left") === "center"
             ? "center"
             : String((inputSnap as any)?.bodyTextAlign || "left") === "right"
@@ -2004,14 +2010,6 @@ export default function EditorShell() {
     });
     setSlides(nextSlides);
     slidesRef.current = nextSlides;
-    // Restore project-wide body font size from slide 1 snapshot (stored redundantly per slide).
-    try {
-      const s0: any = nextSlides[0] || null;
-      const n = Number((s0 as any)?.inputData?.bodyFontSizePx ?? (loadedSlides?.[0] as any)?.input_snapshot?.bodyFontSizePx ?? NaN);
-      if (Number.isFinite(n)) setBodyFontSizePx(Math.max(10, Math.min(200, Math.round(n))));
-    } catch {
-      // ignore
-    }
     setActiveSlideIndex(0);
     // Restore slide 1 (index 0) snapshots into the engine immediately.
     if (nextSlides[0]?.layoutData && nextSlides[0]?.inputData) {
@@ -2054,6 +2052,7 @@ export default function EditorShell() {
         draftBodyRanges: [],
         draftHeadlineFontSizePx: 76,
         draftHeadlineTextAlign: "left",
+        draftBodyFontSizePx: 48,
         draftBodyTextAlign: "left",
         layoutData: null,
         inputData: null,
@@ -2068,7 +2067,6 @@ export default function EditorShell() {
     setSlides(nextSlides);
     slidesRef.current = nextSlides;
     setActiveSlideIndex(0);
-    setBodyFontSizePx(48);
     setProjectsDropdownOpen(false);
     await refreshProjectsList();
     handleNewCarousel();
@@ -3294,60 +3292,7 @@ export default function EditorShell() {
               ))}
             </select>
           </div>
-
-          <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body Font Size (px)</div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                onClick={() => {
-                  const next = Math.max(10, Math.round((bodyFontSizePx || 48) - 1));
-                  setBodyFontSizePx(next);
-                  scheduleLiveLayoutAll();
-                }}
-                disabled={loading || switchingSlides || copyGenerating}
-                aria-label="Decrease body font size"
-                title="Decrease"
-              >
-                −
-              </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                className="w-28 h-10 rounded-md border border-slate-200 px-3 text-slate-900"
-                value={Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48}
-                min={10}
-                max={200}
-                step={1}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  const n = Math.round(Number(raw));
-                  const next = Number.isFinite(n) ? Math.max(10, Math.min(200, n)) : 48;
-                  setBodyFontSizePx(next);
-                  scheduleLiveLayoutAll();
-                }}
-                disabled={loading || switchingSlides || copyGenerating}
-              />
-              <button
-                type="button"
-                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                onClick={() => {
-                  const next = Math.min(200, Math.round((bodyFontSizePx || 48) + 1));
-                  setBodyFontSizePx(next);
-                  scheduleLiveLayoutAll();
-                }}
-                disabled={loading || switchingSlides || copyGenerating}
-                aria-label="Increase body font size"
-                title="Increase"
-              >
-                +
-              </button>
-              <div className="text-xs text-slate-500">
-                Updates all slides
-              </div>
-            </div>
-          </div>
+          {/* Body Font Size removed - now per-slide in the text input section */}
         </div>
       </div>
 
@@ -4180,6 +4125,99 @@ export default function EditorShell() {
                       minHeightPx={96}
                       className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                     />
+                    {/* Body Font Size + Alignment (per-slide) */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={24}
+                        max={120}
+                        step={1}
+                        className="w-20 h-9 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                        value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 48)}
+                        disabled={loading || switchingSlides || copyGenerating}
+                        onChange={(e) => {
+                          const raw = Number((e.target as any).value);
+                          const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 48;
+                          pushUndoSnapshot();
+                          setSlides((prev) =>
+                            prev.map((s, i) =>
+                              i !== activeSlideIndex
+                                ? s
+                                : ({
+                                    ...s,
+                                    draftBodyFontSizePx: nextSize,
+                                    inputData: s.inputData && typeof s.inputData === "object"
+                                      ? { ...(s.inputData as any), bodyFontSizePx: nextSize }
+                                      : s.inputData,
+                                  } as any)
+                            )
+                          );
+                          slidesRef.current = slidesRef.current.map((s, i) =>
+                            i !== activeSlideIndex
+                              ? s
+                              : ({
+                                  ...s,
+                                  draftBodyFontSizePx: nextSize,
+                                  inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                    ? { ...((s as any).inputData as any), bodyFontSizePx: nextSize }
+                                    : (s as any).inputData,
+                                } as any)
+                          );
+                          scheduleLiveLayout(activeSlideIndex);
+                        }}
+                        title="Sets the Body font size for this slide (24–120px)."
+                      />
+                      <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden">
+                        {(["left", "center", "right"] as const).map((a) => {
+                          const active = (slides[activeSlideIndex]?.draftBodyTextAlign || "left") === a;
+                          const label = a === "left" ? "L" : a === "center" ? "C" : "R";
+                          return (
+                            <button
+                              key={a}
+                              type="button"
+                              className={[
+                                "h-9 w-9 text-sm font-semibold",
+                                active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50",
+                              ].join(" ")}
+                              disabled={loading || switchingSlides || copyGenerating}
+                              title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
+                              onClick={() => {
+                                const nextAlign = a;
+                                pushUndoSnapshot();
+                                setSlides((prev) =>
+                                  prev.map((s, i) =>
+                                    i !== activeSlideIndex
+                                      ? s
+                                      : ({
+                                          ...s,
+                                          draftBodyTextAlign: nextAlign,
+                                          inputData: s.inputData && typeof s.inputData === "object"
+                                            ? { ...(s.inputData as any), bodyTextAlign: nextAlign }
+                                            : s.inputData,
+                                        } as any)
+                                  )
+                                );
+                                slidesRef.current = slidesRef.current.map((s, i) =>
+                                  i !== activeSlideIndex
+                                    ? s
+                                    : ({
+                                        ...s,
+                                        draftBodyTextAlign: nextAlign,
+                                        inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                          ? { ...((s as any).inputData as any), bodyTextAlign: nextAlign }
+                                          : (s as any).inputData,
+                                      } as any)
+                                );
+                                enqueueLiveLayout([activeSlideIndex]);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <span className="text-xs text-slate-500">Body size (24-120)</span>
+                    </div>
                   </div>
 
                   {/* AI Image Prompt (Enhanced only) */}
@@ -4399,7 +4437,8 @@ export default function EditorShell() {
                         {realigning ? "Realigning..." : "Realign Text"}
                       </button>
 
-                      <AdvancedLayoutControls
+                      {/* Advanced Layout Controls - Hidden per user request */}
+                      {/* <AdvancedLayoutControls
                         open={showAdvancedLayoutControls}
                         onToggle={() => setShowAdvancedLayoutControls((v) => !v)}
                         canGenerate={
@@ -4419,7 +4458,7 @@ export default function EditorShell() {
                         realignmentModel={String(realignmentModel || "gemini-computational")}
                         onChangeModel={(next) => setRealignmentModel(next as any)}
                         disableModelSelect={realigning || copyGenerating}
-                      />
+                      /> */}
                     </>
                   ) : null}
                   <button
