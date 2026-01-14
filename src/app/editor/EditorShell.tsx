@@ -8,11 +8,12 @@ import type { CarouselTextRequest, TextStyle } from "@/lib/carousel-types";
 import type { VisionLayoutDecision } from "@/lib/carousel-types";
 import { wrapFlowLayout } from "@/lib/wrap-flow-layout";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
-import { ensureTypographyFontsLoaded, estimateAvgCharWidthEm } from "../components/health/marketing/ai-carousel/fontMetrics";
+import { ensureTypographyFontsLoaded, estimateAvgCharWidthEm, estimateAvgCharWidthEmRelaxed } from "../components/health/marketing/ai-carousel/fontMetrics";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
 import { remapRangesByDiff } from "@/lib/text-placement";
 import JSZip from "jszip";
+import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 
 // Minimal layout used to render templates even before any text/image layout is generated.
 const EMPTY_LAYOUT: any = {
@@ -248,6 +249,7 @@ export default function EditorShell() {
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [showLayoutOverlays, setShowLayoutOverlays] = useState(false);
+  const [showAdvancedLayoutControls, setShowAdvancedLayoutControls] = useState(false);
 
   // One ref per slide preview canvas so we can export all slides.
   const slideCanvasRefs = useRef<Array<React.RefObject<any>>>(
@@ -318,6 +320,9 @@ export default function EditorShell() {
     draftBody: string;
     draftHeadlineRanges: InlineStyleRange[];
     draftBodyRanges: InlineStyleRange[];
+    draftHeadlineFontSizePx: number; // Enhanced only; persisted via input_snapshot.headlineFontSizePx
+    draftHeadlineTextAlign: "left" | "center" | "right"; // Enhanced only; persisted via input_snapshot.headlineTextAlign
+    draftBodyTextAlign: "left" | "center" | "right"; // persisted via input_snapshot.bodyTextAlign (future)
     draftBg: string;
     draftText: string;
   };
@@ -335,6 +340,9 @@ export default function EditorShell() {
     draftBody: "",
     draftHeadlineRanges: [],
     draftBodyRanges: [],
+    draftHeadlineFontSizePx: 76,
+    draftHeadlineTextAlign: "left",
+    draftBodyTextAlign: "left",
     draftBg: "#ffffff",
     draftText: "#000000",
   });
@@ -1060,6 +1068,9 @@ export default function EditorShell() {
     headlineRanges?: InlineStyleRange[];
     bodyRanges?: InlineStyleRange[];
     lineOverridesByKey?: Record<string, any> | null;
+    headlineFontSizePx?: number;
+    headlineTextAlign?: "left" | "center" | "right";
+    bodyTextAlign?: "left" | "center" | "right";
   }): VisionLayoutDecision | null => {
     const inset = getTemplateContentRectInset(params.templateSnapshot);
     const imageBounds = params.image
@@ -1077,27 +1088,128 @@ export default function EditorShell() {
           height: 1,
         };
 
-    const headlineAvg = estimateAvgCharWidthEm(headlineFontFamily, headlineFontWeight);
-    const bodyAvg = estimateAvgCharWidthEm(bodyFontFamily, bodyFontWeight);
+    // Loosen conservatism to pack lines tighter, then validate using real pixel measurement and retry if needed.
+    const headlineAvgBase = estimateAvgCharWidthEmRelaxed(headlineFontFamily, headlineFontWeight);
+    const bodyAvgBase = estimateAvgCharWidthEmRelaxed(bodyFontFamily, bodyFontWeight);
 
-    const { layout, meta } = wrapFlowLayout(params.headline, params.body, imageBounds, {
-      ...(inset ? { contentRect: inset } : { margin: 40 }),
-      clearancePx: 1,
-      lineHeight: 1.2,
-      headlineFontSize: 76,
-      bodyFontSize: Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48,
-      headlineMinFontSize: 56,
-      bodyMinFontSize: Math.max(10, Math.min(36, Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48)),
-      blockGapPx: 24,
-      laneTieBreak: "right",
-      bodyPreferSideLane: true,
-      minUsableLaneWidthPx: 300,
-      skinnyLaneWidthPx: 380,
-      minBelowSpacePx: 240,
-      headlineAvgCharWidthEm: headlineAvg,
-      bodyAvgCharWidthEm: bodyAvg,
-      imageAlphaMask: (params.image as any)?.bgRemovalEnabled === false ? undefined : (params.image as any)?.mask || undefined,
-    });
+    const canMeasure = typeof document !== "undefined";
+    const measureWidthPx = (() => {
+      if (!canMeasure) return (_text: string, _font: { family: string; weight: number; italic?: boolean; sizePx: number }) => 0;
+      const c = document.createElement("canvas");
+      const ctx = c.getContext("2d");
+      if (!ctx) return (_text: string, _font: { family: string; weight: number; italic?: boolean; sizePx: number }) => 0;
+      return (text: string, font: { family: string; weight: number; italic?: boolean; sizePx: number }) => {
+        const w = Number.isFinite(font.weight as any) ? font.weight : 400;
+        const style = font.italic ? "italic" : "normal";
+        ctx.font = `${style} ${w} ${Math.max(1, Math.round(font.sizePx))}px ${font.family}`;
+        return ctx.measureText(String(text || "")).width;
+      };
+    })();
+
+    const hasOverlapRange = (
+      parts: Array<{ sourceStart: number; sourceEnd: number }>,
+      ranges: InlineStyleRange[],
+      key: "bold" | "italic"
+    ) => {
+      if (!Array.isArray(ranges) || ranges.length === 0) return false;
+      for (const p of parts) {
+        const a0 = Number(p?.sourceStart ?? -1);
+        const b0 = Number(p?.sourceEnd ?? -1);
+        if (!Number.isFinite(a0) || !Number.isFinite(b0) || b0 <= a0) continue;
+        for (const r of ranges) {
+          if (!(r as any)?.[key]) continue;
+          const a = Number((r as any).start ?? -1);
+          const b = Number((r as any).end ?? -1);
+          if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) continue;
+          if (Math.min(b0, b) > Math.max(a0, a)) return true;
+        }
+      }
+      return false;
+    };
+
+    const validateNoOverflow = (layout: any, meta: any) => {
+      if (!canMeasure) return true;
+      if (!layout || !Array.isArray(layout.textLines) || !meta || !Array.isArray(meta.lineSources)) return true;
+      const headlineRanges = Array.isArray(params.headlineRanges) ? params.headlineRanges : [];
+      const bodyRanges = Array.isArray(params.bodyRanges) ? params.bodyRanges : [];
+      for (let i = 0; i < layout.textLines.length; i++) {
+        const line = layout.textLines[i] as any;
+        const src = meta.lineSources[i] as any;
+        const block = (src?.block === "HEADLINE" ? "HEADLINE" : "BODY") as "HEADLINE" | "BODY";
+        const parts = Array.isArray(src?.parts) ? src.parts : [];
+        const ranges = block === "HEADLINE" ? headlineRanges : bodyRanges;
+        const bold = hasOverlapRange(parts, ranges, "bold");
+        const italic = hasOverlapRange(parts, ranges, "italic");
+        const family = block === "HEADLINE" ? headlineFontFamily : bodyFontFamily;
+        const baseWeight = block === "HEADLINE" ? headlineFontWeight : bodyFontWeight;
+        const weight = bold ? 700 : (Number.isFinite(baseWeight as any) ? Number(baseWeight) : 400);
+        const sizePx = Number(line?.baseSize ?? (block === "HEADLINE" ? 76 : 48));
+        const maxWidth = Number(line?.maxWidth ?? 0);
+        if (!Number.isFinite(maxWidth) || maxWidth <= 0) continue;
+        const w = measureWidthPx(String(line?.text || ""), { family, weight, italic, sizePx });
+        if (w > (maxWidth + 1.0)) return false;
+      }
+      return true;
+    };
+
+    const wrapOnce = (headlineAvg: number, bodyAvg: number) => {
+      const headlineSizePx = Math.max(24, Math.min(120, Math.round(Number(params.headlineFontSizePx) || 76)));
+      return wrapFlowLayout(params.headline, params.body, imageBounds, {
+        ...(inset ? { contentRect: inset } : { margin: 40 }),
+        clearancePx: 1,
+        lineHeight: 1.2,
+        headlineFontSize: headlineSizePx,
+        bodyFontSize: Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48,
+        // Only allow auto-shrink down to 56 unless the user explicitly chose smaller.
+        headlineMinFontSize: Math.min(56, headlineSizePx),
+        bodyMinFontSize: Math.max(10, Math.min(36, Number.isFinite(bodyFontSizePx as any) ? bodyFontSizePx : 48)),
+        blockGapPx: 24,
+        laneTieBreak: "right",
+        bodyPreferSideLane: true,
+        minUsableLaneWidthPx: 300,
+        skinnyLaneWidthPx: 380,
+        minBelowSpacePx: 240,
+        headlineAvgCharWidthEm: headlineAvg,
+        bodyAvgCharWidthEm: bodyAvg,
+        imageAlphaMask: (params.image as any)?.bgRemovalEnabled === false ? undefined : (params.image as any)?.mask || undefined,
+      });
+    };
+
+    // Always produce a candidate layout; then retry slightly more conservatively if overflow is detected.
+    let chosen = wrapOnce(headlineAvgBase, bodyAvgBase) as any;
+    const factors = [1.03, 1.06, 1.09];
+    if (!validateNoOverflow(chosen.layout, chosen.meta)) {
+      for (const f of factors) {
+        const attempt = wrapOnce(headlineAvgBase * f, bodyAvgBase * f) as any;
+        chosen = attempt;
+        if (validateNoOverflow(attempt.layout, attempt.meta)) break;
+      }
+      if (!validateNoOverflow(chosen.layout, chosen.meta)) {
+        // Fallback: revert to the original conservative estimator if relaxed packing would overflow.
+        chosen = wrapOnce(
+          estimateAvgCharWidthEm(headlineFontFamily, headlineFontWeight),
+          estimateAvgCharWidthEm(bodyFontFamily, bodyFontWeight)
+        ) as any;
+      }
+    }
+
+    const { layout, meta } = chosen;
+
+    // Apply per-slide block alignment overrides (Google-Docs-like: paragraph setting).
+    // IMPORTANT: `CarouselPreviewVision` treats `position.x` as the Fabric object's LEFT, so we must NOT
+    // shift x for center/right. Instead, keep the box position fixed (within the content/lane) and only
+    // change `textAlign`, which aligns text within the box (like Docs aligns within margins).
+    const alignHeadline = (params.headlineTextAlign || "left") as "left" | "center" | "right";
+    const alignBody = (params.bodyTextAlign || "left") as "left" | "center" | "right";
+    const applyAlign = (l: any, targetAlign: "left" | "center" | "right") => ({ ...l, textAlign: targetAlign });
+    if (Array.isArray(meta?.lineSources) && Array.isArray(layout?.textLines)) {
+      layout.textLines = layout.textLines.map((l: any, idx: number) => {
+        const src = meta.lineSources?.[idx] as any;
+        const block = (src?.block === "HEADLINE" ? "HEADLINE" : "BODY") as "HEADLINE" | "BODY";
+        const target = block === "HEADLINE" ? alignHeadline : alignBody;
+        return applyAlign(l, target);
+      });
+    }
 
     // Phase 4: attach stable line keys and apply per-line overrides (x/y/maxWidth) keyed by source ranges.
     const overridesByKey = (params.lineOverridesByKey && typeof params.lineOverridesByKey === "object")
@@ -1186,7 +1298,7 @@ export default function EditorShell() {
     if (Array.isArray(meta?.lineSources) && Array.isArray(layout?.textLines)) {
       const headlineRanges = params.headlineRanges || [];
       const bodyRanges = params.bodyRanges || [];
-      layout.textLines = layout.textLines.map((l, idx) => {
+      layout.textLines = layout.textLines.map((l: any, idx: number) => {
         const src = meta.lineSources?.[idx];
         if (!src?.parts) return l;
         const ranges = src.block === "HEADLINE" ? headlineRanges : bodyRanges;
@@ -1318,6 +1430,14 @@ export default function EditorShell() {
 
         const headlineRanges = Array.isArray(slide.draftHeadlineRanges) ? slide.draftHeadlineRanges : [];
         const bodyRanges = Array.isArray(slide.draftBodyRanges) ? slide.draftBodyRanges : [];
+        const headlineFontSizePx =
+          Number.isFinite((slide as any)?.draftHeadlineFontSizePx as any)
+            ? Math.max(24, Math.min(120, Math.round(Number((slide as any).draftHeadlineFontSizePx))))
+            : 76;
+        const headlineTextAlign = (slide as any)?.draftHeadlineTextAlign || "left";
+        const bodyTextAlign = (slide as any)?.draftBodyTextAlign || "left";
+        const bodyFontSizePxSnap =
+          Number.isFinite(bodyFontSizePx as any) ? Math.max(10, Math.min(200, Math.round(Number(bodyFontSizePx)))) : 48;
 
         addLog(
           `📐 Live layout slide ${slideIndex + 1} start: template=${tid || "none"} headlineLen=${headline.length} bodyLen=${body.length} headlineRanges=${headlineRanges.length} bodyRanges=${bodyRanges.length}`
@@ -1349,6 +1469,9 @@ export default function EditorShell() {
                 headlineRanges,
                 bodyRanges,
                 lineOverridesByKey,
+                headlineFontSizePx,
+                headlineTextAlign,
+                bodyTextAlign,
               });
         if (!nextLayout) continue;
 
@@ -1361,6 +1484,10 @@ export default function EditorShell() {
         const req: any = {
           headline,
           body,
+          headlineFontSizePx,
+          bodyFontSizePx: bodyFontSizePxSnap,
+          headlineTextAlign,
+          bodyTextAlign,
           settings: {
             backgroundColor: projectBackgroundColor || "#ffffff",
             textColor: projectTextColor || "#000000",
@@ -1784,6 +1911,19 @@ export default function EditorShell() {
         draftBody: loadedBody,
         draftHeadlineRanges: Array.isArray(inputSnap?.headlineStyleRanges) ? inputSnap.headlineStyleRanges : [],
         draftBodyRanges: Array.isArray(inputSnap?.bodyStyleRanges) ? inputSnap.bodyStyleRanges : [],
+        draftHeadlineFontSizePx: Number.isFinite((inputSnap as any)?.headlineFontSizePx as any)
+          ? Math.max(24, Math.min(120, Math.round(Number((inputSnap as any).headlineFontSizePx))))
+          : 76,
+          draftHeadlineTextAlign: (String((inputSnap as any)?.headlineTextAlign || "left") === "center"
+            ? "center"
+            : String((inputSnap as any)?.headlineTextAlign || "left") === "right"
+              ? "right"
+              : "left"),
+          draftBodyTextAlign: (String((inputSnap as any)?.bodyTextAlign || "left") === "center"
+            ? "center"
+            : String((inputSnap as any)?.bodyTextAlign || "left") === "right"
+              ? "right"
+              : "left"),
         layoutData: layoutSnap ? { success: true, layout: layoutSnap, imageUrl: null } : null,
         inputData: inputSnap || null,
         layoutHistory: [],
@@ -1791,6 +1931,14 @@ export default function EditorShell() {
     });
     setSlides(nextSlides);
     slidesRef.current = nextSlides;
+    // Restore project-wide body font size from slide 1 snapshot (stored redundantly per slide).
+    try {
+      const s0: any = nextSlides[0] || null;
+      const n = Number((s0 as any)?.inputData?.bodyFontSizePx ?? (loadedSlides?.[0] as any)?.input_snapshot?.bodyFontSizePx ?? NaN);
+      if (Number.isFinite(n)) setBodyFontSizePx(Math.max(10, Math.min(200, Math.round(n))));
+    } catch {
+      // ignore
+    }
     setActiveSlideIndex(0);
     // Restore slide 1 (index 0) snapshots into the engine immediately.
     if (nextSlides[0]?.layoutData && nextSlides[0]?.inputData) {
@@ -1830,6 +1978,9 @@ export default function EditorShell() {
         draftBody: loadedBody,
         draftHeadlineRanges: [],
         draftBodyRanges: [],
+        draftHeadlineFontSizePx: 76,
+        draftHeadlineTextAlign: "left",
+        draftBodyTextAlign: "left",
         layoutData: null,
         inputData: null,
         layoutHistory: [],
@@ -1841,6 +1992,7 @@ export default function EditorShell() {
     setSlides(nextSlides);
     slidesRef.current = nextSlides;
     setActiveSlideIndex(0);
+    setBodyFontSizePx(48);
     setProjectsDropdownOpen(false);
     await refreshProjectsList();
     handleNewCarousel();
@@ -2611,7 +2763,42 @@ export default function EditorShell() {
         <select
           className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
           value={templateTypeId}
-          onChange={(e) => setTemplateTypeId(e.target.value === "enhanced" ? "enhanced" : "regular")}
+          onChange={(e) => {
+            const nextType = e.target.value === "enhanced" ? "enhanced" : "regular";
+            setTemplateTypeId(nextType);
+            // Minimal fix: persist the project template type + prompt snapshot so Generate Copy uses the correct prompt.
+            if (currentProjectId) {
+              void (async () => {
+                try {
+                  const j = await fetchJson("/api/editor/projects/set-template-type", {
+                    method: "POST",
+                    body: JSON.stringify({ projectId: currentProjectId, templateTypeId: nextType }),
+                  });
+                  if (!j?.success) throw new Error(j?.error || "Failed to update template type");
+                  const p = j?.project || null;
+                  if (p) {
+                    setTemplateTypeId(p.template_type_id === "enhanced" ? "enhanced" : "regular");
+                    setProjectPromptSnapshot(p.prompt_snapshot || "");
+                    setProjectMappingSlide1(p.slide1_template_id_snapshot ?? null);
+                    setProjectMappingSlide2to5(p.slide2_5_template_id_snapshot ?? null);
+                    setProjectMappingSlide6(p.slide6_template_id_snapshot ?? null);
+                    // Refresh the visible Template Type Settings panel (prompt + emphasis) for the new type.
+                    try {
+                      await loadTemplateTypeEffective(nextType);
+                    } catch {
+                      // ignore
+                    }
+                    // Force a re-layout so the canvas matches the new template type/mapping immediately.
+                    enqueueLiveLayout([0, 1, 2, 3, 4, 5]);
+                    void refreshProjectsList();
+                  }
+                } catch (err: any) {
+                  console.error("[EditorShell] set-template-type failed:", err);
+                  addLog(`❌ Template Type update failed: ${String(err?.message || err)}`);
+                }
+              })();
+            }
+          }}
           disabled={switchingSlides}
         >
           <option value="regular">Regular</option>
@@ -3504,7 +3691,105 @@ export default function EditorShell() {
                 <div className="md:col-span-2 space-y-3">
                   {templateTypeId !== "regular" ? (
                     <div>
-                      <label className="block text-sm font-semibold text-slate-900 mb-1">Headline</label>
+                      <div className="flex items-end justify-between gap-3 mb-1">
+                        <label className="block text-sm font-semibold text-slate-900">Headline</label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Headline Font Size (px) 24–120</span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={24}
+                            max={120}
+                            step={1}
+                            className="w-20 h-9 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                            value={Number(slides[activeSlideIndex]?.draftHeadlineFontSizePx ?? 76)}
+                            disabled={loading || switchingSlides || copyGenerating}
+                            onChange={(e) => {
+                              const raw = Number((e.target as any).value);
+                              const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 76;
+                              // Treat this as an explicit edit (Undo should work).
+                              pushUndoSnapshot();
+                              setSlides((prev) =>
+                                prev.map((s, i) =>
+                                  i !== activeSlideIndex
+                                    ? s
+                                    : ({
+                                        ...s,
+                                        draftHeadlineFontSizePx: nextSize,
+                                        inputData: s.inputData && typeof s.inputData === "object"
+                                          ? { ...(s.inputData as any), headlineFontSizePx: nextSize }
+                                          : s.inputData,
+                                      } as any)
+                                )
+                              );
+                              slidesRef.current = slidesRef.current.map((s, i) =>
+                                i !== activeSlideIndex
+                                  ? s
+                                  : ({
+                                      ...s,
+                                      draftHeadlineFontSizePx: nextSize,
+                                      inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                        ? { ...((s as any).inputData as any), headlineFontSizePx: nextSize }
+                                        : (s as any).inputData,
+                                    } as any)
+                              );
+                              // Immediate reflow (deterministic).
+                              scheduleLiveLayout(activeSlideIndex);
+                            }}
+                            title="Sets the Headline font size for this slide (24–120px)."
+                          />
+                          <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden">
+                            {(["left", "center", "right"] as const).map((a) => {
+                              const active = (slides[activeSlideIndex]?.draftHeadlineTextAlign || "left") === a;
+                              const label = a === "left" ? "L" : a === "center" ? "C" : "R";
+                              return (
+                                <button
+                                  key={a}
+                                  type="button"
+                                  className={[
+                                    "h-9 w-9 text-sm font-semibold",
+                                    active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50",
+                                  ].join(" ")}
+                                  disabled={loading || switchingSlides || copyGenerating}
+                                  title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
+                                  onClick={() => {
+                                    const nextAlign = a;
+                                    pushUndoSnapshot();
+                                    setSlides((prev) =>
+                                      prev.map((s, i) =>
+                                        i !== activeSlideIndex
+                                          ? s
+                                          : ({
+                                              ...s,
+                                              draftHeadlineTextAlign: nextAlign,
+                                              inputData: s.inputData && typeof s.inputData === "object"
+                                                ? { ...(s.inputData as any), headlineTextAlign: nextAlign }
+                                                : s.inputData,
+                                            } as any)
+                                      )
+                                    );
+                                    slidesRef.current = slidesRef.current.map((s, i) =>
+                                      i !== activeSlideIndex
+                                        ? s
+                                        : ({
+                                            ...s,
+                                            draftHeadlineTextAlign: nextAlign,
+                                            inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                              ? { ...((s as any).inputData as any), headlineTextAlign: nextAlign }
+                                              : (s as any).inputData,
+                                          } as any)
+                                    );
+                                    // Immediate reflow (deterministic).
+                                    enqueueLiveLayout([activeSlideIndex]);
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                       <RichTextInput
                         valueText={slides[activeSlideIndex]?.draftHeadline || ""}
                         valueRanges={slides[activeSlideIndex]?.draftHeadlineRanges || []}
@@ -3625,37 +3910,6 @@ export default function EditorShell() {
                   {templateTypeId !== "regular" ? (
                     <>
                       <button
-                        className="w-full h-10 rounded-lg bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                        disabled={
-                          loading ||
-                          switchingSlides ||
-                          copyGenerating ||
-                          !(slides[activeSlideIndex]?.draftHeadline || "").trim() ||
-                          !(slides[activeSlideIndex]?.draftBody || "").trim()
-                        }
-                        onClick={() => {
-                          layoutDirtyRef.current = true;
-                          pushUndoSnapshot();
-                          enqueueLiveLayout([activeSlideIndex]);
-                        }}
-                      >
-                        {loading ? "Generating..." : "Generate Layout"}
-                      </button>
-
-                      <div className="flex items-center gap-2">
-                        <select
-                          className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold px-3"
-                          value={realignmentModel}
-                          onChange={(e) => setRealignmentModel(e.target.value as any)}
-                          disabled={realigning || copyGenerating}
-                        >
-                          <option value="gemini-computational">Gemini Computational</option>
-                          <option value="gemini">Gemini 3 Vision</option>
-                          <option value="claude">Claude Vision</option>
-                        </select>
-                      </div>
-
-                      <button
                         className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                         onClick={() => {
                           layoutDirtyRef.current = true;
@@ -3663,6 +3917,33 @@ export default function EditorShell() {
                           pushUndoSnapshot();
                           // Realign should repack line breaks like the original behavior.
                           // Wipe per-line overrides so wrap-flow can start fresh from the current text.
+                          // Realign is allowed to override alignment: reset to defaults.
+                          setSlides((prev) =>
+                            prev.map((s, i) =>
+                              i !== activeSlideIndex
+                                ? s
+                                : ({
+                                    ...s,
+                                    draftHeadlineTextAlign: "left",
+                                    draftBodyTextAlign: "left",
+                                    inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                      ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
+                                      : (s as any).inputData,
+                                  } as any)
+                            )
+                          );
+                          slidesRef.current = slidesRef.current.map((s, i) =>
+                            i !== activeSlideIndex
+                              ? s
+                              : ({
+                                  ...s,
+                                  draftHeadlineTextAlign: "left",
+                                  draftBodyTextAlign: "left",
+                                  inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                    ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
+                                    : (s as any).inputData,
+                                } as any)
+                          );
                           wipeLineOverridesForActiveSlide();
                           // Speed: for /editor we can do deterministic wrap-flow locally for the "Computational" option.
                           // The server realign route can be slow due to model calls (styles/vision).
@@ -3676,6 +3957,28 @@ export default function EditorShell() {
                       >
                         {realigning ? "Realigning..." : "Realign Text"}
                       </button>
+
+                      <AdvancedLayoutControls
+                        open={showAdvancedLayoutControls}
+                        onToggle={() => setShowAdvancedLayoutControls((v) => !v)}
+                        canGenerate={
+                          !(
+                            loading ||
+                            switchingSlides ||
+                            copyGenerating ||
+                            !(slides[activeSlideIndex]?.draftHeadline || "").trim() ||
+                            !(slides[activeSlideIndex]?.draftBody || "").trim()
+                          )
+                        }
+                        onGenerate={() => {
+                          layoutDirtyRef.current = true;
+                          pushUndoSnapshot();
+                          enqueueLiveLayout([activeSlideIndex]);
+                        }}
+                        realignmentModel={String(realignmentModel || "gemini-computational")}
+                        onChangeModel={(next) => setRealignmentModel(next as any)}
+                        disableModelSelect={realigning || copyGenerating}
+                      />
                     </>
                   ) : null}
                   <button

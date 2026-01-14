@@ -1487,7 +1487,19 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             (line as any)?.positionAnchorY === 'center'
               ? 'center'
               : 'top';
-          const originX = line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left';
+          // IMPORTANT:
+          // - In our deterministic layout snapshots, HEADLINE lines store `position.x` as the LEFT edge.
+          // - Fabric will interpret `left` differently depending on `originX`.
+          // If we set originX=center/right while keeping `left` as a left-edge value, the text can jump
+          // off-canvas and violate the contentRegion.
+          //
+          // Therefore:
+          // - For HEADLINE: force originX='left' always; alignment is handled via `textAlign` within the box.
+          // - For BODY: keep the existing behavior (origin follows textAlign).
+          const isHeadlineBlock = String((line as any)?.block || '').toUpperCase() === 'HEADLINE';
+          const originX = isHeadlineBlock
+            ? 'left'
+            : (line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left');
 
           // Enhanced (/editor) UX: make each line's selection box hug the text.
           // Since Enhanced is already pre-wrapped into separate lines, use IText (content-sized) instead of Textbox (lane-sized).
@@ -1495,7 +1507,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const isSingleLine = !String(line.text || '').includes('\n');
           const laneW = Math.max(1, Math.floor(Number(line.maxWidth || 1)));
 
-          const textObj = (useTight && isSingleLine && typeof fabric.IText === 'function')
+          // For "Docs-like" headline alignment, we need a lane-width box so center/right has room to align.
+          // If we used IText (tight width), alignment would be visually meaningless. Force Textbox for
+          // headline when using center/right.
+          const forceLaneWidthBox = isHeadlineBlock && (line.textAlign === 'center' || line.textAlign === 'right');
+
+          const textObj = (useTight && isSingleLine && typeof fabric.IText === 'function' && !forceLaneWidthBox)
             ? new fabric.IText(line.text, {
                 left: line.position.x,
                 top: line.position.y,

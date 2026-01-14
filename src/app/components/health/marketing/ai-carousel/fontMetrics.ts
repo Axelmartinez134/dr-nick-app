@@ -113,3 +113,53 @@ export function estimateAvgCharWidthEm(fontFamily: string, fontWeight: number): 
   }
 }
 
+// A less-conservative variant intended for deterministic wrap packing.
+// This may slightly UNDER-estimate when styles vary (bold/italic), so callers should validate
+// the resulting lines against actual measured pixel widths and retry if needed.
+export function estimateAvgCharWidthEmRelaxed(fontFamily: string, fontWeight: number): number {
+  const family = String(fontFamily || '').trim() || 'Inter, sans-serif';
+  const weight = Number.isFinite(fontWeight as any) ? Number(fontWeight) : 400;
+  const key = `relaxed::${family}@@${weight}`;
+  const cached = cache.get(key);
+  if (typeof cached === 'number' && Number.isFinite(cached)) return cached;
+
+  // If we can't measure (e.g., SSR), fall back to wrap-flow's default.
+  if (typeof document === 'undefined') return 0.56;
+
+  const isSerifFamily =
+    /Droid Serif/i.test(family) ||
+    /Noto Serif/i.test(family) ||
+    /Playfair Display/i.test(family) ||
+    /\bserif\b/i.test(family);
+  const conservativeEm = isSerifFamily ? 0.66 : 0.58;
+
+  try {
+    const fonts: any = (document as any).fonts;
+    // If we can't confirm the font is loaded, avoid measuring a fallback font (which can under-estimate).
+    if (fonts?.check && !fonts.check(`${weight} 16px ${family}`)) {
+      cache.set(key, conservativeEm);
+      return conservativeEm;
+    }
+  } catch {
+    // ignore; we'll measure below
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return 0.56;
+
+    const sizePx = 100; // large for stable measurement
+    ctx.font = `${weight} ${sizePx}px ${family}`;
+    const sample = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const w = ctx.measureText(sample).width;
+    const em = w / sample.length / sizePx;
+    // Relaxed: use the measured value (clamped) without forcing a conservative floor.
+    const out = clamp(em, 0.35, 1.2);
+    cache.set(key, out);
+    return out;
+  } catch {
+    return conservativeEm;
+  }
+}
+

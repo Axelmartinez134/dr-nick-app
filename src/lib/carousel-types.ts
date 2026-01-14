@@ -14,6 +14,13 @@ export interface CarouselTextRequest {
     headlineAvgCharWidthEm?: number;
     bodyAvgCharWidthEm?: number;
   };
+  // Enhanced editor: per-slide typography controls.
+  headlineFontSizePx?: number;
+  // Editor: project-wide body font size (UI says "Updates all slides").
+  // Persisted redundantly in each slide's input_snapshot for simplicity.
+  bodyFontSizePx?: number;
+  headlineTextAlign?: 'left' | 'center' | 'right';
+  bodyTextAlign?: 'left' | 'center' | 'right';
   settings?: {
     backgroundColor?: string;
     textColor?: string;
