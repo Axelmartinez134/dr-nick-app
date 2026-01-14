@@ -91,6 +91,22 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const interactionRef = useRef<{ clampText: boolean; clampImage: boolean; pushTextOut: boolean }>({ clampText: true, clampImage: true, pushTextOut: true });
     const onUserTextChangeRef = useRef<CarouselPreviewProps["onUserTextChange"]>(undefined);
     const onUserImageChangeRef = useRef<CarouselPreviewProps["onUserImageChange"]>(undefined);
+    // When the user moves a single line, we should NOT auto-move other lines (editor-like behavior).
+    // IMPORTANT: This must NOT be time-based because renders are async (font/image loads) and may exceed any small window.
+    // Instead, treat it as a one-shot "next render only" restriction and clear after enforcement runs.
+    const restrictEnforcementToTextIdRef = useRef<string | null>(null);
+    // Option #1 (editor-like): after a user moves/resizes a single text line, do NOT run the
+    // global post-render invariant enforcement (which can move other lines). We rely on the
+    // per-line auto-fix in `object:modified` for the moved line.
+    const skipNextGlobalInvariantEnforcementRef = useRef<boolean>(false);
+    // Multi-select move persistence:
+    // When Fabric moves an `activeSelection`, child objects' coordinates can be selection-relative.
+    // Persist by capturing absolute start positions and applying the selection dx/dy on release.
+    const selectionDragRef = useRef<null | {
+      active: boolean;
+      selectionStartTopLeft: { x: number; y: number };
+      itemsById: Map<string, { topLeft: { x: number; y: number }; originOffset: { x: number; y: number } }>;
+    }>(null);
     const showLayoutOverlaysRef = useRef<boolean>(false);
     const lastOverlayDebugRef = useRef<boolean | null>(null);
     const overlayDataRef = useRef<{
@@ -754,7 +770,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (!rect) return;
           const obj = e?.target;
           const role = obj?.data?.role;
-          if (role !== 'user-image' && role !== 'user-text') return;
+          const t = String(obj?.type || '').toLowerCase();
+          const isSelection = t === 'activeselection' || t === 'group';
+          if (!isSelection && role !== 'user-image' && role !== 'user-text') return;
           if (role === 'user-text') {
             if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
             // Phase 2: allow overlap but mark invalid against silhouette (mask) while dragging.
@@ -762,6 +780,36 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             const hasMask = !!overlayDataRef.current.maskU8;
             if (interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
             scheduleInvalidCheck(canvas, obj);
+          } else if (isSelection) {
+            // Capture multi-select drag start so we can persist via dx/dy on release.
+            if (!selectionDragRef.current?.active) {
+              try {
+                const selAabb = getAABBTopLeft(obj);
+                const children: any[] =
+                  (typeof (obj as any)?.getObjects === 'function' ? (obj as any).getObjects() : null) ||
+                  (Array.isArray((obj as any)?._objects) ? (obj as any)._objects : []) ||
+                  [];
+                const itemsById = new Map<string, { topLeft: { x: number; y: number }; originOffset: { x: number; y: number } }>();
+                children.forEach((child: any, idx: number) => {
+                  if (!child || child?.data?.role !== 'user-text') return;
+                  const a = getAABBTopLeft(child);
+                  const lk = typeof child?.data?.lineKey === 'string' ? child.data.lineKey : null;
+                  const liRaw = child?.data?.lineIndex;
+                  const li = Number.isFinite(liRaw as any) ? Number(liRaw) : null;
+                  const id = lk && lk.length ? `LK:${lk}` : (li != null ? `IDX:${li}` : `FALLBACK:${idx}`);
+                  itemsById.set(id, { topLeft: { x: a.x, y: a.y }, originOffset: { x: a.originOffsetX, y: a.originOffsetY } });
+                });
+                if (itemsById.size > 0) {
+                  selectionDragRef.current = {
+                    active: true,
+                    selectionStartTopLeft: { x: selAabb.x, y: selAabb.y },
+                    itemsById,
+                  };
+                }
+              } catch {
+                // ignore
+              }
+            }
           } else if (role === 'user-image') {
             if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
@@ -820,12 +868,75 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         const onObjectModified = (e: any) => {
           const obj = e?.target;
           if (!obj) return;
+          // Multi-select drag: Fabric emits object:modified with target type "ActiveSelection" (Fabric 5+).
+          // If we don't persist these per-line, the group move is temporary and will snap back on next render.
+          // Robust strategy: bake the selection transform into the children (discard), persist each child, then recreate selection.
+          try {
+            const t = String((obj as any)?.type || '').toLowerCase();
+            const isSelection = t === 'activeselection' || t === 'group';
+            if (isSelection) {
+              const childrenAll: any[] =
+                (typeof (obj as any).getObjects === 'function' ? (obj as any).getObjects() : null) ||
+                (Array.isArray((obj as any)._objects) ? (obj as any)._objects : []) ||
+                [];
+              const children = childrenAll.filter((c: any) => c?.data?.role === 'user-text');
+              if (children.length > 0) {
+                // Skip global enforcement once after this commit so nothing else snaps.
+                skipNextGlobalInvariantEnforcementRef.current = true;
+                // Clear any stale drag state from the older implementation.
+                selectionDragRef.current = null;
+
+                // Bake selection transform into children by discarding the active selection.
+                try {
+                  canvas.discardActiveObject?.();
+                } catch {
+                  // ignore
+                }
+
+                // Persist each child's now-finalized absolute position.
+                children.forEach((child: any) => {
+                  try {
+                    notifyUserText(child, false);
+                  } catch {
+                    // ignore per-child
+                  }
+                });
+
+                // Recreate selection so UX stays the same after release.
+                try {
+                  const fabric = fabricModuleRef.current;
+                  if (fabric && typeof fabric.ActiveSelection === 'function') {
+                    const sel = new fabric.ActiveSelection(children, { canvas });
+                    canvas.setActiveObject?.(sel);
+                  }
+                } catch {
+                  // ignore
+                }
+
+                canvas.requestRenderAll?.();
+                return;
+              }
+            }
+          } catch {
+            // ignore; fall through to single-object handling
+          }
           if (obj?.data?.role === 'user-text') {
+            // The state update/persist that follows a user move/resize triggers a re-render; skipping the
+            // next global enforcement prevents "one move → whole canvas snaps".
+            skipNextGlobalInvariantEnforcementRef.current = true;
+            try {
+              const id = String(obj?.data?.lineKey || obj?.data?.lineIndex || '');
+              if (id) {
+                restrictEnforcementToTextIdRef.current = id;
+              }
+            } catch {
+              // ignore
+            }
             // Phase 3: on release, if invalid, nudge the dragged line minimally until it is valid.
             try {
               const invalid = computeInvalidForUserText(canvas, obj);
               if (invalid) {
-          const next = findNearestValidTopLeft(canvas, obj, getOtherUserTextAABBs(canvas, obj));
+                const next = findNearestValidTopLeft(canvas, obj, getOtherUserTextAABBs(canvas, obj));
                 if (next) {
                   const aabbNow = getAABBTopLeft(obj);
                   obj.left = next.x + aabbNow.originOffsetX;
@@ -1703,6 +1814,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // - Must NOT overlap other text lines
       // IMPORTANT: Skip while the user is actively editing text to avoid disrupting typing.
       try {
+        // Option #1: if this render was triggered by a user move/resize persist, skip global enforcement once.
+        if (skipNextGlobalInvariantEnforcementRef.current) {
+          skipNextGlobalInvariantEnforcementRef.current = false;
+        } else {
         const cb = onUserTextChangeRef.current;
         const allowed = constraintsRef.current.allowedRect;
         if (allowed) {
@@ -1717,6 +1832,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const maskH = data.maskH;
           const mask = (maskU8 && maskW > 0 && maskH > 0) ? { u8: maskU8, w: maskW, h: maskH } : null;
 
+          // Editor UX: moving one line should not cause other lines to auto-move.
+          // After a user drag release, only enforce invariants for that one line on the next render.
+          const onlyId = restrictEnforcementToTextIdRef.current || null;
+
           const items = textObjs.map((o: any, idx: number) => {
             try {
               if (typeof o?.initDimensions === 'function') o.initDimensions();
@@ -1730,7 +1849,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             return {
               id,
               aabb: { left: a.x, top: a.y, right: a.x + a.width, bottom: a.y + a.height },
-              isEditing: !!(o as any).isEditing,
+              // When onlyId is active, mark all other lines as "editing" so the enforcement loop skips moving them,
+              // but still treats their AABBs as obstacles for the moved line.
+              isEditing: onlyId ? (id !== onlyId) : !!(o as any).isEditing,
             };
           });
 
@@ -1748,6 +1869,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           for (const r of results) {
             const o = byId.get(r.id);
             if (!o) continue;
+            // If the user just moved one line, do NOT auto-move any other lines (editor-like).
+            if (onlyId && String(r.id) !== String(onlyId)) continue;
             if ((o as any).isEditing) continue;
 
             if (r.stillInvalid) {
@@ -1787,6 +1910,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           }
 
           if (changed) canvas.requestRenderAll?.();
+          // Clear the one-shot restriction after this render's enforcement has run.
+          if (onlyId) {
+            restrictEnforcementToTextIdRef.current = null;
+          }
+        }
         }
       } catch {
         // ignore

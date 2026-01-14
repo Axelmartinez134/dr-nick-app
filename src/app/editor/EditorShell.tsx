@@ -1591,11 +1591,24 @@ export default function EditorShell() {
     if (templateTypeId !== "regular") return;
     const slideIndex = activeSlideIndex;
     const curSlide = slidesRef.current[slideIndex] || initSlide();
+    // IMPORTANT: Use slidesRef (sync) as the base layout so rapid consecutive moves don't overwrite each other
+    // due to async React state updates (layoutData).
     const baseLayout: any =
-      (slideIndex === activeSlideIndex ? (layoutData as any)?.layout : null) ||
       (curSlide as any)?.layoutData?.layout ||
+      (slideIndex === activeSlideIndex ? (layoutData as any)?.layout : null) ||
       null;
     if (!baseLayout || !Array.isArray(baseLayout.textLines) || !baseLayout.textLines[change.lineIndex]) return;
+
+    // If there is a pending debounced live-layout for this slide (e.g., from recent typing),
+    // cancel it so a full reflow can't immediately overwrite this manual move on release.
+    try {
+      const t = liveLayoutTimeoutsRef.current[slideIndex];
+      if (t) window.clearTimeout(t);
+      liveLayoutTimeoutsRef.current[slideIndex] = null;
+      liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((i) => i !== slideIndex);
+    } catch {
+      // ignore
+    }
 
     // Enable Undo after on-canvas commits (move/resize/text edit). Only push when something truly changed.
     try {
@@ -1684,11 +1697,24 @@ export default function EditorShell() {
     if (!currentProjectId) return;
     const slideIndex = activeSlideIndex;
     const curSlide = slidesRef.current[slideIndex] || initSlide();
+    // IMPORTANT: Use slidesRef (sync) as the base layout so rapid consecutive moves don't overwrite each other
+    // due to async React state updates (layoutData).
     const baseLayout: any =
-      (slideIndex === activeSlideIndex ? (layoutData as any)?.layout : null) ||
       (curSlide as any)?.layoutData?.layout ||
+      (slideIndex === activeSlideIndex ? (layoutData as any)?.layout : null) ||
       null;
     if (!baseLayout || !Array.isArray(baseLayout.textLines) || !baseLayout.textLines[change.lineIndex]) return;
+
+    // If there is a pending debounced live-layout for this slide (e.g., from recent typing),
+    // cancel it so a full reflow can't immediately overwrite this manual move on release.
+    try {
+      const t = liveLayoutTimeoutsRef.current[slideIndex];
+      if (t) window.clearTimeout(t);
+      liveLayoutTimeoutsRef.current[slideIndex] = null;
+      liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((i) => i !== slideIndex);
+    } catch {
+      // ignore
+    }
 
     const changeKey =
       change?.lineKey ||
