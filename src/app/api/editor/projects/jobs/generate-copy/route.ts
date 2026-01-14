@@ -456,13 +456,26 @@ export async function POST(request: NextRequest) {
 
     // Persist slides (overwrite everything model)
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:save' });
+
+    // Preserve any existing per-line override state stored in input_snapshot (Phase 4).
+    const { data: existingInputs } = await supabase
+      .from('carousel_project_slides')
+      .select('slide_index, input_snapshot')
+      .eq('project_id', project.id);
+    const existingByIdx = new Map<number, any>();
+    (existingInputs || []).forEach((r: any) => {
+      if (typeof r?.slide_index === 'number') existingByIdx.set(r.slide_index, r?.input_snapshot || null);
+    });
+
     await Promise.all(
       slides.map((s, idx) => {
         const patch: any = {
           headline: templateTypeId === 'enhanced' ? (s.headline || '') : null,
           body: s.body || '',
         };
+        const prev = existingByIdx.get(idx) || null;
         patch.input_snapshot = {
+          ...(prev && typeof prev === 'object' ? prev : {}),
           headlineStyleRanges: templateTypeId === 'enhanced' ? (headlineStyleRangesBySlide[idx] || []) : [],
           bodyStyleRanges: bodyStyleRangesBySlide[idx] || [],
         };

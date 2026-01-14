@@ -35,11 +35,16 @@ interface CarouselPreviewProps {
   clampUserTextToContentRect?: boolean; // default true
   clampUserImageToContentRect?: boolean; // default true
   pushTextOutOfUserImage?: boolean; // default true
-  onUserTextChange?: (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => void;
+  onUserTextChange?: (change: { lineIndex: number; lineKey?: string; x: number; y: number; maxWidth: number; text?: string }) => void;
   onUserImageChange?: (change: { x: number; y: number; width: number; height: number }) => void;
+  // Display sizing (CSS pixels). The canvas internal resolution remains 1080×1440.
+  // Avoid using parent CSS transforms for scaling; they break Fabric hit-testing.
+  displayWidthPx?: number;  // default 540
+  displayHeightPx?: number; // default 720
 }
 
-const DISPLAY_ZOOM = 0.5;
+const INTERNAL_W = 1080;
+const INTERNAL_H = 1440;
 
 const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
   (
@@ -64,6 +69,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       showLayoutOverlays,
       onUserTextChange,
       onUserImageChange,
+      displayWidthPx,
+      displayHeightPx,
     },
     ref
   ) => {
@@ -96,6 +103,17 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const clampText = clampUserTextToContentRect !== false;
     const clampImage = clampUserImageToContentRect !== false;
     const pushTextOut = pushTextOutOfUserImage !== false;
+
+    const displayW = Math.max(1, Math.round(Number(displayWidthPx ?? 540)));
+    const displayH = Math.max(1, Math.round(Number(displayHeightPx ?? 720)));
+    const computeDisplayZoom = () => {
+      // Prefer width ratio; keep aspect stable (3:4).
+      const zx = displayW / INTERNAL_W;
+      const zy = displayH / INTERNAL_H;
+      const z = Number.isFinite(zx) && Number.isFinite(zy) ? Math.min(zx, zy) : 0.5;
+      // Guardrails
+      return Math.max(0.05, Math.min(4, z));
+    };
 
     // Debug hook: confirm wiring regardless of Fabric lifecycle.
     useEffect(() => {
@@ -249,7 +267,35 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       return false;
     };
 
-    const findNearestValidTopLeft = (canvas: any, obj: any): null | { x: number; y: number } => {
+    const getOtherUserTextAABBs = (canvas: any, self: any): Array<{ left: number; top: number; right: number; bottom: number }> => {
+      try {
+        const out: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+        const objs = canvas?.getObjects?.() || [];
+        for (const o of objs) {
+          if (!o || o === self) continue;
+          if (o?.data?.role !== 'user-text') continue;
+          // Skip actively edited lines; they should not be moved/blocked by auto-fix.
+          if ((o as any).isEditing) continue;
+          const a = getAABBTopLeft(o);
+          const pad = 2; // small separation so lines don't visually collide
+          out.push({
+            left: a.x - pad,
+            top: a.y - pad,
+            right: a.x + a.width + pad,
+            bottom: a.y + a.height + pad,
+          });
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    };
+
+    const findNearestValidTopLeft = (
+      canvas: any,
+      obj: any,
+      avoidAabbs?: Array<{ left: number; top: number; right: number; bottom: number }>
+    ): null | { x: number; y: number } => {
       const allowed = constraintsRef.current.allowedRect;
       if (!allowed) return null;
       if (!obj) return null;
@@ -279,9 +325,17 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         const imgAabb = { left: imageRect.x, top: imageRect.y, right: imageRect.x + imageRect.width, bottom: imageRect.y + imageRect.height };
         return rectsOverlapAABB(aabb, imgAabb);
       };
+      const overlapsOtherTextAt = (p: { x: number; y: number }) => {
+        if (!avoidAabbs || avoidAabbs.length === 0) return false;
+        const aabb = { left: p.x, top: p.y, right: p.x + w, bottom: p.y + h };
+        for (const other of avoidAabbs) {
+          if (rectsOverlapAABB(aabb, other)) return true;
+        }
+        return false;
+      };
 
       // If current is valid, keep it.
-      if (withinAllowed(cur) && !isInvalidAt(cur)) return cur;
+      if (withinAllowed(cur) && !isInvalidAt(cur) && !overlapsOtherTextAt(cur)) return cur;
 
       // Search outward in a diamond (Manhattan distance) so the first hit is "minimal nudge".
       const step = 4; // px
@@ -297,7 +351,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // If dy is 0, the two candidates are identical.
           for (const p of candidates) {
             if (!withinAllowed(p)) continue;
-            if (!isInvalidAt(p)) return p;
+            if (!isInvalidAt(p) && !overlapsOtherTextAt(p)) return p;
           }
         }
       }
@@ -626,14 +680,20 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
         console.log('[Preview Vision] 🖼️ Creating canvas (1080x1440)...');
         const canvas = new fabric.Canvas(canvasRef.current, {
-          width: 1080,
-          height: 1440,
+          width: INTERNAL_W,
+          height: INTERNAL_H,
           backgroundColor,
         });
 
-        // Set zoom to 0.5 for display (1080x1440 -> 540x720)
-        canvas.setZoom(DISPLAY_ZOOM);
-        console.log('[Preview Vision] 🔍 Canvas zoom set to', DISPLAY_ZOOM, 'for display');
+        // Set zoom for display (keep in sync with CSS sizing; no parent transforms)
+        const z = computeDisplayZoom();
+        canvas.setZoom(z);
+        console.log('[Preview Vision] 🔍 Canvas zoom set to', z, 'for display');
+        try {
+          canvas.calcOffset?.();
+        } catch {
+          // ignore
+        }
 
         fabricCanvasRef.current = canvas;
         setFabricLoaded(true);
@@ -835,6 +895,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (typeof obj.setCoords === 'function') obj.setCoords();
         };
 
+        // Track active text editing so we can avoid persisting geometry-only updates that would
+        // immediately overwrite a just-committed text edit.
+        const editStateRef: { active: boolean; lastExitAt: number } = { active: false, lastExitAt: 0 };
+
         const onObjectMoving = (e: any) => {
           const rect = constraintsRef.current.allowedRect;
           if (!rect) return;
@@ -878,6 +942,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const aabb = getAABBTopLeft(obj);
           const next: any = {
             lineIndex,
+            lineKey: typeof obj?.data?.lineKey === 'string' ? obj.data.lineKey : undefined,
             // Persist x/y in the same coordinate system the layout uses:
             // - For center-anchored Y, store obj.top (centerY).
             // - Otherwise store AABB top-left y.
@@ -910,7 +975,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             try {
               const invalid = computeInvalidForUserText(canvas, obj);
               if (invalid) {
-                const next = findNearestValidTopLeft(canvas, obj);
+          const next = findNearestValidTopLeft(canvas, obj, getOtherUserTextAABBs(canvas, obj));
                 if (next) {
                   const aabbNow = getAABBTopLeft(obj);
                   obj.left = next.x + aabbNow.originOffsetX;
@@ -923,14 +988,37 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             } catch {
               // ignore
             }
-            notifyUserText(obj, false);
+            // If this modification was caused by finishing text editing, skip the geometry-only
+            // persist so we don't accidentally re-save stale text from the pre-edit snapshot.
+            if (Date.now() - (editStateRef.lastExitAt || 0) > 250) {
+              notifyUserText(obj, false);
+            }
           }
           if (obj?.data?.role === 'user-image') notifyUserImage(obj);
         };
-        const onTextChanged = (e: any) => {
-          const obj = e?.target;
-          if (!obj || obj?.data?.role !== 'user-text') return;
-          notifyUserText(obj, true);
+        // IMPORTANT: Do NOT persist on every keystroke (text:changed) because it triggers React updates
+        // that rebuild the Fabric canvas and kick the user out of edit mode.
+        // Commit text ONLY when Fabric signals editing has ended (canvas-level event).
+
+        const onTextEditingEntered = (e: any) => {
+          try {
+            const obj = e?.target;
+            if (!obj || obj?.data?.role !== 'user-text') return;
+            editStateRef.active = true;
+          } catch {
+            // ignore
+          }
+        };
+        const onTextEditingExited = (e: any) => {
+          try {
+            const obj = e?.target;
+            if (!obj || obj?.data?.role !== 'user-text') return;
+            editStateRef.active = false;
+            editStateRef.lastExitAt = Date.now();
+            notifyUserText(obj, true);
+          } catch {
+            // ignore
+          }
         };
 
         // Debug overlay stacking: template/user images load async and can be added after overlays.
@@ -960,10 +1048,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         canvas.on('object:moving', onObjectMoving);
         canvas.on('object:scaling', onObjectScaling);
         canvas.on('object:modified', onObjectModified);
-        canvas.on('text:changed', onTextChanged);
+        canvas.on('text:editing:entered', onTextEditingEntered as any);
+        canvas.on('text:editing:exited', onTextEditingExited as any);
         canvas.on('object:added', onObjectAdded);
         // Store for cleanup
-        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextChanged, onObjectAdded };
+        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextEditingEntered, onTextEditingExited, onObjectAdded };
       }).catch((error) => {
         console.error('[Preview Vision] ❌ Failed to load Fabric.js:', error);
       });
@@ -981,7 +1070,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               c.off('object:moving', h.onObjectMoving);
               c.off('object:scaling', h.onObjectScaling);
               c.off('object:modified', h.onObjectModified);
-              c.off('text:changed', h.onTextChanged);
+              c.off('text:editing:entered', h.onTextEditingEntered);
+              c.off('text:editing:exited', h.onTextEditingExited);
               c.off('object:added', h.onObjectAdded);
             }
             if (ov) {
@@ -996,6 +1086,33 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         }
       };
     }, []); // Only run once on mount
+
+    // Keep Fabric's pointer mapping accurate when display size changes.
+    useEffect(() => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) return;
+      try {
+        const z = computeDisplayZoom();
+        if (typeof canvas.setZoom === 'function') {
+          canvas.setZoom(z);
+        }
+        if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
+          canvas.viewportTransform[4] = 0;
+          canvas.viewportTransform[5] = 0;
+        }
+        canvas.requestRenderAll?.();
+        // Offset depends on DOM layout; refresh after paint.
+        window.requestAnimationFrame(() => {
+          try {
+            canvas.calcOffset?.();
+          } catch {
+            // ignore
+          }
+        });
+      } catch {
+        // ignore
+      }
+    }, [displayW, displayH, fabricLoaded]);
 
     // Expose canvas instance and utility methods to parent via ref
     useImperativeHandle(ref, () => ({
@@ -1259,7 +1376,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // IMPORTANT: fabric.Canvas#clear() can reset viewportTransform/zoom depending on Fabric version.
       // Re-apply display zoom deterministically every render so coordinates & hit-testing remain stable.
       if (typeof canvas.setZoom === 'function') {
-        canvas.setZoom(DISPLAY_ZOOM);
+        canvas.setZoom(computeDisplayZoom());
       }
       if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
         // Ensure no translation drift
@@ -1558,8 +1675,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 editable: true,
                 splitByGrapheme: false, // Wrap at word boundaries, not mid-word
               });
-          (textObj as any).data = { role: 'user-text', lineIndex: index };
+          (textObj as any).data = { role: 'user-text', lineIndex: index, lineKey: (line as any)?.lineKey, block: (line as any)?.block };
           disableRotationControls(textObj);
+
+          // Text commit is handled at the canvas level via `text:editing:exited` so it's reliable
+          // across Fabric object types/versions.
 
           // Apply style ranges (bold, italic, etc.)
           if (line.styles && line.styles.length > 0) {
@@ -1705,7 +1825,71 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Clear legacy object-based overlays (we now draw overlays in the top overlay layer).
       clearDebugOverlays(canvas);
 
+      // Option A (hybrid, product-safe): after any reflow/render, enforce invariants for user text:
+      // - Must stay inside allowed rect
+      // - Must NOT intersect the silhouette mask (when available)
+      // We apply the same "minimal nudge" strategy used on drag release (Phase 3).
+      // IMPORTANT: Skip while the user is actively editing text to avoid disrupting typing.
+      try {
+        const cb = onUserTextChangeRef.current;
+        const objs = canvas.getObjects?.() || [];
+        let changed = false;
+        for (const o of objs) {
+          if (!o || o?.data?.role !== 'user-text') continue;
+          // Fabric IText/Textbox sets `isEditing` while actively editing.
+          if ((o as any).isEditing) continue;
+          const invalid = computeInvalidForUserText(canvas, o);
+          if (!invalid) {
+            setInvalidHighlight(o, false);
+            continue;
+          }
+          const before = getAABBTopLeft(o);
+          const next = findNearestValidTopLeft(canvas, o, getOtherUserTextAABBs(canvas, o));
+          if (!next) {
+            // Could not find a valid position; keep highlight so it is visible.
+            setInvalidHighlight(o, true);
+            continue;
+          }
+          const aabbNow = getAABBTopLeft(o);
+          o.left = next.x + aabbNow.originOffsetX;
+          o.top = next.y + aabbNow.originOffsetY;
+          if (typeof o.setCoords === 'function') o.setCoords();
+          setInvalidHighlight(o, false);
+          const after = getAABBTopLeft(o);
+          const moved = Math.abs(after.x - before.x) > 0.5 || Math.abs(after.y - before.y) > 0.5;
+          if (moved) {
+            changed = true;
+            // Persist corrected geometry for the active slide only (cb is only wired for active).
+            if (cb) {
+              try {
+                // geometry only; text is unchanged here
+                const lineIndex = Number(o?.data?.lineIndex ?? 0);
+                cb({
+                  lineIndex,
+                  lineKey: typeof o?.data?.lineKey === 'string' ? o.data.lineKey : undefined,
+                  x: typeof o?.left === 'number' ? o.left : after.x,
+                  y: (o?.originY === 'center' && typeof o?.top === 'number') ? o.top : after.y,
+                  maxWidth: Math.max(1, after.width),
+                } as any);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+        if (changed) {
+          canvas.requestRenderAll?.();
+        }
+      } catch {
+        // ignore
+      }
+
       canvas.renderAll();
+      try {
+        canvas.calcOffset?.();
+      } catch {
+        // ignore
+      }
       console.log('[Preview Vision] ✅ Render complete! Objects on canvas:', canvas.getObjects().length);
       })();
 
@@ -1720,14 +1904,14 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays]);
+    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     return (
       <div className="flex flex-col items-center space-y-4">
         <div 
           style={{ 
-            width: '540px', 
-            height: '720px',
+            width: `${displayW}px`,
+            height: `${displayH}px`,
             border: '2px solid #e5e7eb',
             borderRadius: '8px',
             overflow: 'hidden',
@@ -1737,10 +1921,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         >
           <canvas 
             ref={canvasRef}
-            width={1080}
-            height={1440}
+            width={INTERNAL_W}
+            height={INTERNAL_H}
             style={{ 
-              display: 'block'
+              display: 'block',
+              width: `${displayW}px`,
+              height: `${displayH}px`,
             }} 
           />
         </div>

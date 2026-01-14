@@ -94,6 +94,24 @@ export default function EditorShell() {
   const liveLayoutRunningRef = useRef(false);
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
   const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
+  const lastAppliedOverrideKeysRef = useRef<Record<number, string[]>>({});
+
+  const normalizeLineText = (s: string) => String(s || "").replace(/\s+/g, " ").trim();
+
+  const buildLineKey = (src: any, fallbackIndex: number) => {
+    try {
+      const block = String(src?.block || "UNK");
+      const p = Number.isInteger(src?.paragraphIndex) ? Number(src.paragraphIndex) : 0;
+      const parts = Array.isArray(src?.parts) ? src.parts : [];
+      const ranges = parts
+        .map((x: any) => `${Number(x?.sourceStart ?? -1)}-${Number(x?.sourceEnd ?? -1)}`)
+        .join(",");
+      if (ranges && !ranges.includes("NaN")) return `${block}:${p}:${ranges}`;
+    } catch {
+      // ignore
+    }
+    return `IDX:${fallbackIndex}`;
+  };
 
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
@@ -1018,6 +1036,7 @@ export default function EditorShell() {
     image: any | null;
     headlineRanges?: InlineStyleRange[];
     bodyRanges?: InlineStyleRange[];
+    lineOverridesByKey?: Record<string, any> | null;
   }): VisionLayoutDecision | null => {
     const inset = getTemplateContentRectInset(params.templateSnapshot);
     const imageBounds = params.image
@@ -1057,6 +1076,89 @@ export default function EditorShell() {
       imageAlphaMask: (params.image as any)?.bgRemovalEnabled === false ? undefined : (params.image as any)?.mask || undefined,
     });
 
+    // Phase 4: attach stable line keys and apply per-line overrides (x/y/maxWidth) keyed by source ranges.
+    const overridesByKey = (params.lineOverridesByKey && typeof params.lineOverridesByKey === "object")
+      ? params.lineOverridesByKey
+      : null;
+    if (Array.isArray(meta?.lineSources) && Array.isArray(layout?.textLines)) {
+      const usedKeys: string[] = [];
+      const usedOverrideKeys = new Set<string>();
+      const inset = getTemplateContentRectInset(params.templateSnapshot) || null;
+      const clampToInset = (l: any) => {
+        if (!inset) return l;
+        const w = Math.max(1, Number(l.maxWidth || 1));
+        const h = Math.max(1, Number(l.baseSize || 0) * Number(l.lineHeight || 1.2));
+        const xMin = inset.x;
+        const yMin = inset.y;
+        const xMax = inset.x + inset.width - w;
+        const yMax = inset.y + inset.height - h;
+        const nx = Math.max(xMin, Math.min(xMax, Number(l.position?.x ?? 0)));
+        const ny = Math.max(yMin, Math.min(yMax, Number(l.position?.y ?? 0)));
+        return { ...l, position: { x: nx, y: ny } };
+      };
+
+      // Fallback: also allow matching by normalized line text if keys shifted.
+      const overrideList = overridesByKey ? Object.entries(overridesByKey).map(([k, v]) => ({ k, v })) : [];
+      const byText = new Map<string, Array<{ k: string; v: any }>>();
+      for (const ov of overrideList) {
+        const t = normalizeLineText(String(ov.v?.lineText || ov.v?.text || ""));
+        if (!t) continue;
+        const arr = byText.get(t) || [];
+        arr.push(ov);
+        byText.set(t, arr);
+      }
+
+      layout.textLines = layout.textLines.map((l: any, idx: number) => {
+        const src = meta.lineSources?.[idx];
+        const key = buildLineKey(src, idx);
+        usedKeys.push(key);
+        let next = { ...l, lineKey: key, block: src?.block || "BODY" };
+
+        if (overridesByKey) {
+          const direct = overridesByKey[key];
+          if (direct && typeof direct === "object") {
+            usedOverrideKeys.add(key);
+            const hasTextOverride = typeof (direct as any).text === "string";
+            next = {
+              ...next,
+              position: { x: Number(direct.x) || next.position.x, y: Number(direct.y) || next.position.y },
+              maxWidth: Math.max(1, Number(direct.maxWidth) || next.maxWidth || 1),
+              ...(hasTextOverride ? { text: String((direct as any).text || ""), styles: [] } : {}),
+            };
+          } else {
+            const t = normalizeLineText(String(next.text || ""));
+            const cands = t ? (byText.get(t) || []) : [];
+            if (cands.length > 0) {
+              // Choose closest hintStart if present, otherwise first unused.
+              const curStart = Number((src?.parts?.[0] as any)?.sourceStart ?? -1);
+              const pick = cands
+                .filter((c) => !usedOverrideKeys.has(c.k))
+                .sort((a, b) => {
+                  const ha = Number(a.v?.hintStart ?? -1);
+                  const hb = Number(b.v?.hintStart ?? -1);
+                  if (curStart >= 0 && ha >= 0 && hb >= 0) return Math.abs(ha - curStart) - Math.abs(hb - curStart);
+                  return 0;
+                })[0];
+              if (pick) {
+                usedOverrideKeys.add(pick.k);
+                const hasTextOverride = typeof (pick.v as any)?.text === "string";
+                next = {
+                  ...next,
+                  position: { x: Number(pick.v.x) || next.position.x, y: Number(pick.v.y) || next.position.y },
+                  maxWidth: Math.max(1, Number(pick.v.maxWidth) || next.maxWidth || 1),
+                  ...(hasTextOverride ? { text: String((pick.v as any).text || ""), styles: [] } : {}),
+                };
+              }
+            }
+          }
+        }
+
+        return clampToInset(next);
+      });
+
+      lastAppliedOverrideKeysRef.current[params.slideIndex] = Array.from(usedOverrideKeys);
+    }
+
     // Apply inline style ranges (bold/italic/underline) to the computed line objects.
     if (Array.isArray(meta?.lineSources) && Array.isArray(layout?.textLines)) {
       const headlineRanges = params.headlineRanges || [];
@@ -1065,7 +1167,7 @@ export default function EditorShell() {
         const src = meta.lineSources?.[idx];
         if (!src?.parts) return l;
         const ranges = src.block === "HEADLINE" ? headlineRanges : bodyRanges;
-        return { ...l, styles: buildTextStylesForLine(src.parts, ranges) };
+        return { ...l, block: src.block, styles: buildTextStylesForLine(src.parts, ranges) };
       });
     }
 
@@ -1199,6 +1301,12 @@ export default function EditorShell() {
         );
 
         const image = getExistingImageForSlide(slideIndex);
+        const prevInput = (slide as any)?.inputData || null;
+        const lineOverridesByKey =
+          prevInput && typeof prevInput === "object" && prevInput.lineOverridesByKey && typeof prevInput.lineOverridesByKey === "object"
+            ? prevInput.lineOverridesByKey
+            : null;
+
         const nextLayout =
           templateTypeId === "regular"
             ? computeRegularBodyTextboxLayout({
@@ -1217,6 +1325,7 @@ export default function EditorShell() {
                 image,
                 headlineRanges,
                 bodyRanges,
+                lineOverridesByKey,
               });
         if (!nextLayout) continue;
 
@@ -1237,6 +1346,7 @@ export default function EditorShell() {
           templateId: tid || undefined,
           headlineStyleRanges: headlineRanges,
           bodyStyleRanges: bodyRanges,
+          ...(lineOverridesByKey ? { lineOverridesByKey } : {}),
         } satisfies CarouselTextRequest as any;
 
         const nextLayoutData = {
@@ -1297,6 +1407,34 @@ export default function EditorShell() {
     bodyFontSizeDebounceRef.current = window.setTimeout(() => {
       enqueueLiveLayout(Array.from({ length: slideCount }, (_, i) => i));
     }, LIVE_LAYOUT_DEBOUNCE_MS);
+  };
+
+  const wipeLineOverridesForActiveSlide = (): { nextInput: any | null } => {
+    if (templateTypeId !== "enhanced") return { nextInput: null };
+    if (!currentProjectId) return { nextInput: null };
+    const slideIndex = activeSlideIndex;
+    const curSlide = slidesRef.current[slideIndex] || initSlide();
+    const cur = (slideIndex === activeSlideIndex ? inputData : null) || (curSlide as any)?.inputData || null;
+    if (!cur || typeof cur !== "object") return { nextInput: null };
+    if (!(cur as any).lineOverridesByKey) return { nextInput: null };
+
+    const next = { ...(cur as any) };
+    try {
+      delete (next as any).lineOverridesByKey;
+    } catch {
+      // ignore
+    }
+
+    setSlides((prev) =>
+      prev.map((s, i) => (i !== slideIndex ? s : ({ ...s, inputData: next } as any)))
+    );
+    slidesRef.current = slidesRef.current.map((s, i) => (i !== slideIndex ? s : ({ ...s, inputData: next } as any)));
+    if (slideIndex === activeSlideIndex) setInputData(next as any);
+
+    // Persist wipe (best-effort, async) so Realign starts fresh next time too.
+    void saveSlidePatch(slideIndex, { inputSnapshot: next });
+
+    return { nextInput: next };
   };
 
   const handleRegularCanvasTextChange = (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => {
@@ -1376,7 +1514,7 @@ export default function EditorShell() {
     }, 500);
   };
 
-  const handleEnhancedCanvasTextChange = (change: { lineIndex: number; x: number; y: number; maxWidth: number; text?: string }) => {
+  const handleEnhancedCanvasTextChange = (change: { lineIndex: number; lineKey?: string; x: number; y: number; maxWidth: number; text?: string }) => {
     if (templateTypeId !== "enhanced") return;
     if (!currentProjectId) return;
     const slideIndex = activeSlideIndex;
@@ -1387,8 +1525,15 @@ export default function EditorShell() {
       null;
     if (!baseLayout || !Array.isArray(baseLayout.textLines) || !baseLayout.textLines[change.lineIndex]) return;
 
+    const changeKey =
+      change?.lineKey ||
+      (baseLayout.textLines?.[change.lineIndex] as any)?.lineKey ||
+      null;
+
     const nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
-      if (idx !== change.lineIndex) return l;
+      const lk = (l as any)?.lineKey;
+      const hit = (changeKey && lk && lk === changeKey) || idx === change.lineIndex;
+      if (!hit) return l;
       return {
         ...l,
         text: change.text !== undefined ? change.text : l.text,
@@ -1398,6 +1543,81 @@ export default function EditorShell() {
     });
     const nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
 
+    // Phase 4: persist per-line overrides keyed by stable lineKey into input_snapshot.
+    const curInput: any = (slideIndex === activeSlideIndex ? inputData : null) || (curSlide as any)?.inputData || null;
+    const prevOverrides = (curInput && typeof curInput === "object" && curInput.lineOverridesByKey && typeof curInput.lineOverridesByKey === "object")
+      ? curInput.lineOverridesByKey
+      : {};
+    const line = nextLayoutSnap.textLines?.[change.lineIndex] as any;
+    const lineText = normalizeLineText(String(line?.text || ""));
+    const hintStart = (() => {
+      const l0 = baseLayout.textLines?.[change.lineIndex] as any;
+      const s = Number(l0?.__hintStart ?? l0?.hintStart ?? -1);
+      return Number.isFinite(s) ? s : undefined;
+    })();
+    const overrideKey = String(changeKey || `IDX:${change.lineIndex}`);
+    const nextOverridesByKey = {
+      ...prevOverrides,
+      [overrideKey]: {
+        x: Number(change.x) || 0,
+        y: Number(change.y) || 0,
+        maxWidth: Math.max(1, Number(change.maxWidth) || 1),
+        lineText,
+        ...(typeof hintStart === "number" ? { hintStart } : {}),
+      },
+    };
+
+    // Canvas edits are the source-of-truth now.
+    // - Do NOT persist per-line text overrides (they fight Realign repacking).
+    // - When a line's text changes, rebuild the ENTIRE block (headline/body) from the current lines.
+    const editedLine = nextTextLines?.[change.lineIndex] as any;
+    const editedBlock: "HEADLINE" | "BODY" = (editedLine?.block === "HEADLINE" ? "HEADLINE" : "BODY");
+    const didEditText = typeof change.text === "string";
+
+    const rebuildBlock = (block: "HEADLINE" | "BODY") =>
+      nextTextLines
+        .filter((l: any) => (l?.block === "HEADLINE" ? "HEADLINE" : "BODY") === block)
+        .map((l: any) => String(l?.text || "").trim())
+        .filter((s: string) => !!s)
+        .join(" ");
+
+    // Only rewrite headline/body source-of-truth when the user actually edited text (not when dragging).
+    const nextHeadlineText = didEditText
+      ? rebuildBlock("HEADLINE")
+      : String((curInput && typeof curInput === "object" ? (curInput as any).headline : null) ?? (curSlide.draftHeadline || ""));
+    const nextBodyText = didEditText
+      ? rebuildBlock("BODY")
+      : String((curInput && typeof curInput === "object" ? (curInput as any).body : null) ?? (curSlide.draftBody || ""));
+
+    // v1 styling behavior: if the user edits a block on-canvas, drop styling ranges for that block.
+    const prevHeadlineRanges = Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [];
+    const prevBodyRanges = Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [];
+    const nextHeadlineRanges = didEditText && editedBlock === "HEADLINE" ? [] : prevHeadlineRanges;
+    const nextBodyRanges = didEditText && editedBlock === "BODY" ? [] : prevBodyRanges;
+
+    // Best-effort cleanup: once we move to block-level text as source-of-truth, strip any legacy per-line
+    // text overrides so they don't fight future repacks.
+    if (didEditText) {
+      try {
+        for (const k of Object.keys(nextOverridesByKey || {})) {
+          if ((nextOverridesByKey as any)?.[k] && typeof (nextOverridesByKey as any)[k] === "object") {
+            delete (nextOverridesByKey as any)[k].text;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const nextInputSnap = {
+      ...(curInput && typeof curInput === "object" ? curInput : {}),
+      ...(didEditText ? { headline: nextHeadlineText, body: nextBodyText } : {}),
+      ...(didEditText
+        ? { headlineStyleRanges: nextHeadlineRanges, bodyStyleRanges: nextBodyRanges }
+        : {}),
+      lineOverridesByKey: nextOverridesByKey,
+    };
+
     // Keep state in sync so the current slide preserves the nudged position immediately.
     setSlides((prev) =>
       prev.map((s, i) =>
@@ -1405,24 +1625,38 @@ export default function EditorShell() {
           ? s
           : {
               ...s,
+              draftHeadline: didEditText ? nextHeadlineText : s.draftHeadline,
+              draftBody: didEditText ? nextBodyText : s.draftBody,
+              draftHeadlineRanges: nextHeadlineRanges,
+              draftBodyRanges: nextBodyRanges,
               layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } as any,
+              inputData: nextInputSnap,
             }
       )
     );
     slidesRef.current = slidesRef.current.map((s, i) =>
       i !== slideIndex
         ? s
-        : ({ ...s, layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } as any } as any)
+        : ({
+            ...s,
+            draftHeadline: didEditText ? nextHeadlineText : (s as any).draftHeadline,
+            draftBody: didEditText ? nextBodyText : (s as any).draftBody,
+            draftHeadlineRanges: nextHeadlineRanges,
+            draftBodyRanges: nextBodyRanges,
+            layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } as any,
+            inputData: nextInputSnap,
+          } as any)
     );
 
     if (slideIndex === activeSlideIndex) {
       setLayoutData({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || null } as any);
+      setInputData(nextInputSnap as any);
     }
 
     // Debounced persist.
     if (enhancedCanvasSaveTimeoutRef.current) window.clearTimeout(enhancedCanvasSaveTimeoutRef.current);
     enhancedCanvasSaveTimeoutRef.current = window.setTimeout(() => {
-      void saveSlidePatch(slideIndex, { layoutSnapshot: nextLayoutSnap });
+      void saveSlidePatch(slideIndex, { layoutSnapshot: nextLayoutSnap, inputSnapshot: nextInputSnap });
     }, 500);
   };
 
@@ -2918,16 +3152,11 @@ export default function EditorShell() {
                       const maxW = Math.max(240, Math.min(540, (viewportWidth || 540) - 24));
                       const scale = Math.max(0.35, Math.min(1, maxW / 540));
 
+                      const displayW = Math.round(maxW);
+                      const displayH = Math.round(720 * scale);
+
                       return (
-                        <div style={{ width: maxW, height: 720 * scale, overflow: "hidden" }}>
-                          <div
-                            style={{
-                              transform: `scale(${scale})`,
-                              transformOrigin: "top left",
-                              width: 540,
-                              height: 720,
-                            }}
-                          >
+                        <div style={{ width: displayW, height: displayH, overflow: "hidden" }}>
                             {!tid ? (
                               <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
                                 No template selected
@@ -2960,6 +3189,8 @@ export default function EditorShell() {
                                 clampUserTextToContentRect={templateTypeId !== "regular"}
                                 clampUserImageToContentRect={false}
                                 pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                displayWidthPx={displayW}
+                                displayHeightPx={displayH}
                                 onUserTextChange={
                                   templateTypeId === "regular"
                                     ? handleRegularCanvasTextChange
@@ -2968,7 +3199,6 @@ export default function EditorShell() {
                                 onUserImageChange={handleUserImageChange}
                               />
                             )}
-                          </div>
                         </div>
                       );
                     })()}
@@ -3107,22 +3337,8 @@ export default function EditorShell() {
                               className="w-full h-full flex flex-col items-center justify-start"
                               style={i === activeSlideIndex ? undefined : { pointerEvents: "none" }}
                             >
-                              {/* Scale the existing 540x720 preview down to fit 420x560 */}
-                              <div
-                                style={{
-                                  width: 420,
-                                  height: 560,
-                                  overflow: "hidden",
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    transform: "scale(0.7777778)",
-                                    transformOrigin: "top left",
-                                    width: 540,
-                                    height: 720,
-                                  }}
-                                >
+                              {/* Render at 420x560 without CSS transforms (Fabric hit-testing depends on it). */}
+                              <div style={{ width: 420, height: 560, overflow: "hidden" }}>
                                   {(() => {
                                     const tid = computeTemplateIdForSlide(i);
                                     const snap = (tid ? templateSnapshots[tid] : null) || null;
@@ -3175,6 +3391,8 @@ export default function EditorShell() {
                                         clampUserTextToContentRect={templateTypeId !== "regular"}
                                         clampUserImageToContentRect={false}
                                         pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                        displayWidthPx={420}
+                                        displayHeightPx={560}
                                         onUserTextChange={
                                           i === activeSlideIndex
                                             ? (templateTypeId === "regular" ? handleRegularCanvasTextChange : handleEnhancedCanvasTextChange)
@@ -3186,7 +3404,6 @@ export default function EditorShell() {
                                       />
                                     );
                                   })()}
-                                </div>
                               </div>
                             </div>
                           </SlideCard>
@@ -3374,6 +3591,9 @@ export default function EditorShell() {
                         className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
                         onClick={() => {
                           layoutDirtyRef.current = true;
+                          // Realign should repack line breaks like the original behavior.
+                          // Wipe per-line overrides so wrap-flow can start fresh from the current text.
+                          wipeLineOverridesForActiveSlide();
                           // Speed: for /editor we can do deterministic wrap-flow locally for the "Computational" option.
                           // The server realign route can be slow due to model calls (styles/vision).
                           if (realignmentModel === "gemini-computational") {
