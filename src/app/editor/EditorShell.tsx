@@ -142,11 +142,13 @@ export default function EditorShell() {
   const [imagePromptError, setImagePromptError] = useState<string | null>(null);
   const imagePromptSaveTimeoutRef = useRef<number | null>(null);
   const [aiImagePromptSaveStatus, setAiImagePromptSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  // AI Image generation state (actual image generation)
-  const [aiImageGenerating, setAiImageGenerating] = useState(false);
-  const [aiImageError, setAiImageError] = useState<string | null>(null);
-  const [aiImageProgress, setAiImageProgress] = useState(0); // 0-100
-  const aiImageProgressRef = useRef<number | null>(null);
+  // AI Image generation state (actual image generation) - per-slide tracking for parallel execution
+  const [aiImageGeneratingSlides, setAiImageGeneratingSlides] = useState<Set<number>>(new Set());
+  const [aiImageErrorSlides, setAiImageErrorSlides] = useState<Record<number, string | null>>({});
+  const [aiImageProgressSlides, setAiImageProgressSlides] = useState<Record<number, number>>({}); // 0-100 per slide
+  const [aiImageStatusSlides, setAiImageStatusSlides] = useState<Record<number, string>>({}); // Status label per slide
+  const aiImageProgressRefs = useRef<Record<number, number | null>>({});
+  const aiImagePollRefs = useRef<Record<number, number | null>>({});
   const [copyProgressState, setCopyProgressState] = useState<"idle" | "running" | "success" | "error">("idle");
   const [copyProgressLabel, setCopyProgressLabel] = useState<string>("");
   const copyProgressPollRef = useRef<number | null>(null);
@@ -2211,38 +2213,74 @@ export default function EditorShell() {
     }
   };
 
+  // Helper: Convert progress code to user-friendly label
+  const getAiImageStatusLabel = (progressCode: string): string => {
+    const code = String(progressCode || '').toLowerCase();
+    if (code.includes('generating')) return 'Generating image with AI...';
+    if (code.includes('removebg')) return 'Removing background...';
+    if (code.includes('uploading')) return 'Uploading...';
+    return 'Working...';
+  };
+
   // Generate AI image from the prompt and place it on the active slide
-  const runGenerateAiImage = async () => {
+  const runGenerateAiImage = async (slideIdx?: number) => {
+    const targetSlide = slideIdx ?? activeSlideIndex;
+
     if (!currentProjectId) {
-      setAiImageError('Create or load a project first.');
+      setAiImageErrorSlides((prev) => ({ ...prev, [targetSlide]: 'Create or load a project first.' }));
       return;
     }
     if (templateTypeId !== 'enhanced') {
-      setAiImageError('AI images are only available for Enhanced template type.');
+      setAiImageErrorSlides((prev) => ({ ...prev, [targetSlide]: 'AI images are only available for Enhanced template type.' }));
       return;
     }
-    const prompt = slides[activeSlideIndex]?.draftAiImagePrompt || '';
+    const prompt = slides[targetSlide]?.draftAiImagePrompt || '';
     if (!prompt || prompt.trim().length < 10) {
-      setAiImageError('Please enter or generate an image prompt first (min 10 characters).');
+      setAiImageErrorSlides((prev) => ({ ...prev, [targetSlide]: 'Please enter or generate an image prompt first (min 10 characters).' }));
       return;
     }
 
-    setAiImageGenerating(true);
-    setAiImageError(null);
-    setAiImageProgress(0);
+    // Mark this slide as generating
+    setAiImageGeneratingSlides((prev) => new Set(prev).add(targetSlide));
+    setAiImageErrorSlides((prev) => ({ ...prev, [targetSlide]: null }));
+    setAiImageProgressSlides((prev) => ({ ...prev, [targetSlide]: 0 }));
+    setAiImageStatusSlides((prev) => ({ ...prev, [targetSlide]: 'Starting...' }));
 
-    // Start progress animation (fake progress over 30s)
-    if (aiImageProgressRef.current) window.clearInterval(aiImageProgressRef.current);
+    // Start progress animation (smooth progress over 90 seconds)
+    if (aiImageProgressRefs.current[targetSlide]) window.clearInterval(aiImageProgressRefs.current[targetSlide]!);
     const startTime = Date.now();
-    const totalDuration = 60000; // 60 seconds (1 minute)
-    aiImageProgressRef.current = window.setInterval(() => {
+    const totalDuration = 90000; // 90 seconds
+    aiImageProgressRefs.current[targetSlide] = window.setInterval(() => {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(95, (elapsed / totalDuration) * 100); // Max 95% until complete
-      setAiImageProgress(progress);
+      setAiImageProgressSlides((prev) => ({ ...prev, [targetSlide]: progress }));
     }, 200);
 
+    // Start polling for job status
+    if (aiImagePollRefs.current[targetSlide]) window.clearInterval(aiImagePollRefs.current[targetSlide]!);
+    const pollStatus = async () => {
+      try {
+        const token = await getAuthToken();
+        if (!token) return;
+        const statusRes = await fetch(
+          `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(currentProjectId!)}&jobType=generate-ai-image&slideIndex=${targetSlide}`,
+          { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+        );
+        const statusData = await statusRes.json().catch(() => ({}));
+        const job = statusData?.activeJob || null;
+        if (job && job.error && String(job.error).startsWith('progress:')) {
+          const progressCode = job.error.slice('progress:'.length);
+          setAiImageStatusSlides((prev) => ({ ...prev, [targetSlide]: getAiImageStatusLabel(progressCode) }));
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    };
+    void pollStatus();
+    aiImagePollRefs.current[targetSlide] = window.setInterval(pollStatus, 500);
+
     try {
-      addLog(`🖼️ Generating AI image for slide ${activeSlideIndex + 1}...`);
+      addLog(`🖼️ Generating AI image for slide ${targetSlide + 1}...`);
       const token = await getAuthToken();
       if (!token) throw new Error("Not authenticated. Please sign in again.");
 
@@ -2254,7 +2292,7 @@ export default function EditorShell() {
         },
         body: JSON.stringify({
           projectId: currentProjectId,
-          slideIndex: activeSlideIndex,
+          slideIndex: targetSlide,
           prompt: prompt.trim(),
         }),
       });
@@ -2269,6 +2307,7 @@ export default function EditorShell() {
       if (!url) throw new Error('Image generated but no URL returned.');
 
       addLog(`✅ AI image generated: ${url.substring(0, 80)}...`);
+      setAiImageStatusSlides((prev) => ({ ...prev, [targetSlide]: 'Done' }));
 
       // Load image dimensions for placement
       const dims = await new Promise<{ w: number; h: number }>((resolve) => {
@@ -2278,7 +2317,7 @@ export default function EditorShell() {
         img.src = url;
       });
 
-      const tid = computeTemplateIdForSlide(activeSlideIndex);
+      const tid = computeTemplateIdForSlide(targetSlide);
       const snap = (tid ? templateSnapshots[tid] : null) || null;
       const placement = computeDefaultUploadedImagePlacement(snap, dims.w, dims.h);
       const mask = (j?.mask as any) || null;
@@ -2287,7 +2326,8 @@ export default function EditorShell() {
       const processed = j?.processed || null;
 
       // Update layout with new AI-generated image (replaces any existing image)
-      const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+      const currentLayout = targetSlide === activeSlideIndex ? layoutData : slides[targetSlide]?.layoutData;
+      const baseLayout = (currentLayout as any)?.layout ? { ...(currentLayout as any).layout } : { ...EMPTY_LAYOUT };
       const nextLayout = {
         ...baseLayout,
         image: {
@@ -2306,10 +2346,13 @@ export default function EditorShell() {
         },
       };
 
-      setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+      // Only update global layoutData if this is the active slide
+      if (targetSlide === activeSlideIndex) {
+        setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+      }
       setSlides((prev) =>
         prev.map((s, i) =>
-          i !== activeSlideIndex
+          i !== targetSlide
             ? s
             : {
                 ...s,
@@ -2318,28 +2361,39 @@ export default function EditorShell() {
         )
       );
       slidesRef.current = slidesRef.current.map((s, i) =>
-        i !== activeSlideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
+        i !== targetSlide ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
       );
 
       // Persist to Supabase
-      await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout });
-      addLog(`🖼️ AI image placed on slide ${activeSlideIndex + 1}`);
+      await saveSlidePatch(targetSlide, { layoutSnapshot: nextLayout });
+      addLog(`🖼️ AI image placed on slide ${targetSlide + 1}`);
 
       // Complete progress
-      setAiImageProgress(100);
+      setAiImageProgressSlides((prev) => ({ ...prev, [targetSlide]: 100 }));
     } catch (e: any) {
       addLog(`❌ AI image generation failed: ${e?.message || 'unknown error'}`);
-      setAiImageError(e?.message || 'Image generation failed. Please contact Dr. Nick.');
+      setAiImageErrorSlides((prev) => ({ ...prev, [targetSlide]: e?.message || 'Image generation failed. Please contact Dr. Nick.' }));
     } finally {
-      if (aiImageProgressRef.current) {
-        window.clearInterval(aiImageProgressRef.current);
-        aiImageProgressRef.current = null;
+      // Stop polling
+      if (aiImagePollRefs.current[targetSlide]) {
+        window.clearInterval(aiImagePollRefs.current[targetSlide]!);
+        aiImagePollRefs.current[targetSlide] = null;
+      }
+      // Stop progress animation
+      if (aiImageProgressRefs.current[targetSlide]) {
+        window.clearInterval(aiImageProgressRefs.current[targetSlide]!);
+        aiImageProgressRefs.current[targetSlide] = null;
       }
       // Brief delay before resetting to show 100% or error state
       window.setTimeout(() => {
-        setAiImageGenerating(false);
-        setAiImageProgress(0);
-      }, 500);
+        setAiImageGeneratingSlides((prev) => {
+          const next = new Set(prev);
+          next.delete(targetSlide);
+          return next;
+        });
+        setAiImageProgressSlides((prev) => ({ ...prev, [targetSlide]: 0 }));
+        setAiImageStatusSlides((prev) => ({ ...prev, [targetSlide]: '' }));
+      }, 800);
     }
   };
 
@@ -4177,10 +4231,10 @@ export default function EditorShell() {
                       {/* Generate Image Button with Progress Bar */}
                       <div className="mt-3">
                         <button
-                          className="w-full h-10 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50 relative overflow-hidden"
+                          className="w-full h-12 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50 relative overflow-hidden"
                           disabled={
                             !currentProjectId ||
-                            aiImageGenerating ||
+                            aiImageGeneratingSlides.has(activeSlideIndex) ||
                             copyGenerating ||
                             switchingSlides ||
                             imagePromptGenerating ||
@@ -4188,28 +4242,33 @@ export default function EditorShell() {
                           }
                           onClick={() => void runGenerateAiImage()}
                         >
-                          {aiImageGenerating ? (
+                          {aiImageGeneratingSlides.has(activeSlideIndex) ? (
                             <>
                               {/* Progress bar background */}
                               <div
                                 className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
-                                style={{ width: `${aiImageProgress}%` }}
+                                style={{ width: `${aiImageProgressSlides[activeSlideIndex] || 0}%` }}
                               />
-                              <span className="relative z-10">
-                                Generating... {Math.round(aiImageProgress)}%
+                              <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
+                                <span className="text-xs opacity-90">
+                                  {aiImageStatusSlides[activeSlideIndex] || 'Working...'}
+                                </span>
+                                <span className="text-sm font-bold">
+                                  {Math.round(aiImageProgressSlides[activeSlideIndex] || 0)}%
+                                </span>
                               </span>
                             </>
                           ) : (
                             "🎨 Generate Image"
                           )}
                         </button>
-                        {aiImageError && (
+                        {aiImageErrorSlides[activeSlideIndex] && (
                           <div className="mt-2 text-xs text-red-600">
-                            {aiImageError}
+                            {aiImageErrorSlides[activeSlideIndex]}
                           </div>
                         )}
                         <div className="mt-1 text-xs text-slate-500">
-                          Uses AI to create an image matching this prompt. Takes ~60 seconds.
+                          Uses AI to create an image matching this prompt. Takes 90 seconds to 2 minutes.
                         </div>
                       </div>
                     </div>

@@ -14,6 +14,10 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get('projectId');
+  const jobType = searchParams.get('jobType'); // Optional: 'generate-copy', 'generate-ai-image'
+  const slideIndexRaw = searchParams.get('slideIndex'); // Optional: for slide-specific jobs
+  const slideIndex = slideIndexRaw !== null ? Number(slideIndexRaw) : null;
+
   if (!projectId) return NextResponse.json({ success: false, error: 'projectId is required' }, { status: 400 });
 
   // Ensure user owns project
@@ -26,12 +30,25 @@ export async function GET(request: NextRequest) {
   if (projectErr) return NextResponse.json({ success: false, error: projectErr.message }, { status: 500 });
   if (!project) return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
 
-  const { data: jobs, error } = await supabase
+  // Build query with optional filters
+  let query = supabase
     .from('carousel_generation_jobs')
-    .select('id, project_id, template_type_id, status, error, created_at, started_at, finished_at')
-    .eq('project_id', projectId)
+    .select('id, project_id, template_type_id, job_type, slide_index, status, error, created_at, started_at, finished_at')
+    .eq('project_id', projectId);
+
+  // Filter by job_type if provided
+  if (jobType) {
+    query = query.eq('job_type', jobType);
+  }
+
+  // Filter by slide_index if provided (for slide-specific jobs)
+  if (slideIndex !== null && Number.isInteger(slideIndex)) {
+    query = query.eq('slide_index', slideIndex);
+  }
+
+  const { data: jobs, error } = await query
     .order('created_at', { ascending: false })
-    .limit(5);
+    .limit(10);
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
 
