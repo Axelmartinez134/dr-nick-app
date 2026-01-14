@@ -3982,26 +3982,28 @@ export default function EditorShell() {
           <section className="bg-white border-t border-slate-200">
             <div className="max-w-[1400px] mx-auto px-6 py-4">
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2 space-y-3">
+                <div className="md:col-span-2 space-y-4">
+                  {/* Headline Card (Enhanced only) */}
                   {templateTypeId !== "regular" ? (
-                    <div>
-                      <div className="flex items-end justify-between gap-3 mb-1">
-                        <label className="block text-sm font-semibold text-slate-900">Headline</label>
+                    <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-slate-500">Headline Font Size (px) 24–120</span>
+                          <span className="w-7 h-7 rounded-lg bg-slate-900 text-white text-sm font-bold flex items-center justify-center">H</span>
+                          <label className="text-sm font-semibold text-slate-900">Headline</label>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <input
                             type="number"
                             inputMode="numeric"
                             min={24}
                             max={120}
                             step={1}
-                            className="w-20 h-9 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                            className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                             value={Number(slides[activeSlideIndex]?.draftHeadlineFontSizePx ?? 76)}
                             disabled={loading || switchingSlides || copyGenerating}
                             onChange={(e) => {
                               const raw = Number((e.target as any).value);
                               const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 76;
-                              // Treat this as an explicit edit (Undo should work).
                               pushUndoSnapshot();
                               setSlides((prev) =>
                                 prev.map((s, i) =>
@@ -4027,12 +4029,11 @@ export default function EditorShell() {
                                         : (s as any).inputData,
                                     } as any)
                               );
-                              // Immediate reflow (deterministic).
                               scheduleLiveLayout(activeSlideIndex);
                             }}
-                            title="Sets the Headline font size for this slide (24–120px)."
+                            title="Font size (24–120px)"
                           />
-                          <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden">
+                          <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
                             {(["left", "center", "right"] as const).map((a) => {
                               const active = (slides[activeSlideIndex]?.draftHeadlineTextAlign || "left") === a;
                               const label = a === "left" ? "L" : a === "center" ? "C" : "R";
@@ -4041,8 +4042,8 @@ export default function EditorShell() {
                                   key={a}
                                   type="button"
                                   className={[
-                                    "h-9 w-9 text-sm font-semibold",
-                                    active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50",
+                                    "h-8 w-8 text-xs font-semibold transition-colors",
+                                    active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
                                   ].join(" ")}
                                   disabled={loading || switchingSlides || copyGenerating}
                                   title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
@@ -4073,7 +4074,6 @@ export default function EditorShell() {
                                               : (s as any).inputData,
                                           } as any)
                                     );
-                                    // Immediate reflow (deterministic).
                                     enqueueLiveLayout([activeSlideIndex]);
                                   }}
                                 >
@@ -4100,13 +4100,110 @@ export default function EditorShell() {
                         disabled={loading || switchingSlides || copyGenerating}
                         placeholder="Enter headline..."
                         minHeightPx={40}
-                        className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
                       />
                     </div>
                   ) : null}
 
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-900 mb-1">Body</label>
+                  {/* Body Card */}
+                  <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-sm font-bold flex items-center justify-center">¶</span>
+                        <label className="text-sm font-semibold text-slate-900">Body</label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={24}
+                          max={120}
+                          step={1}
+                          className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
+                          value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 48)}
+                          disabled={loading || switchingSlides || copyGenerating}
+                          onChange={(e) => {
+                            const raw = Number((e.target as any).value);
+                            const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 48;
+                            pushUndoSnapshot();
+                            setSlides((prev) =>
+                              prev.map((s, i) =>
+                                i !== activeSlideIndex
+                                  ? s
+                                  : ({
+                                      ...s,
+                                      draftBodyFontSizePx: nextSize,
+                                      inputData: s.inputData && typeof s.inputData === "object"
+                                        ? { ...(s.inputData as any), bodyFontSizePx: nextSize }
+                                        : s.inputData,
+                                    } as any)
+                              )
+                            );
+                            slidesRef.current = slidesRef.current.map((s, i) =>
+                              i !== activeSlideIndex
+                                ? s
+                                : ({
+                                    ...s,
+                                    draftBodyFontSizePx: nextSize,
+                                    inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                      ? { ...((s as any).inputData as any), bodyFontSizePx: nextSize }
+                                      : (s as any).inputData,
+                                  } as any)
+                            );
+                            scheduleLiveLayout(activeSlideIndex);
+                          }}
+                          title="Font size (24–120px)"
+                        />
+                        <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
+                          {(["left", "center", "right"] as const).map((a) => {
+                            const active = (slides[activeSlideIndex]?.draftBodyTextAlign || "left") === a;
+                            const label = a === "left" ? "L" : a === "center" ? "C" : "R";
+                            return (
+                              <button
+                                key={a}
+                                type="button"
+                                className={[
+                                  "h-8 w-8 text-xs font-semibold transition-colors",
+                                  active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
+                                ].join(" ")}
+                                disabled={loading || switchingSlides || copyGenerating}
+                                title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
+                                onClick={() => {
+                                  const nextAlign = a;
+                                  pushUndoSnapshot();
+                                  setSlides((prev) =>
+                                    prev.map((s, i) =>
+                                      i !== activeSlideIndex
+                                        ? s
+                                        : ({
+                                            ...s,
+                                            draftBodyTextAlign: nextAlign,
+                                            inputData: s.inputData && typeof s.inputData === "object"
+                                              ? { ...(s.inputData as any), bodyTextAlign: nextAlign }
+                                              : s.inputData,
+                                          } as any)
+                                    )
+                                  );
+                                  slidesRef.current = slidesRef.current.map((s, i) =>
+                                    i !== activeSlideIndex
+                                      ? s
+                                      : ({
+                                          ...s,
+                                          draftBodyTextAlign: nextAlign,
+                                          inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                            ? { ...((s as any).inputData as any), bodyTextAlign: nextAlign }
+                                            : (s as any).inputData,
+                                        } as any)
+                                  );
+                                  enqueueLiveLayout([activeSlideIndex]);
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
                     <RichTextInput
                       valueText={slides[activeSlideIndex]?.draftBody || ""}
                       valueRanges={slides[activeSlideIndex]?.draftBodyRanges || []}
@@ -4123,109 +4220,17 @@ export default function EditorShell() {
                       disabled={loading || switchingSlides || copyGenerating}
                       placeholder="Enter body..."
                       minHeightPx={96}
-                      className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
                     />
-                    {/* Body Font Size + Alignment (per-slide) */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={24}
-                        max={120}
-                        step={1}
-                        className="w-20 h-9 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
-                        value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 48)}
-                        disabled={loading || switchingSlides || copyGenerating}
-                        onChange={(e) => {
-                          const raw = Number((e.target as any).value);
-                          const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 48;
-                          pushUndoSnapshot();
-                          setSlides((prev) =>
-                            prev.map((s, i) =>
-                              i !== activeSlideIndex
-                                ? s
-                                : ({
-                                    ...s,
-                                    draftBodyFontSizePx: nextSize,
-                                    inputData: s.inputData && typeof s.inputData === "object"
-                                      ? { ...(s.inputData as any), bodyFontSizePx: nextSize }
-                                      : s.inputData,
-                                  } as any)
-                            )
-                          );
-                          slidesRef.current = slidesRef.current.map((s, i) =>
-                            i !== activeSlideIndex
-                              ? s
-                              : ({
-                                  ...s,
-                                  draftBodyFontSizePx: nextSize,
-                                  inputData: (s as any).inputData && typeof (s as any).inputData === "object"
-                                    ? { ...((s as any).inputData as any), bodyFontSizePx: nextSize }
-                                    : (s as any).inputData,
-                                } as any)
-                          );
-                          scheduleLiveLayout(activeSlideIndex);
-                        }}
-                        title="Sets the Body font size for this slide (24–120px)."
-                      />
-                      <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden">
-                        {(["left", "center", "right"] as const).map((a) => {
-                          const active = (slides[activeSlideIndex]?.draftBodyTextAlign || "left") === a;
-                          const label = a === "left" ? "L" : a === "center" ? "C" : "R";
-                          return (
-                            <button
-                              key={a}
-                              type="button"
-                              className={[
-                                "h-9 w-9 text-sm font-semibold",
-                                active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50",
-                              ].join(" ")}
-                              disabled={loading || switchingSlides || copyGenerating}
-                              title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
-                              onClick={() => {
-                                const nextAlign = a;
-                                pushUndoSnapshot();
-                                setSlides((prev) =>
-                                  prev.map((s, i) =>
-                                    i !== activeSlideIndex
-                                      ? s
-                                      : ({
-                                          ...s,
-                                          draftBodyTextAlign: nextAlign,
-                                          inputData: s.inputData && typeof s.inputData === "object"
-                                            ? { ...(s.inputData as any), bodyTextAlign: nextAlign }
-                                            : s.inputData,
-                                        } as any)
-                                  )
-                                );
-                                slidesRef.current = slidesRef.current.map((s, i) =>
-                                  i !== activeSlideIndex
-                                    ? s
-                                    : ({
-                                        ...s,
-                                        draftBodyTextAlign: nextAlign,
-                                        inputData: (s as any).inputData && typeof (s as any).inputData === "object"
-                                          ? { ...((s as any).inputData as any), bodyTextAlign: nextAlign }
-                                          : (s as any).inputData,
-                                      } as any)
-                                );
-                                enqueueLiveLayout([activeSlideIndex]);
-                              }}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <span className="text-xs text-slate-500">Body size (24-120)</span>
-                    </div>
                   </div>
 
-                  {/* AI Image Prompt (Enhanced only) */}
+                  {/* AI Image Prompt Card (Enhanced only) */}
                   {templateTypeId === "enhanced" && (
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
+                    <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="flex items-center gap-2">
-                          <label className="block text-sm font-semibold text-slate-900">AI Image Prompt</label>
+                          <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white text-sm flex items-center justify-center">🎨</span>
+                          <label className="text-sm font-semibold text-slate-900">AI Image Prompt</label>
                           {aiImagePromptSaveStatus === "saving" && (
                             <span className="text-xs text-slate-500">Saving...</span>
                           )}
@@ -4235,7 +4240,7 @@ export default function EditorShell() {
                         </div>
                         <button
                           type="button"
-                          className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
                           onClick={() => void runGenerateImagePrompts(activeSlideIndex)}
                           disabled={imagePromptGenerating || !currentProjectId || copyGenerating || switchingSlides}
                           title="Regenerate AI image prompt for this slide"
@@ -4244,7 +4249,7 @@ export default function EditorShell() {
                         </button>
                       </div>
                       <textarea
-                        className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900 text-sm"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 text-sm shadow-sm"
                         rows={4}
                         value={slides[activeSlideIndex]?.draftAiImagePrompt || ""}
                         onChange={(e) => {
@@ -4261,15 +4266,15 @@ export default function EditorShell() {
                         placeholder="AI-generated image prompt will appear here after Generate Copy..."
                       />
                       {imagePromptError && (
-                        <div className="mt-1 text-xs text-red-600">
+                        <div className="mt-2 text-xs text-red-600">
                           {imagePromptError}
                         </div>
                       )}
 
                       {/* Generate Image Button with Progress Bar */}
-                      <div className="mt-3">
+                      <div className="mt-4">
                         <button
-                          className="w-full h-12 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50 relative overflow-hidden"
+                          className="w-full h-12 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
                           disabled={
                             !currentProjectId ||
                             aiImageGeneratingSlides.has(activeSlideIndex) ||
@@ -4305,7 +4310,7 @@ export default function EditorShell() {
                             {aiImageErrorSlides[activeSlideIndex]}
                           </div>
                         )}
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-2 text-xs text-slate-500 text-center">
                           Uses AI to create an image matching this prompt. Takes 90 seconds to 2 minutes.
                         </div>
                       </div>
@@ -4314,91 +4319,103 @@ export default function EditorShell() {
 
                 </div>
 
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                    <span>Controls</span>
+                {/* Controls Card */}
+                <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="w-7 h-7 rounded-lg bg-slate-600 text-white text-sm flex items-center justify-center">⚙️</span>
+                    <span className="text-sm font-semibold text-slate-900">Controls</span>
                     <CopyProgressIcon />
                   </div>
-                  <button
-                    className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                    disabled={!currentProjectId || copyGenerating || switchingSlides}
-                    onClick={() => void runGenerateCopy()}
-                  >
-                    {copyGenerating ? "Generating Copy..." : "Generate Copy"}
-                  </button>
-                  {activeImageSelected ? (
-                    <>
-                      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">Background removal (recommended)</div>
-                            <div className="text-xs text-slate-500">
-                              Improves Realign wrapping so text hugs the subject silhouette.
+                  <div className="space-y-3">
+                    <button
+                      className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
+                      disabled={!currentProjectId || copyGenerating || switchingSlides}
+                      onClick={() => void runGenerateCopy()}
+                    >
+                      {copyGenerating ? "Generating Copy..." : "Generate Copy"}
+                    </button>
+                    {activeImageSelected ? (
+                      <>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">Background removal</div>
+                              <div className="text-xs text-slate-500">
+                                Improves text wrapping around subject.
+                              </div>
                             </div>
-                          </div>
-                          <button
-                            type="button"
-                            className={[
-                              "h-8 w-14 rounded-full transition-colors",
-                              ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "bg-black" : "bg-slate-300",
-                            ].join(" ")}
-                            onClick={() => {
-                              const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
-                              void setActiveSlideImageBgRemoval(!cur);
-                            }}
-                            disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
-                            title="Toggle background removal for this image (persists per slide)"
-                          >
-                            <span
+                            <button
+                              type="button"
                               className={[
-                                "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
-                                ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "translate-x-6" : "translate-x-1",
+                                "h-8 w-14 rounded-full transition-colors",
+                                ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "bg-black" : "bg-slate-300",
                               ].join(" ")}
-                            />
-                          </button>
+                              onClick={() => {
+                                const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
+                                void setActiveSlideImageBgRemoval(!cur);
+                              }}
+                              disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                              title="Toggle background removal for this image (persists per slide)"
+                            >
+                              <span
+                                className={[
+                                  "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                  ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "translate-x-6" : "translate-x-1",
+                                ].join(" ")}
+                              />
+                            </button>
+                          </div>
+                          <div className="mt-2 text-xs text-slate-600">
+                            Status:{" "}
+                            <span className="font-semibold">
+                              {String((layoutData as any)?.layout?.image?.bgRemovalStatus || (((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "idle" : "disabled"))}
+                            </span>
+                          </div>
+                          {String((layoutData as any)?.layout?.image?.bgRemovalStatus || "") === "failed" ? (
+                            <button
+                              type="button"
+                              className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
+                              onClick={() => void setActiveSlideImageBgRemoval(true)}
+                              disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                              title="Try background removal again"
+                            >
+                              Try again
+                            </button>
+                          ) : null}
                         </div>
-                        <div className="mt-2 text-xs text-slate-600">
-                          Status:{" "}
-                          <span className="font-semibold">
-                            {String((layoutData as any)?.layout?.image?.bgRemovalStatus || (((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "idle" : "disabled"))}
-                          </span>
-                        </div>
-                        {String((layoutData as any)?.layout?.image?.bgRemovalStatus || "") === "failed" ? (
-                          <button
-                            type="button"
-                            className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
-                            onClick={() => void setActiveSlideImageBgRemoval(true)}
-                            disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
-                            title="Try background removal again (Phase 2 will run the API call)"
-                          >
-                            Try again
-                          </button>
-                        ) : null}
-                      </div>
-                      <button
-                        className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => void deleteImageForActiveSlide("button")}
-                        disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
-                        title="Delete the selected image from this slide"
-                      >
-                        {imageBusy ? "Working…" : "Delete Image"}
-                      </button>
-                    </>
-                  ) : null}
-                  {copyError ? <div className="text-xs text-red-600">❌ {copyError}</div> : null}
-                  {templateTypeId !== "regular" ? (
-                    <>
-                      <button
-                        className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => {
-                          layoutDirtyRef.current = true;
-                          // Save a full snapshot BEFORE wiping overrides so Undo truly restores the prior state.
-                          pushUndoSnapshot();
-                          // Realign should repack line breaks like the original behavior.
-                          // Wipe per-line overrides so wrap-flow can start fresh from the current text.
-                          // Realign is allowed to override alignment: reset to defaults.
-                          setSlides((prev) =>
-                            prev.map((s, i) =>
+                        <button
+                          className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50"
+                          onClick={() => void deleteImageForActiveSlide("button")}
+                          disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                          title="Delete the selected image from this slide"
+                        >
+                          {imageBusy ? "Working…" : "Delete Image"}
+                        </button>
+                      </>
+                    ) : null}
+                    {copyError ? <div className="text-xs text-red-600">❌ {copyError}</div> : null}
+                    {templateTypeId !== "regular" ? (
+                      <>
+                        <button
+                          className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                          onClick={() => {
+                            layoutDirtyRef.current = true;
+                            pushUndoSnapshot();
+                            setSlides((prev) =>
+                              prev.map((s, i) =>
+                                i !== activeSlideIndex
+                                  ? s
+                                  : ({
+                                      ...s,
+                                      draftHeadlineTextAlign: "left",
+                                      draftBodyTextAlign: "left",
+                                      inputData: (s as any).inputData && typeof (s as any).inputData === "object"
+                                        ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
+                                        : (s as any).inputData,
+                                    } as any)
+                              )
+                            );
+                            slidesRef.current = slidesRef.current.map((s, i) =>
                               i !== activeSlideIndex
                                 ? s
                                 : ({
@@ -4409,102 +4426,92 @@ export default function EditorShell() {
                                       ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
                                       : (s as any).inputData,
                                   } as any)
-                            )
-                          );
-                          slidesRef.current = slidesRef.current.map((s, i) =>
-                            i !== activeSlideIndex
-                              ? s
-                              : ({
-                                  ...s,
-                                  draftHeadlineTextAlign: "left",
-                                  draftBodyTextAlign: "left",
-                                  inputData: (s as any).inputData && typeof (s as any).inputData === "object"
-                                    ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
-                                    : (s as any).inputData,
-                                } as any)
-                          );
-                          wipeLineOverridesForActiveSlide();
-                          // Speed: for /editor we can do deterministic wrap-flow locally for the "Computational" option.
-                          // The server realign route can be slow due to model calls (styles/vision).
-                          if (realignmentModel === "gemini-computational") {
-                            enqueueLiveLayout([activeSlideIndex]);
-                          } else {
-                            void handleRealign({ skipHistory: true });
+                            );
+                            wipeLineOverridesForActiveSlide();
+                            if (realignmentModel === "gemini-computational") {
+                              enqueueLiveLayout([activeSlideIndex]);
+                            } else {
+                              void handleRealign({ skipHistory: true });
+                            }
+                          }}
+                          disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
+                        >
+                          {realigning ? "Realigning..." : "Realign Text"}
+                        </button>
+
+                        {/* Advanced Layout Controls - Hidden per user request */}
+                        {/* <AdvancedLayoutControls ... /> */}
+                      </>
+                    ) : null}
+                    <button
+                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      onClick={() => {
+                        layoutDirtyRef.current = true;
+                        handleUndo();
+                      }}
+                      disabled={layoutHistory.length === 0 || realigning || switchingSlides || copyGenerating}
+                    >
+                      Undo
+                    </button>
+
+                    {templateTypeId !== "regular" && (
+                      <button
+                        className={[
+                          "w-full h-10 rounded-lg text-sm font-semibold shadow-sm transition-all border",
+                          showLayoutOverlays
+                            ? "bg-gradient-to-b from-slate-600 to-slate-700 text-white border-slate-500 hover:from-slate-500 hover:to-slate-600"
+                            : "bg-gradient-to-b from-slate-100 to-slate-200 text-slate-600 border-slate-300 hover:from-slate-50 hover:to-slate-100",
+                        ].join(" ")}
+                        onClick={() => {
+                          const next = !showLayoutOverlays;
+                          setShowLayoutOverlays(next);
+                          try {
+                            addLog(`🧩 Overlays: ${next ? "ON" : "OFF"}`);
+                          } catch {
+                            // ignore
                           }
                         }}
-                        disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
                       >
-                        {realigning ? "Realigning..." : "Realign Text"}
+                        {showLayoutOverlays ? "Hide Layout Overlays" : "Show Layout Overlays"}
                       </button>
+                    )}
 
-                      {/* Advanced Layout Controls - Hidden per user request */}
-                      {/* <AdvancedLayoutControls
-                        open={showAdvancedLayoutControls}
-                        onToggle={() => setShowAdvancedLayoutControls((v) => !v)}
-                        canGenerate={
-                          !(
-                            loading ||
-                            switchingSlides ||
-                            copyGenerating ||
-                            !(slides[activeSlideIndex]?.draftHeadline || "").trim() ||
-                            !(slides[activeSlideIndex]?.draftBody || "").trim()
-                          )
-                        }
-                        onGenerate={() => {
-                          layoutDirtyRef.current = true;
-                          pushUndoSnapshot();
-                          enqueueLiveLayout([activeSlideIndex]);
-                        }}
-                        realignmentModel={String(realignmentModel || "gemini-computational")}
-                        onChangeModel={(next) => setRealignmentModel(next as any)}
-                        disableModelSelect={realigning || copyGenerating}
-                      /> */}
-                    </>
-                  ) : null}
-                  <button
-                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm disabled:opacity-50"
-                    onClick={() => {
-                      layoutDirtyRef.current = true;
-                      handleUndo();
-                    }}
-                    disabled={layoutHistory.length === 0 || realigning || switchingSlides || copyGenerating}
-                  >
-                    Undo
-                  </button>
+                    {saveError && <div className="text-xs text-red-600">❌ {saveError}</div>}
+                    {error && <div className="text-xs text-red-600">❌ {error}</div>}
 
-                  {saveError && <div className="text-xs text-red-600">❌ {saveError}</div>}
-                  {error && <div className="text-xs text-red-600">❌ {error}</div>}
-
-                  {error && inputData && (
-                    <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-3">
-                      <div className="text-sm font-semibold text-red-800">Generation Failed</div>
-                      <div className="text-xs text-red-700 mt-1">{error}</div>
-                      <button
-                        className="mt-2 w-full h-9 rounded-md bg-red-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => void handleRetry()}
-                        disabled={!inputData || loading || switchingSlides}
-                      >
-                        Try Again
-                      </button>
-                    </div>
-                  )}
-
+                    {error && inputData && (
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                        <div className="text-sm font-semibold text-red-800">Generation Failed</div>
+                        <div className="text-xs text-red-700 mt-1">{error}</div>
+                        <button
+                          className="mt-2 w-full h-9 rounded-lg bg-red-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+                          onClick={() => void handleRetry()}
+                          disabled={!inputData || loading || switchingSlides}
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Caption (UI-only for now) */}
-              <div className="mt-4 rounded-md border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-slate-900">Caption</div>
+              {/* Caption Card */}
+              <div className="mt-4 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-amber-500 text-white text-sm flex items-center justify-center">✍️</span>
+                    <span className="text-sm font-semibold text-slate-900">Caption</span>
+                  </div>
                   <div className="flex items-center gap-2">
                     {captionCopyStatus === "copied" ? (
-                      <span className="text-xs text-emerald-700">Copied</span>
+                      <span className="text-xs text-emerald-700 font-medium">Copied!</span>
                     ) : captionCopyStatus === "error" ? (
-                      <span className="text-xs text-red-600">Copy failed</span>
+                      <span className="text-xs text-red-600 font-medium">Copy failed</span>
                     ) : null}
                     <button
                       type="button"
-                      className="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm disabled:opacity-50"
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                       onClick={async () => {
                         const ok = await copyToClipboard(captionDraft || "");
                         setCaptionCopyStatus(ok ? "copied" : "error");
@@ -4518,7 +4525,7 @@ export default function EditorShell() {
                   </div>
                 </div>
                 <textarea
-                  className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
                   rows={3}
                   placeholder="Write a caption..."
                   value={captionDraft}
@@ -4534,39 +4541,24 @@ export default function EditorShell() {
                 />
               </div>
 
-              <details className="mt-4 rounded-md border border-slate-200 bg-white">
-                <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-900">
-                  Debug
+              {/* Debug Card */}
+              <details className="mt-4 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 shadow-sm group">
+                <summary className="cursor-pointer px-4 py-3 flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-slate-500 text-white text-sm flex items-center justify-center">🔧</span>
+                  <span className="text-sm font-semibold text-slate-900">Debug</span>
+                  <span className="ml-auto text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
                 </summary>
-                <div className="px-3 pb-3 space-y-3">
-                  {templateTypeId !== "regular" && (
-                    <label className="flex items-center gap-2 text-xs text-slate-700 select-none">
-                      <input
-                        type="checkbox"
-                        checked={showLayoutOverlays}
-                        onChange={(e) => {
-                          const next = e.target.checked;
-                          setShowLayoutOverlays(next);
-                          try {
-                            addLog(`🧩 Overlays: ${next ? "ON" : "OFF"}`);
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                      />
-                      Show layout overlays (content rect / image bounds / mask)
-                    </label>
-                  )}
+                <div className="px-4 pb-4 space-y-3">
                   {debugScreenshot && (
                     <div>
                       <button
-                        className="text-xs text-violet-700 underline"
+                        className="text-xs text-violet-700 font-medium hover:underline"
                         onClick={() => setShowDebugPreview(!showDebugPreview)}
                       >
                         {showDebugPreview ? "Hide" : "Show"} Screenshot
                       </button>
                       {showDebugPreview && (
-                        <div className="mt-2 bg-white rounded border border-slate-200 p-2 overflow-auto max-h-64">
+                        <div className="mt-2 bg-white rounded-lg border border-slate-200 p-2 overflow-auto max-h-64 shadow-sm">
                           <img
                             src={debugScreenshot}
                             alt="Screenshot sent to Claude Vision"
@@ -4578,7 +4570,7 @@ export default function EditorShell() {
                   )}
 
                   {debugLogs.length > 0 ? (
-                    <div className="rounded border border-slate-200 bg-slate-950 p-2 max-h-64 overflow-y-auto font-mono text-[11px] text-green-300">
+                    <div className="rounded-lg border border-slate-200 bg-slate-950 p-3 max-h-64 overflow-y-auto font-mono text-[11px] text-green-300 shadow-inner">
                       {debugLogs.map((log, idx) => (
                         <div key={idx} className="mb-1">
                           {log}
