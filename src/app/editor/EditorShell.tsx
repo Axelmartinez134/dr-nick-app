@@ -3076,139 +3076,155 @@ export default function EditorShell() {
 
   const SidebarInner = (
     <div className="p-4 space-y-4 overflow-auto">
-      <button
-        className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm"
-        onClick={() => {
-          setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
-          handleNewCarousel();
-          void createNewProject(templateTypeId);
-        }}
-        disabled={switchingSlides}
-      >
-        New Project
-      </button>
-
-      <div className="space-y-2">
-        <div className="text-xs font-semibold text-slate-500 uppercase">Template Type</div>
-        <select
-          className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-          value={templateTypeId}
-          onChange={(e) => {
-            const nextType = e.target.value === "enhanced" ? "enhanced" : "regular";
-            setTemplateTypeId(nextType);
-            // Minimal fix: persist the project template type + prompt snapshot so Generate Copy uses the correct prompt.
-            if (currentProjectId) {
-              void (async () => {
-                try {
-                  const j = await fetchJson("/api/editor/projects/set-template-type", {
-                    method: "POST",
-                    body: JSON.stringify({ projectId: currentProjectId, templateTypeId: nextType }),
-                  });
-                  if (!j?.success) throw new Error(j?.error || "Failed to update template type");
-                  const p = j?.project || null;
-                  if (p) {
-                    setTemplateTypeId(p.template_type_id === "enhanced" ? "enhanced" : "regular");
-                    setProjectPromptSnapshot(p.prompt_snapshot || "");
-                    setProjectMappingSlide1(p.slide1_template_id_snapshot ?? null);
-                    setProjectMappingSlide2to5(p.slide2_5_template_id_snapshot ?? null);
-                    setProjectMappingSlide6(p.slide6_template_id_snapshot ?? null);
-                    // Refresh the visible Template Type Settings panel (prompt + emphasis) for the new type.
-                    try {
-                      await loadTemplateTypeEffective(nextType);
-                    } catch {
-                      // ignore
-                    }
-                    // Force a re-layout so the canvas matches the new template type/mapping immediately.
-                    enqueueLiveLayout([0, 1, 2, 3, 4, 5]);
-                    void refreshProjectsList();
-                  }
-                } catch (err: any) {
-                  console.error("[EditorShell] set-template-type failed:", err);
-                  addLog(`❌ Template Type update failed: ${String(err?.message || err)}`);
-                }
-              })();
-            }
-          }}
-          disabled={switchingSlides}
-        >
-          <option value="regular">Regular</option>
-          <option value="enhanced">Enhanced</option>
-        </select>
-        <div className="text-xs text-slate-500">
-          Slide 1: {(currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1) ? "Template set" : "Not set"} · Slides 2–5:{" "}
-          {(currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5) ? "Template set" : "Not set"} · Slide 6:{" "}
-          {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "Template set" : "Not set"}
+      {/* Project Card */}
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-7 h-7 rounded-lg bg-emerald-500 text-white text-sm flex items-center justify-center">➕</span>
+          <span className="text-sm font-semibold text-slate-900">Project</span>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-slate-900">Template Settings</div>
         <button
-          className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-          onClick={() => setTemplateSettingsOpen(true)}
-          disabled={switchingSlides}
-          title="Edit template type settings"
-        >
-          Settings
-        </button>
-      </div>
-
-      <button
-        type="button"
-        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-        onClick={() => {
-          setPromptModalSection("prompt");
-          setPromptModalOpen(true);
-        }}
-        title="Edit Poppy Prompt"
-      >
-        <div className="text-sm font-semibold text-slate-700">Poppy Prompt</div>
-        <div className="mt-0.5 text-xs text-slate-500 truncate">
-          {`${templateTypeId.toUpperCase()}: ${(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}`}
-        </div>
-      </button>
-
-      <button
-        type="button"
-        className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
-        onClick={() => {
-          setPromptModalSection("emphasis");
-          setPromptModalOpen(true);
-        }}
-        title="Edit Text Styling Prompt"
-      >
-        <div className="text-sm font-semibold text-slate-700">Text Styling Prompt</div>
-        <div className="mt-0.5 text-xs text-slate-500 truncate">
-          {`${templateTypeId.toUpperCase()}: ${(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}`}
-        </div>
-      </button>
-
-      {templateTypeId === "enhanced" && (
-        <button
-          type="button"
-          className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+          className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
           onClick={() => {
-            setPromptModalSection("image");
-            setPromptModalOpen(true);
+            setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
+            handleNewCarousel();
+            void createNewProject(templateTypeId);
           }}
-          title="Edit Image Generation Prompt"
+          disabled={switchingSlides}
         >
-          <div className="text-sm font-semibold text-slate-700">Image Generation Prompt</div>
-          <div className="mt-0.5 text-xs text-slate-500 truncate">
-            {`${templateTypeId.toUpperCase()}: ${(templateTypeImageGenPrompt || "").split("\n")[0] || "Click to edit..."}`}
-          </div>
+          New Project
         </button>
-      )}
+      </div>
 
-      {/* Saved projects */}
-      <div className="border-t border-slate-100 pt-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-900">Saved Projects</div>
-          <div className="text-xs text-slate-500">{projects.length}</div>
+      {/* Template Card */}
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 text-white text-sm flex items-center justify-center">🎨</span>
+          <span className="text-sm font-semibold text-slate-900">Template</span>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Template Type</div>
+            <select
+              className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
+              value={templateTypeId}
+              onChange={(e) => {
+                const nextType = e.target.value === "enhanced" ? "enhanced" : "regular";
+                setTemplateTypeId(nextType);
+                if (currentProjectId) {
+                  void (async () => {
+                    try {
+                      const j = await fetchJson("/api/editor/projects/set-template-type", {
+                        method: "POST",
+                        body: JSON.stringify({ projectId: currentProjectId, templateTypeId: nextType }),
+                      });
+                      if (!j?.success) throw new Error(j?.error || "Failed to update template type");
+                      const p = j?.project || null;
+                      if (p) {
+                        setTemplateTypeId(p.template_type_id === "enhanced" ? "enhanced" : "regular");
+                        setProjectPromptSnapshot(p.prompt_snapshot || "");
+                        setProjectMappingSlide1(p.slide1_template_id_snapshot ?? null);
+                        setProjectMappingSlide2to5(p.slide2_5_template_id_snapshot ?? null);
+                        setProjectMappingSlide6(p.slide6_template_id_snapshot ?? null);
+                        try {
+                          await loadTemplateTypeEffective(nextType);
+                        } catch {
+                          // ignore
+                        }
+                        enqueueLiveLayout([0, 1, 2, 3, 4, 5]);
+                        void refreshProjectsList();
+                      }
+                    } catch (err: any) {
+                      console.error("[EditorShell] set-template-type failed:", err);
+                      addLog(`❌ Template Type update failed: ${String(err?.message || err)}`);
+                    }
+                  })();
+                }
+              }}
+              disabled={switchingSlides}
+            >
+              <option value="regular">Regular</option>
+              <option value="enhanced">Enhanced</option>
+            </select>
+            <div className="mt-1 text-xs text-slate-500">
+              Slide 1: {(currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1) ? "✓" : "—"} · 2–5:{" "}
+              {(currentProjectId ? projectMappingSlide2to5 : templateTypeMappingSlide2to5) ? "✓" : "—"} · 6:{" "}
+              {(currentProjectId ? projectMappingSlide6 : templateTypeMappingSlide6) ? "✓" : "—"}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="text-xs font-semibold text-slate-500 uppercase">Settings</div>
+            <button
+              className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+              onClick={() => setTemplateSettingsOpen(true)}
+              disabled={switchingSlides}
+              title="Edit template type settings"
+            >
+              Open
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
+            onClick={() => {
+              setPromptModalSection("prompt");
+              setPromptModalOpen(true);
+            }}
+            title="Edit Poppy Prompt"
+          >
+            <div className="text-xs font-semibold text-slate-700">Poppy Prompt</div>
+            <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+              {(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
+            onClick={() => {
+              setPromptModalSection("emphasis");
+              setPromptModalOpen(true);
+            }}
+            title="Edit Text Styling Prompt"
+          >
+            <div className="text-xs font-semibold text-slate-700">Text Styling Prompt</div>
+            <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+              {(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}
+            </div>
+          </button>
+
+          {templateTypeId === "enhanced" && (
+            <button
+              type="button"
+              className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
+              onClick={() => {
+                setPromptModalSection("image");
+                setPromptModalOpen(true);
+              }}
+              title="Edit Image Generation Prompt"
+            >
+              <div className="text-xs font-semibold text-slate-700">Image Generation Prompt</div>
+              <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                {(templateTypeImageGenPrompt || "").split("\n")[0] || "Click to edit..."}
+              </div>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Saved Projects Card */}
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-blue-500 text-white text-sm flex items-center justify-center">💾</span>
+            <span className="text-sm font-semibold text-slate-900">Saved Projects</span>
+          </div>
+          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{projects.length}</span>
         </div>
         <button
           onClick={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
-          className="w-full h-10 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm flex items-center justify-between px-3"
+          className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm flex items-center justify-between px-3 hover:bg-slate-50 transition-colors"
           disabled={projectsLoading || switchingSlides}
         >
           <span>
@@ -3218,7 +3234,7 @@ export default function EditorShell() {
         </button>
 
         {projectsDropdownOpen && (
-          <div className="w-full bg-white border border-slate-200 rounded-md shadow-sm max-h-64 overflow-y-auto">
+          <div className="mt-2 w-full bg-white border border-slate-200 rounded-lg shadow-sm max-h-64 overflow-y-auto">
             {projects.length === 0 ? (
               <div className="p-3 text-sm text-slate-500">No projects yet</div>
             ) : (
@@ -3226,7 +3242,7 @@ export default function EditorShell() {
                 {projects.map((p) => (
                   <button
                     key={p.id}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors"
                     onClick={() => {
                       setProjectsDropdownOpen(false);
                       void loadProject(p.id);
@@ -3248,14 +3264,17 @@ export default function EditorShell() {
         )}
       </div>
 
-      {/* Typography (project-wide; canvas-only) */}
-      <div className="border-t border-slate-100 pt-4 space-y-3">
-        <div className="text-sm font-semibold text-slate-900">Fonts</div>
-        <div className="space-y-2">
+      {/* Typography Card */}
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-xs font-bold flex items-center justify-center">Aa</span>
+          <span className="text-sm font-semibold text-slate-900">Typography</span>
+        </div>
+        <div className="space-y-3">
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline Font</div>
             <select
-              className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+              className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
               value={fontKey(headlineFontFamily, headlineFontWeight)}
               onChange={(e) => {
                 const raw = e.target.value || "";
@@ -3273,9 +3292,9 @@ export default function EditorShell() {
             </select>
           </div>
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body Font</div>
             <select
-              className="w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
+              className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
               value={fontKey(bodyFontFamily, bodyFontWeight)}
               onChange={(e) => {
                 const raw = e.target.value || "";
@@ -3292,40 +3311,42 @@ export default function EditorShell() {
               ))}
             </select>
           </div>
-          {/* Body Font Size removed - now per-slide in the text input section */}
         </div>
       </div>
 
-      {/* Background Effects (project-wide colors) */}
-      <div className="border-t border-slate-100 pt-4 space-y-3">
-        <div className="text-sm font-semibold text-slate-900">Background Effects</div>
+      {/* Colors Card */}
+      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 text-white text-sm flex items-center justify-center">🖌️</span>
+          <span className="text-sm font-semibold text-slate-900">Colors</span>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Background</div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <input
                 type="color"
-                className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
+                className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
                 value={projectBackgroundColor || "#ffffff"}
                 onChange={(e) => updateProjectColors(e.target.value, projectTextColor)}
                 disabled={loading || switchingSlides}
                 aria-label="Background color"
               />
-              <div className="text-sm text-slate-700 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
+              <div className="text-xs text-slate-600 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
             </div>
           </div>
           <div>
             <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <input
                 type="color"
-                className="h-10 w-14 rounded-md border border-slate-200 bg-white p-1"
+                className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
                 value={projectTextColor || "#000000"}
                 onChange={(e) => updateProjectColors(projectBackgroundColor, e.target.value)}
                 disabled={loading || switchingSlides}
                 aria-label="Text color"
               />
-              <div className="text-sm text-slate-700 tabular-nums">{projectTextColor || "#000000"}</div>
+              <div className="text-xs text-slate-600 tabular-nums">{projectTextColor || "#000000"}</div>
             </div>
           </div>
         </div>
