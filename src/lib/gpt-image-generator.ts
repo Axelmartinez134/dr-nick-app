@@ -26,15 +26,14 @@ CRITICAL REQUIREMENTS:
     n: 1,
     size: '1024x1536', // Portrait format (1080x1440 will be scaled from this)
     quality: 'high', // High quality for best fidelity
-    background: 'transparent', // Native transparent background - no Clipdrop needed!
-    output_format: 'png', // PNG supports transparency
+    output_format: 'png',
+    // NOTE: No 'background: transparent' - we use RemoveBG for better transparency results
   };
 
   console.log('[GPT-Image-1.5] 📤 Request config:', {
     model: requestBody.model,
     size: requestBody.size,
     quality: requestBody.quality,
-    background: requestBody.background,
     output_format: requestBody.output_format,
   });
 
@@ -63,10 +62,6 @@ CRITICAL REQUIREMENTS:
     const data = await response.json();
     console.log('[GPT-Image-1.5] 📦 Response data keys:', Object.keys(data));
     console.log('[GPT-Image-1.5] 📦 Number of images:', data.data?.length || 0);
-    console.log('[GPT-Image-1.5] 📊 Background:', data.background);
-    console.log('[GPT-Image-1.5] 📊 Output format:', data.output_format);
-    console.log('[GPT-Image-1.5] 📊 Quality:', data.quality);
-    console.log('[GPT-Image-1.5] 📊 Size:', data.size);
 
     // GPT Image models always return base64-encoded images
     const imageBase64 = data.data[0]?.b64_json;
@@ -75,12 +70,10 @@ CRITICAL REQUIREMENTS:
       throw new Error('No image data returned from GPT-Image API');
     }
 
-    console.log('[GPT-Image-1.5] ✅ Image generated successfully with transparent background');
+    console.log('[GPT-Image-1.5] ✅ Image generated successfully');
     console.log('[GPT-Image-1.5] ⏱️ Total time:', Date.now() - startTime, 'ms');
     console.log('[GPT-Image-1.5] 📊 Base64 length:', imageBase64.length, 'characters');
-    console.log('[GPT-Image-1.5] ==========================================');
-    console.log('[GPT-Image-1.5] ✅ TRANSPARENT BACKGROUND - No Clipdrop needed!');
-    console.log('[GPT-Image-1.5] ==========================================');
+    console.log('[GPT-Image-1.5] 📝 Note: Background removal will be handled by RemoveBG');
 
     // Return as data URL (already base64, just need to add prefix)
     const dataUrl = `data:image/png;base64,${imageBase64}`;

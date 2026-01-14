@@ -118,6 +118,7 @@ export default function EditorShell() {
   // Template type settings (global defaults + per-user overrides)
   const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
   const [templateTypeEmphasisPrompt, setTemplateTypeEmphasisPrompt] = useState<string>("");
+  const [templateTypeImageGenPrompt, setTemplateTypeImageGenPrompt] = useState<string>("");
   const [templateTypeMappingSlide1, setTemplateTypeMappingSlide1] = useState<string | null>(null);
   const [templateTypeMappingSlide2to5, setTemplateTypeMappingSlide2to5] = useState<string | null>(null);
   const [templateTypeMappingSlide6, setTemplateTypeMappingSlide6] = useState<string | null>(null);
@@ -130,12 +131,22 @@ export default function EditorShell() {
   const [templateSnapshots, setTemplateSnapshots] = useState<Record<string, any>>({});
 
   const [promptModalOpen, setPromptModalOpen] = useState(false);
-  const [promptModalSection, setPromptModalSection] = useState<"prompt" | "emphasis">("prompt");
+  const [promptModalSection, setPromptModalSection] = useState<"prompt" | "emphasis" | "image">("prompt");
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
   const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [copyGenerating, setCopyGenerating] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
+  // AI Image Prompt generation state
+  const [imagePromptGenerating, setImagePromptGenerating] = useState(false);
+  const [imagePromptError, setImagePromptError] = useState<string | null>(null);
+  const imagePromptSaveTimeoutRef = useRef<number | null>(null);
+  const [aiImagePromptSaveStatus, setAiImagePromptSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  // AI Image generation state (actual image generation)
+  const [aiImageGenerating, setAiImageGenerating] = useState(false);
+  const [aiImageError, setAiImageError] = useState<string | null>(null);
+  const [aiImageProgress, setAiImageProgress] = useState(0); // 0-100
+  const aiImageProgressRef = useRef<number | null>(null);
   const [copyProgressState, setCopyProgressState] = useState<"idle" | "running" | "success" | "error">("idle");
   const [copyProgressLabel, setCopyProgressLabel] = useState<string>("");
   const copyProgressPollRef = useRef<number | null>(null);
@@ -325,6 +336,9 @@ export default function EditorShell() {
     draftBodyTextAlign: "left" | "center" | "right"; // persisted via input_snapshot.bodyTextAlign (future)
     draftBg: string;
     draftText: string;
+    // AI Image Prompt (Enhanced only) - per-slide prompt for image generation
+    savedAiImagePrompt: string;
+    draftAiImagePrompt: string;
   };
 
   const initSlide = (): SlideState => ({
@@ -345,6 +359,8 @@ export default function EditorShell() {
     draftBodyTextAlign: "left",
     draftBg: "#ffffff",
     draftText: "#000000",
+    savedAiImagePrompt: "",
+    draftAiImagePrompt: "",
   });
 
   const [slides, setSlides] = useState<SlideState[]>(
@@ -396,6 +412,26 @@ export default function EditorShell() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId, activeSlideIndex, activeDraftHeadline, activeDraftBody, templateTypeId, switchingSlides]);
+
+  // Debounced autosave: active slide AI image prompt → Supabase (carousel_project_slides.ai_image_prompt)
+  const activeDraftAiImagePrompt = slides[activeSlideIndex]?.draftAiImagePrompt || "";
+  useEffect(() => {
+    if (!currentProjectId) return;
+    if (switchingSlides) return;
+    if (templateTypeId !== 'enhanced') return;
+    const cur = slidesRef.current[activeSlideIndex];
+    if (!cur) return;
+    // Don't save if unchanged
+    if ((cur.draftAiImagePrompt || "") === (cur.savedAiImagePrompt || "")) return;
+    if (imagePromptSaveTimeoutRef.current) window.clearTimeout(imagePromptSaveTimeoutRef.current);
+    imagePromptSaveTimeoutRef.current = window.setTimeout(() => {
+      void saveSlideAiImagePrompt(activeSlideIndex, activeDraftAiImagePrompt);
+    }, 600);
+    return () => {
+      if (imagePromptSaveTimeoutRef.current) window.clearTimeout(imagePromptSaveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, activeSlideIndex, activeDraftAiImagePrompt, templateTypeId, switchingSlides]);
 
   // Persist layout snapshots only when an explicit layout action happened (Generate Layout / Realign / Undo).
   useEffect(() => {
@@ -868,6 +904,11 @@ export default function EditorShell() {
       addLog(`📐 Queue live layout for slides 1–6`);
       setCopyProgressLabel("Applying layouts…");
       enqueueLiveLayout([0, 1, 2, 3, 4, 5]);
+      // Generate AI image prompts for Enhanced template type (async, non-blocking)
+      if (typeOut === 'enhanced') {
+        addLog(`🎨 Triggering AI image prompt generation for Enhanced project`);
+        void runGenerateImagePrompts();
+      }
       setCopyProgressState("success");
     } catch (e: any) {
       setCopyError(e?.message || 'Generate Copy failed');
@@ -1886,11 +1927,12 @@ export default function EditorShell() {
     const effective = data?.effective;
     setTemplateTypePrompt(effective?.prompt || '');
     setTemplateTypeEmphasisPrompt(effective?.emphasisPrompt || '');
+    setTemplateTypeImageGenPrompt(effective?.imageGenPrompt || '');
     setTemplateTypeMappingSlide1(effective?.slide1TemplateId ?? null);
     setTemplateTypeMappingSlide2to5(effective?.slide2to5TemplateId ?? null);
     setTemplateTypeMappingSlide6(effective?.slide6TemplateId ?? null);
     addLog(
-      `✅ Settings loaded: promptLen=${String(effective?.prompt || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}`
+      `✅ Settings loaded: promptLen=${String(effective?.prompt || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}, imageGenLen=${String(effective?.imageGenPrompt || "").length}`
     );
     // Reset prompt status on type switch
     setPromptSaveStatus('idle');
@@ -1929,6 +1971,7 @@ export default function EditorShell() {
       const inputSnap = row?.input_snapshot ?? null;
       const loadedHeadline = row?.headline || '';
       const loadedBody = row?.body || '';
+      const loadedAiImagePrompt = row?.ai_image_prompt || '';
       return {
         ...prev,
         savedHeadline: loadedHeadline,
@@ -1953,6 +1996,8 @@ export default function EditorShell() {
         layoutData: layoutSnap ? { success: true, layout: layoutSnap, imageUrl: null } : null,
         inputData: inputSnap || null,
         layoutHistory: [],
+        savedAiImagePrompt: loadedAiImagePrompt,
+        draftAiImagePrompt: loadedAiImagePrompt,
       };
     });
     setSlides(nextSlides);
@@ -1996,6 +2041,7 @@ export default function EditorShell() {
       const row = slidesRows.find((r: any) => r.slide_index === i);
       const loadedHeadline = row?.headline || '';
       const loadedBody = row?.body || '';
+      const loadedAiImagePrompt = row?.ai_image_prompt || '';
       return {
         ...prev,
         savedHeadline: loadedHeadline,
@@ -2013,6 +2059,8 @@ export default function EditorShell() {
         error: null,
         debugLogs: [],
         debugScreenshot: null,
+        savedAiImagePrompt: loadedAiImagePrompt,
+        draftAiImagePrompt: loadedAiImagePrompt,
       };
     });
     setSlides(nextSlides);
@@ -2076,7 +2124,7 @@ export default function EditorShell() {
   const savePromptSettings = async () => {
     // Simplified behavior: always write to global defaults (shared across editor users).
     addLog(
-      `💾 Saving template-type prompts: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length}`
+      `💾 Saving template-type prompts: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
     );
     await fetchJson('/api/editor/template-types/defaults/update', {
       method: 'POST',
@@ -2084,12 +2132,215 @@ export default function EditorShell() {
         templateTypeId,
         defaultPrompt: templateTypePrompt,
         defaultEmphasisPrompt: templateTypeEmphasisPrompt,
+        defaultImageGenPrompt: templateTypeImageGenPrompt,
         slide1TemplateId: templateTypeMappingSlide1,
         slide2to5TemplateId: templateTypeMappingSlide2to5,
         slide6TemplateId: templateTypeMappingSlide6,
       }),
     });
     addLog(`✅ Saved template-type prompts`);
+  };
+
+  // Save AI image prompt for a single slide
+  const saveSlideAiImagePrompt = async (slideIndex: number, prompt: string) => {
+    if (!currentProjectId) return false;
+    setAiImagePromptSaveStatus("saving");
+    try {
+      addLog(`💾 Saving AI image prompt for slide ${slideIndex + 1}`);
+      await fetchJson('/api/editor/projects/slides/update', {
+        method: 'POST',
+        body: JSON.stringify({
+          projectId: currentProjectId,
+          slideIndex,
+          aiImagePrompt: prompt,
+        }),
+      });
+      // Update saved state
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== slideIndex ? s : { ...s, savedAiImagePrompt: prompt }
+        )
+      );
+      addLog(`✅ Saved AI image prompt for slide ${slideIndex + 1}`);
+      setAiImagePromptSaveStatus("saved");
+      window.setTimeout(() => setAiImagePromptSaveStatus("idle"), 1200);
+      return true;
+    } catch (e) {
+      addLog(`❌ Failed to save AI image prompt for slide ${slideIndex + 1}`);
+      setAiImagePromptSaveStatus("idle");
+      return false;
+    }
+  };
+
+  // Generate AI image prompts for all slides (called after Generate Copy)
+  const runGenerateImagePrompts = async (slideIndexOverride?: number) => {
+    if (!currentProjectId) return;
+    if (templateTypeId !== 'enhanced') return;
+    setImagePromptGenerating(true);
+    setImagePromptError(null);
+    try {
+      addLog(`🎨 Generating AI image prompts for project ${currentProjectId}${slideIndexOverride !== undefined ? ` (slide ${slideIndexOverride + 1} only)` : ''}`);
+      const bodyPayload: any = { projectId: currentProjectId };
+      if (slideIndexOverride !== undefined) {
+        bodyPayload.slideIndex = slideIndexOverride;
+      }
+      const data = await fetchJson('/api/editor/projects/jobs/generate-image-prompts', {
+        method: 'POST',
+        body: JSON.stringify(bodyPayload),
+      });
+      const prompts = data.prompts || [];
+      addLog(`🎨 Received ${prompts.length} AI image prompts`);
+      // Update slides with new prompts
+      setSlides((prev) =>
+        prev.map((s, i) => {
+          const newPrompt = prompts[i] || '';
+          if (slideIndexOverride !== undefined && i !== slideIndexOverride) return s;
+          if (!newPrompt) return s;
+          return {
+            ...s,
+            savedAiImagePrompt: newPrompt,
+            draftAiImagePrompt: newPrompt,
+          };
+        })
+      );
+    } catch (e: any) {
+      addLog(`❌ Failed to generate AI image prompts: ${e?.message || 'unknown error'}`);
+      setImagePromptError(e?.message || 'Failed to generate image prompts');
+    } finally {
+      setImagePromptGenerating(false);
+    }
+  };
+
+  // Generate AI image from the prompt and place it on the active slide
+  const runGenerateAiImage = async () => {
+    if (!currentProjectId) {
+      setAiImageError('Create or load a project first.');
+      return;
+    }
+    if (templateTypeId !== 'enhanced') {
+      setAiImageError('AI images are only available for Enhanced template type.');
+      return;
+    }
+    const prompt = slides[activeSlideIndex]?.draftAiImagePrompt || '';
+    if (!prompt || prompt.trim().length < 10) {
+      setAiImageError('Please enter or generate an image prompt first (min 10 characters).');
+      return;
+    }
+
+    setAiImageGenerating(true);
+    setAiImageError(null);
+    setAiImageProgress(0);
+
+    // Start progress animation (fake progress over 30s)
+    if (aiImageProgressRef.current) window.clearInterval(aiImageProgressRef.current);
+    const startTime = Date.now();
+    const totalDuration = 60000; // 60 seconds (1 minute)
+    aiImageProgressRef.current = window.setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(95, (elapsed / totalDuration) * 100); // Max 95% until complete
+      setAiImageProgress(progress);
+    }, 200);
+
+    try {
+      addLog(`🖼️ Generating AI image for slide ${activeSlideIndex + 1}...`);
+      const token = await getAuthToken();
+      if (!token) throw new Error("Not authenticated. Please sign in again.");
+
+      const res = await fetch('/api/editor/projects/jobs/generate-ai-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          projectId: currentProjectId,
+          slideIndex: activeSlideIndex,
+          prompt: prompt.trim(),
+        }),
+      });
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.success) {
+        throw new Error(j?.error || `Image generation failed (${res.status})`);
+      }
+
+      const url = String(j?.url || '');
+      const path = String(j?.path || '');
+      if (!url) throw new Error('Image generated but no URL returned.');
+
+      addLog(`✅ AI image generated: ${url.substring(0, 80)}...`);
+
+      // Load image dimensions for placement
+      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
+        img.onerror = () => resolve({ w: 1, h: 1 });
+        img.src = url;
+      });
+
+      const tid = computeTemplateIdForSlide(activeSlideIndex);
+      const snap = (tid ? templateSnapshots[tid] : null) || null;
+      const placement = computeDefaultUploadedImagePlacement(snap, dims.w, dims.h);
+      const mask = (j?.mask as any) || null;
+      const bgRemovalStatus = String(j?.bgRemovalStatus || 'succeeded');
+      const original = j?.original || null;
+      const processed = j?.processed || null;
+
+      // Update layout with new AI-generated image (replaces any existing image)
+      const baseLayout = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+      const nextLayout = {
+        ...baseLayout,
+        image: {
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
+          height: placement.height,
+          url,
+          storage: { bucket: 'carousel-project-images', path },
+          bgRemovalEnabled: true,
+          bgRemovalStatus,
+          ...(original ? { original: { url: String(original.url || ''), storage: original.storage || { bucket: 'carousel-project-images', path: String(original.path || '') } } } : {}),
+          ...(processed ? { processed: { url: String(processed.url || ''), storage: processed.storage || { bucket: 'carousel-project-images', path: String(processed.path || '') } } } : {}),
+          ...(mask ? { mask } : {}),
+          isAiGenerated: true, // Mark as AI-generated
+        },
+      };
+
+      setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== activeSlideIndex
+            ? s
+            : {
+                ...s,
+                layoutData: { success: true, layout: nextLayout, imageUrl: url } as any,
+              }
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s, i) =>
+        i !== activeSlideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
+      );
+
+      // Persist to Supabase
+      await saveSlidePatch(activeSlideIndex, { layoutSnapshot: nextLayout });
+      addLog(`🖼️ AI image placed on slide ${activeSlideIndex + 1}`);
+
+      // Complete progress
+      setAiImageProgress(100);
+    } catch (e: any) {
+      addLog(`❌ AI image generation failed: ${e?.message || 'unknown error'}`);
+      setAiImageError(e?.message || 'Image generation failed. Please contact Dr. Nick.');
+    } finally {
+      if (aiImageProgressRef.current) {
+        window.clearInterval(aiImageProgressRef.current);
+        aiImageProgressRef.current = null;
+      }
+      // Brief delay before resetting to show 100% or error state
+      window.setTimeout(() => {
+        setAiImageGenerating(false);
+        setAiImageProgress(0);
+      }, 500);
+    }
   };
 
   // Load template type defaults + saved projects on mount/login.
@@ -2194,6 +2445,7 @@ export default function EditorShell() {
     templateTypeId,
     templateTypePrompt,
     templateTypeEmphasisPrompt,
+    templateTypeImageGenPrompt,
     templateTypeMappingSlide1,
     templateTypeMappingSlide2to5,
     templateTypeMappingSlide6,
@@ -2878,6 +3130,23 @@ export default function EditorShell() {
           {`${templateTypeId.toUpperCase()}: ${(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}`}
         </div>
       </button>
+
+      {templateTypeId === "enhanced" && (
+        <button
+          type="button"
+          className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2.5 hover:bg-slate-50"
+          onClick={() => {
+            setPromptModalSection("image");
+            setPromptModalOpen(true);
+          }}
+          title="Edit Image Generation Prompt"
+        >
+          <div className="text-sm font-semibold text-slate-700">Image Generation Prompt</div>
+          <div className="mt-0.5 text-xs text-slate-500 truncate">
+            {`${templateTypeId.toUpperCase()}: ${(templateTypeImageGenPrompt || "").split("\n")[0] || "Click to edit..."}`}
+          </div>
+        </button>
+      )}
 
       {/* Saved projects */}
       <div className="border-t border-slate-100 pt-4 space-y-2">
@@ -3859,6 +4128,93 @@ export default function EditorShell() {
                     />
                   </div>
 
+                  {/* AI Image Prompt (Enhanced only) */}
+                  {templateTypeId === "enhanced" && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <label className="block text-sm font-semibold text-slate-900">AI Image Prompt</label>
+                          {aiImagePromptSaveStatus === "saving" && (
+                            <span className="text-xs text-slate-500">Saving...</span>
+                          )}
+                          {aiImagePromptSaveStatus === "saved" && (
+                            <span className="text-xs text-emerald-600">Saved ✓</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          onClick={() => void runGenerateImagePrompts(activeSlideIndex)}
+                          disabled={imagePromptGenerating || !currentProjectId || copyGenerating || switchingSlides}
+                          title="Regenerate AI image prompt for this slide"
+                        >
+                          {imagePromptGenerating ? "Generating..." : "Regenerate"}
+                        </button>
+                      </div>
+                      <textarea
+                        className="w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900 text-sm"
+                        rows={4}
+                        value={slides[activeSlideIndex]?.draftAiImagePrompt || ""}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setSlides((prev) =>
+                            prev.map((s, i) =>
+                              i === activeSlideIndex
+                                ? { ...s, draftAiImagePrompt: newValue }
+                                : s
+                            )
+                          );
+                        }}
+                        disabled={loading || switchingSlides || copyGenerating || imagePromptGenerating}
+                        placeholder="AI-generated image prompt will appear here after Generate Copy..."
+                      />
+                      {imagePromptError && (
+                        <div className="mt-1 text-xs text-red-600">
+                          {imagePromptError}
+                        </div>
+                      )}
+
+                      {/* Generate Image Button with Progress Bar */}
+                      <div className="mt-3">
+                        <button
+                          className="w-full h-10 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50 relative overflow-hidden"
+                          disabled={
+                            !currentProjectId ||
+                            aiImageGenerating ||
+                            copyGenerating ||
+                            switchingSlides ||
+                            imagePromptGenerating ||
+                            !(slides[activeSlideIndex]?.draftAiImagePrompt || '').trim()
+                          }
+                          onClick={() => void runGenerateAiImage()}
+                        >
+                          {aiImageGenerating ? (
+                            <>
+                              {/* Progress bar background */}
+                              <div
+                                className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
+                                style={{ width: `${aiImageProgress}%` }}
+                              />
+                              <span className="relative z-10">
+                                Generating... {Math.round(aiImageProgress)}%
+                              </span>
+                            </>
+                          ) : (
+                            "🎨 Generate Image"
+                          )}
+                        </button>
+                        {aiImageError && (
+                          <div className="mt-2 text-xs text-red-600">
+                            {aiImageError}
+                          </div>
+                        )}
+                        <div className="mt-1 text-xs text-slate-500">
+                          Uses AI to create an image matching this prompt. Takes ~60 seconds.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
 
                 <div className="space-y-3">
@@ -4344,6 +4700,25 @@ export default function EditorShell() {
                     placeholder="Enter the text styling prompt for this template type..."
                   />
                 </div>
+
+                {templateTypeId === "enhanced" && (
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Image Generation Prompt</div>
+                    <div className="mt-0.5 text-xs text-slate-500">
+                      System prompt sent to Claude for generating per-slide image prompts. Used when "Generate Copy" is clicked (Enhanced only).
+                    </div>
+                    <textarea
+                      className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                      rows={10}
+                      value={templateTypeImageGenPrompt}
+                      onChange={(e) => {
+                        promptDirtyRef.current = true;
+                        setTemplateTypeImageGenPrompt(e.target.value);
+                      }}
+                      placeholder="Enter the image generation prompt for this template type..."
+                    />
+                  </div>
+                )}
               </div>
               <div className="mt-2 text-xs text-slate-500">
                 Auto-saves as you type. Press <span className="font-mono">Esc</span> to close.

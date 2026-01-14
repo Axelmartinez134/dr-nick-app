@@ -38,6 +38,7 @@ export type TemplateTypeDefaultsRow = {
   label: string;
   default_prompt: string;
   default_emphasis_prompt: string;
+  default_image_gen_prompt: string;
   default_slide1_template_id: string | null;
   default_slide2_5_template_id: string | null;
   default_slide6_template_id: string | null;
@@ -69,6 +70,33 @@ PLACEMENT (to avoid randomness):
 - Emphasis should typically land on words that change meaning or carry the takeaway.
 - Prefer complete words/phrases (no mid-word emphasis).
 - Don’t emphasize punctuation or whitespace.`;
+
+const DEFAULT_IMAGE_GEN_PROMPT = `You are creating image generation prompts for a 6-slide Instagram carousel about health/medical topics.
+
+For EACH slide, generate a concise, descriptive prompt that would create a professional medical illustration matching that slide's content.
+
+REQUIREMENTS:
+- NO TEXT in the images (text will be added separately by the design system)
+- Professional, clean medical illustration style
+- Suitable for Instagram/LinkedIn carousel (portrait format 1080x1440)
+- Educational and trustworthy visual aesthetic
+- Consider the narrative flow across all 6 slides
+
+INPUT: You will receive all 6 slides with their headline and body text.
+
+OUTPUT: Return ONLY valid JSON:
+{
+  "prompts": [
+    "prompt for slide 1",
+    "prompt for slide 2", 
+    "prompt for slide 3",
+    "prompt for slide 4",
+    "prompt for slide 5",
+    "prompt for slide 6"
+  ]
+}
+
+Each prompt should be 1-3 sentences describing the visual concept.`;
 
 const DEFAULT_EMPHASIS_PROMPT_ENHANCED = `You are a social-media typography editor for a 6-slide carousel.
 
@@ -116,11 +144,15 @@ export function mergeTemplateTypeDefaults(
     emphasisPrompt:
       (defaults.default_emphasis_prompt || '').trim() ||
       (defaults.id === 'enhanced' ? DEFAULT_EMPHASIS_PROMPT_ENHANCED : DEFAULT_EMPHASIS_PROMPT_REGULAR),
+    imageGenPrompt:
+      (defaults.default_image_gen_prompt || '').trim() || DEFAULT_IMAGE_GEN_PROMPT,
     slide1TemplateId: override?.slide1_template_id_override ?? defaults.default_slide1_template_id ?? null,
     slide2to5TemplateId: override?.slide2_5_template_id_override ?? defaults.default_slide2_5_template_id ?? null,
     slide6TemplateId: override?.slide6_template_id_override ?? defaults.default_slide6_template_id ?? null,
     updatedAt: defaults.updated_at,
   };
 }
+
+export { DEFAULT_IMAGE_GEN_PROMPT };
 
 

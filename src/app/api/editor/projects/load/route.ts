@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
   const { data: slides, error: slidesErr } = await supabase
     .from('carousel_project_slides')
-    .select('id, project_id, slide_index, headline, body, layout_snapshot, input_snapshot, created_at, updated_at')
+    .select('id, project_id, slide_index, headline, body, layout_snapshot, input_snapshot, ai_image_prompt, created_at, updated_at')
     .eq('project_id', project.id)
     .order('slide_index', { ascending: true });
 

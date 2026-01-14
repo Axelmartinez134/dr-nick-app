@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const { data: defaults, error: defaultsErr } = await supabase
     .from('carousel_template_types')
     .select(
-      'id, label, default_prompt, default_emphasis_prompt, default_slide1_template_id, default_slide2_5_template_id, default_slide6_template_id, updated_at, updated_by'
+      'id, label, default_prompt, default_emphasis_prompt, default_image_gen_prompt, default_slide1_template_id, default_slide2_5_template_id, default_slide6_template_id, updated_at, updated_by'
     )
     .eq('id', templateTypeId)
     .single();
