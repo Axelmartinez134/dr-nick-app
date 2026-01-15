@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
     .from('carousel_templates')
     .select('id, name, owner_user_id, definition, updated_at')
     .eq('id', id)
+    .eq('owner_user_id', user.id)
     .single();
 
   if (error || !data) {

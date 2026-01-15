@@ -10,7 +10,6 @@ import DrNickAdmin from './DrNickAdmin'
 import DrNickQueue, { QueueSubmission } from './DrNickQueue'
 import DrNickSubmissionReview from './DrNickSubmissionReview'
 import MarketingTab from './marketing/MarketingTab'
-import AICarouselPageVision from './marketing/ai-carousel/AICarouselPageVision'
 import ChatBotDemo from './ChatBotDemo'
 
 // Import QueueSubmission interface from DrNickQueue
@@ -703,11 +702,6 @@ export default function DrNickPatientDashboard() {
       {/* Marketing Tab Content */}
       {activeTab === 'marketing' && (
         <MarketingTab />
-      )}
-
-      {/* AI Carousels Tab Content */}
-      {activeTab === 'aiCarousel' && (
-        <AICarouselPageVision />
       )}
 
       {activeTab === 'chatbot' && (

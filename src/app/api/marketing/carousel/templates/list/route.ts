@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from('carousel_templates')
     .select('id, name, updated_at')
+    .eq('owner_user_id', user.id)
     .order('updated_at', { ascending: false });
 
   if (error) {

@@ -1,6 +1,7 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSupabase } from '../../../../editor/_utils';
+import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -16,56 +17,6 @@ type InlineStyleRange = {
   italic?: boolean;
   underline?: boolean;
 };
-
-const DEFAULT_EMPHASIS_PROMPT_REGULAR = `You are a social-media typography editor for a 6-slide carousel.
-
-GOAL:
-Make the text instantly scannable for someone scrolling fast. Use your discernment to apply emphasis so the reader understands the key takeaway in 1–2 seconds.
-
-WHAT YOU CAN DO:
-Return inline style ranges using bold / italic / underline.
-
-WHAT YOU MUST NOT DO (hard rules):
-- Do NOT change any characters in the text (no edits, no punctuation changes, no extra spaces, no rewording).
-- Do NOT add or remove slides.
-- Do NOT emphasize everything. Less is more.
-- Avoid emphasizing stopwords and filler ("the", "and", "that", "really", etc.).
-- Do NOT create overlapping ranges that fight each other.
-
-WHEN TO USE EACH STYLE (use judgment):
-- Bold: key nouns/terms and the core takeaway words that drive comprehension.
-- Italic: contrast operators ("not", "but", "instead") to sharpen meaning.
-- Underline: use sparingly, only if one short phrase is the single most "scroll-stopping" takeaway.
-
-PLACEMENT (to avoid randomness):
-- Emphasis should typically land on words that change meaning or carry the takeaway.
-- Prefer complete words/phrases (no mid-word emphasis).
-- Don’t emphasize punctuation or whitespace.`;
-
-const DEFAULT_EMPHASIS_PROMPT_ENHANCED = `You are a social-media typography editor for a 6-slide carousel.
-
-GOAL:
-Make the headline + body instantly scannable for someone scrolling fast. Use your discernment to apply emphasis so the reader understands the key takeaway in 1–2 seconds.
-
-WHAT YOU CAN DO:
-Return inline style ranges using bold / italic / underline.
-
-WHAT YOU MUST NOT DO (hard rules):
-- Do NOT change any characters in the text (no edits, no punctuation changes, no extra spaces, no rewording).
-- Do NOT add or remove slides.
-- Do NOT emphasize everything. Less is more.
-- Avoid emphasizing stopwords and filler ("the", "and", "that", "really", etc.).
-- Do NOT create overlapping ranges that fight each other.
-
-WHEN TO USE EACH STYLE (use judgment):
-- Bold: key nouns/terms and the core takeaway words that drive comprehension.
-- Italic: contrast operators ("not", "but", "instead") to sharpen meaning.
-- Underline: use sparingly, only if one short phrase is the single most "scroll-stopping" takeaway.
-
-PLACEMENT (to avoid randomness):
-- Emphasis should typically land on words that change meaning or carry the takeaway.
-- Prefer complete words/phrases (no mid-word emphasis).
-- Don’t emphasize punctuation or whitespace.`;
 
 function sanitizePrompt(input: string): string {
   // Remove ASCII control chars that can break JSON payloads/logging.
@@ -430,15 +381,9 @@ export async function POST(request: NextRequest) {
     const slides = payload.slides as Array<{ headline?: string; body: string }>;
     const caption = payload.caption as string;
 
-    // Load saved emphasis prompt for this template type (shared global defaults).
-    const { data: ttRow } = await supabase
-      .from('carousel_template_types')
-      .select('default_emphasis_prompt')
-      .eq('id', templateTypeId)
-      .maybeSingle();
-    const emphasisInstruction =
-      String(ttRow?.default_emphasis_prompt || '').trim() ||
-      (templateTypeId === 'enhanced' ? DEFAULT_EMPHASIS_PROMPT_ENHANCED : DEFAULT_EMPHASIS_PROMPT_REGULAR);
+    // Load per-user effective emphasis prompt for this template type.
+    const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(supabase, user.id, templateTypeId);
+    const emphasisInstruction = String(ttEffective?.emphasisPrompt || '').trim();
 
     // Generate emphasis ranges (Generate Copy only; Realign untouched).
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:emphasis' });

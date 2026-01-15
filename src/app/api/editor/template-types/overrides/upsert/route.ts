@@ -8,6 +8,8 @@ export const maxDuration = 10;
 type Body = {
   templateTypeId: TemplateTypeId;
   promptOverride?: string | null;
+  emphasisPromptOverride?: string | null;
+  imageGenPromptOverride?: string | null;
   slide1TemplateIdOverride?: string | null;
   slide2to5TemplateIdOverride?: string | null;
   slide6TemplateIdOverride?: string | null;
@@ -33,6 +35,8 @@ export async function POST(request: NextRequest) {
 
   const patch: any = { user_id: user.id, template_type_id: body.templateTypeId };
   if (body.promptOverride !== undefined) patch.prompt_override = body.promptOverride;
+  if (body.emphasisPromptOverride !== undefined) patch.emphasis_prompt_override = body.emphasisPromptOverride;
+  if (body.imageGenPromptOverride !== undefined) patch.image_gen_prompt_override = body.imageGenPromptOverride;
   if (body.slide1TemplateIdOverride !== undefined) patch.slide1_template_id_override = body.slide1TemplateIdOverride;
   if (body.slide2to5TemplateIdOverride !== undefined) patch.slide2_5_template_id_override = body.slide2to5TemplateIdOverride;
   if (body.slide6TemplateIdOverride !== undefined) patch.slide6_template_id_override = body.slide6TemplateIdOverride;
@@ -46,7 +50,7 @@ export async function POST(request: NextRequest) {
     .from('carousel_template_type_overrides')
     .upsert(patch, { onConflict: 'user_id,template_type_id' })
     .select(
-      'user_id, template_type_id, prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
+      'user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
     )
     .single();
 

@@ -61,11 +61,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Sanity: ensure template exists (prevents signing random paths).
+  // Sanity + authZ: ensure template exists and is owned by this user (templates are user-private).
   const { data: tpl, error: tplErr } = await supabase
     .from('carousel_templates')
-    .select('id')
+    .select('id, owner_user_id')
     .eq('id', templateId)
+    .eq('owner_user_id', user.id)
     .single();
   if (tplErr || !tpl) {
     return NextResponse.json({ success: false, error: 'Template not found' } as SignedUrlResponse, { status: 404 });

@@ -1,6 +1,7 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSupabase, DEFAULT_IMAGE_GEN_PROMPT } from '../../../_utils';
+import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -66,14 +67,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Could not load slides' }, { status: 500 });
   }
 
-  // Load the image gen prompt from template type settings
-  const { data: ttRow } = await supabase
-    .from('carousel_template_types')
-    .select('default_image_gen_prompt')
-    .eq('id', 'enhanced')
-    .maybeSingle();
-
-  const systemPrompt = String(ttRow?.default_image_gen_prompt || '').trim() || DEFAULT_IMAGE_GEN_PROMPT;
+  // Load the per-user effective image gen prompt for Enhanced
+  const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(supabase, user.id, 'enhanced');
+  const systemPrompt = String(ttEffective?.imageGenPrompt || '').trim() || DEFAULT_IMAGE_GEN_PROMPT;
 
   // Build the input for Claude
   const slidesInput = slides.map((s, i) => ({

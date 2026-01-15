@@ -127,6 +127,8 @@ export type TemplateTypeOverrideRow = {
   user_id: string;
   template_type_id: TemplateTypeId;
   prompt_override: string | null;
+  emphasis_prompt_override: string | null;
+  image_gen_prompt_override: string | null;
   slide1_template_id_override: string | null;
   slide2_5_template_id_override: string | null;
   slide6_template_id_override: string | null;
@@ -142,10 +144,13 @@ export function mergeTemplateTypeDefaults(
     label: defaults.label,
     prompt: (override?.prompt_override ?? '') || defaults.default_prompt || '',
     emphasisPrompt:
-      (defaults.default_emphasis_prompt || '').trim() ||
+      (String(override?.emphasis_prompt_override ?? '').trim() ||
+        (defaults.default_emphasis_prompt || '').trim()) ||
       (defaults.id === 'enhanced' ? DEFAULT_EMPHASIS_PROMPT_ENHANCED : DEFAULT_EMPHASIS_PROMPT_REGULAR),
     imageGenPrompt:
-      (defaults.default_image_gen_prompt || '').trim() || DEFAULT_IMAGE_GEN_PROMPT,
+      (String(override?.image_gen_prompt_override ?? '').trim() ||
+        (defaults.default_image_gen_prompt || '').trim()) ||
+      DEFAULT_IMAGE_GEN_PROMPT,
     slide1TemplateId: override?.slide1_template_id_override ?? defaults.default_slide1_template_id ?? null,
     slide2to5TemplateId: override?.slide2_5_template_id_override ?? defaults.default_slide2_5_template_id ?? null,
     slide6TemplateId: override?.slide6_template_id_override ?? defaults.default_slide6_template_id ?? null,

@@ -78,11 +78,14 @@ export async function POST(request: NextRequest) {
   // Load source template (service role to avoid RLS issues)
   const { data: srcTpl, error: srcErr } = await supabase
     .from('carousel_templates')
-    .select('id, name, definition')
+    .select('id, name, definition, owner_user_id')
     .eq('id', sourceTemplateId)
     .single();
   if (srcErr || !srcTpl) {
     return NextResponse.json({ success: false, error: srcErr?.message || 'Template not found' } satisfies Resp, { status: 404 });
+  }
+  if (String((srcTpl as any).owner_user_id || '') !== user.id) {
+    return NextResponse.json({ success: false, error: 'Forbidden' } satisfies Resp, { status: 403 });
   }
 
   const newName = `${String(srcTpl.name || 'Untitled Template')} (Copy)`;

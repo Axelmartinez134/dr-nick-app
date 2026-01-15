@@ -22,10 +22,16 @@ type UndoSnapshot = {
   inputData: CarouselTextRequest;
 };
 
-export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean }) {
-  // Legacy autosave writes into `ai_carousels` (single-slide). `/editor` uses `carousel_projects` instead,
-  // so we disable this there to avoid noisy save attempts and validation errors.
-  const enableLegacyAutoSave = opts?.enableLegacyAutoSave !== false;
+export function useCarouselEditorEngine(opts?: {
+  enableLegacyAutoSave?: boolean;
+  enableLegacySavedCarouselsOnMount?: boolean;
+  enableTemplatesOnMount?: boolean;
+}) {
+  // Legacy autosave and legacy "saved carousels" (ai_carousels) have been removed.
+  // We keep these flags for backward-compat with call sites, but they do nothing now.
+  const enableLegacyAutoSave = false;
+  const enableLegacySavedCarouselsOnMount = false;
+  const enableTemplatesOnMount = opts?.enableTemplatesOnMount !== false;
   const canvasRef = useRef<any>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef(0);
@@ -53,9 +59,9 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
   const [headlineFontWeight, setHeadlineFontWeight] = useState<number>(400);
   const [bodyFontWeight, setBodyFontWeight] = useState<number>(400);
 
-  // Saved carousels list
-  const [savedCarousels, setSavedCarousels] = useState<SavedCarousel[]>([]);
-  const [loadingCarousels, setLoadingCarousels] = useState(false);
+  // Legacy saved carousels removed; keep minimal placeholder state for older UI.
+  const [savedCarousels] = useState<SavedCarousel[]>([]);
+  const [loadingCarousels] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
   // Debug screenshot preview
@@ -134,120 +140,12 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
   }, [addLog]);
 
   const loadSavedCarousels = useCallback(async () => {
-    setLoadingCarousels(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+    // removed
+  }, []);
 
-      const response = await fetch('/api/marketing/carousel/list', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      const result = await response.json();
-      if (result.success) {
-        setSavedCarousels(result.carousels || []);
-        addLog(`✅ Loaded ${result.carousels?.length || 0} saved carousels`);
-      }
-    } catch (err) {
-      console.error('Failed to load saved carousels:', err);
-    } finally {
-      setLoadingCarousels(false);
-    }
-  }, [addLog]);
-
-  const loadCarousel = useCallback(async (id: string) => {
-    addLog(`📂 Loading carousel: ${id}`);
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError('Not authenticated');
-        return;
-      }
-
-      const response = await fetch(`/api/marketing/carousel/load?id=${id}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        setError(result.error || 'Failed to load carousel');
-        return;
-      }
-
-      const carousel = result.carousel;
-      addLog(`✅ Carousel loaded: "${carousel.title}"`);
-
-      // Restore state from loaded carousel
-      setCurrentCarouselId(carousel.id);
-      setCarouselTitle(carousel.title);
-
-      // Reconstruct layoutData
-      const layout: LayoutResponse = {
-        success: true,
-        layout: carousel.layoutJson,
-        imageUrl: carousel.imageBase64,
-      };
-
-      // Update image position and URL with saved values
-      if (layout.layout && carousel.imageBase64 && layout.layout.image) {
-        layout.layout.image.url = carousel.imageBase64;
-
-        // IMPORTANT: Use the saved image position, not the one from layoutJson
-        // This ensures moved images are restored to their correct position
-        layout.layout.image.x = carousel.imagePosition.x;
-        layout.layout.image.y = carousel.imagePosition.y;
-        layout.layout.image.width = carousel.imagePosition.width;
-        layout.layout.image.height = carousel.imagePosition.height;
-
-        addLog(`📐 Image position restored: x=${carousel.imagePosition.x}, y=${carousel.imagePosition.y}`);
-      }
-
-      setLayoutData(layout);
-
-      // Reconstruct inputData
-      setInputData({
-        headline: carousel.headline,
-        body: carousel.body,
-        templateId: carousel.templateId || undefined,
-        settings: {
-          backgroundColor: carousel.backgroundColor,
-          textColor: carousel.textColor,
-          imagePrompt: carousel.customImagePrompt,
-        },
-      });
-
-      // Restore typography (project-wide)
-      setHeadlineFontFamily(carousel.headlineFontFamily || 'Inter, sans-serif');
-      setBodyFontFamily(carousel.bodyFontFamily || 'Inter, sans-serif');
-      setHeadlineFontWeight(700);
-      setBodyFontWeight(400);
-
-      // Restore template snapshot (render from snapshot only)
-      if (carousel.templateId && carousel.templateSnapshot) {
-        setSelectedTemplateId(carousel.templateId);
-        setSelectedTemplateSnapshot(carousel.templateSnapshot);
-        addLog(`🧩 Template snapshot restored (templateId=${carousel.templateId})`);
-      } else {
-        setSelectedTemplateId(null);
-        setSelectedTemplateSnapshot(null);
-      }
-
-      setSaveStatus('saved');
-      setShowDropdown(false);
-    } catch (err) {
-      console.error('Load error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load carousel');
-    } finally {
-      setLoading(false);
-    }
-  }, [addLog]);
+  const loadCarousel = useCallback(async (_id: string) => {
+    // removed
+  }, []);
 
   const triggerAutoSave = useCallback(() => {
     if (!enableLegacyAutoSave) return;
@@ -365,42 +263,7 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
         templateSnapshot: templateSnapshotToUse,
       };
 
-      const response = await fetch('/api/marketing/carousel/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(saveData),
-      });
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to save');
-      }
-
-      // Update current carousel ID if it was a new save
-      if (!idToUse || forceNew) {
-        setCurrentCarouselId(result.id);
-        addLog(`✅ Carousel saved as new (ID: ${result.id})`);
-      } else {
-        addLog(`✅ Carousel updated (ID: ${result.id})`);
-      }
-
-      setSaveStatus('saved');
-      retryCountRef.current = 0;
-
-      // Reload carousel list to show updated title/date
-      void loadSavedCarousels();
-
-      // Reset status after 2 seconds
-      setTimeout(() => {
-        if (saveStatus !== 'editing' && saveStatus !== 'saving') {
-          setSaveStatus('idle');
-        }
-      }, 2000);
-      return result.id as string;
+      throw new Error('Legacy save is no longer supported');
     } catch (err) {
       console.error('Auto-save error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to save';
@@ -817,9 +680,8 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
 
   // Load saved carousels + templates on mount
   useEffect(() => {
-    void loadSavedCarousels();
-    void loadTemplatesList();
-  }, [loadSavedCarousels, loadTemplatesList]);
+    if (enableTemplatesOnMount) void loadTemplatesList();
+  }, [enableLegacySavedCarouselsOnMount, enableTemplatesOnMount, loadSavedCarousels, loadTemplatesList]);
 
   return {
     // refs
@@ -872,6 +734,7 @@ export function useCarouselEditorEngine(opts?: { enableLegacyAutoSave?: boolean 
     setBodyFontFamily,
     setHeadlineFontWeight,
     setBodyFontWeight,
+    setTemplates,
 
     // actions
     addLog,

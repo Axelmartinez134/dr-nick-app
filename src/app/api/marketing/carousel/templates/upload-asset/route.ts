@@ -69,6 +69,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Missing file, templateId, or assetId' } as UploadTemplateAssetResponse, { status: 400 });
   }
 
+  // Enforce ownership: templates are user-private.
+  const { data: tpl, error: tplErr } = await supabase
+    .from('carousel_templates')
+    .select('id, owner_user_id')
+    .eq('id', templateId)
+    .single();
+  if (tplErr || !tpl?.id) {
+    return NextResponse.json({ success: false, error: 'Template not found' } as UploadTemplateAssetResponse, { status: 404 });
+  }
+  if (String((tpl as any).owner_user_id || '') !== user.id) {
+    return NextResponse.json({ success: false, error: 'Forbidden' } as UploadTemplateAssetResponse, { status: 403 });
+  }
+
   const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
   const allowed = ['png', 'webp', 'jpg', 'jpeg', 'svg'];
   if (!allowed.includes(ext)) {

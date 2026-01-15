@@ -96,10 +96,10 @@ GRANT ALL ON admin_users TO authenticated;
 -- =========================
 -- 3) ai_carousels extensions
 -- =========================
-ALTER TABLE ai_carousels
+ALTER TABLE IF EXISTS ai_carousels
   ADD COLUMN IF NOT EXISTS template_id UUID REFERENCES carousel_templates(id) ON DELETE SET NULL;
 
-ALTER TABLE ai_carousels
+ALTER TABLE IF EXISTS ai_carousels
   ADD COLUMN IF NOT EXISTS template_snapshot JSONB;
 
 CREATE INDEX IF NOT EXISTS idx_ai_carousels_template_id ON ai_carousels(template_id);

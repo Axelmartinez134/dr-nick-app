@@ -97,6 +97,9 @@ export default function EditorShell() {
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
   const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
   const lastAppliedOverrideKeysRef = useRef<Record<number, string[]>>({});
+  const editorBootstrapDoneRef = useRef(false);
+  const initialTemplateTypeLoadDoneRef = useRef(false);
+  const lastLoadedTemplateTypeIdRef = useRef<"regular" | "enhanced" | null>(null);
 
   const normalizeLineText = (s: string) => String(s || "").replace(/\s+/g, " ").trim();
 
@@ -220,6 +223,7 @@ export default function EditorShell() {
     realignmentModel,
     setRealignmentModel,
     templates,
+    setTemplates,
     loadingTemplates,
     selectedTemplateId,
     selectedTemplateSnapshot,
@@ -245,7 +249,7 @@ export default function EditorShell() {
     handleNewCarousel,
     addLog,
     loadTemplatesList,
-  } = useCarouselEditorEngine({ enableLegacyAutoSave: false });
+  } = useCarouselEditorEngine({ enableLegacyAutoSave: false, enableLegacySavedCarouselsOnMount: false, enableTemplatesOnMount: false });
 
   // Undo snapshots should restore BOTH layout and underlying text/styling state.
   // We push snapshots only for explicit layout actions (Generate Layout / Realign),
@@ -506,6 +510,66 @@ export default function EditorShell() {
     if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
     return data;
   }
+
+  // Initial editor state load (single round trip):
+  // - Bootstraps starter template if user has none
+  // - Loads templates list, projects list, effective template-type settings
+  // - Preloads the 3 mapped template definitions for instant preview rendering
+  useEffect(() => {
+    if (!user?.id) return;
+    if (editorBootstrapDoneRef.current) return;
+    editorBootstrapDoneRef.current = true;
+    void (async () => {
+      try {
+        const data = await fetchJson('/api/editor/initial-state', {
+          method: 'POST',
+          body: JSON.stringify({ templateTypeId }),
+        });
+        if (!data?.success) throw new Error(data?.error || 'Failed to load editor state');
+
+        // Hydrate templates + snapshots
+        if (Array.isArray(data.templates)) {
+          setTemplates(data.templates);
+        }
+        if (data.templateSnapshotsById && typeof data.templateSnapshotsById === 'object') {
+          setTemplateSnapshots((prev) => ({ ...prev, ...(data.templateSnapshotsById as any) }));
+        }
+
+        // Hydrate projects list
+        if (Array.isArray(data.projects)) {
+          setProjects(data.projects);
+        }
+
+        // Hydrate effective per-user template-type settings
+        const effective = data?.templateType?.effective || null;
+        if (effective) {
+          setTemplateTypePrompt(String(effective.prompt || ''));
+          setTemplateTypeEmphasisPrompt(String(effective.emphasisPrompt || ''));
+          setTemplateTypeImageGenPrompt(String(effective.imageGenPrompt || ''));
+          setTemplateTypeMappingSlide1(effective.slide1TemplateId ?? null);
+          setTemplateTypeMappingSlide2to5(effective.slide2to5TemplateId ?? null);
+          setTemplateTypeMappingSlide6(effective.slide6TemplateId ?? null);
+          promptDirtyRef.current = false;
+          setPromptSaveStatus('idle');
+        }
+
+        // Mark template-type as loaded so downstream effects don't refetch on first render.
+        initialTemplateTypeLoadDoneRef.current = true;
+        lastLoadedTemplateTypeIdRef.current = templateTypeId;
+
+        if (data?.bootstrap?.created) {
+          addLog(`🧩 Starter template created for new user`);
+        }
+      } catch (e: any) {
+        addLog(`⚠️ Initial editor load failed: ${String(e?.message || e || 'unknown error')}`);
+        // Fallback: best-effort load the two critical things.
+        void loadTemplatesList();
+        void loadTemplateTypeEffective(templateTypeId);
+        void refreshProjectsList();
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const uploadImageForActiveSlide = async (file: File) => {
     if (!currentProjectId) throw new Error("Create or load a project first.");
@@ -2125,23 +2189,23 @@ export default function EditorShell() {
   };
 
   const savePromptSettings = async () => {
-    // Simplified behavior: always write to global defaults (shared across editor users).
+    // Per-user customization is stored in `carousel_template_type_overrides`.
     addLog(
-      `💾 Saving template-type prompts: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
+      `💾 Saving per-user template-type settings: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
     );
-    await fetchJson('/api/editor/template-types/defaults/update', {
+    await fetchJson('/api/editor/template-types/overrides/upsert', {
       method: 'POST',
       body: JSON.stringify({
         templateTypeId,
-        defaultPrompt: templateTypePrompt,
-        defaultEmphasisPrompt: templateTypeEmphasisPrompt,
-        defaultImageGenPrompt: templateTypeImageGenPrompt,
-        slide1TemplateId: templateTypeMappingSlide1,
-        slide2to5TemplateId: templateTypeMappingSlide2to5,
-        slide6TemplateId: templateTypeMappingSlide6,
+        promptOverride: templateTypePrompt,
+        emphasisPromptOverride: templateTypeEmphasisPrompt,
+        imageGenPromptOverride: templateTypeImageGenPrompt,
+        slide1TemplateIdOverride: templateTypeMappingSlide1,
+        slide2to5TemplateIdOverride: templateTypeMappingSlide2to5,
+        slide6TemplateIdOverride: templateTypeMappingSlide6,
       }),
     });
-    addLog(`✅ Saved template-type prompts`);
+    addLog(`✅ Saved per-user template-type settings`);
   };
 
   // Save AI image prompt for a single slide
@@ -2401,20 +2465,21 @@ export default function EditorShell() {
   // Load template type defaults + saved projects on mount/login.
   useEffect(() => {
     if (!user?.id) return;
-    void (async () => {
-      try {
-        await loadTemplateTypeEffective(templateTypeId);
-      } catch {
-        // ignore
-      }
-      void refreshProjectsList();
-    })();
+    // Initial state is loaded via `/api/editor/initial-state`; avoid redundant round trips.
+    if (editorBootstrapDoneRef.current) return;
+    if (initialTemplateTypeLoadDoneRef.current) return;
+    initialTemplateTypeLoadDoneRef.current = true;
+    lastLoadedTemplateTypeIdRef.current = templateTypeId;
+    void Promise.allSettled([loadTemplateTypeEffective(templateTypeId), refreshProjectsList()]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   // Load effective settings when template type changes.
   useEffect(() => {
     if (!user?.id) return;
+    if (!initialTemplateTypeLoadDoneRef.current) return;
+    if (lastLoadedTemplateTypeIdRef.current === templateTypeId) return;
+    lastLoadedTemplateTypeIdRef.current = templateTypeId;
     void loadTemplateTypeEffective(templateTypeId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateTypeId, user?.id]);
@@ -2424,8 +2489,14 @@ export default function EditorShell() {
     const tid = computeTemplateIdForSlide(activeSlideIndex);
     void ensureTemplateSnapshot(tid);
     if (tid) {
-      // Keep engine template selection in sync for layout endpoints.
-      void loadTemplate(tid);
+      const snap = templateSnapshots[tid] || null;
+      if (snap) {
+        setSelectedTemplateId(tid);
+        setSelectedTemplateSnapshot(snap as any);
+      } else {
+        // Keep engine template selection in sync for layout endpoints.
+        void loadTemplate(tid);
+      }
     } else {
       setSelectedTemplateId(null);
       setSelectedTemplateSnapshot(null);
@@ -4729,7 +4800,7 @@ export default function EditorShell() {
 
               <div className="mt-3 flex items-center justify-between">
                 <div className="text-xs text-slate-500">
-                  Changes auto-save (shared). New projects snapshot these settings. Existing projects keep their snapshot unless recreated.
+                  Changes auto-save (per user). New projects snapshot these settings. Existing projects keep their snapshot unless recreated.
                 </div>
                 <button
                   className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
@@ -4777,7 +4848,7 @@ export default function EditorShell() {
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Poppy Prompt</div>
                   <div className="mt-0.5 text-xs text-slate-500">
-                    Used for generating the 6-slide copy for this template type (shared across editor users).
+                    Used for generating the 6-slide copy for this template type (saved per user).
                   </div>
                   <textarea
                     ref={promptTextareaRef}
@@ -4795,7 +4866,7 @@ export default function EditorShell() {
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Text Styling Prompt</div>
                   <div className="mt-0.5 text-xs text-slate-500">
-                    Controls bold/italic/underline for scannability. It never changes characters—only formatting ranges (shared across editor users).
+                    Controls bold/italic/underline for scannability. It never changes characters—only formatting ranges (saved per user).
                   </div>
                   <textarea
                     ref={emphasisTextareaRef}

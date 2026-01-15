@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
     .from('carousel_templates')
     .update(patch)
     .eq('id', body.id)
+    .eq('owner_user_id', user.id)
     .select('id')
     .maybeSingle();
 
