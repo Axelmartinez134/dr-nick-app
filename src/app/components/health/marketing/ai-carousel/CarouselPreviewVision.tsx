@@ -41,8 +41,23 @@ interface CarouselPreviewProps {
   clampUserTextToContentRect?: boolean; // default true
   clampUserImageToContentRect?: boolean; // default true
   pushTextOutOfUserImage?: boolean; // default true
-  onUserTextChange?: (change: { lineIndex: number; lineKey?: string; x: number; y: number; maxWidth: number; text?: string }) => void;
-  onUserImageChange?: (change: { x: number; y: number; width: number; height: number; angle?: number }) => void;
+  onUserTextChange?: (change: {
+    canvasSlideIndex?: number;
+    lineIndex: number;
+    lineKey?: string;
+    x: number;
+    y: number;
+    maxWidth: number;
+    text?: string;
+  }) => void;
+  onUserImageChange?: (change: {
+    canvasSlideIndex?: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    angle?: number;
+  }) => void;
   // Display sizing (CSS pixels). The canvas internal resolution remains 1080×1440.
   // Avoid using parent CSS transforms for scaling; they break Fabric hit-testing.
   displayWidthPx?: number;  // default 540
@@ -125,6 +140,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const clampText = clampUserTextToContentRect !== false;
     const clampImage = clampUserImageToContentRect !== false;
     const pushTextOut = pushTextOutOfUserImage !== false;
+    const canvasSlideIndex =
+      Number.isInteger(slideIndex as any) ? Math.max(0, Number(slideIndex as any)) : 0;
 
     const displayW = Math.max(1, Math.round(Number(displayWidthPx ?? 540)));
     const displayH = Math.max(1, Math.round(Number(displayHeightPx ?? 720)));
@@ -839,6 +856,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const lineIndex = Number(obj?.data?.lineIndex ?? 0);
           const aabb = getAABBTopLeft(obj);
           const next: any = {
+            canvasSlideIndex,
             lineIndex,
             lineKey: typeof obj?.data?.lineKey === 'string' ? obj.data.lineKey : undefined,
             // Persist x/y in the same coordinate system the layout uses:
@@ -861,6 +879,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // so text wrapping works correctly around the rotated bounding box
           const angle = typeof obj.angle === 'number' ? obj.angle : 0;
           cb({
+            canvasSlideIndex,
             x: aabb.x,
             y: aabb.y,
             width: Math.max(1, aabb.width),

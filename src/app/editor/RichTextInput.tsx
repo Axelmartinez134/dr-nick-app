@@ -12,6 +12,8 @@ type Props = {
   valueText: string;
   valueRanges: InlineStyleRange[];
   onChange: (next: { text: string; ranges: InlineStyleRange[] }) => void;
+  onDebugLog?: (msg: string) => void;
+  debugId?: string;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -212,7 +214,7 @@ function parseDomToTextAndRanges(root: HTMLElement): { text: string; ranges: Inl
 }
 
 export function RichTextInput(props: Props) {
-  const { valueText, valueRanges, onChange, disabled, placeholder, className, minHeightPx } = props;
+  const { valueText, valueRanges, onChange, onDebugLog, debugId, disabled, placeholder, className, minHeightPx } = props;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const isFocusedRef = useRef(false);
   const lastCommittedRef = useRef<{ text: string; rangesKey: string } | null>(null);
@@ -251,6 +253,16 @@ export function RichTextInput(props: Props) {
         const el = rootRef.current;
         if (!el) return;
         const parsed = parseDomToTextAndRanges(el);
+        try {
+          if (onDebugLog && debugId) {
+            const t = String(parsed.text || "");
+            onDebugLog(
+              `🧾 RTE blur: ${debugId} textLen=${t.length} head="${t.slice(0, 40).replace(/\s+/g, " ").trim()}"`
+            );
+          }
+        } catch {
+          // ignore
+        }
         onChange(parsed);
         lastCommittedRef.current = { text: parsed.text, rangesKey: JSON.stringify(parsed.ranges) };
       }}

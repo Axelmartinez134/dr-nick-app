@@ -154,8 +154,31 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (jobErr) {
-    console.error('[generate-ai-image] ❌ Failed to create job:', jobErr);
-    return NextResponse.json({ success: false, error: 'Failed to create job' } as GenerateResponse, { status: 500 });
+    const code = String((jobErr as any)?.code || '');
+    console.error('[generate-ai-image] ❌ Failed to create job:', {
+      code,
+      message: (jobErr as any)?.message,
+      details: (jobErr as any)?.details,
+      hint: (jobErr as any)?.hint,
+    });
+    if (code === '23505') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `A generation job is already running for this slide (slide ${slideIndex + 1}). Please wait and try again.`,
+          debug: { code, message: (jobErr as any)?.message },
+        } as any,
+        { status: 409 }
+      );
+    }
+    return NextResponse.json(
+      {
+        success: false,
+        error: (jobErr as any)?.message || 'Failed to create job',
+        debug: { code, message: (jobErr as any)?.message, details: (jobErr as any)?.details, hint: (jobErr as any)?.hint },
+      } as any,
+      { status: 500 }
+    );
   }
 
   const jobId = job.id as string;
