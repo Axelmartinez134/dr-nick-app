@@ -374,17 +374,35 @@ export default function TemplateEditorModal(props: {
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Upload failed');
 
+      // Preserve the uploaded image aspect ratio on first insert.
+      // Previously this was hard-coded to 200×200 which squished non-square images into 1:1.
+      const uploadedUrl = String(json.url || '');
+      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+        if (!uploadedUrl) return resolve({ w: 1, h: 1 });
+        const imgEl = new Image();
+        imgEl.crossOrigin = 'anonymous';
+        imgEl.onload = () => resolve({ w: imgEl.naturalWidth || imgEl.width || 1, h: imgEl.naturalHeight || imgEl.height || 1 });
+        imgEl.onerror = () => resolve({ w: 1, h: 1 });
+        imgEl.src = uploadedUrl;
+      });
+
+      const MAX_W = 420;
+      const MAX_H = 420;
+      const scale = Math.min(MAX_W / Math.max(1, dims.w), MAX_H / Math.max(1, dims.h), 1);
+      const width = Math.max(40, Math.round(dims.w * scale));
+      const height = Math.max(40, Math.round(dims.h * scale));
+
       const img: TemplateImageAsset = {
         id: assetId,
         type: 'image',
         // We treat all uploaded images as generic template image assets.
         // Their identity is determined by their position/size in the template.
         kind: 'other_image',
-        rect: { x: 60, y: 180, width: 200, height: 200 },
+        rect: { x: 60, y: 180, width, height },
         src: {
           bucket: 'carousel-templates',
           path: json.path,
-          url: json.url,
+          url: uploadedUrl,
           contentType: json.contentType,
         },
         zIndex: 1,

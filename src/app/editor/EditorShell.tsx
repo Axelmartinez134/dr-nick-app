@@ -788,14 +788,17 @@ export default function EditorShell() {
 
         // Hydrate projects list
         if (Array.isArray(data.projects)) {
-          setProjects(data.projects);
+          const sortedProjects = [...data.projects].sort(
+            (a: any, b: any) => Date.parse(String(b?.updated_at || 0)) - Date.parse(String(a?.updated_at || 0))
+          );
+          setProjects(sortedProjects);
           // Phase 1/2: auto-load most recent project if any, otherwise auto-create an Enhanced project.
           // Guarded so it can't double-run under StrictMode/dev re-renders.
           if (!initialProjectAutoLoadDoneRef.current) {
             initialProjectAutoLoadDoneRef.current = true;
-            if (data.projects.length > 0) {
+            if (sortedProjects.length > 0) {
               try {
-                await loadProject(String(data.projects[0]?.id || ""));
+                await loadProject(String(sortedProjects[0]?.id || ""));
               } catch (e: any) {
                 addLog(
                   `⚠️ Auto-load most recent project failed: ${String(e?.message || e || "unknown error")}`
@@ -2529,9 +2532,46 @@ export default function EditorShell() {
     setProjectsLoading(true);
     try {
       const data = await fetchJson('/api/editor/projects/list');
-      setProjects(data.projects || []);
+      const next = Array.isArray(data.projects) ? data.projects : [];
+      const sorted = [...next].sort(
+        (a: any, b: any) => Date.parse(String(b?.updated_at || 0)) - Date.parse(String(a?.updated_at || 0))
+      );
+      setProjects(sorted);
     } finally {
       setProjectsLoading(false);
+    }
+  };
+
+  const projectMappingSaveRunIdRef = useRef(0);
+  const persistCurrentProjectTemplateMappings = async (patch: {
+    slide1TemplateIdSnapshot?: string | null;
+    slide2to5TemplateIdSnapshot?: string | null;
+    slide6TemplateIdSnapshot?: string | null;
+  }) => {
+    const projectIdAtStart = currentProjectIdRef.current;
+    if (!projectIdAtStart) return;
+    const runId = (projectMappingSaveRunIdRef.current || 0) + 1;
+    projectMappingSaveRunIdRef.current = runId;
+    try {
+      addLog(
+        `🧩 Applying template mappings to current project: ${projectIdAtStart} ` +
+          `(s1=${patch.slide1TemplateIdSnapshot ?? "—"}, s25=${patch.slide2to5TemplateIdSnapshot ?? "—"}, s6=${patch.slide6TemplateIdSnapshot ?? "—"})`
+      );
+      const res = await fetchJson('/api/editor/projects/update-mappings', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: projectIdAtStart, ...patch }),
+      });
+      if (projectMappingSaveRunIdRef.current !== runId) return;
+      if (currentProjectIdRef.current !== projectIdAtStart) return;
+      const p = res?.project || null;
+      if (!p) return;
+      setProjectMappingSlide1(p.slide1_template_id_snapshot ?? null);
+      setProjectMappingSlide2to5(p.slide2_5_template_id_snapshot ?? null);
+      setProjectMappingSlide6(p.slide6_template_id_snapshot ?? null);
+      void refreshProjectsList();
+      addLog(`✅ Applied template mappings to project`);
+    } catch (e: any) {
+      addLog(`❌ Apply template mappings failed: ${String(e?.message || e || 'unknown error')}`);
     }
   };
 
@@ -4391,7 +4431,9 @@ export default function EditorShell() {
             </>
           ) : null}
           {/* Slides row */}
-          <div className="flex flex-col items-center justify-center p-3 md:p-6">
+          {/* Lock desktop slide-row height to prevent layout shift while Fabric/templates load. */}
+          {/* Slightly bias padding to the top so slides sit a touch lower without moving the bottom panel. */}
+          <div className="flex flex-col items-center justify-center md:justify-start p-3 md:px-6 md:pb-6 md:pt-8 md:h-[696px]">
             <div className="w-full max-w-[1400px]">
               {/* Hidden file input for per-slide image upload */}
               <input
@@ -4589,7 +4631,7 @@ export default function EditorShell() {
                   </div>
                 </div>
               ) : (
-                <div className="w-full flex items-center gap-3">
+                <div className="w-full flex items-center gap-3 min-h-[648px]">
                   <button
                     className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
                     aria-label="Previous"
@@ -4600,7 +4642,10 @@ export default function EditorShell() {
                   </button>
                   <div
                     ref={viewportRef}
-                    className="flex-1 overflow-x-hidden overflow-y-visible"
+                    // IMPORTANT: prevent vertical scroll/overflow in the dotted workspace.
+                    // The upload icon is intentionally positioned slightly below the slide card.
+                    // We reserve a small bottom gutter so the icon stays visible without increasing scroll height.
+                    className="flex-1 overflow-x-hidden overflow-y-hidden pb-10"
                     style={{ paddingLeft: VIEWPORT_PAD, paddingRight: VIEWPORT_PAD }}
                   >
                     <div
@@ -4634,14 +4679,21 @@ export default function EditorShell() {
                             void switchToSlide(i);
                           }}
                         >
-                          {/* Per-slide image upload trigger (active slide only). */}
-                          {i === activeSlideIndex && currentProjectId ? (
+                          {/* Per-slide image upload trigger (active slide only). Render immediately; disable until a project exists. */}
+                          {i === activeSlideIndex ? (
                             <button
                               type="button"
-                              className="absolute left-2 -bottom-10 w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
-                              title={imageBusy ? "Working…" : "Upload image"}
+                              // Use translate (not negative bottom) to avoid affecting scroll/overflow metrics when the icon mounts.
+                              className="absolute left-2 bottom-0 translate-y-10 w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
+                              title={
+                                !currentProjectId
+                                  ? "Create or load a project to upload an image"
+                                  : imageBusy
+                                    ? "Working…"
+                                    : "Upload image"
+                              }
                               aria-label="Upload image"
-                              disabled={imageBusy || switchingSlides || copyGenerating}
+                              disabled={!currentProjectId || imageBusy || switchingSlides || copyGenerating}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -4674,11 +4726,24 @@ export default function EditorShell() {
                                 imageLongPressRef.current = null;
                               }}
                             >
-                              <svg viewBox="0 0 24 24" className="w-9 h-9">
-                                <path
-                                  fill="currentColor"
-                                  d="M19 15a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a1 1 0 1 1 2 0v3h12v-3a1 1 0 0 1 1-1ZM12 3a1 1 0 0 1 1 1v8.59l2.3-2.3a1 1 0 1 1 1.4 1.42l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.42l2.3 2.3V4a1 1 0 0 1 1-1Z"
-                                />
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="w-9 h-9"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                {/* Camera body */}
+                                <rect x="3" y="7" width="14" height="12" rx="3" />
+                                {/* Camera top bump */}
+                                <path d="M7 7l1.2-2h3.6L13 7" />
+                                {/* Lens */}
+                                <circle cx="10" cy="13" r="3" />
+                                {/* Plus (add photo) */}
+                                <path d="M20 4v4" />
+                                <path d="M18 6h4" />
                               </svg>
                             </button>
                           ) : null}
@@ -5505,8 +5570,14 @@ export default function EditorShell() {
                     className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
                     value={templateTypeMappingSlide1 || ""}
                     onChange={(e) => {
+                      const next = e.target.value || null;
                       promptDirtyRef.current = true;
-                      setTemplateTypeMappingSlide1(e.target.value || null);
+                      setTemplateTypeMappingSlide1(next);
+                      // Also apply to the currently loaded project so visuals update immediately.
+                      if (currentProjectIdRef.current) {
+                        setProjectMappingSlide1(next);
+                        void persistCurrentProjectTemplateMappings({ slide1TemplateIdSnapshot: next });
+                      }
                     }}
                     disabled={loadingTemplates}
                   >
@@ -5525,8 +5596,14 @@ export default function EditorShell() {
                     className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
                     value={templateTypeMappingSlide2to5 || ""}
                     onChange={(e) => {
+                      const next = e.target.value || null;
                       promptDirtyRef.current = true;
-                      setTemplateTypeMappingSlide2to5(e.target.value || null);
+                      setTemplateTypeMappingSlide2to5(next);
+                      // Also apply to the currently loaded project so visuals update immediately.
+                      if (currentProjectIdRef.current) {
+                        setProjectMappingSlide2to5(next);
+                        void persistCurrentProjectTemplateMappings({ slide2to5TemplateIdSnapshot: next });
+                      }
                     }}
                     disabled={loadingTemplates}
                   >
@@ -5545,8 +5622,14 @@ export default function EditorShell() {
                     className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
                     value={templateTypeMappingSlide6 || ""}
                     onChange={(e) => {
+                      const next = e.target.value || null;
                       promptDirtyRef.current = true;
-                      setTemplateTypeMappingSlide6(e.target.value || null);
+                      setTemplateTypeMappingSlide6(next);
+                      // Also apply to the currently loaded project so visuals update immediately.
+                      if (currentProjectIdRef.current) {
+                        setProjectMappingSlide6(next);
+                        void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
+                      }
                     }}
                     disabled={loadingTemplates}
                   >
