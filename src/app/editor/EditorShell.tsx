@@ -129,6 +129,7 @@ export default function EditorShell() {
   const liveLayoutAutoFixAllSlidesDoneByProjectRef = useRef<Record<string, boolean>>({});
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
   const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
+  const regularMeasureElRef = useRef<HTMLDivElement | null>(null);
   const lastAppliedOverrideKeysRef = useRef<Record<number, string[]>>({});
   const editorBootstrapDoneRef = useRef(false);
   const initialProjectAutoLoadDoneRef = useRef(false);
@@ -1550,6 +1551,80 @@ export default function EditorShell() {
     return out;
   };
 
+  const measureRegularBodyHeightPx = useCallback(
+    (text: string, maxWidthPx: number, fontSizePx: number, bodyRanges: InlineStyleRange[]) => {
+      if (typeof document === "undefined") return 0;
+      const width = Math.max(1, Math.floor(Number(maxWidthPx) || 1));
+      const size = Math.max(1, Math.floor(Number(fontSizePx) || 1));
+      const hasBold = Array.isArray(bodyRanges) && bodyRanges.some((r) => !!r?.bold);
+      const hasItalic = Array.isArray(bodyRanges) && bodyRanges.some((r) => !!r?.italic);
+      const weight = hasBold ? 700 : (Number.isFinite(bodyFontWeight as any) ? Number(bodyFontWeight) : 400);
+      const family = String(bodyFontFamily || "Inter, sans-serif");
+      const style = hasItalic ? "italic" : "normal";
+
+      let el = regularMeasureElRef.current;
+      if (!el) {
+        el = document.createElement("div");
+        el.setAttribute("data-regular-measure", "1");
+        el.style.position = "fixed";
+        el.style.left = "-100000px";
+        el.style.top = "-100000px";
+        el.style.visibility = "hidden";
+        el.style.pointerEvents = "none";
+        el.style.whiteSpace = "pre-wrap";
+        el.style.wordBreak = "break-word";
+        (el.style as any).overflowWrap = "break-word";
+        el.style.padding = "0";
+        el.style.margin = "0";
+        el.style.border = "0";
+        document.body.appendChild(el);
+        regularMeasureElRef.current = el;
+      }
+
+      el.style.width = `${width}px`;
+      el.style.fontFamily = family;
+      el.style.fontWeight = String(weight);
+      el.style.fontStyle = style;
+      el.style.fontSize = `${size}px`;
+      el.style.lineHeight = "1.2";
+      el.textContent = String(text || "");
+      const h = Math.max(0, Math.ceil(el.scrollHeight || 0));
+      // Fabric's Textbox height tends to be slightly larger than DOM flow height due to font metric rounding.
+      // Add a small buffer to avoid "fits in measurer but overflows in canvas" edge cases.
+      const buffer = Math.max(4, Math.ceil(size * 0.25));
+      return h + buffer;
+    },
+    [bodyFontFamily, bodyFontWeight]
+  );
+
+  const fitRegularBodyFontSizePx = useCallback(
+    (params: { text: string; maxWidthPx: number; maxHeightPx: number; bodyRanges: InlineStyleRange[]; maxFontSizePx?: number }) => {
+      const { text, maxWidthPx, maxHeightPx, bodyRanges } = params;
+      const maxH = Math.max(1, Math.floor(Number(maxHeightPx) || 1));
+      const tol = 2; // allow 1–2px tolerance
+      if (typeof document === "undefined") return 48;
+      if (!String(text || "").trim()) return 48;
+
+      // Technical floor only (user requested no UX minimum).
+      let lo = 8;
+      const cap = Number.isFinite(params.maxFontSizePx as any) ? Math.max(8, Math.min(120, Math.floor(Number(params.maxFontSizePx)))) : 56;
+      let hi = cap;
+      let best = lo;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const h = measureRegularBodyHeightPx(String(text || ""), maxWidthPx, mid, bodyRanges);
+        if (h <= (maxH + tol)) {
+          best = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return best;
+    },
+    [measureRegularBodyHeightPx]
+  );
+
   const buildTextStylesForLine = (
     parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }>,
     ranges: InlineStyleRange[]
@@ -1868,13 +1943,16 @@ export default function EditorShell() {
     bodyRanges?: InlineStyleRange[];
     bodyFontSizePx?: number;
   }): VisionLayoutDecision | null => {
-    const region = getTemplateContentRectRaw(params.templateSnapshot);
+    // Regular should fit inside the SAME "safe area" shown by the teal overlay (allowed/inset rect),
+    // not the raw contentRegion.
+    const region = getTemplateContentRectInset(params.templateSnapshot);
     if (!region) return null;
 
-    const bodySize = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
     const imageUrl = (params.image as any)?.url || null;
     const prevLine = params.existingLayout?.textLines?.[0] || null;
-    const preservedX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
+
+    const requestedBodySize = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
+    const rawX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
     // For Regular we anchor Y by CENTER so the box grows up/down.
     // - If we already have an anchored snapshot, preserve it.
     // - Otherwise default to center of contentRegion (ignores old top-anchored snapshots).
@@ -1883,7 +1961,40 @@ export default function EditorShell() {
       prevLine?.positionAnchorY === "center" && typeof prevLine?.position?.y === "number"
         ? prevLine.position.y
         : regionCenterY;
-    const preservedWidth = typeof prevLine?.maxWidth === "number" ? prevLine.maxWidth : region.width;
+    const rawW = typeof prevLine?.maxWidth === "number" ? prevLine.maxWidth : region.width;
+
+    // Clamp x/width to remain inside contentRegion.
+    const x = Math.max(region.x, Math.min(region.x + region.width - 1, Number(rawX) || region.x));
+    const maxW = Math.max(1, Math.floor((region.x + region.width) - x));
+    const width = Math.max(1, Math.min(maxW, Math.floor(Number(rawW) || region.width)));
+
+    // Largest size that fits the contentRegion vertically (tolerant by 1–2px).
+    const fittedSize =
+      typeof document === "undefined"
+        ? requestedBodySize
+        : fitRegularBodyFontSizePx({
+            text: String(params.body || ""),
+            maxWidthPx: width,
+            maxHeightPx: region.height,
+            bodyRanges: params.bodyRanges || [],
+            // Regular max is 56px; shrink as needed.
+            maxFontSizePx: 56,
+          });
+    const bodySize = Math.max(8, Math.min(120, Math.round(Number(fittedSize) || requestedBodySize)));
+
+    // Clamp centerY so the wrapped textbox stays inside the contentRegion even after resizing text.
+    // NOTE: y is stored as centerY for Regular (positionAnchorY="center").
+    const measuredH =
+      typeof document === "undefined"
+        ? Math.max(1, Math.round(bodySize * 1.2))
+        : measureRegularBodyHeightPx(String(params.body || ""), width, bodySize, params.bodyRanges || []);
+    const halfH = Math.max(1, Math.floor(measuredH / 2));
+    const minCenterY = region.y + halfH;
+    const maxCenterY = (region.y + region.height) - halfH;
+    const centerY =
+      Number.isFinite(preservedCenterY as any)
+        ? Math.max(minCenterY, Math.min(maxCenterY, Number(preservedCenterY)))
+        : (region.y + region.height / 2);
 
     const layout: VisionLayoutDecision = {
       canvas: { width: 1080, height: 1440 },
@@ -1892,12 +2003,12 @@ export default function EditorShell() {
         {
           text: params.body || "",
           baseSize: bodySize,
-          position: { x: preservedX, y: preservedCenterY },
+          position: { x, y: centerY },
           // Non-standard field (JSON snapshot only): used by renderer to interpret `position.y` as centerY.
           positionAnchorY: "center",
           textAlign: "left",
           lineHeight: 1.2,
-          maxWidth: Math.max(1, preservedWidth),
+          maxWidth: width,
           styles: buildTextStylesForLine(
             [
               {
@@ -2073,6 +2184,11 @@ export default function EditorShell() {
               });
         if (!nextLayout) continue;
 
+        const effectiveBodyFontSizePx =
+          item.templateTypeId === "regular"
+            ? Number((nextLayout as any)?.textLines?.[0]?.baseSize ?? item.bodyFontSizePx ?? 48)
+            : item.bodyFontSizePx;
+
         const textLineCount = Array.isArray((nextLayout as any)?.textLines) ? (nextLayout as any).textLines.length : 0;
         const styleCount = Array.isArray((nextLayout as any)?.textLines)
           ? (nextLayout as any).textLines.reduce((acc: number, l: any) => acc + (Array.isArray(l?.styles) ? l.styles.length : 0), 0)
@@ -2083,7 +2199,7 @@ export default function EditorShell() {
           headline,
           body,
           headlineFontSizePx: item.headlineFontSizePx,
-          bodyFontSizePx: item.bodyFontSizePx,
+          bodyFontSizePx: effectiveBodyFontSizePx,
           headlineTextAlign,
           bodyTextAlign,
           settings: item.settings,
@@ -2109,11 +2225,19 @@ export default function EditorShell() {
                     ...s,
                     layoutData: nextLayoutData,
                     inputData: req,
+                    ...(item.templateTypeId === "regular" ? { draftBodyFontSizePx: effectiveBodyFontSizePx } : {}),
                   }
             )
           );
           slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== slideIndex ? s : { ...s, layoutData: nextLayoutData, inputData: req }
+            i !== slideIndex
+              ? s
+              : {
+                  ...s,
+                  layoutData: nextLayoutData,
+                  inputData: req,
+                  ...(item.templateTypeId === "regular" ? { draftBodyFontSizePx: effectiveBodyFontSizePx } : {}),
+                }
           );
           // If this is the active slide, also update the engine so Fabric rerenders immediately.
           if (slideIndex === activeSlideIndexRef.current) {
@@ -2239,13 +2363,62 @@ export default function EditorShell() {
         maxWidth: Math.max(1, Number(change.maxWidth) || l.maxWidth || 1),
       };
     });
-    const nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
+    // Regular: shrink-to-fit after release (do NOT run full reflow here; preserve manual move/resize).
+    let nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
+    let fittedSizeForUi = Number((curSlide as any)?.draftBodyFontSizePx ?? 48);
+    try {
+      const tidForFit = computeTemplateIdForSlide(slideIndex);
+      const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
+      const region = getTemplateContentRectInset(snapForFit || null);
+      const nextBodyForFit = change.text !== undefined ? String(change.text || "") : String(curSlide.draftBody || "");
+      const line0 = (nextLayoutSnap as any)?.textLines?.[0] || null;
+      if (region && line0) {
+        const rawX = Number(line0?.position?.x ?? region.x) || region.x;
+        const x = Math.max(region.x, Math.min(region.x + region.width - 1, rawX));
+        const maxW = Math.max(1, Math.floor((region.x + region.width) - x));
+        const width = Math.max(1, Math.min(maxW, Math.floor(Number(line0?.maxWidth ?? region.width) || region.width)));
+        const fitted = fitRegularBodyFontSizePx({
+          text: nextBodyForFit,
+          maxWidthPx: width,
+          maxHeightPx: region.height,
+          bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
+          // Regular max is 56px; shrink as needed.
+          maxFontSizePx: 56,
+        });
+        const measuredH = measureRegularBodyHeightPx(
+          nextBodyForFit,
+          width,
+          fitted,
+          Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : []
+        );
+        const halfH = Math.max(1, Math.floor(measuredH / 2));
+        const minCenterY = region.y + halfH;
+        const maxCenterY = (region.y + region.height) - halfH;
+        const rawCenterY = Number(line0?.position?.y ?? (region.y + region.height / 2));
+        const centerY = Math.max(minCenterY, Math.min(maxCenterY, rawCenterY));
+        fittedSizeForUi = fitted;
+        nextLayoutSnap = {
+          ...nextLayoutSnap,
+          textLines: [
+            {
+              ...line0,
+              position: { ...(line0.position || {}), x, y: centerY },
+              maxWidth: width,
+              baseSize: fitted,
+            },
+          ],
+        } as any;
+      }
+    } catch {
+      // ignore
+    }
 
     const tid = computeTemplateIdForSlide(slideIndex);
     const nextBody = change.text !== undefined ? change.text : (curSlide.draftBody || "");
     const req: any = {
       headline: "",
       body: nextBody,
+      bodyFontSizePx: fittedSizeForUi,
       settings: {
         backgroundColor: projectBackgroundColor || "#ffffff",
         textColor: projectTextColor || "#000000",
@@ -2264,6 +2437,7 @@ export default function EditorShell() {
           : {
               ...s,
               draftBody: change.text !== undefined ? nextBody : s.draftBody,
+              draftBodyFontSizePx: fittedSizeForUi,
               layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null },
               inputData: req,
             }
@@ -2275,6 +2449,7 @@ export default function EditorShell() {
         : {
             ...s,
             draftBody: change.text !== undefined ? nextBody : (s.draftBody || ""),
+            draftBodyFontSizePx: fittedSizeForUi,
             layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null },
             inputData: req,
           }
@@ -4178,7 +4353,9 @@ export default function EditorShell() {
       {/* Top bar (visual only for now) */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-slate-900" />
+          <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-white select-none">
+            🎠
+          </div>
           <div className="text-sm font-semibold text-slate-900">
             The Fittest You - AI Carousel Generator
           </div>
@@ -4577,8 +4754,9 @@ export default function EditorShell() {
                                 bodyFontFamily={bodyFontFamily}
                                   headlineFontWeight={headlineFontWeight}
                                   bodyFontWeight={bodyFontWeight}
-                                contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
-                                clampUserTextToContentRect={templateTypeId !== "regular"}
+                                // Regular should use the same safe-area inset as the teal overlay (40px).
+                                contentPaddingPx={40}
+                                clampUserTextToContentRect={true}
                                 clampUserImageToContentRect={false}
                                 pushTextOutOfUserImage={templateTypeId !== "regular"}
                                 displayWidthPx={displayW}
@@ -4621,8 +4799,8 @@ export default function EditorShell() {
                           bodyFontFamily={bodyFontFamily}
                             headlineFontWeight={headlineFontWeight}
                             bodyFontWeight={bodyFontWeight}
-                          contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
-                          clampUserTextToContentRect={templateTypeId !== "regular"}
+                          contentPaddingPx={40}
+                          clampUserTextToContentRect={true}
                           clampUserImageToContentRect={false}
                           pushTextOutOfUserImage={templateTypeId !== "regular"}
                         />
@@ -4802,8 +4980,8 @@ export default function EditorShell() {
                                         bodyFontFamily={bodyFontFamily}
                                           headlineFontWeight={headlineFontWeight}
                                           bodyFontWeight={bodyFontWeight}
-                                        contentPaddingPx={templateTypeId === "regular" ? 0 : 40}
-                                        clampUserTextToContentRect={templateTypeId !== "regular"}
+                                        contentPaddingPx={40}
+                                        clampUserTextToContentRect={true}
                                         clampUserImageToContentRect={false}
                                         pushTextOutOfUserImage={templateTypeId !== "regular"}
                                         displayWidthPx={420}
@@ -4996,7 +5174,8 @@ export default function EditorShell() {
                         <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-sm font-bold flex items-center justify-center">¶</span>
                         <label className="text-sm font-semibold text-slate-900">Body</label>
                       </div>
-                      <div className="flex items-center gap-2">
+                      {templateTypeId !== "regular" ? (
+                        <div className="flex items-center gap-2">
                         <input
                           type="number"
                           min={24}
@@ -5086,7 +5265,8 @@ export default function EditorShell() {
                             );
                           })}
                         </div>
-                      </div>
+                        </div>
+                      ) : null}
                     </div>
                     <RichTextInput
                       key={`rte-body:${currentProjectId || "none"}:${activeSlideIndex}`}

@@ -1693,6 +1693,20 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           (textObj as any).data = { role: 'user-text', lineIndex: index, lineKey: (line as any)?.lineKey, block: (line as any)?.block };
           disableRotationControls(textObj);
 
+          // Hard clamp on render: if a layout produced an out-of-bounds position (common when
+          // image wrap lanes get tight), keep the text inside the allowed rect so it never "disappears".
+          // This is independent of drag-time clamping and runs even on Realign re-renders.
+          try {
+            const rect = constraintsRef.current.allowedRect;
+            if (rect && interactionRef.current.clampText) {
+              if (typeof (textObj as any).initDimensions === 'function') (textObj as any).initDimensions();
+              if (typeof (textObj as any).setCoords === 'function') (textObj as any).setCoords();
+              clampObjectToRect(textObj, rect);
+            }
+          } catch {
+            // ignore
+          }
+
           // Text commit is handled at the canvas level via `text:editing:exited` so it's reliable
           // across Fabric object types/versions.
 
