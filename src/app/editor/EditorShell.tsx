@@ -119,6 +119,11 @@ export default function EditorShell() {
   const liveLayoutQueueRef = useRef<LiveLayoutWorkItem[]>([]);
   const liveLayoutRunIdByKeyRef = useRef<Record<string, number>>({});
   const liveLayoutRunningRef = useRef(false);
+  // Phase 3C follow-up: if a project loads with new draft text but stale/missing inputSnapshot/layoutSnapshot,
+  // auto-queue live layout for the active slide once its template snapshot is available.
+  const liveLayoutAutoFixRunIdByKeyRef = useRef<Record<string, number>>({});
+  // Also auto-render non-visited slides on project open so the slide strip isn't blank.
+  const liveLayoutAutoFixAllSlidesDoneByProjectRef = useRef<Record<string, boolean>>({});
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
   const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
   const lastAppliedOverrideKeysRef = useRef<Record<number, string[]>>({});
@@ -256,6 +261,7 @@ export default function EditorShell() {
   const [imageMenuOpen, setImageMenuOpen] = useState(false);
   const [imageMenuPos, setImageMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
+  const [bgRemovalBusyKeys, setBgRemovalBusyKeys] = useState<Set<string>>(new Set());
   const [activeImageSelected, setActiveImageSelected] = useState(false);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const imageLongPressRef = useRef<number | null>(null);
@@ -475,9 +481,137 @@ export default function EditorShell() {
     currentProjectIdRef.current = currentProjectId;
   }, [currentProjectId]);
 
+  // Minimal global error capture so Debug panel shows stack traces for rare runtime errors.
+  useEffect(() => {
+    const onErr = (e: ErrorEvent) => {
+      try {
+        const msg = String(e?.message || "");
+        if (!msg.toLowerCase().includes("maximum call stack size exceeded")) return;
+        const stack = (e as any)?.error?.stack ? String((e as any).error.stack) : "";
+        addLog(`🚨 Runtime error: ${msg}${stack ? `\n${stack}` : ""}`);
+      } catch {
+        // ignore
+      }
+    };
+    const onRej = (e: PromiseRejectionEvent) => {
+      try {
+        const reason: any = (e as any)?.reason;
+        const msg = String(reason?.message || reason || "");
+        if (!msg.toLowerCase().includes("maximum call stack size exceeded")) return;
+        const stack = reason?.stack ? String(reason.stack) : "";
+        addLog(`🚨 Unhandled rejection: ${msg}${stack ? `\n${stack}` : ""}`);
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    return () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Debounced autosave: active slide headline/body → Supabase (carousel_project_slides)
   const activeDraftHeadline = slides[activeSlideIndex]?.draftHeadline || "";
   const activeDraftBody = slides[activeSlideIndex]?.draftBody || "";
+
+  // If the active slide's saved inputSnapshot doesn't match its current draft text (common after background Generate Copy),
+  // queue a live layout so the canvas catches up when the user returns to the project.
+  useEffect(() => {
+    if (!currentProjectId) return;
+    if (switchingSlides) return;
+    const slideIndex = activeSlideIndex;
+    const key = liveLayoutKey(currentProjectId, slideIndex);
+    const slide = slidesRef.current[slideIndex];
+    if (!slide) return;
+
+    const expectedHeadline = templateTypeId === "regular" ? "" : String(slide.draftHeadline || "");
+    const expectedBody = String(slide.draftBody || "");
+    if (!expectedHeadline.trim() && !expectedBody.trim()) return;
+
+    // If user is actively typing, a debounced live layout is already scheduled; don't add more.
+    try {
+      if (liveLayoutTimeoutsRef.current[key]) return;
+    } catch {
+      // ignore
+    }
+
+    const input = (slide as any)?.inputData || null;
+    const inputHeadline = String(input?.headline || "");
+    const inputBody = String(input?.body || "");
+    if (inputHeadline === expectedHeadline && inputBody === expectedBody) return;
+
+    // Wait until this slide's template snapshot is available; otherwise layout will be skipped.
+    const tid = computeTemplateIdForSlide(slideIndex);
+    if (tid && !templateSnapshots[tid]) return;
+
+    // Throttle: only enqueue once per (project,slide) per mismatch until inputSnapshot updates.
+    const runId = (liveLayoutAutoFixRunIdByKeyRef.current[key] || 0) + 1;
+    liveLayoutAutoFixRunIdByKeyRef.current[key] = runId;
+    if (runId > 3) return;
+
+    addLog(`🛠️ Canvas stale for active slide; queueing live layout (project=${currentProjectId} slide=${slideIndex + 1})`);
+    enqueueLiveLayoutForProject(currentProjectId, [slideIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, activeSlideIndex, templateTypeId, templateSnapshots, switchingSlides]);
+
+  // When a project is opened, if some slides have text but no layout snapshot yet, queue live layout for them in the background.
+  // This makes the slide strip canvases populate even before you click each slide.
+  useEffect(() => {
+    if (!currentProjectId) return;
+    if (switchingSlides) return;
+    const pid = currentProjectId;
+    if (liveLayoutAutoFixAllSlidesDoneByProjectRef.current[pid]) return;
+
+    const toQueue: number[] = [];
+    let waitingOnSnapshots = false;
+
+    for (let i = 0; i < slideCount; i++) {
+      const slide = slidesRef.current[i] || null;
+      if (!slide) continue;
+      const headline = templateTypeId === "regular" ? "" : String(slide.draftHeadline || "");
+      const body = String(slide.draftBody || "");
+      if (!headline.trim() && !body.trim()) continue;
+
+      const hasLayout = !!(slide as any)?.layoutData?.layout && Array.isArray(((slide as any).layoutData.layout as any)?.textLines);
+      const hasSomeTextLines = hasLayout ? (((slide as any).layoutData.layout as any).textLines?.length || 0) > 0 : false;
+      if (hasSomeTextLines) continue;
+
+      const tid = computeTemplateIdForSlide(i);
+      // If a slide has text but template mapping isn't ready yet, wait and re-run.
+      if (!tid) {
+        waitingOnSnapshots = true;
+        continue;
+      }
+      if (!templateSnapshots[tid]) {
+        waitingOnSnapshots = true;
+        continue;
+      }
+      toQueue.push(i);
+    }
+
+    if (waitingOnSnapshots) return;
+    liveLayoutAutoFixAllSlidesDoneByProjectRef.current[pid] = true;
+    if (toQueue.length) {
+      addLog(`🛠️ Rendering ${toQueue.length} slide(s) with text but no layout yet (project=${pid})`);
+      enqueueLiveLayoutForProject(pid, toQueue);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentProjectId,
+    templateTypeId,
+    templateSnapshots,
+    switchingSlides,
+    // Rerun once project snapshot mapping is hydrated.
+    projectMappingSlide1,
+    projectMappingSlide2to5,
+    projectMappingSlide6,
+    templateTypeMappingSlide1,
+    templateTypeMappingSlide2to5,
+    templateTypeMappingSlide6,
+  ]);
   useEffect(() => {
     if (!currentProjectId) return;
     if (switchingSlides) return;
@@ -827,6 +961,12 @@ export default function EditorShell() {
     const projectIdAtStart = currentProjectId;
     const slideIndexAtStart = activeSlideIndex;
     const opKey = aiKey(projectIdAtStart, slideIndexAtStart);
+    // UI: show busy state per slide while toggling/reprocessing.
+    setBgRemovalBusyKeys((prev) => {
+      const next = new Set(prev);
+      next.add(opKey);
+      return next;
+    });
     const runId = (imageOpRunIdByKeyRef.current[opKey] || 0) + 1;
     imageOpRunIdByKeyRef.current[opKey] = runId;
     const baseLayoutAtStart = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : null;
@@ -877,9 +1017,11 @@ export default function EditorShell() {
 
     if (nextEnabled) {
       try {
+        const sourcePath =
+          String((img as any)?.original?.storage?.path || (img as any)?.storage?.path || '').trim() || undefined;
         const j = await fetchJson("/api/editor/projects/slides/image/reprocess", {
           method: "POST",
-          body: JSON.stringify({ projectId: projectIdAtStart, slideIndex: slideIndexAtStart }),
+          body: JSON.stringify({ projectId: projectIdAtStart, slideIndex: slideIndexAtStart, path: sourcePath }),
         });
         if (!j?.success) throw new Error(j?.error || "Reprocess failed");
         if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
@@ -972,6 +1114,12 @@ export default function EditorShell() {
         await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout2 });
       }
     }
+    // Clear busy state when the operation completes.
+    setBgRemovalBusyKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(opKey);
+      return next;
+    });
   };
 
   const deleteImageForActiveSlide = async (reason: "menu" | "button") => {
@@ -5045,6 +5193,30 @@ export default function EditorShell() {
                     {activeImageSelected ? (
                       <>
                         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                          {(() => {
+                            const pid = currentProjectId;
+                            const key = pid ? aiKey(pid, activeSlideIndex) : "";
+                            const busy = key ? bgRemovalBusyKeys.has(key) : false;
+                            const enabled = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
+                            const statusRaw = String((layoutData as any)?.layout?.image?.bgRemovalStatus || (enabled ? "idle" : "disabled"));
+                            const statusLabel =
+                              busy
+                                ? (enabled ? "processing" : "saving")
+                                : statusRaw;
+                            return (
+                              <div className="flex items-start justify-between gap-3 mb-2">
+                                <div className="text-xs text-slate-500">
+                                  BG removal:{" "}
+                                  <span className="font-semibold text-slate-800">{statusLabel}</span>
+                                </div>
+                                {busy ? (
+                                  <div className="text-[11px] text-slate-500">
+                                    Working…
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center justify-between gap-3">
                             <div>
                               <div className="text-sm font-semibold text-slate-900">Background removal</div>
@@ -5062,7 +5234,13 @@ export default function EditorShell() {
                                 const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
                                 void setActiveSlideImageBgRemoval(!cur);
                               }}
-                              disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                              disabled={
+                                imageBusy ||
+                                switchingSlides ||
+                                copyGenerating ||
+                                !currentProjectId ||
+                                (currentProjectId ? bgRemovalBusyKeys.has(aiKey(currentProjectId, activeSlideIndex)) : false)
+                              }
                               title="Toggle background removal for this image (persists per slide)"
                             >
                               <span
@@ -5073,21 +5251,21 @@ export default function EditorShell() {
                               />
                             </button>
                           </div>
-                          <div className="mt-2 text-xs text-slate-600">
-                            Status:{" "}
-                            <span className="font-semibold">
-                              {String((layoutData as any)?.layout?.image?.bgRemovalStatus || (((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "idle" : "disabled"))}
-                            </span>
-                          </div>
                           {String((layoutData as any)?.layout?.image?.bgRemovalStatus || "") === "failed" ? (
                             <button
                               type="button"
                               className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
                               onClick={() => void setActiveSlideImageBgRemoval(true)}
-                              disabled={imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                              disabled={
+                                imageBusy ||
+                                switchingSlides ||
+                                copyGenerating ||
+                                !currentProjectId ||
+                                (currentProjectId ? bgRemovalBusyKeys.has(aiKey(currentProjectId, activeSlideIndex)) : false)
+                              }
                               title="Try background removal again"
                             >
-                              Try again
+                              {currentProjectId && bgRemovalBusyKeys.has(aiKey(currentProjectId, activeSlideIndex)) ? "Processing…" : "Try again"}
                             </button>
                           ) : null}
                         </div>

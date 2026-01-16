@@ -26,7 +26,7 @@ function serviceClient() {
   return createClient(url, key);
 }
 
-type Body = { projectId: string; slideIndex: number };
+type Body = { projectId: string; slideIndex: number; path?: string };
 type Resp =
   | {
       success: true;
@@ -48,6 +48,16 @@ async function downloadFirstExisting(
     return { ...c, bytes: new Uint8Array(ab) };
   }
   return null;
+}
+
+function candidateForPath(p: string): null | { path: string; contentType: string; ext: string } {
+  const path = String(p || '').trim().replace(/^\/+/, '');
+  if (!path) return null;
+  const ext = (path.split('.').pop() || '').toLowerCase();
+  if (ext !== 'png' && ext !== 'webp' && ext !== 'jpg' && ext !== 'jpeg') return null;
+  const contentType =
+    ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  return { path, contentType, ext };
 }
 
 export async function POST(req: NextRequest) {
@@ -96,7 +106,9 @@ export async function POST(req: NextRequest) {
   const v = String(Date.now());
 
   // Prefer the stored original.* (Phase 3), but fall back to old image.* if needed.
+  const explicit = candidateForPath((body as any)?.path);
   const found = await downloadFirstExisting(svc, [
+    ...(explicit ? [explicit] : []),
     { path: `${baseDir}/original.png`, contentType: 'image/png', ext: 'png' },
     { path: `${baseDir}/original.webp`, contentType: 'image/webp', ext: 'webp' },
     { path: `${baseDir}/original.jpg`, contentType: 'image/jpeg', ext: 'jpg' },
