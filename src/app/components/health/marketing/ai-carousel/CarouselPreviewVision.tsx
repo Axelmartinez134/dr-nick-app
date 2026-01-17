@@ -44,6 +44,9 @@ interface CarouselPreviewProps {
   // /editor Enhanced: when true, do NOT auto-move text lines during invariant enforcement.
   // The editor will show a warning and let the user press "Realign" explicitly.
   lockTextLayout?: boolean;
+  // /editor Enhanced: when true, while the user is dragging the user-image, do not run
+  // post-render invariant enforcement that auto-moves text lines. Intended for "auto realign on release".
+  suppressTextInvariantsWhileDraggingUserImage?: boolean;
   onUserTextChange?: (change: {
     canvasSlideIndex?: number;
     lineIndex: number;
@@ -89,6 +92,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       clampUserImageToContentRect,
       pushTextOutOfUserImage,
       lockTextLayout,
+      suppressTextInvariantsWhileDraggingUserImage,
       tightUserTextWidth,
       onDebugLog,
       showLayoutOverlays,
@@ -127,6 +131,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       itemsById: Map<string, { topLeft: { x: number; y: number }; originOffset: { x: number; y: number } }>;
     }>(null);
     const showLayoutOverlaysRef = useRef<boolean>(false);
+    const draggingUserImageRef = useRef<boolean>(false);
     const lastOverlayDebugRef = useRef<boolean | null>(null);
     const overlayDataRef = useRef<{
       enabled: boolean;
@@ -833,6 +838,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               }
             }
           } else if (role === 'user-image') {
+            if (suppressTextInvariantsWhileDraggingUserImage) draggingUserImageRef.current = true;
             if (!lockTextLayout && interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
           canvas.requestRenderAll?.();
@@ -986,7 +992,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               notifyUserText(obj, false);
             }
           }
-          if (obj?.data?.role === 'user-image') notifyUserImage(obj);
+          if (obj?.data?.role === 'user-image') {
+            draggingUserImageRef.current = false;
+            notifyUserImage(obj);
+          }
         };
         // IMPORTANT: Do NOT persist on every keystroke (text:changed) because it triggers React updates
         // that rebuild the Fabric canvas and kick the user out of edit mode.
@@ -1913,7 +1922,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
           // If the editor has locked layout for this slide, do NOT auto-move lines here.
           // We still allow manual moves (object:modified handlers) and allow the user to explicitly Realign.
-          const results = lockTextLayout
+          // Also: when the user is actively dragging the image AND the editor has enabled "auto realign on release",
+          // we skip this post-render enforcement so text doesn't "fight" the image drag (it will reflow on release).
+          const results = (lockTextLayout || (suppressTextInvariantsWhileDraggingUserImage && draggingUserImageRef.current))
             ? []
             : enforceTextInvariantsSequential({
                 items,

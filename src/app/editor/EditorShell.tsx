@@ -158,6 +158,24 @@ export default function EditorShell() {
     return { ...(base as any), editor: { ...(editor as any), layoutLocked: !!locked } };
   };
 
+  const getAutoRealignOnImageReleaseFromInput = (inputSnap: any | null): boolean => {
+    try {
+      const v =
+        (inputSnap && typeof inputSnap === "object")
+          ? (inputSnap as any).editor?.autoRealignOnImageRelease
+          : undefined;
+      return v === true;
+    } catch {
+      return false;
+    }
+  };
+
+  const withAutoRealignOnImageReleaseInInput = (inputSnap: any | null, enabled: boolean) => {
+    const base = (inputSnap && typeof inputSnap === "object") ? inputSnap : {};
+    const editor = ((base as any).editor && typeof (base as any).editor === "object") ? (base as any).editor : {};
+    return { ...(base as any), editor: { ...(editor as any), autoRealignOnImageRelease: !!enabled } };
+  };
+
   const isPunctuationWhitespaceOnly = (s: string) => {
     // Allowed punctuation set from spec + whitespace
     return /^[\s.,!?;:'"()[\]{}\-—…]*$/u.test(String(s || ""));
@@ -427,6 +445,7 @@ export default function EditorShell() {
   const [imageBusy, setImageBusy] = useState(false);
   const [bgRemovalBusyKeys, setBgRemovalBusyKeys] = useState<Set<string>>(new Set());
   const [activeImageSelected, setActiveImageSelected] = useState(false);
+  const autoRealignAfterImageReleaseTimeoutRef = useRef<number | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const imageLongPressRef = useRef<number | null>(null);
   const imageMoveSaveTimeoutRef = useRef<number | null>(null);
@@ -515,6 +534,51 @@ export default function EditorShell() {
     if (!layoutData || !inputData) return;
     setLayoutHistory((prev) => [...(prev || []), { layoutData, inputData }]);
   }, [inputData, layoutData, setLayoutHistory]);
+
+  const runRealignTextForActiveSlide = (opts: { pushHistory: boolean }) => {
+    const slideIndex = activeSlideIndexRef.current;
+    layoutDirtyRef.current = true;
+    if (opts.pushHistory) pushUndoSnapshot();
+
+    setSlides((prev) =>
+      prev.map((s, i) =>
+        i !== slideIndex
+          ? s
+          : ({
+              ...s,
+              draftHeadlineTextAlign: "left",
+              draftBodyTextAlign: "left",
+              inputData:
+                (s as any).inputData && typeof (s as any).inputData === "object"
+                  ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
+                  : (s as any).inputData,
+            } as any)
+      )
+    );
+    slidesRef.current = slidesRef.current.map((s, i) =>
+      i !== slideIndex
+        ? s
+        : ({
+            ...s,
+            draftHeadlineTextAlign: "left",
+            draftBodyTextAlign: "left",
+            inputData:
+              (s as any).inputData && typeof (s as any).inputData === "object"
+                ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
+                : (s as any).inputData,
+          } as any)
+    );
+
+    wipeLineOverridesForActiveSlide();
+
+    if (realignmentModel === "gemini-computational") {
+      if (currentProjectId && !(slidesRef.current[slideIndex] as any)?.layoutLocked) {
+        enqueueLiveLayoutForProject(currentProjectId, [slideIndex]);
+      }
+    } else {
+      void handleRealign({ skipHistory: true });
+    }
+  };
 
   const applyInlineStyleFromCanvas = (args: {
     lineKey?: string;
@@ -950,6 +1014,10 @@ export default function EditorShell() {
     // Enhanced-only UX: when enabled, edits should NOT trigger reflow/realign for this slide.
     // Persisted in input_snapshot.editor.layoutLocked
     layoutLocked: boolean;
+
+    // Enhanced-only UX: when enabled (and image selected), releasing an image move/resize/rotate
+    // triggers the full "Realign Text" pipeline. Persisted in input_snapshot.editor.autoRealignOnImageRelease
+    autoRealignOnImageRelease: boolean;
   };
 
   const initSlide = (): SlideState => ({
@@ -974,6 +1042,7 @@ export default function EditorShell() {
     savedAiImagePrompt: "",
     draftAiImagePrompt: "",
     layoutLocked: false,
+    autoRealignOnImageRelease: false,
   });
 
   const [slides, setSlides] = useState<SlideState[]>(
@@ -1774,6 +1843,39 @@ export default function EditorShell() {
     imageMoveSaveTimeoutRef.current = window.setTimeout(() => {
       void saveSlidePatchForProject(projectIdAtSchedule, slideIndexAtSchedule, { layoutSnapshot: layoutAtSchedule });
     }, 500);
+
+    // Enhanced-only: optional safety-guarded auto realign when the user releases the image.
+    // This runs the SAME pipeline as pressing the "Realign Text" button, but:
+    // - only for the active slide
+    // - never when Lock layout is ON
+    // - without adding a second Undo snapshot (image move already pushed one)
+    try {
+      if (autoRealignAfterImageReleaseTimeoutRef.current) {
+        window.clearTimeout(autoRealignAfterImageReleaseTimeoutRef.current);
+        autoRealignAfterImageReleaseTimeoutRef.current = null;
+      }
+      const pidAtRelease = currentProjectId;
+      const slideAtRelease = slideIndex;
+      autoRealignAfterImageReleaseTimeoutRef.current = window.setTimeout(() => {
+        try {
+          // Must still be on the same project/slide when the release settles.
+          if (currentProjectIdRef.current !== pidAtRelease) return;
+          if (activeSlideIndexRef.current !== slideAtRelease) return;
+          if (templateTypeId !== "enhanced") return;
+          const cur = slidesRef.current[slideAtRelease] || initSlide();
+          if (cur.layoutLocked) return;
+          if (!cur.autoRealignOnImageRelease) return;
+          if (switchingSlides || copyGenerating || realigning) return;
+
+          // Run the same pipeline as the button, but do NOT push a second history snapshot.
+          runRealignTextForActiveSlide({ pushHistory: false });
+        } catch {
+          // ignore
+        }
+      }, 0);
+    } catch {
+      // ignore
+    }
   };
 
   const runGenerateCopy = async () => {
@@ -3545,6 +3647,7 @@ export default function EditorShell() {
         savedAiImagePrompt: loadedAiImagePrompt,
         draftAiImagePrompt: loadedAiImagePrompt,
         layoutLocked: getLayoutLockedFromInput(inputSnap || null),
+        autoRealignOnImageRelease: getAutoRealignOnImageReleaseFromInput(inputSnap || null),
       };
     });
     setSlides(nextSlides);
@@ -3602,6 +3705,7 @@ export default function EditorShell() {
         savedAiImagePrompt: loadedAiImagePrompt,
         draftAiImagePrompt: loadedAiImagePrompt,
         layoutLocked: false,
+        autoRealignOnImageRelease: false,
       };
     });
     setSlides(nextSlides);
@@ -5756,6 +5860,96 @@ export default function EditorShell() {
                                 </div>
                               ) : null}
 
+                              {templateTypeId === "enhanced" && activeImageSelected ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={!!slides[activeSlideIndex]?.autoRealignOnImageRelease}
+                                    aria-label="Auto realign on release"
+                                    className={[
+                                      "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
+                                      !currentProjectId || switchingSlides || copyGenerating || !!slides[activeSlideIndex]?.layoutLocked
+                                        ? "opacity-40 cursor-not-allowed"
+                                        : "cursor-pointer",
+                                      slides[activeSlideIndex]?.autoRealignOnImageRelease
+                                        ? "bg-slate-900 border-slate-900"
+                                        : "bg-slate-300 border-slate-300",
+                                    ].join(" ")}
+                                    disabled={
+                                      !currentProjectId ||
+                                      switchingSlides ||
+                                      copyGenerating ||
+                                      !!slides[activeSlideIndex]?.layoutLocked
+                                    }
+                                    title={
+                                      !currentProjectId
+                                        ? "Create or load a project to use Auto realign on release"
+                                        : slides[activeSlideIndex]?.layoutLocked
+                                          ? "Turn off Lock layout to use Auto realign on release"
+                                          : "Toggle Auto realign on release"
+                                    }
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (!currentProjectId) return;
+                                      const slideIndex = activeSlideIndexRef.current;
+                                      const prev = slidesRef.current[slideIndex] || initSlide();
+                                      if (prev.layoutLocked) return;
+                                      const nextEnabled = !prev.autoRealignOnImageRelease;
+                                      const baseInput =
+                                        (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
+                                        (prev as any)?.inputData ||
+                                        null;
+                                      const nextInput = withAutoRealignOnImageReleaseInInput(baseInput, nextEnabled);
+
+                                      setSlides((arr) =>
+                                        arr.map((s, ii) =>
+                                          ii !== slideIndex
+                                            ? s
+                                            : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
+                                        )
+                                      );
+                                      slidesRef.current = slidesRef.current.map((s, ii) =>
+                                        ii !== slideIndex
+                                          ? s
+                                          : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
+                                      );
+                                      if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
+
+                                      // Persist immediately (not debounced). This is a user-intent toggle and should survive refresh.
+                                      void saveSlidePatchForProject(currentProjectId, slideIndex, { inputSnapshot: nextInput });
+                                    }}
+                                  >
+                                    <span
+                                      className={[
+                                        "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
+                                        slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-100" : "opacity-0",
+                                      ].join(" ")}
+                                    >
+                                      ON
+                                    </span>
+                                    <span
+                                      className={[
+                                        "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
+                                        slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-0" : "opacity-100",
+                                      ].join(" ")}
+                                    >
+                                      OFF
+                                    </span>
+                                    <span
+                                      className={[
+                                        "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
+                                        slides[activeSlideIndex]?.autoRealignOnImageRelease ? "translate-x-8" : "translate-x-1",
+                                      ].join(" ")}
+                                    />
+                                  </button>
+                                  <div className="text-sm font-semibold text-slate-900 select-none">
+                                    Auto realign on release
+                                  </div>
+                                </div>
+                              ) : null}
+
                               {canvasTextSelection?.active ? (
                                 <div className="flex items-center gap-2">
                                   {(() => {
@@ -5909,6 +6103,11 @@ export default function EditorShell() {
                                         clampUserImageToContentRect={false}
                                         pushTextOutOfUserImage={templateTypeId !== "regular"}
                                         lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
+                                        suppressTextInvariantsWhileDraggingUserImage={
+                                          templateTypeId === "enhanced"
+                                            ? (!!slides[i]?.autoRealignOnImageRelease && !slides[i]?.layoutLocked)
+                                            : false
+                                        }
                                         displayWidthPx={420}
                                         displayHeightPx={560}
                                         onUserTextChange={
@@ -5950,7 +6149,7 @@ export default function EditorShell() {
                 <div className="md:col-span-2 space-y-4">
                   {/* Headline Card (Enhanced only) */}
                   {templateTypeId !== "regular" ? (
-                    <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                    <div className="relative rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
                       <div className="flex items-center justify-between gap-3 mb-3">
                         <div className="flex items-center gap-2">
                           <span className="w-7 h-7 rounded-lg bg-slate-900 text-white text-sm font-bold flex items-center justify-center">H</span>
@@ -6181,28 +6380,46 @@ export default function EditorShell() {
                           minHeightPx={40}
                           className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
                         />
-                        {enhancedLockOn ? (
-                          <div
-                            className="absolute inset-0 rounded-lg border border-slate-200"
-                            style={{
-                              backgroundImage:
-                                "repeating-linear-gradient(135deg, rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 10px, rgba(255,255,255,0.30) 10px, rgba(255,255,255,0.30) 20px)",
-                              pointerEvents: "none",
-                            }}
-                            aria-hidden="true"
-                          >
-                            <div className="absolute top-2 right-2 px-3 py-2 rounded-lg bg-white/90 border border-red-200 shadow-sm flex items-center gap-2">
-                              <span className="text-red-600 text-sm font-bold">!</span>
-                              <div className="text-xs font-semibold text-slate-800">Locked — edit on canvas</div>
+                      </div>
+
+                      {enhancedLockOn ? (
+                        <div
+                          className="absolute inset-0 rounded-xl border border-slate-200 z-20"
+                          style={{
+                            backgroundImage:
+                              // Subtle "disabled" barber-pole (low contrast, wider stripes).
+                              "repeating-linear-gradient(135deg, rgba(15,23,42,0.06) 0px, rgba(15,23,42,0.06) 12px, rgba(255,255,255,0.10) 12px, rgba(255,255,255,0.10) 24px)",
+                            backgroundColor: "rgba(248,250,252,0.55)",
+                            pointerEvents: "auto",
+                          }}
+                          aria-hidden="true"
+                        >
+                          <div className="absolute top-3 right-3 px-3 py-2 rounded-full bg-white/90 border border-slate-200 shadow-sm flex items-center gap-2">
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="w-4 h-4 text-slate-600"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <rect x="5" y="11" width="14" height="10" rx="2" />
+                              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                            </svg>
+                            <div className="leading-tight">
+                              <div className="text-xs font-semibold text-slate-900">Layout locked</div>
+                              <div className="text-[11px] font-medium text-slate-600">Edit on canvas</div>
                             </div>
                           </div>
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
                   {/* Body Card */}
-                  <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                  <div className="relative rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-sm font-bold flex items-center justify-center">¶</span>
@@ -6428,23 +6645,41 @@ export default function EditorShell() {
                         minHeightPx={96}
                         className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
                       />
-                      {enhancedLockOn ? (
-                        <div
-                          className="absolute inset-0 rounded-lg border border-slate-200"
-                          style={{
-                            backgroundImage:
-                              "repeating-linear-gradient(135deg, rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 10px, rgba(255,255,255,0.30) 10px, rgba(255,255,255,0.30) 20px)",
-                            pointerEvents: "none",
-                          }}
-                          aria-hidden="true"
-                        >
-                          <div className="absolute top-2 right-2 px-3 py-2 rounded-lg bg-white/90 border border-red-200 shadow-sm flex items-center gap-2">
-                            <span className="text-red-600 text-sm font-bold">!</span>
-                            <div className="text-xs font-semibold text-slate-800">Locked — edit on canvas</div>
+                    </div>
+
+                    {enhancedLockOn ? (
+                      <div
+                        className="absolute inset-0 rounded-xl border border-slate-200 z-20"
+                        style={{
+                          backgroundImage:
+                            // Subtle "disabled" barber-pole (low contrast, wider stripes).
+                            "repeating-linear-gradient(135deg, rgba(15,23,42,0.06) 0px, rgba(15,23,42,0.06) 12px, rgba(255,255,255,0.10) 12px, rgba(255,255,255,0.10) 24px)",
+                          backgroundColor: "rgba(248,250,252,0.55)",
+                          pointerEvents: "auto",
+                        }}
+                        aria-hidden="true"
+                      >
+                        <div className="absolute top-3 right-3 px-3 py-2 rounded-full bg-white/90 border border-slate-200 shadow-sm flex items-center gap-2">
+                          <svg
+                            viewBox="0 0 24 24"
+                            className="w-4 h-4 text-slate-600"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <rect x="5" y="11" width="14" height="10" rx="2" />
+                            <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                          </svg>
+                          <div className="leading-tight">
+                            <div className="text-xs font-semibold text-slate-900">Layout locked</div>
+                            <div className="text-[11px] font-medium text-slate-600">Edit on canvas</div>
                           </div>
                         </div>
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* AI Image Prompt Card (Enhanced only) */}
@@ -6652,42 +6887,7 @@ export default function EditorShell() {
                         <button
                           className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                           onClick={() => {
-                            layoutDirtyRef.current = true;
-                            pushUndoSnapshot();
-                            setSlides((prev) =>
-                              prev.map((s, i) =>
-                                i !== activeSlideIndex
-                                  ? s
-                                  : ({
-                                      ...s,
-                                      draftHeadlineTextAlign: "left",
-                                      draftBodyTextAlign: "left",
-                                      inputData: (s as any).inputData && typeof (s as any).inputData === "object"
-                                        ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
-                                        : (s as any).inputData,
-                                    } as any)
-                              )
-                            );
-                            slidesRef.current = slidesRef.current.map((s, i) =>
-                              i !== activeSlideIndex
-                                ? s
-                                : ({
-                                    ...s,
-                                    draftHeadlineTextAlign: "left",
-                                    draftBodyTextAlign: "left",
-                                    inputData: (s as any).inputData && typeof (s as any).inputData === "object"
-                                      ? { ...((s as any).inputData as any), headlineTextAlign: "left", bodyTextAlign: "left" }
-                                      : (s as any).inputData,
-                                  } as any)
-                            );
-                            wipeLineOverridesForActiveSlide();
-                            if (realignmentModel === "gemini-computational") {
-                              if (currentProjectId && !(slidesRef.current[activeSlideIndex] as any)?.layoutLocked) {
-                                enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
-                              }
-                            } else {
-                              void handleRealign({ skipHistory: true });
-                            }
+                            runRealignTextForActiveSlide({ pushHistory: true });
                           }}
                           disabled={loading || realigning || !layoutData || switchingSlides || copyGenerating}
                         >
