@@ -241,7 +241,7 @@ export default function EditorShell() {
       const a = sorted[i]!;
       const b = sorted[i + 1]!;
       if (b <= a) continue;
-      let marks = marksForInterval(a, b);
+      const marks = marksForInterval(a, b);
       if (overlapsAnySeg(a, b)) {
         (marks as any)[params.mark] = params.enabled;
       }
