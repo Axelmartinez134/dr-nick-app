@@ -4,9 +4,19 @@ import { useState, useEffect } from 'react';
 
 interface TextStylingToolbarProps {
   fabricCanvas: any;
+  onApplyInlineStyle?: (args: {
+    lineKey?: string;
+    lineIndex?: number;
+    block?: "HEADLINE" | "BODY";
+    selectionStart: number;
+    selectionEnd: number;
+    mark: "bold" | "italic";
+    enabled: boolean;
+  }) => void;
+  disabled?: boolean;
 }
 
-export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarProps) {
+export default function TextStylingToolbar({ fabricCanvas, onApplyInlineStyle, disabled }: TextStylingToolbarProps) {
   const [selectedText, setSelectedText] = useState<any>(null);
   const [selectionInfo, setSelectionInfo] = useState<{
     start: number;
@@ -25,7 +35,9 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
     const handleSelection = () => {
       const activeObject = fabricCanvas.getActiveObject();
       
-      if (activeObject && activeObject.type === 'i-text') {
+      const t = String(activeObject?.type || "").toLowerCase();
+      const isTextObj = !!activeObject && (t === "i-text" || t === "textbox");
+      if (isTextObj) {
         const selStart = activeObject.selectionStart;
         const selEnd = activeObject.selectionEnd;
         
@@ -40,7 +52,7 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
           setSelectionInfo({
             start: selStart,
             end: selEnd,
-            isBold: firstStyle.fontWeight === 'bold',
+            isBold: firstStyle.fontWeight === 'bold' || firstStyle.fontWeight === 700,
             isItalic: firstStyle.fontStyle === 'italic',
           });
           
@@ -81,10 +93,12 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
   }, [fabricCanvas]);
 
   const toggleBold = () => {
+    if (disabled) return;
     if (!selectedText || !selectionInfo || !fabricCanvas) return;
 
     console.log('[Toolbar] 🎨 Toggling bold');
     const newWeight = selectionInfo.isBold ? 'normal' : 'bold';
+    const enabled = !selectionInfo.isBold;
     
     selectedText.setSelectionStyles(
       { fontWeight: newWeight },
@@ -102,13 +116,31 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
     });
     
     console.log('[Toolbar] ✅ Bold toggled to:', newWeight);
+
+    try {
+      if (onApplyInlineStyle) {
+        onApplyInlineStyle({
+          lineKey: selectedText?.data?.lineKey,
+          lineIndex: selectedText?.data?.lineIndex,
+          block: String(selectedText?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+          selectionStart: selectionInfo.start,
+          selectionEnd: selectionInfo.end,
+          mark: "bold",
+          enabled,
+        });
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const toggleItalic = () => {
+    if (disabled) return;
     if (!selectedText || !selectionInfo || !fabricCanvas) return;
 
     console.log('[Toolbar] 🎨 Toggling italic');
     const newStyle = selectionInfo.isItalic ? 'normal' : 'italic';
+    const enabled = !selectionInfo.isItalic;
     
     selectedText.setSelectionStyles(
       { fontStyle: newStyle },
@@ -126,9 +158,26 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
     });
     
     console.log('[Toolbar] ✅ Italic toggled to:', newStyle);
+
+    try {
+      if (onApplyInlineStyle) {
+        onApplyInlineStyle({
+          lineKey: selectedText?.data?.lineKey,
+          lineIndex: selectedText?.data?.lineIndex,
+          block: String(selectedText?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+          selectionStart: selectionInfo.start,
+          selectionEnd: selectionInfo.end,
+          mark: "italic",
+          enabled,
+        });
+      }
+    } catch {
+      // ignore
+    }
   };
 
   const clearFormatting = () => {
+    if (disabled) return;
     if (!selectedText || !selectionInfo || !fabricCanvas) return;
 
     console.log('[Toolbar] 🧹 Clearing formatting');
@@ -150,6 +199,32 @@ export default function TextStylingToolbar({ fabricCanvas }: TextStylingToolbarP
     });
     
     console.log('[Toolbar] ✅ Formatting cleared');
+
+    try {
+      if (onApplyInlineStyle) {
+        const block: "HEADLINE" | "BODY" = String(selectedText?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+        onApplyInlineStyle({
+          lineKey: selectedText?.data?.lineKey,
+          lineIndex: selectedText?.data?.lineIndex,
+          block,
+          selectionStart: selectionInfo.start,
+          selectionEnd: selectionInfo.end,
+          mark: "bold",
+          enabled: false,
+        });
+        onApplyInlineStyle({
+          lineKey: selectedText?.data?.lineKey,
+          lineIndex: selectedText?.data?.lineIndex,
+          block,
+          selectionStart: selectionInfo.start,
+          selectionEnd: selectionInfo.end,
+          mark: "italic",
+          enabled: false,
+        });
+      }
+    } catch {
+      // ignore
+    }
   };
 
   if (!selectionInfo) {

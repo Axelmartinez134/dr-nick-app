@@ -65,10 +65,6 @@ const ExportButton = dynamic(
   () => import("../components/health/marketing/ai-carousel/ExportButton"),
   { ssr: false }
 );
-const TextStylingToolbar = dynamic(
-  () => import("../components/health/marketing/ai-carousel/TextStylingToolbar"),
-  { ssr: false }
-);
 
 export default function EditorShell() {
   const { user, signOut } = useAuth();
@@ -118,6 +114,9 @@ export default function EditorShell() {
     settings: { backgroundColor: string; textColor: string; includeImage: boolean };
   };
   const liveLayoutKey = (projectId: string, slideIndex: number) => `${projectId}:${slideIndex}`;
+  // Used to re-attach Fabric selection listeners once the active slide canvas is actually mounted.
+  const [activeCanvasNonce, setActiveCanvasNonce] = useState(0);
+  const lastActiveFabricCanvasRef = useRef<any>(null);
   const liveLayoutTimeoutsRef = useRef<Record<string, number | null>>({});
   const liveLayoutQueueRef = useRef<LiveLayoutWorkItem[]>([]);
   const liveLayoutRunIdByKeyRef = useRef<Record<string, number>>({});
@@ -130,6 +129,7 @@ export default function EditorShell() {
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
   const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
   const regularMeasureElRef = useRef<HTMLDivElement | null>(null);
+  const rteNoReflowSaveTimeoutRef = useRef<number | null>(null);
   const lastAppliedOverrideKeysRef = useRef<Record<number, string[]>>({});
   const editorBootstrapDoneRef = useRef(false);
   const initialProjectAutoLoadDoneRef = useRef(false);
@@ -142,6 +142,161 @@ export default function EditorShell() {
   }, [user?.id]);
 
   const normalizeLineText = (s: string) => String(s || "").replace(/\s+/g, " ").trim();
+
+  const getLayoutLockedFromInput = (inputSnap: any | null): boolean => {
+    try {
+      const v = (inputSnap && typeof inputSnap === "object") ? (inputSnap as any).editor?.layoutLocked : undefined;
+      return v === true;
+    } catch {
+      return false;
+    }
+  };
+
+  const withLayoutLockedInInput = (inputSnap: any | null, locked: boolean) => {
+    const base = (inputSnap && typeof inputSnap === "object") ? inputSnap : {};
+    const editor = ((base as any).editor && typeof (base as any).editor === "object") ? (base as any).editor : {};
+    return { ...(base as any), editor: { ...(editor as any), layoutLocked: !!locked } };
+  };
+
+  const isPunctuationWhitespaceOnly = (s: string) => {
+    // Allowed punctuation set from spec + whitespace
+    return /^[\s.,!?;:'"()[\]{}\-—…]*$/u.test(String(s || ""));
+  };
+
+  const isPunctuationOnlyChange = (prev: string, next: string) => {
+    const a = String(prev || "");
+    const b = String(next || "");
+    // Letters/digits must remain identical; only punctuation/whitespace can change.
+    const aAlnum = a.replace(/[^0-9A-Za-z]/g, "");
+    const bAlnum = b.replace(/[^0-9A-Za-z]/g, "");
+    if (aAlnum !== bAlnum) return false;
+    // Any non-alnum chars must be within the allowed punctuation set + whitespace.
+    const aNon = a.replace(/[0-9A-Za-z]/g, "");
+    const bNon = b.replace(/[0-9A-Za-z]/g, "");
+    return isPunctuationWhitespaceOnly(aNon) && isPunctuationWhitespaceOnly(bNon);
+  };
+
+  const rangesEqual = (a: InlineStyleRange[], b: InlineStyleRange[]) => {
+    if (a === b) return true;
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      const x: any = a[i];
+      const y: any = b[i];
+      if (!x || !y) return false;
+      if (Number(x.start) !== Number(y.start)) return false;
+      if (Number(x.end) !== Number(y.end)) return false;
+      if (!!x.bold !== !!y.bold) return false;
+      if (!!x.italic !== !!y.italic) return false;
+      if (!!x.underline !== !!y.underline) return false;
+    }
+    return true;
+  };
+
+  const applyMarkToRanges = (params: {
+    textLen: number;
+    existing: InlineStyleRange[];
+    segments: Array<{ start: number; end: number }>;
+    mark: "bold" | "italic" | "underline";
+    enabled: boolean;
+  }): InlineStyleRange[] => {
+    const textLen = Math.max(0, Math.floor(Number(params.textLen) || 0));
+    const existing = Array.isArray(params.existing) ? params.existing : [];
+    const segs = (Array.isArray(params.segments) ? params.segments : [])
+      .map((s) => ({ start: Math.max(0, Math.min(textLen, Math.floor(Number(s.start) || 0))), end: Math.max(0, Math.min(textLen, Math.floor(Number(s.end) || 0))) }))
+      .filter((s) => s.end > s.start);
+    if (!segs.length) return existing;
+
+    const points = new Set<number>([0, textLen]);
+    for (const r of existing) {
+      const a = Math.max(0, Math.min(textLen, Math.floor(Number((r as any).start) || 0)));
+      const b = Math.max(0, Math.min(textLen, Math.floor(Number((r as any).end) || 0)));
+      if (b > a) {
+        points.add(a);
+        points.add(b);
+      }
+    }
+    for (const s of segs) {
+      points.add(s.start);
+      points.add(s.end);
+    }
+    const sorted = Array.from(points).sort((a, b) => a - b);
+
+    const overlapsAnySeg = (a: number, b: number) => segs.some((s) => Math.min(b, s.end) > Math.max(a, s.start));
+    const marksForInterval = (a: number, b: number) => {
+      const active = existing.filter((r) => {
+        const rs = Number((r as any).start ?? -1);
+        const re = Number((r as any).end ?? -1);
+        return re > a && rs < b;
+      });
+      return {
+        bold: active.some((r: any) => !!r.bold),
+        italic: active.some((r: any) => !!r.italic),
+        underline: active.some((r: any) => !!r.underline),
+      };
+    };
+
+    const out: InlineStyleRange[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i]!;
+      const b = sorted[i + 1]!;
+      if (b <= a) continue;
+      let marks = marksForInterval(a, b);
+      if (overlapsAnySeg(a, b)) {
+        (marks as any)[params.mark] = params.enabled;
+      }
+      if (marks.bold || marks.italic || marks.underline) {
+        out.push({
+          start: a,
+          end: b,
+          bold: marks.bold || undefined,
+          italic: marks.italic || undefined,
+          underline: marks.underline || undefined,
+        });
+      }
+    }
+    // Merge adjacent identical marks
+    const merged: InlineStyleRange[] = [];
+    const same = (x: InlineStyleRange, y: InlineStyleRange) =>
+      !!x.bold === !!y.bold && !!x.italic === !!y.italic && !!x.underline === !!y.underline;
+    for (const r of out) {
+      const prev = merged[merged.length - 1];
+      if (prev && same(prev, r) && r.start <= prev.end) {
+        prev.end = Math.max(prev.end, r.end);
+        continue;
+      }
+      merged.push({ ...r });
+    }
+    return merged;
+  };
+
+  const mapLineSelectionToSourceSegments = (params: {
+    parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }>;
+    selectionStart: number;
+    selectionEnd: number;
+  }): Array<{ start: number; end: number }> => {
+    const selA = Math.max(0, Math.floor(Number(params.selectionStart) || 0));
+    const selB = Math.max(0, Math.floor(Number(params.selectionEnd) || 0));
+    const a = Math.min(selA, selB);
+    const b = Math.max(selA, selB);
+    const out: Array<{ start: number; end: number }> = [];
+    const parts = Array.isArray(params.parts) ? params.parts : [];
+    for (const p of parts) {
+      const ls = Number((p as any).lineStart ?? -1);
+      const le = Number((p as any).lineEnd ?? -1);
+      const ss = Number((p as any).sourceStart ?? -1);
+      if (!Number.isFinite(ls) || !Number.isFinite(le) || !Number.isFinite(ss)) continue;
+      const ovA = Math.max(a, ls);
+      const ovB = Math.min(b, le);
+      if (ovB <= ovA) continue;
+      const srcA = ss + (ovA - ls);
+      const srcB = ss + (ovB - ls);
+      out.push({ start: srcA, end: srcB });
+    }
+    return out;
+  };
+
+  // NOTE: applyInlineStyleFromCanvas is defined after engine state is available.
 
   const buildLineKey = (src: any, fallbackIndex: number) => {
     try {
@@ -361,6 +516,135 @@ export default function EditorShell() {
     setLayoutHistory((prev) => [...(prev || []), { layoutData, inputData }]);
   }, [inputData, layoutData, setLayoutHistory]);
 
+  const applyInlineStyleFromCanvas = (args: {
+    lineKey?: string;
+    lineIndex?: number;
+    block?: "HEADLINE" | "BODY";
+    selectionStart: number;
+    selectionEnd: number;
+    mark: "bold" | "italic" | "underline";
+    enabled: boolean;
+    // If true, do NOT update engine layout/input state immediately (prevents Fabric editing from exiting).
+    preserveCanvasEditing?: boolean;
+  }) => {
+    if (!currentProjectId) return;
+    const slideIndex = activeSlideIndexRef.current;
+    const curSlide = slidesRef.current[slideIndex] || initSlide();
+    const block: "HEADLINE" | "BODY" = args.block === "HEADLINE" ? "HEADLINE" : "BODY";
+
+    const baseLayout =
+      (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+      (curSlide as any)?.layoutData?.layout ||
+      null;
+    const baseInput =
+      (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
+      (curSlide as any)?.inputData ||
+      null;
+    if (!baseLayout || !Array.isArray((baseLayout as any).textLines)) return;
+
+    const lines = (baseLayout as any).textLines as any[];
+    const line =
+      (args.lineKey ? lines.find((l) => String((l as any)?.lineKey || "") === String(args.lineKey)) : null) ||
+      (Number.isFinite(args.lineIndex as any) ? lines[Number(args.lineIndex)] : null) ||
+      null;
+    if (!line) return;
+    const parts = Array.isArray((line as any).__sourceParts) ? (line as any).__sourceParts : null;
+    if (!parts) return;
+
+    const segs = mapLineSelectionToSourceSegments({
+      parts,
+      selectionStart: args.selectionStart,
+      selectionEnd: args.selectionEnd,
+    });
+    if (!segs.length) return;
+
+    // IMPORTANT: __sourceParts typically map only the "word" spans, not the inter-word spaces.
+    // If the user highlights a whole phrase, we want the mark to apply across the entire
+    // contiguous selection including spaces. So we expand to one contiguous source span.
+    const segMin = Math.min(...segs.map((s) => Number(s.start)));
+    const segMax = Math.max(...segs.map((s) => Number(s.end)));
+    const mergedSegs = [{ start: segMin, end: segMax }].filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start);
+    if (!mergedSegs.length) return;
+
+    const headlineText = String(curSlide.draftHeadline || "");
+    const bodyText = String(curSlide.draftBody || "");
+    const headlineRanges = Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [];
+    const bodyRanges = Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [];
+
+    const nextHeadlineRanges =
+      block === "HEADLINE"
+        ? applyMarkToRanges({ textLen: headlineText.length, existing: headlineRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled })
+        : headlineRanges;
+    const nextBodyRanges =
+      block === "BODY"
+        ? applyMarkToRanges({ textLen: bodyText.length, existing: bodyRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled })
+        : bodyRanges;
+
+    const nextInput = {
+      ...(baseInput && typeof baseInput === "object" ? baseInput : {}),
+      headline: headlineText,
+      body: bodyText,
+      headlineStyleRanges: nextHeadlineRanges,
+      bodyStyleRanges: nextBodyRanges,
+    };
+
+    const nextLayout = {
+      ...(baseLayout as any),
+      textLines: lines.map((l: any) => {
+        const p = Array.isArray(l?.__sourceParts) ? l.__sourceParts : null;
+        if (!p) return l;
+        const blk = String(l?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+        const ranges = blk === "HEADLINE" ? nextHeadlineRanges : nextBodyRanges;
+        return { ...l, styles: buildTextStylesForLine(p, ranges) };
+      }),
+    };
+
+    const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
+
+    // Always update the ref so background jobs / persistence sees latest ranges.
+    slidesRef.current = slidesRef.current.map((s, i) =>
+      i !== slideIndex
+        ? s
+        : ({
+            ...s,
+            draftHeadlineRanges: nextHeadlineRanges,
+            draftBodyRanges: nextBodyRanges,
+            layoutData: nextLayoutData,
+            inputData: nextInput,
+          } as any)
+    );
+
+    // IMPORTANT: while Fabric is actively editing text, updating the engine/layout props
+    // can cause a re-render that recreates text objects and exits editing/selection.
+    // So we defer UI/engine updates until editing is done, but still persist snapshots.
+    if (!args.preserveCanvasEditing) {
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== slideIndex
+            ? s
+            : ({
+                ...s,
+                draftHeadlineRanges: nextHeadlineRanges,
+                draftBodyRanges: nextBodyRanges,
+                layoutData: nextLayoutData,
+                inputData: nextInput,
+              } as any)
+        )
+      );
+      if (slideIndex === activeSlideIndexRef.current) {
+        setLayoutData(nextLayoutData);
+        setInputData(nextInput as any);
+      }
+    }
+
+    schedulePersistLayoutAndInput({
+      projectId: currentProjectIdRef.current,
+      slideIndex,
+      layoutSnapshot: nextLayout,
+      inputSnapshot: nextInput,
+    });
+  };
+
   // Project-wide colors (shared across all slides; affects canvas + generation).
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
@@ -373,6 +657,221 @@ export default function EditorShell() {
   const slideCanvasRefs = useRef<Array<React.RefObject<any>>>(
     Array.from({ length: slideCount }, () => createRef<any>())
   );
+
+  type CanvasTextSelectionState = {
+    active: boolean;
+    lineKey?: string;
+    lineIndex?: number;
+    block: "HEADLINE" | "BODY";
+    // Raw Fabric selection (cursor or highlight)
+    selectionStart: number;
+    selectionEnd: number;
+    // Effective range we apply changes to (full object if no highlight)
+    rangeStart: number;
+    rangeEnd: number;
+    isBold: boolean;
+    isItalic: boolean;
+    isUnderline: boolean;
+  };
+  const [canvasTextSelection, setCanvasTextSelection] = useState<CanvasTextSelectionState | null>(null);
+
+  const computeCanvasTextSelectionState = useCallback(() => {
+    try {
+      const c = (canvasRef as any)?.current?.canvas;
+      if (!c || typeof c.getActiveObject !== "function") {
+        setCanvasTextSelection(null);
+        return;
+      }
+      const obj = c.getActiveObject();
+      const t = String(obj?.type || "").toLowerCase();
+      const isTextObj = !!obj && (t === "i-text" || t === "textbox" || t === "text");
+      const isUserText = String(obj?.data?.role || "") === "user-text";
+      if (!isTextObj || !isUserText) {
+        setCanvasTextSelection(null);
+        return;
+      }
+      const text = String(obj?.text || "");
+      const rawA = Number(obj?.selectionStart ?? 0);
+      const rawB = Number(obj?.selectionEnd ?? rawA);
+      const selA = Number.isFinite(rawA) ? Math.max(0, Math.min(text.length, Math.floor(rawA))) : 0;
+      const selB = Number.isFinite(rawB) ? Math.max(0, Math.min(text.length, Math.floor(rawB))) : selA;
+      const hasHighlight = selA !== selB;
+      const rangeStart = hasHighlight ? Math.min(selA, selB) : 0;
+      const rangeEnd = hasHighlight ? Math.max(selA, selB) : text.length;
+
+      const baseBold = obj?.fontWeight === "bold" || obj?.fontWeight === 700;
+      const baseItalic = obj?.fontStyle === "italic";
+      const baseUnderline = !!obj?.underline;
+      let styles: any[] = [];
+      if (typeof obj?.getSelectionStyles === "function" && rangeEnd > rangeStart) {
+        styles = obj.getSelectionStyles(rangeStart, rangeEnd) || [];
+      }
+      const getBoldForStyle = (s: any) => {
+        const w = s?.fontWeight;
+        if (w == null) return baseBold;
+        return w === "bold" || w === 700;
+      };
+      const getItalicForStyle = (s: any) => {
+        const st = s?.fontStyle;
+        if (st == null) return baseItalic;
+        return st === "italic";
+      };
+      const getUnderlineForStyle = (s: any) => {
+        const u = s?.underline;
+        if (u == null) return baseUnderline;
+        return !!u;
+      };
+      const allBold = styles.length ? styles.every(getBoldForStyle) : baseBold;
+      const allItalic = styles.length ? styles.every(getItalicForStyle) : baseItalic;
+      const allUnderline = styles.length ? styles.every(getUnderlineForStyle) : baseUnderline;
+
+      setCanvasTextSelection({
+        active: true,
+        lineKey: obj?.data?.lineKey,
+        lineIndex: obj?.data?.lineIndex,
+        block: String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+        selectionStart: selA,
+        selectionEnd: selB,
+        rangeStart,
+        rangeEnd,
+        isBold: allBold,
+        isItalic: allItalic,
+        isUnderline: allUnderline,
+      });
+    } catch {
+      setCanvasTextSelection(null);
+    }
+  }, [canvasRef]);
+
+  useEffect(() => {
+    const c = (canvasRef as any)?.current?.canvas;
+    if (!c) {
+      setCanvasTextSelection(null);
+      return;
+    }
+    computeCanvasTextSelectionState();
+
+    const onUpdate = () => computeCanvasTextSelectionState();
+    try {
+      c.on?.("selection:created", onUpdate);
+      c.on?.("selection:updated", onUpdate);
+      c.on?.("selection:cleared", onUpdate);
+      c.on?.("mouse:up", onUpdate);
+      c.on?.("text:editing:entered", onUpdate);
+      c.on?.("text:editing:exited", onUpdate);
+      c.on?.("text:selection:changed", onUpdate);
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        c.off?.("selection:created", onUpdate);
+        c.off?.("selection:updated", onUpdate);
+        c.off?.("selection:cleared", onUpdate);
+        c.off?.("mouse:up", onUpdate);
+        c.off?.("text:editing:entered", onUpdate);
+        c.off?.("text:editing:exited", onUpdate);
+        c.off?.("text:selection:changed", onUpdate);
+      } catch {
+        // ignore
+      }
+    };
+  }, [activeSlideIndex, currentProjectId, activeCanvasNonce, computeCanvasTextSelectionState]);
+
+  const applyCanvasInlineMark = useCallback(
+    (mark: "bold" | "italic" | "underline", enabled: boolean) => {
+      const c = (canvasRef as any)?.current?.canvas;
+      if (!c || typeof c.getActiveObject !== "function") return;
+      const obj = c.getActiveObject();
+      const t = String(obj?.type || "").toLowerCase();
+      const isTextObj = !!obj && (t === "i-text" || t === "textbox" || t === "text");
+      const isUserText = String(obj?.data?.role || "") === "user-text";
+      if (!isTextObj || !isUserText) return;
+
+      const state = canvasTextSelection;
+      const text = String(obj?.text || "");
+      const prevSelStart =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.selectionStart) || 0))) : 0;
+      const prevSelEnd =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.selectionEnd) || 0))) : prevSelStart;
+      const wasEditing = !!(obj as any)?.isEditing;
+      const rangeStart =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.rangeStart) || 0))) : 0;
+      const rangeEnd =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.rangeEnd) || 0))) : text.length;
+      if (rangeEnd <= rangeStart) return;
+
+      if (mark === "bold") {
+        obj.setSelectionStyles?.({ fontWeight: enabled ? "bold" : "normal" }, rangeStart, rangeEnd);
+      } else if (mark === "italic") {
+        obj.setSelectionStyles?.({ fontStyle: enabled ? "italic" : "normal" }, rangeStart, rangeEnd);
+      } else {
+        obj.setSelectionStyles?.({ underline: enabled }, rangeStart, rangeEnd);
+      }
+      try {
+        // Keep the same object active and restore highlight/cursor.
+        if (typeof c.setActiveObject === "function") c.setActiveObject(obj);
+        if (wasEditing && typeof (obj as any).enterEditing === "function") (obj as any).enterEditing();
+        if (typeof (obj as any).setSelectionStart === "function") (obj as any).setSelectionStart(prevSelStart);
+        if (typeof (obj as any).setSelectionEnd === "function") (obj as any).setSelectionEnd(prevSelEnd);
+        c.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+
+      applyInlineStyleFromCanvas({
+        lineKey: obj?.data?.lineKey,
+        lineIndex: obj?.data?.lineIndex,
+        block: String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+        selectionStart: rangeStart,
+        selectionEnd: rangeEnd,
+        mark,
+        enabled,
+        preserveCanvasEditing: wasEditing,
+      });
+      computeCanvasTextSelectionState();
+    },
+    [applyInlineStyleFromCanvas, canvasRef, canvasTextSelection, computeCanvasTextSelectionState]
+  );
+
+  const clearCanvasInlineMarks = useCallback(() => {
+    const c = (canvasRef as any)?.current?.canvas;
+    if (!c || typeof c.getActiveObject !== "function") return;
+    const obj = c.getActiveObject();
+    const t = String(obj?.type || "").toLowerCase();
+    const isTextObj = !!obj && (t === "i-text" || t === "textbox" || t === "text");
+    const isUserText = String(obj?.data?.role || "") === "user-text";
+    if (!isTextObj || !isUserText) return;
+
+    const state = canvasTextSelection;
+    const text = String(obj?.text || "");
+    const prevSelStart =
+      state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.selectionStart) || 0))) : 0;
+    const prevSelEnd =
+      state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.selectionEnd) || 0))) : prevSelStart;
+    const wasEditing = !!(obj as any)?.isEditing;
+    const rangeStart =
+      state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.rangeStart) || 0))) : 0;
+    const rangeEnd =
+      state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.rangeEnd) || 0))) : text.length;
+    if (rangeEnd <= rangeStart) return;
+
+    obj.setSelectionStyles?.({ fontWeight: "normal", fontStyle: "normal", underline: false }, rangeStart, rangeEnd);
+    try {
+      if (typeof c.setActiveObject === "function") c.setActiveObject(obj);
+      if (wasEditing && typeof (obj as any).enterEditing === "function") (obj as any).enterEditing();
+      if (typeof (obj as any).setSelectionStart === "function") (obj as any).setSelectionStart(prevSelStart);
+      if (typeof (obj as any).setSelectionEnd === "function") (obj as any).setSelectionEnd(prevSelEnd);
+      c.requestRenderAll?.();
+    } catch {
+      // ignore
+    }
+    const block: "HEADLINE" | "BODY" = String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+    applyInlineStyleFromCanvas({ lineKey: obj?.data?.lineKey, lineIndex: obj?.data?.lineIndex, block, selectionStart: rangeStart, selectionEnd: rangeEnd, mark: "bold", enabled: false, preserveCanvasEditing: wasEditing });
+    applyInlineStyleFromCanvas({ lineKey: obj?.data?.lineKey, lineIndex: obj?.data?.lineIndex, block, selectionStart: rangeStart, selectionEnd: rangeEnd, mark: "italic", enabled: false, preserveCanvasEditing: wasEditing });
+    applyInlineStyleFromCanvas({ lineKey: obj?.data?.lineKey, lineIndex: obj?.data?.lineIndex, block, selectionStart: rangeStart, selectionEnd: rangeEnd, mark: "underline", enabled: false, preserveCanvasEditing: wasEditing });
+    computeCanvasTextSelectionState();
+  }, [applyInlineStyleFromCanvas, canvasRef, canvasTextSelection, computeCanvasTextSelectionState]);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -447,6 +946,10 @@ export default function EditorShell() {
     // AI Image Prompt (Enhanced only) - per-slide prompt for image generation
     savedAiImagePrompt: string;
     draftAiImagePrompt: string;
+
+    // Enhanced-only UX: when enabled, edits should NOT trigger reflow/realign for this slide.
+    // Persisted in input_snapshot.editor.layoutLocked
+    layoutLocked: boolean;
   };
 
   const initSlide = (): SlideState => ({
@@ -470,6 +973,7 @@ export default function EditorShell() {
     draftText: "#000000",
     savedAiImagePrompt: "",
     draftAiImagePrompt: "",
+    layoutLocked: false,
   });
 
   const [slides, setSlides] = useState<SlideState[]>(
@@ -525,6 +1029,7 @@ export default function EditorShell() {
   // Debounced autosave: active slide headline/body → Supabase (carousel_project_slides)
   const activeDraftHeadline = slides[activeSlideIndex]?.draftHeadline || "";
   const activeDraftBody = slides[activeSlideIndex]?.draftBody || "";
+  const enhancedLockOn = templateTypeId === "enhanced" && !!slides[activeSlideIndex]?.layoutLocked;
 
   // If the active slide's saved inputSnapshot doesn't match its current draft text (common after background Generate Copy),
   // queue a live layout so the canvas catches up when the user returns to the project.
@@ -1858,7 +2363,16 @@ export default function EditorShell() {
         const src = meta.lineSources?.[idx];
         const key = buildLineKey(src, idx);
         usedKeys.push(key);
-        let next = { ...l, lineKey: key, block: src?.block || "BODY" };
+        // Persist minimal source mapping so we can update inline styles without reflow (Lock Layout feature).
+        // `__sourceParts` mirrors wrap-flow's `parts` and maps this line's text back to [sourceStart,sourceEnd) spans
+        // of the original block string.
+        const parts = Array.isArray((src as any)?.parts) ? (src as any).parts : [];
+        const hintStart =
+          parts && parts.length > 0 && Number.isFinite(Number((parts[0] as any)?.sourceStart ?? NaN))
+            ? Number((parts[0] as any).sourceStart)
+            : undefined;
+        let next: any = { ...l, lineKey: key, block: src?.block || "BODY", __sourceParts: parts };
+        if (typeof hintStart === "number") next.__hintStart = hintStart;
 
         if (overridesByKey) {
           const direct = overridesByKey[key];
@@ -1932,6 +2446,182 @@ export default function EditorShell() {
       }
     }
     return layout;
+  };
+
+  const applyInlineStylesToExistingLayout = (params: {
+    layout: any;
+    headlineRanges: InlineStyleRange[];
+    bodyRanges: InlineStyleRange[];
+  }): { layout: any; canApply: boolean } => {
+    const { layout, headlineRanges, bodyRanges } = params;
+    if (!layout || !Array.isArray(layout.textLines)) return { layout, canApply: false };
+    let ok = true;
+    const nextLines = layout.textLines.map((l: any) => {
+      const parts = Array.isArray(l?.__sourceParts) ? l.__sourceParts : null;
+      if (!parts) {
+        ok = false;
+        return l;
+      }
+      const block = String(l?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+      const ranges = block === "HEADLINE" ? headlineRanges : bodyRanges;
+      return { ...l, styles: buildTextStylesForLine(parts, ranges) };
+    });
+    return { layout: { ...layout, textLines: nextLines }, canApply: ok };
+  };
+
+  type FixedWrapToken =
+    | { kind: "word"; text: string; start: number; end: number }
+    | { kind: "break"; start: number; end: number };
+
+  const tokenizeFixedWrap = (text: string): FixedWrapToken[] => {
+    const s = String(text || "");
+    const out: FixedWrapToken[] = [];
+    let i = 0;
+    while (i < s.length) {
+      const ch = s[i]!;
+      if (ch === "\n") {
+        out.push({ kind: "break", start: i, end: i + 1 });
+        i += 1;
+        continue;
+      }
+      if (/\s/.test(ch)) {
+        i += 1;
+        continue;
+      }
+      let j = i + 1;
+      while (j < s.length && !/\s/.test(s[j]!) && s[j] !== "\n") j += 1;
+      out.push({ kind: "word", text: s.slice(i, j), start: i, end: j });
+      i = j;
+    }
+    return out;
+  };
+
+  const takeLineFixed = (tokens: FixedWrapToken[], idx: number, maxChars: number) => {
+    if (idx >= tokens.length) return { line: "", consumed: 0, parts: [] as any[] };
+    if (tokens[idx]?.kind === "break") {
+      return { line: "", consumed: 1, parts: [] as any[] };
+    }
+    let line = "";
+    let consumed = 0;
+    const parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> = [];
+    for (let i = idx; i < tokens.length; i++) {
+      const t = tokens[i]!;
+      if (t.kind === "break") break;
+      const next = line ? `${line} ${t.text}` : t.text;
+      if (!Number.isFinite(maxChars as any) || next.length <= maxChars) {
+        const startPos = line ? line.length + 1 : 0;
+        line = next;
+        parts.push({ lineStart: startPos, lineEnd: startPos + t.text.length, sourceStart: t.start, sourceEnd: t.end });
+        consumed++;
+        continue;
+      }
+      break;
+    }
+    // IMPORTANT for Lock Layout: never truncate with ellipsis.
+    // If a single word doesn't fit in maxChars, still take it (overflow is allowed).
+    if (!line) {
+      const t = tokens[idx]!;
+      if (t.kind === "word") {
+        line = t.text;
+        parts.push({ lineStart: 0, lineEnd: t.text.length, sourceStart: t.start, sourceEnd: t.end });
+        consumed = 1;
+      }
+    }
+    return { line, consumed, parts };
+  };
+
+  const wrapBlockIntoExistingLinesNoMove = (params: {
+    layout: any;
+    block: "HEADLINE" | "BODY";
+    text: string;
+    ranges: InlineStyleRange[];
+  }): { layout: any; overflow: boolean } => {
+    const { layout, block, text, ranges } = params;
+    if (!layout || !Array.isArray(layout.textLines)) return { layout, overflow: false };
+    const target = String(block);
+    const idxs = layout.textLines
+      .map((l: any, idx: number) => ({ l, idx }))
+      .filter(({ l }: any) => String(l?.block || "").toUpperCase() === target)
+      .map(({ idx }: any) => idx);
+    if (!idxs.length) return { layout, overflow: false };
+
+    const tokens = tokenizeFixedWrap(String(text || ""));
+    let tIdx = 0;
+    // Lock Layout mode: overflow is allowed; we do not truncate or drop tokens.
+    let overflow = false;
+
+    const avgEm =
+      target === "HEADLINE"
+        ? estimateAvgCharWidthEmRelaxed(headlineFontFamily, headlineFontWeight)
+        : estimateAvgCharWidthEmRelaxed(bodyFontFamily, bodyFontWeight);
+
+    const nextLines = [...layout.textLines];
+    for (let pos = 0; pos < idxs.length; pos++) {
+      const li = idxs[pos]!;
+      const line = nextLines[li] as any;
+      const maxWidth = Math.max(1, Math.floor(Number(line?.maxWidth || 1)));
+      const fontSize = Math.max(1, Math.floor(Number(line?.baseSize || (target === "HEADLINE" ? 76 : 48))));
+      const estCharPx = Math.max(4, Math.floor(fontSize * Math.max(0.3, Number(avgEm) || 0.56)));
+      const maxChars = Math.max(4, Math.floor(maxWidth / estCharPx));
+
+      const isLastLine = pos === (idxs.length - 1);
+      // For the last available line, consume EVERYTHING (including breaks) so nothing is dropped.
+      if (isLastLine) {
+        let txt = "";
+        const parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> = [];
+        let outIdx = 0;
+        while (tIdx < tokens.length) {
+          const t = tokens[tIdx]!;
+          if (t.kind === "break") {
+            txt += "\n";
+            outIdx += 1;
+            tIdx += 1;
+            continue;
+          }
+          // word
+          const prefix = txt && !txt.endsWith("\n") ? " " : "";
+          const startPos = outIdx + prefix.length;
+          txt += prefix + t.text;
+          outIdx = txt.length;
+          parts.push({ lineStart: startPos, lineEnd: startPos + t.text.length, sourceStart: t.start, sourceEnd: t.end });
+          tIdx += 1;
+        }
+        const nextLine: any = { ...line, text: String(txt || "") };
+        nextLine.__sourceParts = parts;
+        nextLine.styles = buildTextStylesForLine(parts, ranges);
+        nextLines[li] = nextLine;
+        break;
+      }
+
+      // Non-last lines: respect maxChars for wrapping, but do not truncate words.
+      const { line: txt, consumed, parts } = takeLineFixed(tokens, tIdx, maxChars);
+      tIdx += Math.max(0, consumed);
+
+      const nextLine: any = { ...line, text: String(txt || "") };
+      nextLine.__sourceParts = parts;
+      nextLine.styles = buildTextStylesForLine(parts, ranges);
+      nextLines[li] = nextLine;
+    }
+    if (tIdx < tokens.length) overflow = true;
+    return { layout: { ...layout, textLines: nextLines }, overflow };
+  };
+
+  const schedulePersistLayoutAndInput = (params: {
+    projectId: string | null;
+    slideIndex: number;
+    layoutSnapshot: any;
+    inputSnapshot: any;
+  }) => {
+    const pid = String(params.projectId || "").trim();
+    if (!pid) return;
+    const slideIndex = params.slideIndex;
+    if (slideIndex < 0 || slideIndex >= slideCount) return;
+    if (rteNoReflowSaveTimeoutRef.current) window.clearTimeout(rteNoReflowSaveTimeoutRef.current);
+    const layoutAtSchedule = params.layoutSnapshot;
+    const inputAtSchedule = params.inputSnapshot;
+    rteNoReflowSaveTimeoutRef.current = window.setTimeout(() => {
+      void saveSlidePatchForProject(pid, slideIndex, { layoutSnapshot: layoutAtSchedule, inputSnapshot: inputAtSchedule });
+    }, 500);
   };
 
   const computeRegularBodyTextboxLayout = (params: {
@@ -2134,6 +2824,18 @@ export default function EditorShell() {
         // Ignore stale completions for this project+slide.
         if (liveLayoutRunIdByKeyRef.current[key] !== item.runId) continue;
 
+        // Enhanced Lock Layout: if the slide is currently locked, do not apply/persist auto-reflow results.
+        // (User explicitly chose to keep positions stable.)
+        try {
+          const cur = slidesRef.current[slideIndex] || null;
+          if (item.templateTypeId === "enhanced" && !!(cur as any)?.layoutLocked) {
+            addLog(`🔒 Live layout skipped slide ${slideIndex + 1}: layout is locked`);
+            continue;
+          }
+        } catch {
+          // ignore
+        }
+
         const snap = item.templateSnapshot;
         const tid = item.templateId;
         if (!snap) {
@@ -2268,6 +2970,21 @@ export default function EditorShell() {
     const prev = liveLayoutTimeoutsRef.current[key];
     if (prev) window.clearTimeout(prev);
     liveLayoutTimeoutsRef.current[key] = window.setTimeout(() => {
+      // Enhanced Lock Layout: never auto-reflow a slide that is currently locked
+      // (unless there is no layout yet, in which case we allow the initial layout to be generated).
+      try {
+        if (templateTypeId === "enhanced") {
+          const s = slidesRef.current[slideIndex] || null;
+          const locked = !!(s as any)?.layoutLocked;
+          const hasLayout = !!(
+            (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+            (s as any)?.layoutData?.layout
+          );
+          if (locked && hasLayout) return;
+        }
+      } catch {
+        // ignore
+      }
       enqueueLiveLayoutForProject(pid, [slideIndex]);
     }, LIVE_LAYOUT_DEBOUNCE_MS);
   };
@@ -2583,12 +3300,37 @@ export default function EditorShell() {
     const editedBlock: "HEADLINE" | "BODY" = (editedLine?.block === "HEADLINE" ? "HEADLINE" : "BODY");
     const didEditText = typeof change.text === "string";
 
-    const rebuildBlock = (block: "HEADLINE" | "BODY") =>
-      nextTextLines
-        .filter((l: any) => (l?.block === "HEADLINE" ? "HEADLINE" : "BODY") === block)
-        .map((l: any) => String(l?.text || "").trim())
-        .filter((s: string) => !!s)
-        .join(" ");
+    const rebuildBlock = (block: "HEADLINE" | "BODY") => {
+      // Preserve paragraph breaks when rebuilding the underlying source-of-truth text from positioned lines.
+      // We can infer paragraph boundaries from the stable lineKey format: `${BLOCK}:${paragraphIndex}:...`
+      const lines = nextTextLines.filter((l: any) => (l?.block === "HEADLINE" ? "HEADLINE" : "BODY") === block);
+      const parseParagraphIndex = (lineKey: any) => {
+        try {
+          const s = String(lineKey || "");
+          const m = s.match(/^[A-Z]+:(\d+):/);
+          if (m && m[1] != null) return Number(m[1]) || 0;
+        } catch {
+          // ignore
+        }
+        return 0;
+      };
+
+      let out = "";
+      let prevPara: number | null = null;
+      for (const l of lines) {
+        const raw = String(l?.text ?? "");
+        const text = raw.replace(/[ \t]+$/g, "").replace(/^[ \t]+/g, "");
+        if (!text) continue;
+        const para = parseParagraphIndex((l as any)?.lineKey);
+        if (out.length > 0) {
+          // Paragraph change → blank line; otherwise normal line continuation.
+          out += (prevPara != null && para !== prevPara) ? "\n\n" : " ";
+        }
+        out += text;
+        prevPara = para;
+      }
+      return out;
+    };
 
     // Only rewrite headline/body source-of-truth when the user actually edited text (not when dragging).
     const nextHeadlineText = didEditText
@@ -2802,6 +3544,7 @@ export default function EditorShell() {
         layoutHistory: [],
         savedAiImagePrompt: loadedAiImagePrompt,
         draftAiImagePrompt: loadedAiImagePrompt,
+        layoutLocked: getLayoutLockedFromInput(inputSnap || null),
       };
     });
     setSlides(nextSlides);
@@ -2858,6 +3601,7 @@ export default function EditorShell() {
         debugScreenshot: null,
         savedAiImagePrompt: loadedAiImagePrompt,
         draftAiImagePrompt: loadedAiImagePrompt,
+        layoutLocked: false,
       };
     });
     setSlides(nextSlides);
@@ -4759,6 +5503,7 @@ export default function EditorShell() {
                                 clampUserTextToContentRect={true}
                                 clampUserImageToContentRect={false}
                                 pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
                                 displayWidthPx={displayW}
                                 displayHeightPx={displayH}
                                 onUserTextChange={
@@ -4803,6 +5548,7 @@ export default function EditorShell() {
                           clampUserTextToContentRect={true}
                           clampUserImageToContentRect={false}
                           pushTextOutOfUserImage={templateTypeId !== "regular"}
+                          lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
                         />
                       );
                     })}
@@ -4857,73 +5603,242 @@ export default function EditorShell() {
                             void switchToSlide(i);
                           }}
                         >
-                          {/* Per-slide image upload trigger (active slide only). Render immediately; disable until a project exists. */}
+                          {/* Per-slide controls under the active slide (active slide only). */}
                           {i === activeSlideIndex ? (
-                            <button
-                              type="button"
-                              // Use translate (not negative bottom) to avoid affecting scroll/overflow metrics when the icon mounts.
-                              className="absolute left-2 bottom-0 translate-y-10 w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
-                              title={
-                                !currentProjectId
-                                  ? "Create or load a project to upload an image"
-                                  : imageBusy
-                                    ? "Working…"
-                                    : "Upload image"
-                              }
-                              aria-label="Upload image"
-                              disabled={!currentProjectId || imageBusy || switchingSlides || copyGenerating}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                imageFileInputRef.current?.click();
-                              }}
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                openImageMenu(e.clientX, e.clientY);
-                              }}
-                              onPointerDown={(e) => {
-                                // Long-press to open menu
-                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                const x = (e as any).clientX ?? 0;
-                                const y = (e as any).clientY ?? 0;
-                                imageLongPressRef.current = window.setTimeout(() => {
-                                  openImageMenu(x, y);
-                                }, 520);
-                              }}
-                              onPointerUp={() => {
-                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                imageLongPressRef.current = null;
-                              }}
-                              onPointerCancel={() => {
-                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                imageLongPressRef.current = null;
-                              }}
-                              onPointerLeave={() => {
-                                if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                imageLongPressRef.current = null;
-                              }}
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                className="w-9 h-9"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
+                            <div className="absolute left-2 bottom-0 translate-y-10 flex items-center gap-3">
+                              <button
+                                type="button"
+                                className="w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
+                                title={
+                                  !currentProjectId
+                                    ? "Create or load a project to upload an image"
+                                    : imageBusy
+                                      ? "Working…"
+                                      : "Upload image"
+                                }
+                                aria-label="Upload image"
+                                disabled={!currentProjectId || imageBusy || switchingSlides || copyGenerating}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  imageFileInputRef.current?.click();
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openImageMenu(e.clientX, e.clientY);
+                                }}
+                                onPointerDown={(e) => {
+                                  // Long-press to open menu
+                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                  const x = (e as any).clientX ?? 0;
+                                  const y = (e as any).clientY ?? 0;
+                                  imageLongPressRef.current = window.setTimeout(() => {
+                                    openImageMenu(x, y);
+                                  }, 520);
+                                }}
+                                onPointerUp={() => {
+                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                  imageLongPressRef.current = null;
+                                }}
+                                onPointerCancel={() => {
+                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                  imageLongPressRef.current = null;
+                                }}
+                                onPointerLeave={() => {
+                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                                  imageLongPressRef.current = null;
+                                }}
                               >
-                                {/* Camera body */}
-                                <rect x="3" y="7" width="14" height="12" rx="3" />
-                                {/* Camera top bump */}
-                                <path d="M7 7l1.2-2h3.6L13 7" />
-                                {/* Lens */}
-                                <circle cx="10" cy="13" r="3" />
-                                {/* Plus (add photo) */}
-                                <path d="M20 4v4" />
-                                <path d="M18 6h4" />
-                              </svg>
-                            </button>
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  className="w-9 h-9"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  {/* Camera body */}
+                                  <rect x="3" y="7" width="14" height="12" rx="3" />
+                                  {/* Camera top bump */}
+                                  <path d="M7 7l1.2-2h3.6L13 7" />
+                                  {/* Lens */}
+                                  <circle cx="10" cy="13" r="3" />
+                                  {/* Plus (add photo) */}
+                                  <path d="M20 4v4" />
+                                  <path d="M18 6h4" />
+                                </svg>
+                              </button>
+
+                              {templateTypeId === "enhanced" ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={!!slides[activeSlideIndex]?.layoutLocked}
+                                    aria-label="Lock layout"
+                                    className={[
+                                      "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
+                                      !currentProjectId || switchingSlides || copyGenerating
+                                        ? "opacity-40 cursor-not-allowed"
+                                        : "cursor-pointer",
+                                      slides[activeSlideIndex]?.layoutLocked
+                                        ? "bg-emerald-500 border-emerald-500"
+                                        : "bg-slate-300 border-slate-300",
+                                    ].join(" ")}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating}
+                                    title={!currentProjectId ? "Create or load a project to use Lock layout" : "Toggle Lock layout for this slide"}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      if (!currentProjectId) return;
+                                      const slideIndex = activeSlideIndexRef.current;
+                                      const prev = slidesRef.current[slideIndex] || initSlide();
+                                      const nextLocked = !prev.layoutLocked;
+                                      const baseInput =
+                                        (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
+                                        (prev as any)?.inputData ||
+                                        null;
+                                      const nextInput = withLayoutLockedInInput(baseInput, nextLocked);
+                                      setSlides((arr) =>
+                                        arr.map((s, ii) =>
+                                          ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
+                                        )
+                                      );
+                                      slidesRef.current = slidesRef.current.map((s, ii) =>
+                                        ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
+                                      );
+                                      if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
+                                      // If enabling lock, cancel any pending/in-flight live-layout for this slide so it can't "snap" after the toggle.
+                                      try {
+                                        const key = liveLayoutKey(currentProjectId, slideIndex);
+                                        const t = liveLayoutTimeoutsRef.current[key];
+                                        if (t) window.clearTimeout(t);
+                                        liveLayoutTimeoutsRef.current[key] = null;
+                                        liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((x) => x.key !== key);
+                                        liveLayoutRunIdByKeyRef.current[key] = (liveLayoutRunIdByKeyRef.current[key] || 0) + 1;
+                                      } catch {
+                                        // ignore
+                                      }
+                                      schedulePersistLayoutAndInput({
+                                        projectId: currentProjectId,
+                                        slideIndex,
+                                        layoutSnapshot: ((layoutData as any)?.layout || (prev as any)?.layoutData?.layout || null),
+                                        inputSnapshot: nextInput,
+                                      });
+                                    }}
+                                  >
+                                    <span
+                                      className={[
+                                        "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
+                                        slides[activeSlideIndex]?.layoutLocked ? "opacity-100" : "opacity-0",
+                                      ].join(" ")}
+                                    >
+                                      ON
+                                    </span>
+                                    <span
+                                      className={[
+                                        "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
+                                        slides[activeSlideIndex]?.layoutLocked ? "opacity-0" : "opacity-100",
+                                      ].join(" ")}
+                                    >
+                                      OFF
+                                    </span>
+                                    <span
+                                      className={[
+                                        "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
+                                        slides[activeSlideIndex]?.layoutLocked ? "translate-x-8" : "translate-x-1",
+                                      ].join(" ")}
+                                    />
+                                  </button>
+                                  <div className="text-sm font-semibold text-slate-900 select-none">Lock layout</div>
+                                </div>
+                              ) : null}
+
+                              {canvasTextSelection?.active ? (
+                                <div className="flex items-center gap-2">
+                                  {(() => {
+                                    const disabled = !currentProjectId || switchingSlides || copyGenerating;
+                                    const pillBase =
+                                      "h-8 px-3 rounded-full border text-sm font-semibold select-none transition-colors";
+                                    const pillOn = "bg-slate-900 border-slate-900 text-white";
+                                    const pillOff = "bg-white border-slate-300 text-slate-900 hover:bg-slate-50";
+                                    const pillDis = "opacity-40 cursor-not-allowed";
+                                    const btn = (on: boolean) =>
+                                      [pillBase, disabled ? pillDis : "cursor-pointer", on ? pillOn : pillOff].join(" ");
+                                    const stop = (e: any) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    };
+                                    return (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className={btn(!!canvasTextSelection?.isBold)}
+                                          disabled={disabled}
+                                          tabIndex={-1}
+                                          aria-label="Bold"
+                                          title="Bold"
+                                          onMouseDown={stop}
+                                          onClick={(e) => {
+                                            stop(e);
+                                            applyCanvasInlineMark("bold", !canvasTextSelection.isBold);
+                                          }}
+                                        >
+                                          B
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className={btn(!!canvasTextSelection?.isItalic)}
+                                          disabled={disabled}
+                                          tabIndex={-1}
+                                          aria-label="Italic"
+                                          title="Italic"
+                                          onMouseDown={stop}
+                                          onClick={(e) => {
+                                            stop(e);
+                                            applyCanvasInlineMark("italic", !canvasTextSelection.isItalic);
+                                          }}
+                                        >
+                                          I
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className={btn(!!canvasTextSelection?.isUnderline)}
+                                          disabled={disabled}
+                                          tabIndex={-1}
+                                          aria-label="Underline"
+                                          title="Underline"
+                                          onMouseDown={stop}
+                                          onClick={(e) => {
+                                            stop(e);
+                                            applyCanvasInlineMark("underline", !canvasTextSelection.isUnderline);
+                                          }}
+                                        >
+                                          <span className="underline underline-offset-2">U</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className={btn(false)}
+                                          disabled={disabled}
+                                          tabIndex={-1}
+                                          aria-label="Clear text styling"
+                                          title="Clear (bold/italic/underline)"
+                                          onMouseDown={stop}
+                                          onClick={(e) => {
+                                            stop(e);
+                                            clearCanvasInlineMarks();
+                                          }}
+                                        >
+                                          Clear
+                                        </button>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              ) : null}
+                            </div>
                           ) : null}
                           <SlideCard index={i + 1} active={i === activeSlideIndex}>
                             <div
@@ -4960,6 +5875,15 @@ export default function EditorShell() {
                                         ? (node: any) => {
                                             (canvasRef as any).current = node;
                                             slideCanvasRefs.current[i]!.current = node;
+                                            try {
+                                              const fabricCanvas = (node as any)?.canvas || null;
+                                              if (fabricCanvas && lastActiveFabricCanvasRef.current !== fabricCanvas) {
+                                                lastActiveFabricCanvasRef.current = fabricCanvas;
+                                                setActiveCanvasNonce((x) => x + 1);
+                                              }
+                                            } catch {
+                                              // ignore
+                                            }
                                           }
                                         : slideCanvasRefs.current[i];
 
@@ -4984,6 +5908,7 @@ export default function EditorShell() {
                                         clampUserTextToContentRect={true}
                                         clampUserImageToContentRect={false}
                                         pushTextOutOfUserImage={templateTypeId !== "regular"}
+                                        lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
                                         displayWidthPx={420}
                                         displayHeightPx={560}
                                         onUserTextChange={
@@ -5015,12 +5940,7 @@ export default function EditorShell() {
                 </div>
               )}
             </div>
-            {/* Text styling toolbar (kept outside SlideCard so it never affects slide sizing/clipping) */}
-            {layoutData?.layout && inputData ? (
-              <div className="mt-4 flex justify-center">
-                <TextStylingToolbar fabricCanvas={canvasRef.current?.canvas} />
-              </div>
-            ) : null}
+            {/* Text styling UI lives under the active slide (no floating toolbar). */}
           </div>
 
           {/* Bottom panel */}
@@ -5045,7 +5965,7 @@ export default function EditorShell() {
                             step={1}
                             className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                             value={Number(slides[activeSlideIndex]?.draftHeadlineFontSizePx ?? 76)}
-                            disabled={loading || switchingSlides || copyGenerating}
+                            disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                             onChange={(e) => {
                               const raw = Number((e.target as any).value);
                               const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 76;
@@ -5074,7 +5994,7 @@ export default function EditorShell() {
                                         : (s as any).inputData,
                                     } as any)
                               );
-                              scheduleLiveLayout(activeSlideIndex);
+                              if (!enhancedLockOn) scheduleLiveLayout(activeSlideIndex);
                             }}
                             title="Font size (24–120px)"
                           />
@@ -5090,7 +6010,7 @@ export default function EditorShell() {
                                     "h-8 w-8 text-xs font-semibold transition-colors",
                                     active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
                                   ].join(" ")}
-                                  disabled={loading || switchingSlides || copyGenerating}
+                                  disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                                   title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
                                   onClick={() => {
                                     const nextAlign = a;
@@ -5119,7 +6039,9 @@ export default function EditorShell() {
                                               : (s as any).inputData,
                                           } as any)
                                     );
-                                    if (currentProjectId) enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
+                                    if (!enhancedLockOn && currentProjectId && !(slidesRef.current[activeSlideIndex] as any)?.layoutLocked) {
+                                      enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
+                                    }
                                   }}
                                 >
                                   {label}
@@ -5129,13 +6051,14 @@ export default function EditorShell() {
                           </div>
                         </div>
                       </div>
-                      <RichTextInput
-                        key={`rte-headline:${currentProjectId || "none"}:${activeSlideIndex}`}
-                        valueText={slides[activeSlideIndex]?.draftHeadline || ""}
-                        valueRanges={slides[activeSlideIndex]?.draftHeadlineRanges || []}
-                        onDebugLog={addLog}
-                        debugId={`headline proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
-                        onChange={(next) => {
+                      <div className="relative">
+                        <RichTextInput
+                          key={`rte-headline:${currentProjectId || "none"}:${activeSlideIndex}`}
+                          valueText={slides[activeSlideIndex]?.draftHeadline || ""}
+                          valueRanges={slides[activeSlideIndex]?.draftHeadlineRanges || []}
+                          onDebugLog={addLog}
+                          debugId={`headline proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
+                          onChange={(next) => {
                           // Log ONLY if this handler is firing after project/slide changed (stale closure symptom).
                           try {
                             const nowProj = currentProjectIdRef.current || "none";
@@ -5150,24 +6073,131 @@ export default function EditorShell() {
                           } catch {
                             // ignore
                           }
-                          // IMPORTANT: keep slidesRef in sync so background live-layout snapshots
-                          // always see the latest RTE text (prevents "RTE shows text but canvas is blank" races).
                           const slideIndexNow = activeSlideIndexRef.current;
+                          const cur = slidesRef.current[slideIndexNow] || initSlide();
+                          const prevText = String(cur.draftHeadline || "");
+                          const prevRanges = Array.isArray(cur.draftHeadlineRanges) ? cur.draftHeadlineRanges : [];
+                          const nextText = String(next.text || "");
+                          const nextRanges = Array.isArray(next.ranges) ? next.ranges : [];
+                          const isFormattingOnly = nextText === prevText && !rangesEqual(prevRanges, nextRanges);
+                          const isPuncOnly = nextText !== prevText && isPunctuationOnlyChange(prevText, nextText);
+                          const locked = templateTypeId === "enhanced" ? !!cur.layoutLocked : false;
+
+                          // Always keep slidesRef in sync so background snapshots see latest RTE state.
                           setSlides((prev) =>
                             prev.map((s, i) =>
-                              i === slideIndexNow ? { ...s, draftHeadline: next.text, draftHeadlineRanges: next.ranges } : s
+                              i === slideIndexNow ? { ...s, draftHeadline: nextText, draftHeadlineRanges: nextRanges } : s
                             )
                           );
                           slidesRef.current = slidesRef.current.map((s, i) =>
-                            i === slideIndexNow ? ({ ...s, draftHeadline: next.text, draftHeadlineRanges: next.ranges } as any) : s
+                            i === slideIndexNow ? ({ ...s, draftHeadline: nextText, draftHeadlineRanges: nextRanges } as any) : s
                           );
+
+                          // Enhanced: avoid full reflow for formatting-only or punctuation-only edits,
+                          // and avoid reflow for ANY edits when layout is locked.
+                          if (templateTypeId === "enhanced" && (locked || isFormattingOnly || isPuncOnly)) {
+                            const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+                            const baseLayout = (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+                              (baseSlide as any)?.layoutData?.layout ||
+                              null;
+                            const baseInput = (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) ||
+                              (baseSlide as any)?.inputData ||
+                              null;
+                            if (baseLayout) {
+                              const headlineRanges = nextRanges;
+                              const bodyRanges = Array.isArray(baseSlide.draftBodyRanges) ? baseSlide.draftBodyRanges : [];
+                              const updatedInput = withLayoutLockedInInput(
+                                {
+                                  ...(baseInput && typeof baseInput === "object" ? baseInput : {}),
+                                  headline: nextText,
+                                  headlineStyleRanges: headlineRanges,
+                                  bodyStyleRanges: bodyRanges,
+                                },
+                                locked
+                              );
+
+                              let nextLayout = baseLayout;
+                              let overflow = false;
+                              if (locked || isPuncOnly) {
+                                const wrapped = wrapBlockIntoExistingLinesNoMove({
+                                  layout: baseLayout,
+                                  block: "HEADLINE",
+                                  text: nextText,
+                                  ranges: headlineRanges,
+                                });
+                                nextLayout = wrapped.layout;
+                                overflow = wrapped.overflow;
+                              } else {
+                                const applied = applyInlineStylesToExistingLayout({
+                                  layout: baseLayout,
+                                  headlineRanges,
+                                  bodyRanges,
+                                });
+                                nextLayout = applied.layout;
+                                overflow = false;
+                              }
+
+                              const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
+
+                              setSlides((prev) =>
+                                prev.map((s, i) =>
+                                  i !== slideIndexNow
+                                    ? s
+                                    : ({
+                                        ...s,
+                                        layoutData: nextLayoutData,
+                                        inputData: updatedInput,
+                                      } as any)
+                                )
+                              );
+                              slidesRef.current = slidesRef.current.map((s, i) =>
+                                i !== slideIndexNow
+                                  ? s
+                                  : ({
+                                      ...s,
+                                      layoutData: nextLayoutData,
+                                      inputData: updatedInput,
+                                    } as any)
+                              );
+                              if (slideIndexNow === activeSlideIndexRef.current) {
+                                setLayoutData(nextLayoutData);
+                                setInputData(updatedInput as any);
+                              }
+                              schedulePersistLayoutAndInput({
+                                projectId: currentProjectIdRef.current,
+                                slideIndex: slideIndexNow,
+                                layoutSnapshot: nextLayout,
+                                inputSnapshot: updatedInput,
+                              });
+                              return;
+                            }
+                            // If no layout yet, fall back to normal flow (it will generate one).
+                          }
+
                           scheduleLiveLayout(slideIndexNow);
-                        }}
-                        disabled={loading || switchingSlides || copyGenerating}
-                        placeholder="Enter headline..."
-                        minHeightPx={40}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
-                      />
+                          }}
+                          disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
+                          placeholder={enhancedLockOn ? "Headline locked" : "Enter headline..."}
+                          minHeightPx={40}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
+                        />
+                        {enhancedLockOn ? (
+                          <div
+                            className="absolute inset-0 rounded-lg border border-slate-200"
+                            style={{
+                              backgroundImage:
+                                "repeating-linear-gradient(135deg, rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 10px, rgba(255,255,255,0.30) 10px, rgba(255,255,255,0.30) 20px)",
+                              pointerEvents: "none",
+                            }}
+                            aria-hidden="true"
+                          >
+                            <div className="absolute top-2 right-2 px-3 py-2 rounded-lg bg-white/90 border border-red-200 shadow-sm flex items-center gap-2">
+                              <span className="text-red-600 text-sm font-bold">!</span>
+                              <div className="text-xs font-semibold text-slate-800">Locked — edit on canvas</div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
 
@@ -5187,7 +6217,7 @@ export default function EditorShell() {
                           step={1}
                           className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                           value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 48)}
-                          disabled={loading || switchingSlides || copyGenerating}
+                          disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                           onChange={(e) => {
                             const raw = Number((e.target as any).value);
                             const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 48;
@@ -5216,7 +6246,7 @@ export default function EditorShell() {
                                       : (s as any).inputData,
                                   } as any)
                             );
-                            scheduleLiveLayout(activeSlideIndex);
+                            if (!enhancedLockOn) scheduleLiveLayout(activeSlideIndex);
                           }}
                           title="Font size (24–120px)"
                         />
@@ -5232,7 +6262,7 @@ export default function EditorShell() {
                                   "h-8 w-8 text-xs font-semibold transition-colors",
                                   active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
                                 ].join(" ")}
-                                disabled={loading || switchingSlides || copyGenerating}
+                                disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                                 title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
                                 onClick={() => {
                                   const nextAlign = a;
@@ -5261,7 +6291,9 @@ export default function EditorShell() {
                                             : (s as any).inputData,
                                         } as any)
                                   );
-                                  if (currentProjectId) enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
+                                  if (!enhancedLockOn && currentProjectId && !(slidesRef.current[activeSlideIndex] as any)?.layoutLocked) {
+                                    enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
+                                  }
                                 }}
                               >
                                 {label}
@@ -5272,13 +6304,14 @@ export default function EditorShell() {
                         </div>
                       ) : null}
                     </div>
-                    <RichTextInput
-                      key={`rte-body:${currentProjectId || "none"}:${activeSlideIndex}`}
-                      valueText={slides[activeSlideIndex]?.draftBody || ""}
-                      valueRanges={slides[activeSlideIndex]?.draftBodyRanges || []}
-                      onDebugLog={addLog}
-                      debugId={`body proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
-                      onChange={(next) => {
+                    <div className="relative">
+                      <RichTextInput
+                        key={`rte-body:${currentProjectId || "none"}:${activeSlideIndex}`}
+                        valueText={slides[activeSlideIndex]?.draftBody || ""}
+                        valueRanges={slides[activeSlideIndex]?.draftBodyRanges || []}
+                        onDebugLog={addLog}
+                        debugId={`body proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
+                        onChange={(next) => {
                         // Log ONLY if this handler is firing after project/slide changed (stale closure symptom).
                         try {
                           const nowProj = currentProjectIdRef.current || "none";
@@ -5293,22 +6326,125 @@ export default function EditorShell() {
                         } catch {
                           // ignore
                         }
-                        // IMPORTANT: keep slidesRef in sync so background live-layout snapshots
-                        // always see the latest RTE text (prevents "RTE shows text but canvas is blank" races).
                         const slideIndexNow = activeSlideIndexRef.current;
+                        const cur = slidesRef.current[slideIndexNow] || initSlide();
+                        const prevText = String(cur.draftBody || "");
+                        const prevRanges = Array.isArray(cur.draftBodyRanges) ? cur.draftBodyRanges : [];
+                        const nextText = String(next.text || "");
+                        const nextRanges = Array.isArray(next.ranges) ? next.ranges : [];
+                        const isFormattingOnly = nextText === prevText && !rangesEqual(prevRanges, nextRanges);
+                        const isPuncOnly = nextText !== prevText && isPunctuationOnlyChange(prevText, nextText);
+                        const locked = templateTypeId === "enhanced" ? !!cur.layoutLocked : false;
+
                         setSlides((prev) =>
-                          prev.map((s, i) => (i === slideIndexNow ? { ...s, draftBody: next.text, draftBodyRanges: next.ranges } : s))
+                          prev.map((s, i) => (i === slideIndexNow ? { ...s, draftBody: nextText, draftBodyRanges: nextRanges } : s))
                         );
                         slidesRef.current = slidesRef.current.map((s, i) =>
-                          i === slideIndexNow ? ({ ...s, draftBody: next.text, draftBodyRanges: next.ranges } as any) : s
+                          i === slideIndexNow ? ({ ...s, draftBody: nextText, draftBodyRanges: nextRanges } as any) : s
                         );
+
+                        if (templateTypeId === "enhanced" && (locked || isFormattingOnly || isPuncOnly)) {
+                          const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+                          const baseLayout = (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+                            (baseSlide as any)?.layoutData?.layout ||
+                            null;
+                          const baseInput = (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) ||
+                            (baseSlide as any)?.inputData ||
+                            null;
+                          if (baseLayout) {
+                            const headlineRanges = Array.isArray(baseSlide.draftHeadlineRanges) ? baseSlide.draftHeadlineRanges : [];
+                            const bodyRanges = nextRanges;
+                            const updatedInput = withLayoutLockedInInput(
+                              {
+                                ...(baseInput && typeof baseInput === "object" ? baseInput : {}),
+                                body: nextText,
+                                headlineStyleRanges: headlineRanges,
+                                bodyStyleRanges: bodyRanges,
+                              },
+                              locked
+                            );
+
+                            let nextLayout = baseLayout;
+                            let overflow = false;
+                            if (locked || isPuncOnly) {
+                              const wrapped = wrapBlockIntoExistingLinesNoMove({
+                                layout: baseLayout,
+                                block: "BODY",
+                                text: nextText,
+                                ranges: bodyRanges,
+                              });
+                              nextLayout = wrapped.layout;
+                              overflow = wrapped.overflow;
+                            } else {
+                              const applied = applyInlineStylesToExistingLayout({
+                                layout: baseLayout,
+                                headlineRanges,
+                                bodyRanges,
+                              });
+                              nextLayout = applied.layout;
+                              overflow = false;
+                            }
+
+                            const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
+
+                            setSlides((prev) =>
+                              prev.map((s, i) =>
+                                i !== slideIndexNow
+                                  ? s
+                                  : ({
+                                      ...s,
+                                      layoutData: nextLayoutData,
+                                      inputData: updatedInput,
+                                    } as any)
+                              )
+                            );
+                            slidesRef.current = slidesRef.current.map((s, i) =>
+                              i !== slideIndexNow
+                                ? s
+                                : ({
+                                    ...s,
+                                    layoutData: nextLayoutData,
+                                    inputData: updatedInput,
+                                  } as any)
+                            );
+                            if (slideIndexNow === activeSlideIndexRef.current) {
+                              setLayoutData(nextLayoutData);
+                              setInputData(updatedInput as any);
+                            }
+                            schedulePersistLayoutAndInput({
+                              projectId: currentProjectIdRef.current,
+                              slideIndex: slideIndexNow,
+                              layoutSnapshot: nextLayout,
+                              inputSnapshot: updatedInput,
+                            });
+                            return;
+                          }
+                        }
+
                         scheduleLiveLayout(slideIndexNow);
-                      }}
-                      disabled={loading || switchingSlides || copyGenerating}
-                      placeholder="Enter body..."
-                      minHeightPx={96}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
-                    />
+                        }}
+                        disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
+                        placeholder={enhancedLockOn ? "Body locked" : "Enter body..."}
+                        minHeightPx={96}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
+                      />
+                      {enhancedLockOn ? (
+                        <div
+                          className="absolute inset-0 rounded-lg border border-slate-200"
+                          style={{
+                            backgroundImage:
+                              "repeating-linear-gradient(135deg, rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 10px, rgba(255,255,255,0.30) 10px, rgba(255,255,255,0.30) 20px)",
+                            pointerEvents: "none",
+                          }}
+                          aria-hidden="true"
+                        >
+                          <div className="absolute top-2 right-2 px-3 py-2 rounded-lg bg-white/90 border border-red-200 shadow-sm flex items-center gap-2">
+                            <span className="text-red-600 text-sm font-bold">!</span>
+                            <div className="text-xs font-semibold text-slate-800">Locked — edit on canvas</div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
                   {/* AI Image Prompt Card (Enhanced only) */}
@@ -5546,7 +6682,9 @@ export default function EditorShell() {
                             );
                             wipeLineOverridesForActiveSlide();
                             if (realignmentModel === "gemini-computational") {
-                              if (currentProjectId) enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
+                              if (currentProjectId && !(slidesRef.current[activeSlideIndex] as any)?.layoutLocked) {
+                                enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
+                              }
                             } else {
                               void handleRealign({ skipHistory: true });
                             }

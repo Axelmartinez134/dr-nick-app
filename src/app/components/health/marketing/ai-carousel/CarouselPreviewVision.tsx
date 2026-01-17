@@ -41,6 +41,9 @@ interface CarouselPreviewProps {
   clampUserTextToContentRect?: boolean; // default true
   clampUserImageToContentRect?: boolean; // default true
   pushTextOutOfUserImage?: boolean; // default true
+  // /editor Enhanced: when true, do NOT auto-move text lines during invariant enforcement.
+  // The editor will show a warning and let the user press "Realign" explicitly.
+  lockTextLayout?: boolean;
   onUserTextChange?: (change: {
     canvasSlideIndex?: number;
     lineIndex: number;
@@ -85,6 +88,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       clampUserTextToContentRect,
       clampUserImageToContentRect,
       pushTextOutOfUserImage,
+      lockTextLayout,
       tightUserTextWidth,
       onDebugLog,
       showLayoutOverlays,
@@ -791,12 +795,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const isSelection = t === 'activeselection' || t === 'group';
           if (!isSelection && role !== 'user-image' && role !== 'user-text') return;
           if (role === 'user-text') {
-            if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
+            // STRICT Lock Layout: do not auto-clamp or push text while locked.
+            if (!lockTextLayout && interactionRef.current.clampText) clampObjectToRect(obj, rect);
             // Phase 2: allow overlap but mark invalid against silhouette (mask) while dragging.
             // Only use the legacy rectangle push-out when there is no mask available.
             const hasMask = !!overlayDataRef.current.maskU8;
-            if (interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
-            scheduleInvalidCheck(canvas, obj);
+            if (!lockTextLayout && interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
+            if (!lockTextLayout) scheduleInvalidCheck(canvas, obj);
           } else if (isSelection) {
             // Capture multi-select drag start so we can persist via dx/dy on release.
             if (!selectionDragRef.current?.active) {
@@ -828,7 +833,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               }
             }
           } else if (role === 'user-image') {
-            if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
+            if (!lockTextLayout && interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
           canvas.requestRenderAll?.();
         };
@@ -839,12 +844,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const role = obj?.data?.role;
           if (role !== 'user-image' && role !== 'user-text') return;
           if (role === 'user-text') {
-            if (interactionRef.current.clampText) clampObjectToRect(obj, rect);
+            if (!lockTextLayout && interactionRef.current.clampText) clampObjectToRect(obj, rect);
             const hasMask = !!overlayDataRef.current.maskU8;
-            if (interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
-            scheduleInvalidCheck(canvas, obj);
+            if (!lockTextLayout && interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
+            if (!lockTextLayout) scheduleInvalidCheck(canvas, obj);
           } else if (role === 'user-image') {
-            if (interactionRef.current.clampImage) clampObjectToRect(obj, rect);
+            if (!lockTextLayout && interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
           canvas.requestRenderAll?.();
         };
@@ -955,22 +960,25 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             } catch {
               // ignore
             }
-            // Phase 3: on release, if invalid, nudge the dragged line minimally until it is valid.
-            try {
-              const invalid = computeInvalidForUserText(canvas, obj);
-              if (invalid) {
-                const next = findNearestValidTopLeft(canvas, obj, getOtherUserTextAABBs(canvas, obj));
-                if (next) {
-                  const aabbNow = getAABBTopLeft(obj);
-                  obj.left = next.x + aabbNow.originOffsetX;
-                  obj.top = next.y + aabbNow.originOffsetY;
-                  if (typeof obj.setCoords === 'function') obj.setCoords();
+            // STRICT Lock Layout: never auto-nudge on release while locked.
+            if (!lockTextLayout) {
+              // Phase 3: on release, if invalid, nudge the dragged line minimally until it is valid.
+              try {
+                const invalid = computeInvalidForUserText(canvas, obj);
+                if (invalid) {
+                  const next = findNearestValidTopLeft(canvas, obj, getOtherUserTextAABBs(canvas, obj));
+                  if (next) {
+                    const aabbNow = getAABBTopLeft(obj);
+                    obj.left = next.x + aabbNow.originOffsetX;
+                    obj.top = next.y + aabbNow.originOffsetY;
+                    if (typeof obj.setCoords === 'function') obj.setCoords();
+                  }
                 }
+                const invalidAfter = computeInvalidForUserText(canvas, obj);
+                setInvalidHighlight(obj, invalidAfter);
+              } catch {
+                // ignore
               }
-              const invalidAfter = computeInvalidForUserText(canvas, obj);
-              setInvalidHighlight(obj, invalidAfter);
-            } catch {
-              // ignore
             }
             // If this modification was caused by finishing text editing, skip the geometry-only
             // persist so we don't accidentally re-save stale text from the pre-edit snapshot.
@@ -1698,7 +1706,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // This is independent of drag-time clamping and runs even on Realign re-renders.
           try {
             const rect = constraintsRef.current.allowedRect;
-            if (rect && interactionRef.current.clampText) {
+            // STRICT Lock Layout: never clamp positions during render while locked.
+            if (!lockTextLayout && rect && interactionRef.current.clampText) {
               if (typeof (textObj as any).initDimensions === 'function') (textObj as any).initDimensions();
               if (typeof (textObj as any).setCoords === 'function') (textObj as any).setCoords();
               clampObjectToRect(textObj, rect);
@@ -1767,7 +1776,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
           // Hard clamp: if the tight object ends up wider than its lane due to font metrics, fall back to lane width.
           try {
-            if (useTight && (textObj as any)?.type !== 'textbox') {
+            // STRICT Lock Layout: never swap object types while locked (IText->Textbox fallback looks like a reflow).
+            if (!lockTextLayout && useTight && (textObj as any)?.type !== 'textbox') {
               if (typeof (textObj as any).initDimensions === 'function') (textObj as any).initDimensions();
               const w = typeof (textObj as any).getScaledWidth === 'function' ? Number((textObj as any).getScaledWidth()) : Number((textObj as any).width || 0);
               if (Number.isFinite(w) && w > laneW) {
@@ -1901,18 +1911,22 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             };
           });
 
-          const results = enforceTextInvariantsSequential({
-            items,
-            allowedRect: allowed,
-            imageRect,
-            mask,
-            stepPx: 4,
-            maxRadiusPx: 640,
-            textPaddingPx: 2,
-          });
+          // If the editor has locked layout for this slide, do NOT auto-move lines here.
+          // We still allow manual moves (object:modified handlers) and allow the user to explicitly Realign.
+          const results = lockTextLayout
+            ? []
+            : enforceTextInvariantsSequential({
+                items,
+                allowedRect: allowed,
+                imageRect,
+                mask,
+                stepPx: 4,
+                maxRadiusPx: 640,
+                textPaddingPx: 2,
+              });
 
           let changed = false;
-          for (const r of results) {
+          for (const r of results as any[]) {
             const o = byId.get(r.id);
             if (!o) continue;
             // If the user just moved one line, do NOT auto-move any other lines (editor-like).
