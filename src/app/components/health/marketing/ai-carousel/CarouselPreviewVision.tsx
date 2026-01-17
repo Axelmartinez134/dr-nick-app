@@ -11,6 +11,7 @@ import {
   findNearestValidTopLeft as findNearestValidTopLeftPure,
   enforceTextInvariantsSequential,
 } from '@/lib/text-placement';
+import { attachHorizontalSmartGuides, drawHorizontalSmartGuide, type HorizontalSmartGuideState } from './smartGuides';
 
 interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
@@ -132,6 +133,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     }>(null);
     const showLayoutOverlaysRef = useRef<boolean>(false);
     const draggingUserImageRef = useRef<boolean>(false);
+    const smartGuidesEnabledRef = useRef<boolean>(false);
+    const smartGuidesStateRef = useRef<HorizontalSmartGuideState>({ x: null, kind: null });
     const lastOverlayDebugRef = useRef<boolean | null>(null);
     const overlayDataRef = useRef<{
       enabled: boolean;
@@ -177,6 +180,17 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     useEffect(() => {
       interactionRef.current = { clampText, clampImage, pushTextOut };
     }, [clampText, clampImage, pushTextOut]);
+    useEffect(() => {
+      smartGuidesEnabledRef.current = !!lockTextLayout;
+      if (!lockTextLayout) {
+        smartGuidesStateRef.current = { x: null, kind: null };
+        try {
+          fabricCanvasRef.current?.requestRenderAll?.();
+        } catch {
+          // ignore
+        }
+      }
+    }, [lockTextLayout]);
     useEffect(() => {
       onUserTextChangeRef.current = onUserTextChange;
     }, [onUserTextChange]);
@@ -591,36 +605,42 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         setFabricLoaded(true);
         console.log('[Preview Vision] ✅ Canvas created and ready');
 
-        // Debug overlays: draw in Fabric's top overlay layer so they can't be occluded by objects.
-        const onAfterRender = () => {
+        // Debug overlays + Smart Guides: draw in Fabric's top overlay layer so they can't be occluded by objects.
+        // IMPORTANT: Fabric also uses contextTop for selection highlights/cursors. We must NOT clear it
+        // after Fabric draws selection. So we clear in `before:render`, then draw our overlays in `after:render`
+        // using destination-over so we don't overwrite selection UI.
+        const onBeforeRender = () => {
           try {
             const data = overlayDataRef.current;
             const c = fabricCanvasRef.current;
-            if (!c || !data?.enabled) {
-              // Clear top overlay layer if disabled.
-              const ctx = c?.contextTop;
-              if (ctx) {
-                const retina = typeof c.getRetinaScaling === 'function' ? (c.getRetinaScaling() || 1) : 1;
-                ctx.save();
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.clearRect(0, 0, (c.getWidth?.() || 1080) * retina, (c.getHeight?.() || 1440) * retina);
-                ctx.restore();
-              }
-              return;
-            }
+            if (!c) return;
             const ctx = c.contextTop;
             if (!ctx) return;
-
-            // Clear overlay layer
+            const hasGuides = !!(smartGuidesEnabledRef.current && smartGuidesStateRef.current?.x != null);
+            if (!data?.enabled && !hasGuides) return;
             const retina = typeof c.getRetinaScaling === 'function' ? (c.getRetinaScaling() || 1) : 1;
             ctx.save();
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, (c.getWidth?.() || 1080) * retina, (c.getHeight?.() || 1440) * retina);
             ctx.restore();
+          } catch {
+            // ignore
+          }
+        };
+        const onAfterRender = () => {
+          try {
+            const data = overlayDataRef.current;
+            const c = fabricCanvasRef.current;
+            if (!c) return;
+            const ctx = c.contextTop;
+            if (!ctx) return;
+            const retina = typeof c.getRetinaScaling === 'function' ? (c.getRetinaScaling() || 1) : 1;
 
-            // Ensure transform matches viewportTransform (but avoid double-applying).
+            // Compute overlay transform to match the canvas viewportTransform (and retina scaling),
+            // but NEVER leave contextTop in a modified transform. Fabric uses contextTop for
+            // selection highlights/cursors; leaking transforms here causes the "tiny box in top-left"
+            // selection mismatch.
             const vpt = c.viewportTransform || [1, 0, 0, 1, 0, 0];
-            const cur = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
             const want = {
               a: vpt[0] * retina,
               b: vpt[1] * retina,
@@ -629,18 +649,21 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               e: vpt[4] * retina,
               f: vpt[5] * retina,
             };
-            const matches =
-              !!cur &&
-              Math.abs(cur.a - want.a) < 1e-6 &&
-              Math.abs(cur.b - want.b) < 1e-6 &&
-              Math.abs(cur.c - want.c) < 1e-6 &&
-              Math.abs(cur.d - want.d) < 1e-6 &&
-              Math.abs(cur.e - want.e) < 1e-3 &&
-              Math.abs(cur.f - want.f) < 1e-3;
-            if (!matches && typeof ctx.setTransform === 'function') {
+            ctx.save();
+            if (typeof ctx.setTransform === 'function') {
               ctx.setTransform(want.a, want.b, want.c, want.d, want.e, want.f);
             }
+            // Draw behind Fabric's selection/cursor UI (which also uses contextTop).
+            try {
+              (ctx as any).globalCompositeOperation = 'destination-over';
+            } catch {
+              // ignore
+            }
 
+            // Draw overlays (when enabled)
+            if (!data?.enabled) {
+              // no overlays
+            } else {
             const drawRect = (
               r: { x: number; y: number; width: number; height: number },
               stroke: string,
@@ -692,12 +715,29 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               ctx.drawImage(data.maskCanvas, data.imageRect.x, data.imageRect.y, data.imageRect.width, data.imageRect.height);
               ctx.restore();
             }
+            }
+
+            // Draw Smart Guides (visual-only) when Lock layout is ON.
+            if (smartGuidesEnabledRef.current && smartGuidesStateRef.current?.x != null) {
+              drawHorizontalSmartGuide({
+                ctx,
+                canvas: c,
+                state: smartGuidesStateRef.current,
+                allowedRect: constraintsRef.current.allowedRect,
+                color: 'rgba(99,102,241,0.9)',
+                lineWidthPx: 1,
+              });
+            }
+
+            // IMPORTANT: restore contextTop state so Fabric can draw its own selection UI correctly.
+            ctx.restore();
           } catch {
             // ignore
           }
         };
+        canvas.on('before:render', onBeforeRender);
         canvas.on('after:render', onAfterRender);
-        (canvas as any).__dnOverlayRender = { onAfterRender };
+        (canvas as any).__dnOverlayRender = { onBeforeRender, onAfterRender };
 
         // Enforce hard-clamps for user content when a template contentRegion exists.
         // We attach listeners once and consult constraintsRef (updated on render).
@@ -1054,6 +1094,19 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         canvas.on('object:added', onObjectAdded);
         // Store for cleanup
         (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextEditingEntered, onTextEditingExited, onObjectAdded };
+
+        // Smart Guides (visual-only): enabled only when lockTextLayout is true.
+        try {
+          const sg = attachHorizontalSmartGuides({
+            canvas,
+            enabledRef: smartGuidesEnabledRef,
+            stateRef: smartGuidesStateRef,
+            thresholdPx: 2,
+          });
+          (canvas as any).__dnSmartGuides = sg;
+        } catch {
+          // ignore
+        }
       }).catch((error) => {
         console.error('[Preview Vision] ❌ Failed to load Fabric.js:', error);
       });
@@ -1067,6 +1120,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             const c = fabricCanvasRef.current;
             const h = (c as any).__dnClampHandlers;
             const ov = (c as any).__dnOverlayRender;
+            const sg = (c as any).__dnSmartGuides;
             if (h) {
               c.off('object:moving', h.onObjectMoving);
               c.off('object:scaling', h.onObjectScaling);
@@ -1076,7 +1130,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               c.off('object:added', h.onObjectAdded);
             }
             if (ov) {
+              if (ov.onBeforeRender) {
+                c.off('before:render', ov.onBeforeRender);
+              }
               c.off('after:render', ov.onAfterRender);
+            }
+            if (sg && typeof sg.cleanup === 'function') {
+              sg.cleanup();
             }
           } catch {
             // ignore
