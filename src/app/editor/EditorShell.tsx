@@ -5150,14 +5150,18 @@ export default function EditorShell() {
                           } catch {
                             // ignore
                           }
+                          // IMPORTANT: keep slidesRef in sync so background live-layout snapshots
+                          // always see the latest RTE text (prevents "RTE shows text but canvas is blank" races).
+                          const slideIndexNow = activeSlideIndexRef.current;
                           setSlides((prev) =>
                             prev.map((s, i) =>
-                              i === activeSlideIndex
-                                ? { ...s, draftHeadline: next.text, draftHeadlineRanges: next.ranges }
-                                : s
+                              i === slideIndexNow ? { ...s, draftHeadline: next.text, draftHeadlineRanges: next.ranges } : s
                             )
                           );
-                          scheduleLiveLayout(activeSlideIndex);
+                          slidesRef.current = slidesRef.current.map((s, i) =>
+                            i === slideIndexNow ? ({ ...s, draftHeadline: next.text, draftHeadlineRanges: next.ranges } as any) : s
+                          );
+                          scheduleLiveLayout(slideIndexNow);
                         }}
                         disabled={loading || switchingSlides || copyGenerating}
                         placeholder="Enter headline..."
@@ -5289,14 +5293,16 @@ export default function EditorShell() {
                         } catch {
                           // ignore
                         }
+                        // IMPORTANT: keep slidesRef in sync so background live-layout snapshots
+                        // always see the latest RTE text (prevents "RTE shows text but canvas is blank" races).
+                        const slideIndexNow = activeSlideIndexRef.current;
                         setSlides((prev) =>
-                          prev.map((s, i) =>
-                            i === activeSlideIndex
-                              ? { ...s, draftBody: next.text, draftBodyRanges: next.ranges }
-                              : s
-                          )
+                          prev.map((s, i) => (i === slideIndexNow ? { ...s, draftBody: next.text, draftBodyRanges: next.ranges } : s))
                         );
-                        scheduleLiveLayout(activeSlideIndex);
+                        slidesRef.current = slidesRef.current.map((s, i) =>
+                          i === slideIndexNow ? ({ ...s, draftBody: next.text, draftBodyRanges: next.ranges } as any) : s
+                        );
+                        scheduleLiveLayout(slideIndexNow);
                       }}
                       disabled={loading || switchingSlides || copyGenerating}
                       placeholder="Enter body..."
