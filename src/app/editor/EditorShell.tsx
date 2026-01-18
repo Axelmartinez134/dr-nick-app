@@ -14,6 +14,23 @@ import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
 import { remapRangesByDiff } from "@/lib/text-placement";
 import JSZip from "jszip";
 import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
+import { SavedProjectsCard } from "@/features/editor/components/SavedProjectsCard";
+import { useProjects } from "@/features/editor/hooks/useProjects";
+import { useSlidePersistence } from "@/features/editor/hooks/useSlidePersistence";
+import { useAutoRealignOnImageRelease } from "@/features/editor/hooks/useAutoRealignOnImageRelease";
+import { useImageOps } from "@/features/editor/hooks/useImageOps";
+import { useGenerateCopy } from "@/features/editor/hooks/useGenerateCopy";
+import { useGenerateImagePrompts } from "@/features/editor/hooks/useGenerateImagePrompts";
+import { useGenerateAiImage } from "@/features/editor/hooks/useGenerateAiImage";
+import * as projectsApi from "@/features/editor/services/projectsApi";
+import {
+  type SlideState,
+  initSlide,
+  getLayoutLockedFromInput,
+  withLayoutLockedInInput,
+  getAutoRealignOnImageReleaseFromInput,
+  withAutoRealignOnImageReleaseInInput,
+} from "@/features/editor/state";
 
 // Minimal layout used to render templates even before any text/image layout is generated.
 const EMPTY_LAYOUT: any = {
@@ -80,8 +97,6 @@ export default function EditorShell() {
   // Defaults to Enhanced on each /editor load.
   const [newProjectTemplateTypeId, setNewProjectTemplateTypeId] = useState<"regular" | "enhanced">("enhanced");
   const [templateSettingsOpen, setTemplateSettingsOpen] = useState(false);
-  const [projectsLoading, setProjectsLoading] = useState(false);
-  const [projects, setProjects] = useState<Array<{ id: string; title: string; template_type_id: string; updated_at: string }>>([]);
   const [projectsDropdownOpen, setProjectsDropdownOpen] = useState(false);
   const [archiveProjectModalOpen, setArchiveProjectModalOpen] = useState(false);
   const [archiveProjectTarget, setArchiveProjectTarget] = useState<{ id: string; title: string } | null>(null);
@@ -89,9 +104,7 @@ export default function EditorShell() {
   const [projectSaveStatus, setProjectSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const projectSaveTimeoutRef = useRef<number | null>(null);
   const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const slideSaveTimeoutRef = useRef<number | null>(null);
   const layoutDirtyRef = useRef(false);
-  const layoutSaveTimeoutRef = useRef<number | null>(null);
   const LIVE_LAYOUT_DEBOUNCE_MS = 500;
   type LiveLayoutWorkItem = {
     key: string; // projectId:slideIndex
@@ -132,7 +145,6 @@ export default function EditorShell() {
   const regularCanvasSaveTimeoutRef = useRef<number | null>(null);
   const enhancedCanvasSaveTimeoutRef = useRef<number | null>(null);
   const regularMeasureElRef = useRef<HTMLDivElement | null>(null);
-  const rteNoReflowSaveTimeoutRef = useRef<number | null>(null);
   const lastAppliedOverrideKeysRef = useRef<Record<number, string[]>>({});
   const editorBootstrapDoneRef = useRef(false);
   const initialProjectAutoLoadDoneRef = useRef(false);
@@ -145,39 +157,6 @@ export default function EditorShell() {
   }, [user?.id]);
 
   const normalizeLineText = (s: string) => String(s || "").replace(/\s+/g, " ").trim();
-
-  const getLayoutLockedFromInput = (inputSnap: any | null): boolean => {
-    try {
-      const v = (inputSnap && typeof inputSnap === "object") ? (inputSnap as any).editor?.layoutLocked : undefined;
-      return v === true;
-    } catch {
-      return false;
-    }
-  };
-
-  const withLayoutLockedInInput = (inputSnap: any | null, locked: boolean) => {
-    const base = (inputSnap && typeof inputSnap === "object") ? inputSnap : {};
-    const editor = ((base as any).editor && typeof (base as any).editor === "object") ? (base as any).editor : {};
-    return { ...(base as any), editor: { ...(editor as any), layoutLocked: !!locked } };
-  };
-
-  const getAutoRealignOnImageReleaseFromInput = (inputSnap: any | null): boolean => {
-    try {
-      const v =
-        (inputSnap && typeof inputSnap === "object")
-          ? (inputSnap as any).editor?.autoRealignOnImageRelease
-          : undefined;
-      return v === true;
-    } catch {
-      return false;
-    }
-  };
-
-  const withAutoRealignOnImageReleaseInInput = (inputSnap: any | null, enabled: boolean) => {
-    const base = (inputSnap && typeof inputSnap === "object") ? inputSnap : {};
-    const editor = ((base as any).editor && typeof (base as any).editor === "object") ? (base as any).editor : {};
-    return { ...(base as any), editor: { ...(editor as any), autoRealignOnImageRelease: !!enabled } };
-  };
 
   const isPunctuationWhitespaceOnly = (s: string) => {
     // Allowed punctuation set from spec + whitespace
@@ -354,85 +333,15 @@ export default function EditorShell() {
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
   const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  // Generate Copy UI state is tracked per-project so multiple projects can run concurrently
-  // without dumping results into the wrong project when the user switches.
-  type CopyUiState = "idle" | "running" | "success" | "error";
-  type CopyUi = { state: CopyUiState; label: string; error: string | null };
-  const [copyByProject, setCopyByProject] = useState<Record<string, CopyUi>>({});
-  const copyRunIdByProjectRef = useRef<Record<string, number>>({});
-  const copyPollRefsByProjectRef = useRef<Record<string, number | null>>({});
-  const copyResetRefsByProjectRef = useRef<Record<string, number | null>>({});
-  // Generate Image Prompts UI state:
-  // - bulk (all slides): tracked per-project (same reason as Generate Copy)
-  // - regenerate (single slide): tracked per-project+slide key (so switching slides doesn't show the same "Generating..." UI)
-  type ImagePromptUi = { generating: boolean; error: string | null };
-  const [imagePromptByProject, setImagePromptByProject] = useState<Record<string, ImagePromptUi>>({});
-  const imagePromptRunIdByProjectRef = useRef<Record<string, number>>({});
-  const imagePromptKey = (projectId: string, slideIndex: number) => `${projectId}:${slideIndex}`;
-  const [imagePromptGeneratingKeys, setImagePromptGeneratingKeys] = useState<Set<string>>(new Set());
-  const [imagePromptErrorByKey, setImagePromptErrorByKey] = useState<Record<string, string | null>>({});
-  const imagePromptRunIdByKeyRef = useRef<Record<string, number>>({});
-  const imagePromptSaveTimeoutRef = useRef<number | null>(null);
+  // Long-running generation jobs are extracted into dedicated hooks (Section 7).
   const [aiImagePromptSaveStatus, setAiImagePromptSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  // AI Image generation state is tracked per-project+slide key so concurrent projects don't bleed UI.
+
+  // Shared key helper (also used by image operations / BG removal state).
   const aiKey = (projectId: string, slideIndex: number) => `${projectId}:${slideIndex}`;
-  const [aiImageGeneratingKeys, setAiImageGeneratingKeys] = useState<Set<string>>(new Set());
-  const [aiImageErrorByKey, setAiImageErrorByKey] = useState<Record<string, string | null>>({});
-  const [aiImageProgressByKey, setAiImageProgressByKey] = useState<Record<string, number>>({}); // 0-100 per key
-  const [aiImageStatusByKey, setAiImageStatusByKey] = useState<Record<string, string>>({}); // label per key
-  const aiImageRunIdByKeyRef = useRef<Record<string, number>>({});
-  const aiImageProgressRefsByKeyRef = useRef<Record<string, number | null>>({});
-  const aiImagePollRefsByKeyRef = useRef<Record<string, number | null>>({});
+
   // Phase 3A: image operations (upload/delete/bg-removal) need runId guards too,
   // so stale completions don't overwrite newer image state for the same project+slide.
   const imageOpRunIdByKeyRef = useRef<Record<string, number>>({});
-  const getCopyUi = (projectId: string | null): CopyUi => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return { state: "idle", label: "", error: null };
-    return copyByProject[pid] || { state: "idle", label: "", error: null };
-  };
-  const setCopyUi = (projectId: string, patch: Partial<CopyUi>) => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return;
-    setCopyByProject((prev) => {
-      const cur = prev[pid] || { state: "idle" as CopyUiState, label: "", error: null };
-      return { ...prev, [pid]: { ...cur, ...patch } };
-    });
-  };
-  const copyUiCurrent = getCopyUi(currentProjectId);
-  const copyGenerating = copyUiCurrent.state === "running";
-  const copyError = copyUiCurrent.error;
-  const copyProgressState = copyUiCurrent.state;
-  const copyProgressLabel = copyUiCurrent.label;
-
-  const getImagePromptUi = (projectId: string | null): ImagePromptUi => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return { generating: false, error: null };
-    return imagePromptByProject[pid] || { generating: false, error: null };
-  };
-  const setImagePromptUi = (projectId: string, patch: Partial<ImagePromptUi>) => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return;
-    setImagePromptByProject((prev) => {
-      const cur = prev[pid] || { generating: false, error: null };
-      return { ...prev, [pid]: { ...cur, ...patch } };
-    });
-  };
-  const imagePromptUiCurrent = getImagePromptUi(currentProjectId);
-  const imagePromptGeneratingAll = imagePromptUiCurrent.generating;
-  const imagePromptErrorAll = imagePromptUiCurrent.error;
-  const imagePromptKeyCurrent =
-    currentProjectId && Number.isInteger(activeSlideIndex) ? imagePromptKey(currentProjectId, activeSlideIndex) : "";
-  const imagePromptGeneratingThis = imagePromptKeyCurrent ? imagePromptGeneratingKeys.has(imagePromptKeyCurrent) : false;
-  const imagePromptErrorThis = imagePromptKeyCurrent ? (imagePromptErrorByKey[imagePromptKeyCurrent] || null) : null;
-  const imagePromptGenerating = imagePromptGeneratingAll || imagePromptGeneratingThis;
-  const imagePromptError = imagePromptErrorThis || imagePromptErrorAll;
-
-  const aiKeyCurrent = currentProjectId ? aiKey(currentProjectId, activeSlideIndex) : "";
-  const aiImageGeneratingThis = aiKeyCurrent ? aiImageGeneratingKeys.has(aiKeyCurrent) : false;
-  const aiImageProgressThis = aiKeyCurrent ? (aiImageProgressByKey[aiKeyCurrent] || 0) : 0;
-  const aiImageStatusThis = aiKeyCurrent ? (aiImageStatusByKey[aiKeyCurrent] || "") : "";
-  const aiImageErrorThis = aiKeyCurrent ? (aiImageErrorByKey[aiKeyCurrent] || null) : null;
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(0);
   // Resizable left sidebar (desktop-only)
@@ -448,10 +357,8 @@ export default function EditorShell() {
   const [imageBusy, setImageBusy] = useState(false);
   const [bgRemovalBusyKeys, setBgRemovalBusyKeys] = useState<Set<string>>(new Set());
   const [activeImageSelected, setActiveImageSelected] = useState(false);
-  const autoRealignAfterImageReleaseTimeoutRef = useRef<number | null>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const imageLongPressRef = useRef<number | null>(null);
-  const imageMoveSaveTimeoutRef = useRef<number | null>(null);
   const mobileGestureRef = useRef<{
     mode: null | "drawer-open" | "drawer-close" | "slide";
     startX: number;
@@ -990,64 +897,6 @@ export default function EditorShell() {
     setBodyFontWeight(400);
   }, [templateTypeId, bodyFontFamily, bodyFontWeight, setBodyFontFamily, setBodyFontWeight]);
 
-  type SlideState = {
-    layoutData: any | null;
-    inputData: any | null;
-    layoutHistory: any[];
-    error: string | null;
-    debugLogs: string[];
-    debugScreenshot: string | null;
-    // Last-saved text values (used to avoid saving on slide-switch / hydration).
-    savedHeadline: string;
-    savedBody: string;
-    draftHeadline: string;
-    draftBody: string;
-    draftHeadlineRanges: InlineStyleRange[];
-    draftBodyRanges: InlineStyleRange[];
-    draftHeadlineFontSizePx: number; // Enhanced only; persisted via input_snapshot.headlineFontSizePx
-    draftHeadlineTextAlign: "left" | "center" | "right"; // Enhanced only; persisted via input_snapshot.headlineTextAlign
-    draftBodyFontSizePx: number; // Per-slide body font size; persisted via input_snapshot.bodyFontSizePx
-    draftBodyTextAlign: "left" | "center" | "right"; // persisted via input_snapshot.bodyTextAlign
-    draftBg: string;
-    draftText: string;
-    // AI Image Prompt (Enhanced only) - per-slide prompt for image generation
-    savedAiImagePrompt: string;
-    draftAiImagePrompt: string;
-
-    // Enhanced-only UX: when enabled, edits should NOT trigger reflow/realign for this slide.
-    // Persisted in input_snapshot.editor.layoutLocked
-    layoutLocked: boolean;
-
-    // Enhanced-only UX: when enabled (and image selected), releasing an image move/resize/rotate
-    // triggers the full "Realign Text" pipeline. Persisted in input_snapshot.editor.autoRealignOnImageRelease
-    autoRealignOnImageRelease: boolean;
-  };
-
-  const initSlide = (): SlideState => ({
-    layoutData: null,
-    inputData: null,
-    layoutHistory: [],
-    error: null,
-    debugLogs: [],
-    debugScreenshot: null,
-    savedHeadline: "",
-    savedBody: "",
-    draftHeadline: "",
-    draftBody: "",
-    draftHeadlineRanges: [],
-    draftBodyRanges: [],
-    draftHeadlineFontSizePx: 76,
-    draftHeadlineTextAlign: "left",
-    draftBodyFontSizePx: 48,
-    draftBodyTextAlign: "left",
-    draftBg: "#ffffff",
-    draftText: "#000000",
-    savedAiImagePrompt: "",
-    draftAiImagePrompt: "",
-    layoutLocked: false,
-    autoRealignOnImageRelease: false,
-  });
-
   const [slides, setSlides] = useState<SlideState[]>(
     () => Array.from({ length: slideCount }, () => initSlide())
   );
@@ -1208,20 +1057,18 @@ export default function EditorShell() {
     const desiredSavedBody = cur.savedBody || "";
     if ((cur.draftHeadline || "") === desiredSavedHeadline && (cur.draftBody || "") === desiredSavedBody) return;
     // Debounced save on every change (overwrite everything model)
-    if (slideSaveTimeoutRef.current) window.clearTimeout(slideSaveTimeoutRef.current);
     const projectIdAtSchedule = currentProjectId;
     const slideIndexAtSchedule = activeSlideIndex;
     const typeAtSchedule = templateTypeId;
     const headlineAtSchedule = activeDraftHeadline;
     const bodyAtSchedule = activeDraftBody;
-    slideSaveTimeoutRef.current = window.setTimeout(() => {
-      const headlineVal = typeAtSchedule === "regular" ? null : (headlineAtSchedule || null);
-      void (async () => {
-        const ok = await saveSlidePatchForProject(projectIdAtSchedule, slideIndexAtSchedule, {
-          headline: headlineVal,
-          body: bodyAtSchedule || null,
-        });
-        if (!ok) return;
+    const headlineVal = typeAtSchedule === "regular" ? null : (headlineAtSchedule || null);
+    scheduleDebouncedSlideTextSave({
+      projectId: projectIdAtSchedule,
+      slideIndex: slideIndexAtSchedule,
+      debounceMs: 600,
+      patch: { headline: headlineVal, body: bodyAtSchedule || null },
+      onSuccess: () => {
         // Mark text as clean after a successful save.
         setSlides((prev) =>
           prev.map((s, i) =>
@@ -1234,10 +1081,10 @@ export default function EditorShell() {
                 }
           )
         );
-      })();
-    }, 600);
+      },
+    });
     return () => {
-      if (slideSaveTimeoutRef.current) window.clearTimeout(slideSaveTimeoutRef.current);
+      cancelPendingSlideTextSave();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId, activeSlideIndex, activeDraftHeadline, activeDraftBody, templateTypeId, switchingSlides]);
@@ -1252,15 +1099,27 @@ export default function EditorShell() {
     if (!cur) return;
     // Don't save if unchanged
     if ((cur.draftAiImagePrompt || "") === (cur.savedAiImagePrompt || "")) return;
-    if (imagePromptSaveTimeoutRef.current) window.clearTimeout(imagePromptSaveTimeoutRef.current);
     const projectIdAtSchedule = currentProjectId;
     const slideIndexAtSchedule = activeSlideIndex;
     const promptAtSchedule = activeDraftAiImagePrompt;
-    imagePromptSaveTimeoutRef.current = window.setTimeout(() => {
-      void saveSlideAiImagePromptForProject(projectIdAtSchedule, slideIndexAtSchedule, promptAtSchedule);
-    }, 600);
+    scheduleDebouncedAiPromptSave({
+      projectId: projectIdAtSchedule,
+      slideIndex: slideIndexAtSchedule,
+      debounceMs: 600,
+      prompt: promptAtSchedule,
+      onComplete: (ok) => {
+        if (!ok) return;
+        // Only update visible UI state if we're still viewing that project.
+        if (currentProjectIdRef.current !== projectIdAtSchedule) return;
+        setSlides((prev) =>
+          prev.map((s, i) => (i !== slideIndexAtSchedule ? s : { ...s, savedAiImagePrompt: promptAtSchedule }))
+        );
+        setAiImagePromptSaveStatus("saved");
+        window.setTimeout(() => setAiImagePromptSaveStatus("idle"), 1200);
+      },
+    });
     return () => {
-      if (imagePromptSaveTimeoutRef.current) window.clearTimeout(imagePromptSaveTimeoutRef.current);
+      cancelPendingAiPromptSave();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId, activeSlideIndex, activeDraftAiImagePrompt, templateTypeId, switchingSlides]);
@@ -1272,23 +1131,23 @@ export default function EditorShell() {
     if (!layoutDirtyRef.current) return;
     if (!layoutData?.layout || !inputData) return;
 
-    if (layoutSaveTimeoutRef.current) window.clearTimeout(layoutSaveTimeoutRef.current);
     const projectIdAtSchedule = currentProjectId;
     const slideIndexAtSchedule = activeSlideIndex;
     const layoutAtSchedule = layoutData.layout;
     const inputAtSchedule = inputData;
-    layoutSaveTimeoutRef.current = window.setTimeout(() => {
-      void (async () => {
-        const ok = await saveSlidePatchForProject(projectIdAtSchedule, slideIndexAtSchedule, {
-          layoutSnapshot: layoutAtSchedule,
-          inputSnapshot: inputAtSchedule,
-        });
-        if (ok) layoutDirtyRef.current = false;
-      })();
-    }, 400);
+    scheduleDebouncedLayoutPersist({
+      projectId: projectIdAtSchedule,
+      slideIndex: slideIndexAtSchedule,
+      debounceMs: 400,
+      layoutSnapshot: layoutAtSchedule,
+      inputSnapshot: inputAtSchedule,
+      onSaved: () => {
+        layoutDirtyRef.current = false;
+      },
+    });
 
     return () => {
-      if (layoutSaveTimeoutRef.current) window.clearTimeout(layoutSaveTimeoutRef.current);
+      cancelPendingLayoutPersist();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId, activeSlideIndex, layoutData, inputData, switchingSlides]);
@@ -1340,6 +1199,44 @@ export default function EditorShell() {
     return data;
   }
 
+  const { projects, projectsLoading, hydrateProjects, refreshProjectsList, archiveProjectById: archiveProjectByIdCore } =
+    useProjects({
+      fetchJson,
+      addLog,
+      currentProjectIdRef,
+      onLoadProject: async (projectId: string) => {
+        await loadProject(projectId);
+      },
+      onCreateNewEnhancedProject: async () => {
+        await createNewProject("enhanced");
+      },
+    });
+
+  const {
+    saveSlidePatchForProject,
+    saveSlideAiImagePromptForProject: saveSlideAiImagePromptForProjectCore,
+    scheduleDebouncedSlideTextSave,
+    scheduleDebouncedLayoutPersist,
+    scheduleDebouncedAiPromptSave,
+    schedulePersistLayoutAndInputNoReflow,
+    hasPendingSlideTextSave,
+    cancelPendingSlideTextSave,
+    hasPendingLayoutPersist,
+    cancelPendingLayoutPersist,
+    hasPendingAiPromptSave,
+    cancelPendingAiPromptSave,
+  } = useSlidePersistence({
+    fetchJson,
+    addLog,
+    setSlideSaveStatus,
+    currentProjectIdRef,
+  });
+
+  const { scheduleAutoRealignAfterRelease } = useAutoRealignOnImageRelease({
+    currentProjectIdRef,
+    activeSlideIndexRef,
+  });
+
   // Initial editor state load (single round trip):
   // - Bootstraps starter template if user has none
   // - Loads templates list, projects list, effective template-type settings
@@ -1369,7 +1266,7 @@ export default function EditorShell() {
           const sortedProjects = [...data.projects].sort(
             (a: any, b: any) => Date.parse(String(b?.updated_at || 0)) - Date.parse(String(a?.updated_at || 0))
           );
-          setProjects(sortedProjects);
+          hydrateProjects(sortedProjects);
           // Phase 1/2: auto-load most recent project if any, otherwise auto-create an Enhanced project.
           // Guarded so it can't double-run under StrictMode/dev re-renders.
           if (!initialProjectAutoLoadDoneRef.current) {
@@ -1425,651 +1322,7 @@ export default function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  const uploadImageForActiveSlide = async (file: File) => {
-    if (!currentProjectId) throw new Error("Create or load a project first.");
-    if (!file) return;
-    if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
-    const projectIdAtStart = currentProjectId;
-    const slideIndexAtStart = activeSlideIndex;
-    const opKey = aiKey(projectIdAtStart, slideIndexAtStart);
-    const runId = (imageOpRunIdByKeyRef.current[opKey] || 0) + 1;
-    imageOpRunIdByKeyRef.current[opKey] = runId;
-    const tidAtStart = computeTemplateIdForSlide(slideIndexAtStart);
-    const snapAtStart = (tidAtStart ? templateSnapshots[tidAtStart] : null) || null;
-    const baseLayoutAtStart = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
-
-    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-    const t = String((file as any)?.type || "");
-    if (!allowedTypes.has(t)) {
-      throw new Error("Unsupported file type. Please upload JPG, PNG, or WebP.");
-    }
-    if (Number((file as any)?.size || 0) > 10 * 1024 * 1024) {
-      throw new Error("File too large. Max 10MB.");
-    }
-
-    setImageBusy(true);
-    closeImageMenu();
-    try {
-      const token = await getAuthToken();
-      if (!token) throw new Error("Not authenticated. Please sign in again.");
-      if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
-
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("projectId", projectIdAtStart);
-      fd.append("slideIndex", String(slideIndexAtStart));
-      // Phase 3: background removal is ON by default for new uploads (toggle lives on selected image).
-      fd.append("bgRemovalEnabled", "1");
-
-      const res = await fetch("/api/editor/projects/slides/image/upload", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.success) throw new Error(j?.error || `Upload failed (${res.status})`);
-      if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
-
-      const url = String(j?.url || "");
-      const path = String(j?.path || "");
-      if (!url) throw new Error("Upload succeeded but no URL was returned.");
-
-      // Load image dimensions for initial centered placement.
-      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
-        img.onerror = () => resolve({ w: 1, h: 1 });
-        img.src = url;
-      });
-      if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
-
-      const placement = computeDefaultUploadedImagePlacement(snapAtStart, dims.w, dims.h);
-      const mask = (j?.mask as any) || null;
-      const bgRemovalStatus = String(j?.bgRemovalStatus || "idle");
-      const original = j?.original || null;
-      const processed = j?.processed || null;
-
-      // Patch the ORIGINAL slide's layout snapshot so Realign can see the image and preserve movement.
-      // If the user is still on the same project, prefer the latest in-memory layout for that slide.
-      const latestBaseLayout =
-        currentProjectIdRef.current === projectIdAtStart
-          ? ((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout
-              ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
-              : baseLayoutAtStart)
-          : baseLayoutAtStart;
-      const nextLayout = {
-        ...latestBaseLayout,
-        image: {
-          x: placement.x,
-          y: placement.y,
-          width: placement.width,
-          height: placement.height,
-          url,
-          storage: { bucket: "carousel-project-images", path },
-          bgRemovalEnabled: true,
-          bgRemovalStatus,
-          ...(original ? { original: { url: String(original.url || ""), storage: original.storage || { bucket: "carousel-project-images", path: String(original.path || "") } } } : {}),
-          ...(processed ? { processed: { url: String(processed.url || ""), storage: processed.storage || { bucket: "carousel-project-images", path: String(processed.path || "") } } } : {}),
-          ...(mask ? { mask } : {}),
-        },
-      };
-
-      // Only apply UI updates if the user is still viewing this project.
-      if (currentProjectIdRef.current === projectIdAtStart) {
-        setSlides((prev) =>
-          prev.map((s, i) =>
-            i !== slideIndexAtStart
-              ? s
-              : {
-                  ...s,
-                  layoutData: { success: true, layout: nextLayout, imageUrl: url } as any,
-                }
-          )
-        );
-        slidesRef.current = slidesRef.current.map((s, i) =>
-          i !== slideIndexAtStart
-            ? s
-            : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
-        );
-        if (activeSlideIndexRef.current === slideIndexAtStart) {
-          setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
-        }
-      }
-
-      // Persist to Supabase (per-slide snapshot).
-      await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
-      addLog(`🖼️ Uploaded image → slide ${slideIndexAtStart + 1}`);
-    } finally {
-      setImageBusy(false);
-    }
-  };
-
-  const setActiveSlideImageBgRemoval = async (nextEnabled: boolean) => {
-    if (!currentProjectId) throw new Error("Create or load a project first.");
-    if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
-    const projectIdAtStart = currentProjectId;
-    const slideIndexAtStart = activeSlideIndex;
-    const opKey = aiKey(projectIdAtStart, slideIndexAtStart);
-    // UI: show busy state per slide while toggling/reprocessing.
-    setBgRemovalBusyKeys((prev) => {
-      const next = new Set(prev);
-      next.add(opKey);
-      return next;
-    });
-    const runId = (imageOpRunIdByKeyRef.current[opKey] || 0) + 1;
-    imageOpRunIdByKeyRef.current[opKey] = runId;
-    const baseLayoutAtStart = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : null;
-    const baseLayout = baseLayoutAtStart;
-    const img = baseLayout?.image ? { ...(baseLayout.image as any) } : null;
-    if (!img || !String(img?.url || "").trim()) return;
-
-    // Ensure we always keep a pointer to the original upload for retries (Phase 2+).
-    const orig = (img as any).original || null;
-    if (!orig) {
-      (img as any).original = {
-        url: String((img as any)?.url || ""),
-        storage: (img as any)?.storage || null,
-      };
-    }
-
-    (img as any).bgRemovalEnabled = !!nextEnabled;
-    if (!nextEnabled) {
-      // When disabling, revert to original visually and clear mask so wrapping falls back to rectangle.
-      (img as any).bgRemovalStatus = "disabled";
-      const o = (img as any).original || null;
-      if (o?.url) (img as any).url = String(o.url);
-      if (o?.storage) (img as any).storage = o.storage;
-      if ((img as any).mask) delete (img as any).mask;
-      if ((img as any).processed) delete (img as any).processed;
-    } else {
-      // When enabling, kick off reprocess from stored original and update to processed PNG + server mask.
-      (img as any).bgRemovalStatus = "processing";
-    }
-
-    const nextLayout = { ...baseLayout, image: img };
-    if (currentProjectIdRef.current === projectIdAtStart) {
-      setSlides((prev) =>
-        prev.map((s, i) =>
-          i === slideIndexAtStart ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout } as any }) : s
-        )
-      );
-      slidesRef.current = slidesRef.current.map((s, i) =>
-        i === slideIndexAtStart ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout } as any } as any) : s
-      );
-      if (activeSlideIndexRef.current === slideIndexAtStart) {
-        setLayoutData((prev: any) => (prev?.layout ? ({ ...prev, layout: nextLayout }) : prev));
-      }
-    }
-
-    await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
-    if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
-
-    if (nextEnabled) {
-      try {
-        const sourcePath =
-          String((img as any)?.original?.storage?.path || (img as any)?.storage?.path || '').trim() || undefined;
-        const j = await fetchJson("/api/editor/projects/slides/image/reprocess", {
-          method: "POST",
-          body: JSON.stringify({ projectId: projectIdAtStart, slideIndex: slideIndexAtStart, path: sourcePath }),
-        });
-        if (!j?.success) throw new Error(j?.error || "Reprocess failed");
-        if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
-
-        const processedUrl = String(j?.processed?.url || "");
-        const processedPath = String(j?.processed?.path || "");
-        const mask = j?.mask || null;
-        const bgRemovalStatus = String(j?.bgRemovalStatus || "succeeded");
-
-        const base2 =
-          currentProjectIdRef.current === projectIdAtStart
-            ? ((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout
-                ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
-                : ({ ...EMPTY_LAYOUT } as any))
-            : ({ ...EMPTY_LAYOUT } as any);
-        const prevImg = (base2 as any)?.image ? { ...(base2 as any).image } : null;
-        if (!prevImg) return;
-
-        const nextImg = {
-          ...prevImg,
-          bgRemovalEnabled: true,
-          bgRemovalStatus,
-          url: processedUrl || prevImg.url,
-          storage: processedPath ? { bucket: "carousel-project-images", path: processedPath } : prevImg.storage,
-          original: j?.original
-            ? { url: String(j.original.url || ""), storage: { bucket: "carousel-project-images", path: String(j.original.path || "") } }
-            : (prevImg as any).original,
-          processed: j?.processed
-            ? { url: String(j.processed.url || ""), storage: { bucket: "carousel-project-images", path: String(j.processed.path || "") } }
-            : { url: processedUrl, storage: processedPath ? { bucket: "carousel-project-images", path: processedPath } : prevImg.storage },
-          ...(mask ? { mask } : {}),
-        };
-        const nextLayout2 = { ...base2, image: nextImg };
-        if (currentProjectIdRef.current === projectIdAtStart) {
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i === slideIndexAtStart
-                ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: nextImg.url } as any })
-                : s
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i === slideIndexAtStart
-              ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: nextImg.url } as any } as any)
-              : s
-          );
-          if (activeSlideIndexRef.current === slideIndexAtStart) {
-            setLayoutData((prev: any) =>
-              prev?.layout ? ({ ...prev, layout: nextLayout2, imageUrl: nextImg.url } as any) : prev
-            );
-          }
-        }
-        await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout2 });
-      } catch (e) {
-        // Mark failed but keep original visible.
-        const base2 =
-          currentProjectIdRef.current === projectIdAtStart
-            ? ((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout
-                ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
-                : null)
-            : null;
-        const prevImg = base2?.image ? { ...(base2.image as any) } : null;
-        if (!base2 || !prevImg) return;
-        const o = (prevImg as any).original || null;
-        const failedImg: any = { ...prevImg, bgRemovalEnabled: true, bgRemovalStatus: "failed" };
-        if (o?.url) failedImg.url = String(o.url);
-        if (o?.storage) failedImg.storage = o.storage;
-        if (failedImg.mask) delete failedImg.mask;
-        if (failedImg.processed) delete failedImg.processed;
-        const nextLayout2 = { ...base2, image: failedImg };
-        if (currentProjectIdRef.current === projectIdAtStart) {
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i === slideIndexAtStart
-                ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: failedImg.url } as any })
-                : s
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i === slideIndexAtStart
-              ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout2, imageUrl: failedImg.url } as any } as any)
-              : s
-          );
-          if (activeSlideIndexRef.current === slideIndexAtStart) {
-            setLayoutData((prev: any) =>
-              prev?.layout ? ({ ...prev, layout: nextLayout2, imageUrl: failedImg.url } as any) : prev
-            );
-          }
-        }
-        await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout2 });
-      }
-    }
-    // Clear busy state when the operation completes.
-    setBgRemovalBusyKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(opKey);
-      return next;
-    });
-  };
-
-  const deleteImageForActiveSlide = async (reason: "menu" | "button") => {
-    if (!currentProjectId) return;
-    if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
-    const projectIdAtStart = currentProjectId;
-    const slideIndexAtStart = activeSlideIndex;
-    const opKey = aiKey(projectIdAtStart, slideIndexAtStart);
-    const runId = (imageOpRunIdByKeyRef.current[opKey] || 0) + 1;
-    imageOpRunIdByKeyRef.current[opKey] = runId;
-    setImageBusy(true);
-    closeImageMenu();
-    try {
-      // Best-effort delete from storage
-      try {
-        await fetchJson("/api/editor/projects/slides/image/delete", {
-          method: "POST",
-          body: JSON.stringify({ projectId: projectIdAtStart, slideIndex: slideIndexAtStart }),
-        });
-      } catch (e) {
-        // If storage delete fails, still remove from the slide snapshot so the UI unblocks.
-        console.warn("[EditorShell] Image storage delete failed:", e);
-      }
-      if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
-
-      const baseLayout =
-        currentProjectIdRef.current === projectIdAtStart
-          ? ((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout
-              ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
-              : ((activeSlideIndexRef.current === slideIndexAtStart && (layoutData as any)?.layout)
-                  ? { ...((layoutData as any).layout as any) }
-                  : { ...EMPTY_LAYOUT }))
-          : { ...EMPTY_LAYOUT };
-      const nextLayout = { ...baseLayout };
-      if (nextLayout.image) delete (nextLayout as any).image;
-
-      if (currentProjectIdRef.current === projectIdAtStart) {
-        setSlides((prev) =>
-          prev.map((s, i) =>
-            i !== slideIndexAtStart
-              ? s
-              : { ...s, layoutData: { success: true, layout: nextLayout, imageUrl: null } as any }
-          )
-        );
-        slidesRef.current = slidesRef.current.map((s, i) =>
-          i !== slideIndexAtStart
-            ? s
-            : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: null } as any } as any)
-        );
-        if (activeSlideIndexRef.current === slideIndexAtStart) {
-          setLayoutData({ success: true, layout: nextLayout, imageUrl: null } as any);
-        }
-      }
-
-      await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
-      setActiveImageSelected(false);
-      addLog(`🗑️ Removed image (slide ${slideIndexAtStart + 1}) via ${reason}`);
-    } finally {
-      setImageBusy(false);
-    }
-  };
-
-  const handleUserImageChange = (change: {
-    canvasSlideIndex?: number;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    angle?: number;
-  }) => {
-    if (!currentProjectId) return;
-    const slideIndex =
-      Number.isInteger((change as any)?.canvasSlideIndex) ? Number((change as any).canvasSlideIndex) : activeSlideIndex;
-    if (slideIndex < 0 || slideIndex >= slideCount) return;
-
-    // Update in-memory layout snapshot so Realign sees the current image bounds immediately.
-    const currentLayoutState =
-      slideIndex === activeSlideIndex ? (layoutData as any) : ((slidesRef.current?.[slideIndex] as any)?.layoutData as any);
-    const baseLayout = currentLayoutState?.layout ? { ...currentLayoutState.layout } : { ...EMPTY_LAYOUT };
-    const prevImage = (baseLayout as any)?.image || null;
-    if (!prevImage || !prevImage.url) return; // no user image to update
-
-    // Enable Undo for image moves/resizes/rotations too. Push only when bounds actually changed.
-    try {
-      const eps = 0.5;
-      const didMove =
-        Math.abs(Number(prevImage?.x ?? 0) - Number(change.x ?? 0)) > eps ||
-        Math.abs(Number(prevImage?.y ?? 0) - Number(change.y ?? 0)) > eps;
-      const didResize =
-        Math.abs(Number(prevImage?.width ?? 0) - Number(change.width ?? 0)) > eps ||
-        Math.abs(Number(prevImage?.height ?? 0) - Number(change.height ?? 0)) > eps;
-      const didRotate =
-        Math.abs(Number(prevImage?.angle ?? 0) - Number(change.angle ?? 0)) > eps;
-      if (didMove || didResize || didRotate) pushUndoSnapshot();
-    } catch {
-      pushUndoSnapshot();
-    }
-
-    const nextLayout = {
-      ...baseLayout,
-      image: {
-        ...prevImage,
-        x: Math.round(Number(change.x) || 0),
-        y: Math.round(Number(change.y) || 0),
-        width: Math.max(1, Math.round(Number(change.width) || 1)),
-        height: Math.max(1, Math.round(Number(change.height) || 1)),
-        angle: Number(change.angle) || 0,
-      },
-    };
-
-    if (slideIndex === activeSlideIndex) {
-      setLayoutData({ success: true, layout: nextLayout, imageUrl: prevImage.url } as any);
-    }
-    setSlides((prev) =>
-      prev.map((s, i) =>
-        i !== slideIndex
-          ? s
-          : {
-              ...s,
-              layoutData: { success: true, layout: nextLayout, imageUrl: prevImage.url } as any,
-            }
-      )
-    );
-    slidesRef.current = slidesRef.current.map((s, i) =>
-      i !== slideIndex
-        ? s
-        : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: prevImage.url } as any } as any)
-    );
-
-    // Debounced persist (500ms) after user finishes moving/resizing the image.
-    if (imageMoveSaveTimeoutRef.current) window.clearTimeout(imageMoveSaveTimeoutRef.current);
-    const projectIdAtSchedule = currentProjectId;
-    const slideIndexAtSchedule = slideIndex;
-    const layoutAtSchedule = nextLayout;
-    imageMoveSaveTimeoutRef.current = window.setTimeout(() => {
-      void saveSlidePatchForProject(projectIdAtSchedule, slideIndexAtSchedule, { layoutSnapshot: layoutAtSchedule });
-    }, 500);
-
-    // Enhanced-only: optional safety-guarded auto realign when the user releases the image.
-    // This runs the SAME pipeline as pressing the "Realign Text" button, but:
-    // - only for the active slide
-    // - never when Lock layout is ON
-    // - without adding a second Undo snapshot (image move already pushed one)
-    try {
-      if (autoRealignAfterImageReleaseTimeoutRef.current) {
-        window.clearTimeout(autoRealignAfterImageReleaseTimeoutRef.current);
-        autoRealignAfterImageReleaseTimeoutRef.current = null;
-      }
-      const pidAtRelease = currentProjectId;
-      const slideAtRelease = slideIndex;
-      autoRealignAfterImageReleaseTimeoutRef.current = window.setTimeout(() => {
-        try {
-          // Must still be on the same project/slide when the release settles.
-          if (currentProjectIdRef.current !== pidAtRelease) return;
-          if (activeSlideIndexRef.current !== slideAtRelease) return;
-          if (templateTypeId !== "enhanced") return;
-          const cur = slidesRef.current[slideAtRelease] || initSlide();
-          if (cur.layoutLocked) return;
-          if (!cur.autoRealignOnImageRelease) return;
-          if (switchingSlides || copyGenerating || realigning) return;
-
-          // Run the same pipeline as the button, but do NOT push a second history snapshot.
-          runRealignTextForActiveSlide({ pushHistory: false });
-        } catch {
-          // ignore
-        }
-      }, 0);
-    } catch {
-      // ignore
-    }
-  };
-
-  const runGenerateCopy = async () => {
-    if (!currentProjectId) {
-      return;
-    }
-    const projectIdAtStart = currentProjectId;
-    const runId = (copyRunIdByProjectRef.current[projectIdAtStart] || 0) + 1;
-    copyRunIdByProjectRef.current[projectIdAtStart] = runId;
-
-    setCopyUi(projectIdAtStart, { state: "running", label: "Starting…", error: null });
-    // Progress indicator: poll job status for true step updates (no schema changes).
-    const prevPoll = copyPollRefsByProjectRef.current[projectIdAtStart];
-    if (prevPoll) window.clearInterval(prevPoll);
-    copyPollRefsByProjectRef.current[projectIdAtStart] = null;
-    const prevReset = copyResetRefsByProjectRef.current[projectIdAtStart];
-    if (prevReset) window.clearTimeout(prevReset);
-    copyResetRefsByProjectRef.current[projectIdAtStart] = null;
-    const stepLabelFor = (progressCode: string) => {
-      const code = String(progressCode || "").toLowerCase();
-      if (code.includes("poppy")) return "Poppy is Cooking...";
-      if (code.includes("parse")) return "Parsing output…";
-      if (code.includes("emphasis")) return "Generating emphasis styles…";
-      if (code.includes("save")) return "Saving…";
-      return "Working…";
-    };
-    const pollOnce = async () => {
-      try {
-        // Ignore stale pollers for this project.
-        if (copyRunIdByProjectRef.current[projectIdAtStart] !== runId) return;
-        const j = await fetchJson(
-          `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(projectIdAtStart)}`,
-          { method: "GET" }
-        );
-        const job = j?.activeJob || null;
-        if (!job) return;
-        const status = String(job.status || "");
-        const err = String(job.error || "");
-        // We reuse `error` while running to store "progress:<step>".
-        if ((status === "pending" || status === "running") && err.startsWith("progress:")) {
-          setCopyUi(projectIdAtStart, { label: stepLabelFor(err.slice("progress:".length)) });
-        } else if (status === "pending") {
-          setCopyUi(projectIdAtStart, { label: "Queued…" });
-        } else if (status === "running") {
-          setCopyUi(projectIdAtStart, { label: "Working…" });
-        } else if (status === "completed") {
-          setCopyUi(projectIdAtStart, { label: "Done" });
-        } else if (status === "failed") {
-          setCopyUi(projectIdAtStart, { label: "Error" });
-        }
-      } catch {
-        // ignore polling errors; Debug panel has details
-      }
-    };
-    void pollOnce();
-    copyPollRefsByProjectRef.current[projectIdAtStart] = window.setInterval(() => {
-      void pollOnce();
-    }, 500);
-    try {
-      addLog(`🤖 Generate Copy start: project=${projectIdAtStart} type=${templateTypeId.toUpperCase()}`);
-      const data = await fetchJson('/api/editor/projects/jobs/generate-copy', {
-        method: 'POST',
-        body: JSON.stringify({ projectId: projectIdAtStart }),
-      });
-      // Ignore stale completions for this project.
-      if (copyRunIdByProjectRef.current[projectIdAtStart] !== runId) return;
-      const typeOut = data?.templateTypeId === "enhanced" ? "enhanced" : "regular";
-      addLog(
-        `🤖 Generate Copy response: type=${String(typeOut).toUpperCase()} slides=${Array.isArray(data?.slides) ? data.slides.length : 0} captionLen=${String(data?.caption || "").length}`
-      );
-      const slidesOut = data.slides || [];
-      const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
-        const prev = slidesRef.current[i] || initSlide();
-        const out = slidesOut[i] || {};
-        const nextHeadline = out.headline ?? '';
-        const nextBody = out.body ?? '';
-        const nextHeadlineRanges = Array.isArray(out.headlineStyleRanges) ? out.headlineStyleRanges : [];
-        const nextBodyRanges = Array.isArray(out.bodyStyleRanges) ? out.bodyStyleRanges : [];
-        addLog(
-          `🧾 Slide ${i + 1} text: headlineLen=${String(nextHeadline).length} bodyLen=${String(nextBody).length} headlineRanges=${nextHeadlineRanges.length} bodyRanges=${nextBodyRanges.length}`
-        );
-
-        const previewRanges = (label: string, text: string, ranges: any[]) => {
-          if (!Array.isArray(ranges) || !ranges.length || !text) return;
-          // Show up to 6 ranges so logs stay readable.
-          const max = Math.min(6, ranges.length);
-          for (let r = 0; r < max; r++) {
-            const rr = ranges[r] || {};
-            const start = Number(rr.start);
-            const end = Number(rr.end);
-            if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
-            const marks = [
-              rr.bold ? "bold" : null,
-              rr.italic ? "italic" : null,
-              rr.underline ? "underline" : null,
-            ].filter(Boolean).join("+") || "style";
-            const slice = String(text).slice(start, end).replace(/\s+/g, " ").trim();
-            addLog(`   ↳ ${label} ${marks}: "${slice}" (${start}-${end})`);
-          }
-          if (ranges.length > max) addLog(`   ↳ ${label} … +${ranges.length - max} more range(s)`);
-        };
-
-        if (typeOut === "enhanced") {
-          previewRanges("headline", String(nextHeadline), nextHeadlineRanges);
-        }
-        previewRanges("body", String(nextBody), nextBodyRanges);
-
-        return {
-          ...prev,
-          draftHeadline: nextHeadline,
-          draftBody: nextBody,
-          // Use AI-provided emphasis ranges so the editor + canvas show the final emphasized result immediately.
-          // - Regular: body ranges
-          // - Enhanced: headline + body ranges
-          draftHeadlineRanges: typeOut === "enhanced" ? nextHeadlineRanges : [],
-          draftBodyRanges: nextBodyRanges,
-          // Mark as dirty vs saved so autosave of text works, but don't show "saving" just from switching.
-        };
-      });
-      // Apply UI updates ONLY if the user is still viewing this same project.
-      if (currentProjectIdRef.current === projectIdAtStart) {
-        setSlides(nextSlides);
-        slidesRef.current = nextSlides;
-        if (typeof data.caption === 'string') setCaptionDraft(data.caption);
-        void refreshProjectsList();
-        // Auto-layout all 6 slides sequentially (queued).
-        addLog(`📐 Queue live layout for slides 1–6`);
-        setCopyUi(projectIdAtStart, { label: "Applying layouts…" });
-        enqueueLiveLayoutForProject(projectIdAtStart, [0, 1, 2, 3, 4, 5]);
-        // Generate AI image prompts for Enhanced template type (async, non-blocking)
-        if (typeOut === 'enhanced') {
-          addLog(`🎨 Triggering AI image prompt generation for Enhanced project`);
-          void runGenerateImagePrompts();
-        }
-      }
-      setCopyUi(projectIdAtStart, { state: "success" });
-    } catch (e: any) {
-      addLog(`❌ Generate Copy failed: ${e?.message || "unknown error"}`);
-      setCopyUi(projectIdAtStart, { state: "error", error: e?.message || "Generate Copy failed", label: "Error" });
-    } finally {
-      const poll = copyPollRefsByProjectRef.current[projectIdAtStart];
-      if (poll) window.clearInterval(poll);
-      copyPollRefsByProjectRef.current[projectIdAtStart] = null;
-      // Leave a brief success/error state so users see completion.
-      copyResetRefsByProjectRef.current[projectIdAtStart] = window.setTimeout(() => {
-        // Only reset if no newer run started for this project.
-        if (copyRunIdByProjectRef.current[projectIdAtStart] !== runId) return;
-        setCopyUi(projectIdAtStart, { state: "idle", label: "" });
-      }, 1400);
-    }
-  };
-
-  const CopyProgressIcon = () => {
-    if (copyProgressState === "idle") return null;
-    const title =
-      copyProgressState === "running"
-        ? (copyProgressLabel || "Working…")
-        : copyProgressState === "success"
-          ? "Done"
-          : "Error";
-    if (copyProgressState === "running") {
-      return (
-        <span className="inline-flex items-center gap-2" title={title} aria-label={title}>
-          <span className="inline-flex items-center justify-center w-4 h-4">
-            <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
-          </span>
-          <span className="text-xs font-medium text-slate-500">{title}</span>
-        </span>
-      );
-    }
-    if (copyProgressState === "success") {
-      return (
-        <span
-          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] leading-none"
-          title={title}
-          aria-label={title}
-        >
-          ✓
-        </span>
-      );
-    }
-    return (
-      <span
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] leading-none"
-        title={title}
-        aria-label={title}
-      >
-        !
-      </span>
-    );
-  };
+  // NOTE: image operations + image-move persistence live in `useImageOps`.
 
   const computeTemplateIdForSlide = (slideIndex: number) => {
     const s1 = currentProjectId ? projectMappingSlide1 : templateTypeMappingSlide1;
@@ -2721,12 +1974,13 @@ export default function EditorShell() {
     if (!pid) return;
     const slideIndex = params.slideIndex;
     if (slideIndex < 0 || slideIndex >= slideCount) return;
-    if (rteNoReflowSaveTimeoutRef.current) window.clearTimeout(rteNoReflowSaveTimeoutRef.current);
-    const layoutAtSchedule = params.layoutSnapshot;
-    const inputAtSchedule = params.inputSnapshot;
-    rteNoReflowSaveTimeoutRef.current = window.setTimeout(() => {
-      void saveSlidePatchForProject(pid, slideIndex, { layoutSnapshot: layoutAtSchedule, inputSnapshot: inputAtSchedule });
-    }, 500);
+    schedulePersistLayoutAndInputNoReflow({
+      projectId: pid,
+      slideIndex,
+      debounceMs: 500,
+      layoutSnapshot: params.layoutSnapshot,
+      inputSnapshot: params.inputSnapshot,
+    });
   };
 
   const computeRegularBodyTextboxLayout = (params: {
@@ -2906,6 +2160,80 @@ export default function EditorShell() {
       liveLayoutQueueRef.current.push(item);
     });
     void processLiveLayoutQueue();
+  };
+
+  const {
+    runGenerateImagePrompts,
+    imagePromptGeneratingAll,
+    imagePromptErrorAll,
+    imagePromptGeneratingThis,
+    imagePromptErrorThis,
+    imagePromptGenerating,
+    imagePromptError,
+  } = useGenerateImagePrompts({
+    currentProjectId,
+    currentProjectIdRef,
+    activeSlideIndex,
+    templateTypeId,
+    fetchJson,
+    addLog,
+    setSlides,
+  });
+
+  const { runGenerateCopy, copyGenerating, copyError, copyProgressState, copyProgressLabel } = useGenerateCopy({
+    currentProjectId,
+    currentProjectIdRef,
+    templateTypeId,
+    slideCount,
+    slidesRef,
+    initSlide,
+    setSlides,
+    setCaptionDraft,
+    refreshProjectsList,
+    enqueueLiveLayoutForProject,
+    runGenerateImagePrompts,
+    fetchJson,
+    addLog,
+  });
+
+  const CopyProgressIcon = () => {
+    if (copyProgressState === "idle") return null;
+    const title =
+      copyProgressState === "running"
+        ? (copyProgressLabel || "Working…")
+        : copyProgressState === "success"
+          ? "Done"
+          : "Error";
+    if (copyProgressState === "running") {
+      return (
+        <span className="inline-flex items-center gap-2" title={title} aria-label={title}>
+          <span className="inline-flex items-center justify-center w-4 h-4">
+            <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
+          </span>
+          <span className="text-xs font-medium text-slate-500">{title}</span>
+        </span>
+      );
+    }
+    if (copyProgressState === "success") {
+      return (
+        <span
+          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] leading-none"
+          title={title}
+          aria-label={title}
+        >
+          ✓
+        </span>
+      );
+    }
+    return (
+      <span
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] leading-none"
+        title={title}
+        aria-label={title}
+      >
+        !
+      </span>
+    );
   };
 
   const processLiveLayoutQueue = async () => {
@@ -3119,7 +2447,9 @@ export default function EditorShell() {
     if (slideIndex === activeSlideIndex) setInputData(next as any);
 
     // Persist wipe (best-effort, async) so Realign starts fresh next time too.
-    void saveSlidePatch(slideIndex, { inputSnapshot: next });
+    if (currentProjectId) {
+      void saveSlidePatchForProject(currentProjectId, slideIndex, { inputSnapshot: next });
+    }
 
     return { nextInput: next };
   };
@@ -3550,53 +2880,21 @@ export default function EditorShell() {
     promptDirtyRef.current = false;
   };
 
-  const refreshProjectsList = async () => {
-    setProjectsLoading(true);
-    try {
-      const data = await fetchJson('/api/editor/projects/list');
-      const next = Array.isArray(data.projects) ? data.projects : [];
-      const sorted = [...next].sort(
-        (a: any, b: any) => Date.parse(String(b?.updated_at || 0)) - Date.parse(String(a?.updated_at || 0))
-      );
-      setProjects(sorted);
-    } finally {
-      setProjectsLoading(false);
-    }
-  };
-
   const archiveProjectById = async (projectId: string, titleForUi: string) => {
     const pid = String(projectId || '').trim();
     if (!pid) return;
     if (archiveProjectBusy) return;
     setArchiveProjectBusy(true);
     try {
-      await fetchJson('/api/editor/projects/archive', {
-        method: 'POST',
-        body: JSON.stringify({ projectId: pid }),
+      await archiveProjectByIdCore({
+        projectId: pid,
+        titleForUi,
+        onCloseUi: () => {
+          setArchiveProjectModalOpen(false);
+          setArchiveProjectTarget(null);
+          setProjectsDropdownOpen(false);
+        },
       });
-      addLog(`🗄️ Archived project: ${titleForUi || pid}`);
-
-      // Optimistic local removal
-      setProjects((prev) => prev.filter((p) => p.id !== pid));
-
-      // Close modal/dropdown
-      setArchiveProjectModalOpen(false);
-      setArchiveProjectTarget(null);
-      setProjectsDropdownOpen(false);
-
-      // If the archived project was active, auto-load the next most recent remaining project.
-      if (currentProjectIdRef.current === pid) {
-        const remaining = projects.filter((p) => p.id !== pid);
-        const next = remaining[0] || null;
-        if (next?.id) {
-          await loadProject(next.id);
-        } else {
-          // No projects left: create a new one (Enhanced default).
-          void createNewProject('enhanced');
-        }
-      } else {
-        void refreshProjectsList();
-      }
     } catch (e: any) {
       addLog(`❌ Archive project failed: ${String(e?.message || e || 'unknown error')}`);
     } finally {
@@ -3638,7 +2936,7 @@ export default function EditorShell() {
   };
 
   const loadProject = async (projectId: string) => {
-    const data = await fetchJson(`/api/editor/projects/load?id=${encodeURIComponent(projectId)}`, { method: 'GET' });
+    const data = await projectsApi.loadProject(fetchJson, projectId);
     const project = data.project;
     const loadedSlides = data.slides || [];
     setCurrentProjectId(project.id);
@@ -3707,10 +3005,7 @@ export default function EditorShell() {
   };
 
   const createNewProject = async (type: 'regular' | 'enhanced') => {
-    const data = await fetchJson('/api/editor/projects/create', {
-      method: 'POST',
-      body: JSON.stringify({ templateTypeId: type, title: 'Untitled Project' }),
-    });
+    const data = await projectsApi.createProject(fetchJson, { templateTypeId: type, title: 'Untitled Project' });
     const project = data.project;
     const slidesRows = data.slides || [];
     setCurrentProjectId(project.id);
@@ -3798,75 +3093,7 @@ export default function EditorShell() {
     }
   };
 
-  const saveSlidePatch = async (
-    slideIndex: number,
-    patch: {
-      headline?: string | null;
-      body?: string | null;
-      layoutSnapshot?: any | null;
-      inputSnapshot?: any | null;
-    }
-  ): Promise<boolean> => {
-    if (!currentProjectId) return false;
-    setSlideSaveStatus('saving');
-    try {
-      addLog(
-        `🧩 Persist slide ${slideIndex + 1}: ${Object.keys(patch)
-          .filter((k) => (patch as any)[k] !== undefined)
-          .join(", ")}`
-      );
-      await fetchJson('/api/editor/projects/slides/update', {
-        method: 'POST',
-        body: JSON.stringify({ projectId: currentProjectId, slideIndex, ...patch }),
-      });
-      setSlideSaveStatus('saved');
-      window.setTimeout(() => setSlideSaveStatus('idle'), 1200);
-      addLog(`✅ Persisted slide ${slideIndex + 1}`);
-      return true;
-    } catch {
-      setSlideSaveStatus('error');
-      window.setTimeout(() => setSlideSaveStatus('idle'), 2000);
-      addLog(`❌ Persist slide ${slideIndex + 1} failed`);
-      return false;
-    }
-  };
-
-  // Phase 1 (stale-context fix groundwork): project-scoped slide save helper.
-  // No call sites use this yet (Phase 2 will), so behavior is unchanged for now.
-  const saveSlidePatchForProject = async (
-    projectId: string,
-    slideIndex: number,
-    patch: {
-      headline?: string | null;
-      body?: string | null;
-      layoutSnapshot?: any | null;
-      inputSnapshot?: any | null;
-    }
-  ): Promise<boolean> => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return false;
-    setSlideSaveStatus('saving');
-    try {
-      addLog(
-        `🧩 Persist slide ${slideIndex + 1}: ${Object.keys(patch)
-          .filter((k) => (patch as any)[k] !== undefined)
-          .join(", ")}`
-      );
-      await fetchJson('/api/editor/projects/slides/update', {
-        method: 'POST',
-        body: JSON.stringify({ projectId: pid, slideIndex, ...patch }),
-      });
-      setSlideSaveStatus('saved');
-      window.setTimeout(() => setSlideSaveStatus('idle'), 1200);
-      addLog(`✅ Persisted slide ${slideIndex + 1}`);
-      return true;
-    } catch {
-      setSlideSaveStatus('error');
-      window.setTimeout(() => setSlideSaveStatus('idle'), 2000);
-      addLog(`❌ Persist slide ${slideIndex + 1} failed`);
-      return false;
-    }
-  };
+  // NOTE: slide snapshot persistence is handled via `useSlidePersistence` (project-scoped).
 
   const savePromptSettings = async () => {
     // Per-user customization is stored in `carousel_template_type_overrides`.
@@ -3888,355 +3115,23 @@ export default function EditorShell() {
     addLog(`✅ Saved per-user template-type settings`);
   };
 
-  // Save AI image prompt for a single slide
-  const saveSlideAiImagePrompt = async (slideIndex: number, prompt: string) => {
-    if (!currentProjectId) return false;
-    setAiImagePromptSaveStatus("saving");
-    try {
-      addLog(`💾 Saving AI image prompt for slide ${slideIndex + 1}`);
-      await fetchJson('/api/editor/projects/slides/update', {
-        method: 'POST',
-        body: JSON.stringify({
-          projectId: currentProjectId,
-          slideIndex,
-          aiImagePrompt: prompt,
-        }),
-      });
-      // Update saved state
-      setSlides((prev) =>
-        prev.map((s, i) =>
-          i !== slideIndex ? s : { ...s, savedAiImagePrompt: prompt }
-        )
-      );
-      addLog(`✅ Saved AI image prompt for slide ${slideIndex + 1}`);
-      setAiImagePromptSaveStatus("saved");
-      window.setTimeout(() => setAiImagePromptSaveStatus("idle"), 1200);
-      return true;
-    } catch (e) {
-      addLog(`❌ Failed to save AI image prompt for slide ${slideIndex + 1}`);
-      setAiImagePromptSaveStatus("idle");
-      return false;
-    }
-  };
-
-  // Phase 2 (finish): project-scoped AI image prompt save (debounced callers capture pid).
-  const saveSlideAiImagePromptForProject = async (
-    projectId: string,
-    slideIndex: number,
-    prompt: string
-  ) => {
+  // Project-scoped AI image prompt save (debounced callers capture pid).
+  const saveSlideAiImagePromptForProject = async (projectId: string, slideIndex: number, prompt: string) => {
     const pid = String(projectId || "").trim();
     if (!pid) return false;
     const shouldShowUi = currentProjectIdRef.current === pid;
     if (shouldShowUi) setAiImagePromptSaveStatus("saving");
-    try {
-      addLog(`💾 Saving AI image prompt for slide ${slideIndex + 1} (project ${pid})`);
-      await fetchJson('/api/editor/projects/slides/update', {
-        method: 'POST',
-        body: JSON.stringify({
-          projectId: pid,
-          slideIndex,
-          aiImagePrompt: prompt,
-        }),
-      });
-      // Only update visible UI state if we're still viewing that project.
-      if (shouldShowUi) {
-        setSlides((prev) =>
-          prev.map((s, i) => (i !== slideIndex ? s : { ...s, savedAiImagePrompt: prompt }))
-        );
-        setAiImagePromptSaveStatus("saved");
-        window.setTimeout(() => setAiImagePromptSaveStatus("idle"), 1200);
-      }
-      addLog(`✅ Saved AI image prompt for slide ${slideIndex + 1} (project ${pid})`);
-      return true;
-    } catch {
-      addLog(`❌ Failed to save AI image prompt for slide ${slideIndex + 1} (project ${pid})`);
+    const ok = await saveSlideAiImagePromptForProjectCore(pid, slideIndex, prompt);
+    if (!ok) {
       if (shouldShowUi) setAiImagePromptSaveStatus("idle");
       return false;
     }
-  };
-
-  // Generate AI image prompts for all slides (called after Generate Copy)
-  const runGenerateImagePrompts = async (slideIndexOverride?: number) => {
-    if (!currentProjectId) return;
-    if (templateTypeId !== 'enhanced') return;
-    const projectIdAtStart = currentProjectId;
-    const isSingleSlide = slideIndexOverride !== undefined;
-    const key = isSingleSlide ? imagePromptKey(projectIdAtStart, slideIndexOverride as number) : "";
-    let runIdStarted: number | null = null;
-    if (isSingleSlide) {
-      const runId = (imagePromptRunIdByKeyRef.current[key] || 0) + 1;
-      imagePromptRunIdByKeyRef.current[key] = runId;
-      runIdStarted = runId;
-      setImagePromptGeneratingKeys((prev) => new Set(prev).add(key));
-      setImagePromptErrorByKey((prev) => ({ ...prev, [key]: null }));
-    } else {
-      const runId = (imagePromptRunIdByProjectRef.current[projectIdAtStart] || 0) + 1;
-      imagePromptRunIdByProjectRef.current[projectIdAtStart] = runId;
-      runIdStarted = runId;
-      setImagePromptUi(projectIdAtStart, { generating: true, error: null });
+    if (shouldShowUi) {
+      setSlides((prev) => prev.map((s, i) => (i !== slideIndex ? s : { ...s, savedAiImagePrompt: prompt })));
+      setAiImagePromptSaveStatus("saved");
+      window.setTimeout(() => setAiImagePromptSaveStatus("idle"), 1200);
     }
-    try {
-      addLog(`🎨 Generating AI image prompts for project ${projectIdAtStart}${slideIndexOverride !== undefined ? ` (slide ${slideIndexOverride + 1} only)` : ''}`);
-      const bodyPayload: any = { projectId: projectIdAtStart };
-      if (slideIndexOverride !== undefined) {
-        bodyPayload.slideIndex = slideIndexOverride;
-      }
-      const data = await fetchJson('/api/editor/projects/jobs/generate-image-prompts', {
-        method: 'POST',
-        body: JSON.stringify(bodyPayload),
-      });
-      // Ignore stale completions.
-      if (isSingleSlide) {
-        if (imagePromptRunIdByKeyRef.current[key] !== runIdStarted) return;
-      } else {
-        if (imagePromptRunIdByProjectRef.current[projectIdAtStart] !== runIdStarted) return;
-      }
-      const prompts = data.prompts || [];
-      addLog(`🎨 Received ${prompts.length} AI image prompts`);
-      // Update slides with new prompts
-      // Apply UI updates ONLY if the user is still viewing this same project.
-      if (currentProjectIdRef.current === projectIdAtStart) {
-        setSlides((prev) =>
-          prev.map((s, i) => {
-            const newPrompt = prompts[i] || '';
-            if (slideIndexOverride !== undefined && i !== slideIndexOverride) return s;
-            if (!newPrompt) return s;
-            return {
-              ...s,
-              savedAiImagePrompt: newPrompt,
-              draftAiImagePrompt: newPrompt,
-            };
-          })
-        );
-      }
-    } catch (e: any) {
-      addLog(`❌ Failed to generate AI image prompts: ${e?.message || 'unknown error'}`);
-      if (isSingleSlide) {
-        if (imagePromptRunIdByKeyRef.current[key] === runIdStarted) {
-          setImagePromptErrorByKey((prev) => ({ ...prev, [key]: e?.message || 'Failed to regenerate image prompt' }));
-        }
-      } else {
-        if (imagePromptRunIdByProjectRef.current[projectIdAtStart] === runIdStarted) {
-          setImagePromptUi(projectIdAtStart, { error: e?.message || 'Failed to generate image prompts' });
-        }
-      }
-    } finally {
-      if (isSingleSlide) {
-        if (imagePromptRunIdByKeyRef.current[key] === runIdStarted) {
-          setImagePromptGeneratingKeys((prev) => {
-            const next = new Set(prev);
-            next.delete(key);
-            return next;
-          });
-        }
-      } else {
-        // Only clear generating if no newer run started.
-        if (imagePromptRunIdByProjectRef.current[projectIdAtStart] === runIdStarted) {
-          setImagePromptUi(projectIdAtStart, { generating: false });
-        }
-      }
-    }
-  };
-
-  // Helper: Convert progress code to user-friendly label
-  const getAiImageStatusLabel = (progressCode: string): string => {
-    const code = String(progressCode || '').toLowerCase();
-    if (code.includes('generating')) return 'Generating image with AI...';
-    if (code.includes('removebg')) return 'Removing background...';
-    if (code.includes('uploading')) return 'Uploading...';
-    return 'Working...';
-  };
-
-  // Generate AI image from the prompt and place it on the active slide
-  const runGenerateAiImage = async (slideIdx?: number) => {
-    const targetSlide = slideIdx ?? activeSlideIndex;
-
-    if (!currentProjectId) {
-      return;
-    }
-    if (templateTypeId !== 'enhanced') {
-      return;
-    }
-    const projectIdAtStart = currentProjectId;
-    const key = aiKey(projectIdAtStart, targetSlide);
-    const prompt = slides[targetSlide]?.draftAiImagePrompt || '';
-    if (!prompt || prompt.trim().length < 10) {
-      setAiImageErrorByKey((prev) => ({ ...prev, [key]: 'Please enter or generate an image prompt first (min 10 characters).' }));
-      return;
-    }
-
-    // Mark this slide as generating
-    const runId = (aiImageRunIdByKeyRef.current[key] || 0) + 1;
-    aiImageRunIdByKeyRef.current[key] = runId;
-    setAiImageGeneratingKeys((prev) => new Set(prev).add(key));
-    setAiImageErrorByKey((prev) => ({ ...prev, [key]: null }));
-    setAiImageProgressByKey((prev) => ({ ...prev, [key]: 0 }));
-    setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Starting...' }));
-
-    // Start progress animation (smooth progress over 90 seconds)
-    if (aiImageProgressRefsByKeyRef.current[key]) window.clearInterval(aiImageProgressRefsByKeyRef.current[key]!);
-    const startTime = Date.now();
-    const totalDuration = 90000; // 90 seconds
-    aiImageProgressRefsByKeyRef.current[key] = window.setInterval(() => {
-      if (aiImageRunIdByKeyRef.current[key] !== runId) return;
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(95, (elapsed / totalDuration) * 100); // Max 95% until complete
-      setAiImageProgressByKey((prev) => ({ ...prev, [key]: progress }));
-    }, 200);
-
-    // Start polling for job status
-    if (aiImagePollRefsByKeyRef.current[key]) window.clearInterval(aiImagePollRefsByKeyRef.current[key]!);
-    const pollStatus = async () => {
-      try {
-        const token = await getAuthToken();
-        if (!token) return;
-        const statusRes = await fetch(
-          `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(projectIdAtStart)}&jobType=generate-ai-image&slideIndex=${targetSlide}`,
-          { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
-        );
-        const statusData = await statusRes.json().catch(() => ({}));
-        const job = statusData?.activeJob || null;
-        if (job && job.error && String(job.error).startsWith('progress:')) {
-          const progressCode = job.error.slice('progress:'.length);
-          // Ignore stale pollers for this key.
-          if (aiImageRunIdByKeyRef.current[key] !== runId) return;
-          setAiImageStatusByKey((prev) => ({ ...prev, [key]: getAiImageStatusLabel(progressCode) }));
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    };
-    void pollStatus();
-    aiImagePollRefsByKeyRef.current[key] = window.setInterval(pollStatus, 500);
-
-    try {
-      addLog(`🖼️ Generating AI image for slide ${targetSlide + 1}...`);
-      const token = await getAuthToken();
-      if (!token) throw new Error("Not authenticated. Please sign in again.");
-
-      const res = await fetch('/api/editor/projects/jobs/generate-ai-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          projectId: projectIdAtStart,
-          slideIndex: targetSlide,
-          prompt: prompt.trim(),
-        }),
-      });
-
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.success) {
-        throw new Error(j?.error || `Image generation failed (${res.status})`);
-      }
-      // Ignore stale completions for this key.
-      if (aiImageRunIdByKeyRef.current[key] !== runId) return;
-
-      const url = String(j?.url || '');
-      const path = String(j?.path || '');
-      if (!url) throw new Error('Image generated but no URL returned.');
-
-      addLog(`✅ AI image generated: ${url.substring(0, 80)}...`);
-      setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Done' }));
-
-      // Load image dimensions for placement
-      const dims = await new Promise<{ w: number; h: number }>((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
-        img.onerror = () => resolve({ w: 1, h: 1 });
-        img.src = url;
-      });
-
-      const tid = computeTemplateIdForSlide(targetSlide);
-      const snap = (tid ? templateSnapshots[tid] : null) || null;
-      const placement = computeDefaultUploadedImagePlacement(snap, dims.w, dims.h);
-      const mask = (j?.mask as any) || null;
-      const bgRemovalStatus = String(j?.bgRemovalStatus || 'succeeded');
-      const original = j?.original || null;
-      const processed = j?.processed || null;
-
-      // Update layout with new AI-generated image (replaces any existing image)
-      const isActiveTarget =
-        currentProjectIdRef.current === projectIdAtStart && activeSlideIndexRef.current === targetSlide;
-      const currentLayout = isActiveTarget
-        ? layoutData
-        : (slidesRef.current?.[targetSlide] as any)?.layoutData;
-      const baseLayout = (currentLayout as any)?.layout ? { ...(currentLayout as any).layout } : { ...EMPTY_LAYOUT };
-      const nextLayout = {
-        ...baseLayout,
-        image: {
-          x: placement.x,
-          y: placement.y,
-          width: placement.width,
-          height: placement.height,
-          url,
-          storage: { bucket: 'carousel-project-images', path },
-          bgRemovalEnabled: true,
-          bgRemovalStatus,
-          ...(original ? { original: { url: String(original.url || ''), storage: original.storage || { bucket: 'carousel-project-images', path: String(original.path || '') } } } : {}),
-          ...(processed ? { processed: { url: String(processed.url || ''), storage: processed.storage || { bucket: 'carousel-project-images', path: String(processed.path || '') } } } : {}),
-          ...(mask ? { mask } : {}),
-          isAiGenerated: true, // Mark as AI-generated
-        },
-      };
-
-      // Only update global layoutData if this is the active slide
-      if (isActiveTarget) {
-        setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
-      }
-      // Apply UI updates ONLY if the user is still viewing this same project.
-      if (currentProjectIdRef.current === projectIdAtStart) {
-        setSlides((prev) =>
-          prev.map((s, i) =>
-            i !== targetSlide
-              ? s
-              : {
-                  ...s,
-                  layoutData: { success: true, layout: nextLayout, imageUrl: url } as any,
-                }
-          )
-        );
-        slidesRef.current = slidesRef.current.map((s, i) =>
-          i !== targetSlide ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
-        );
-      }
-
-      // Persist to Supabase
-      await saveSlidePatchForProject(projectIdAtStart, targetSlide, { layoutSnapshot: nextLayout });
-      addLog(`🖼️ AI image placed on slide ${targetSlide + 1}`);
-
-      // Complete progress
-      setAiImageProgressByKey((prev) => ({ ...prev, [key]: 100 }));
-    } catch (e: any) {
-      addLog(`❌ AI image generation failed: ${e?.message || 'unknown error'}`);
-      setAiImageErrorByKey((prev) => ({ ...prev, [key]: e?.message || 'Image generation failed. Please contact Dr. Nick.' }));
-    } finally {
-      // Stop polling
-      if (aiImagePollRefsByKeyRef.current[key]) {
-        window.clearInterval(aiImagePollRefsByKeyRef.current[key]!);
-        aiImagePollRefsByKeyRef.current[key] = null;
-      }
-      // Stop progress animation
-      if (aiImageProgressRefsByKeyRef.current[key]) {
-        window.clearInterval(aiImageProgressRefsByKeyRef.current[key]!);
-        aiImageProgressRefsByKeyRef.current[key] = null;
-      }
-      // Brief delay before resetting to show 100% or error state
-      window.setTimeout(() => {
-        // Only reset if no newer run started for this key.
-        if (aiImageRunIdByKeyRef.current[key] !== runId) return;
-        setAiImageGeneratingKeys((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
-        });
-        setAiImageProgressByKey((prev) => ({ ...prev, [key]: 0 }));
-        setAiImageStatusByKey((prev) => ({ ...prev, [key]: '' }));
-      }, 800);
-    }
+    return true;
   };
 
   // Load template type defaults + saved projects on mount/login.
@@ -4574,6 +3469,67 @@ export default function EditorShell() {
     setImageMenuPos(null);
   };
 
+  const { runGenerateAiImage, aiImageGeneratingThis, aiImageProgressThis, aiImageStatusThis, aiImageErrorThis } =
+    useGenerateAiImage({
+      currentProjectId,
+      currentProjectIdRef,
+      activeSlideIndex,
+      activeSlideIndexRef,
+      templateTypeId,
+      aiKey,
+      getAuthToken,
+      addLog,
+      getDraftAiImagePromptForSlide: (slideIndex: number) =>
+        String((slidesRef.current?.[slideIndex] as any)?.draftAiImagePrompt || ''),
+      computeTemplateIdForSlide,
+      templateSnapshots,
+      computeDefaultUploadedImagePlacement,
+      EMPTY_LAYOUT,
+      layoutData,
+      setLayoutData,
+      slidesRef,
+      setSlides,
+      saveSlidePatchForProject,
+    });
+
+  const {
+    uploadImageForActiveSlide,
+    setActiveSlideImageBgRemoval,
+    deleteImageForActiveSlide,
+    handleUserImageChange,
+  } = useImageOps({
+    slideCount,
+    EMPTY_LAYOUT,
+    fetchJson,
+    getAuthToken,
+    currentProjectId,
+    currentProjectIdRef,
+    activeSlideIndex,
+    activeSlideIndexRef,
+    templateTypeId,
+    computeTemplateIdForSlide,
+    templateSnapshots,
+    computeDefaultUploadedImagePlacement,
+    slidesRef,
+    setSlides,
+    layoutData,
+    setLayoutData,
+    setActiveImageSelected,
+    setImageBusy,
+    closeImageMenu,
+    setBgRemovalBusyKeys,
+    addLog,
+    saveSlidePatchForProject,
+    aiKey,
+    imageOpRunIdByKeyRef,
+    pushUndoSnapshot,
+    switchingSlides,
+    copyGenerating,
+    realigning,
+    runRealignTextForActiveSlide,
+    scheduleAutoRealignAfterRelease,
+  });
+
   const hasImageForActiveSlide = () => {
     const curLayout = (layoutData as any)?.layout || null;
     const url = curLayout?.image?.url || null;
@@ -4631,9 +3587,8 @@ export default function EditorShell() {
             void saveProjectMetaForProject(projectIdAtStart, { title: projectTitleAtStart, caption: captionAtStart });
           }
         }
-        if (slideSaveTimeoutRef.current) {
-          window.clearTimeout(slideSaveTimeoutRef.current);
-          slideSaveTimeoutRef.current = null;
+        if (hasPendingSlideTextSave()) {
+          cancelPendingSlideTextSave();
           const cur = slidesRef.current[slideIndexAtStart] || initSlide();
           // Only flush if text is actually dirty.
           const desiredSavedHeadline = templateTypeAtStart === "regular" ? "" : (cur.savedHeadline || "");
@@ -4663,9 +3618,8 @@ export default function EditorShell() {
             })();
           }
         }
-        if (layoutSaveTimeoutRef.current) {
-          window.clearTimeout(layoutSaveTimeoutRef.current);
-          layoutSaveTimeoutRef.current = null;
+        if (hasPendingLayoutPersist()) {
+          cancelPendingLayoutPersist();
           if (layoutData?.layout && inputData && layoutDirtyRef.current) {
             void (async () => {
               if (!projectIdAtStart) return;
@@ -5029,119 +3983,35 @@ export default function EditorShell() {
       </div>
 
       {/* Saved Projects Card */}
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-blue-500 text-white text-sm flex items-center justify-center">💾</span>
-            <span className="text-sm font-semibold text-slate-900">Saved Projects</span>
-          </div>
-          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{projects.length}</span>
-        </div>
-        <button
-          onClick={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
-          className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm flex items-center justify-between px-3 hover:bg-slate-50 transition-colors"
-          disabled={projectsLoading || switchingSlides}
-        >
-          <span>
-            {projectsLoading
-              ? "Loading..."
-              : currentProjectId
-                ? (projectTitle || "Untitled Project")
-                : "Load project…"}
-          </span>
-          <span className="text-slate-400">{projectsDropdownOpen ? "▴" : "▾"}</span>
-        </button>
-
-        {projectsDropdownOpen && (
-          <div className="mt-2 w-full bg-white border border-slate-200 rounded-lg shadow-sm max-h-64 overflow-y-auto">
-            {projects.length === 0 ? (
-              <div className="p-3 text-sm text-slate-500">No projects yet</div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {projects.map((p) => (
-                  <div key={p.id} className="flex items-stretch">
-                    <button
-                      className="flex-1 text-left px-3 py-2 hover:bg-slate-50 transition-colors"
-                      onClick={() => {
-                        setProjectsDropdownOpen(false);
-                        void loadProject(p.id);
-                        if (isMobile) setMobileDrawerOpen(false);
-                      }}
-                    >
-                      <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
-                      <div className="text-xs text-slate-500 truncate">Type: {p.template_type_id}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        Updated: {new Date(p.updated_at).toLocaleDateString()}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="w-12 flex items-center justify-center border-l border-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-40"
-                      title="Archive project"
-                      aria-label={`Archive project ${p.title}`}
-                      disabled={projectsLoading || switchingSlides || archiveProjectBusy}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setArchiveProjectTarget({ id: p.id, title: p.title });
-                        setArchiveProjectModalOpen(true);
-                      }}
-                    >
-                      🗑️
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Archive Project Confirmation Modal */}
-      {archiveProjectModalOpen && archiveProjectTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => {
-              if (archiveProjectBusy) return;
-              setArchiveProjectModalOpen(false);
-              setArchiveProjectTarget(null);
-            }}
-          />
-          <div className="relative w-[92vw] max-w-md rounded-xl bg-white border border-slate-200 shadow-xl p-4">
-            <div className="text-sm font-semibold text-slate-900">Archive project?</div>
-            <div className="mt-1 text-sm text-slate-600">
-              This removes it from your Saved Projects list. You can’t load it from the editor once archived.
-            </div>
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="text-sm font-semibold text-slate-900 truncate">{archiveProjectTarget.title}</div>
-            </div>
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-40"
-                disabled={archiveProjectBusy}
-                onClick={() => {
-                  setArchiveProjectModalOpen(false);
-                  setArchiveProjectTarget(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="h-9 px-3 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40"
-                disabled={archiveProjectBusy}
-                onClick={() => {
-                  void archiveProjectById(archiveProjectTarget.id, archiveProjectTarget.title);
-                }}
-              >
-                {archiveProjectBusy ? 'Archiving…' : 'Archive'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <SavedProjectsCard
+        projects={projects}
+        projectsLoading={projectsLoading}
+        switchingSlides={switchingSlides}
+        currentProjectId={currentProjectId}
+        projectTitle={projectTitle}
+        dropdownOpen={projectsDropdownOpen}
+        onToggleDropdown={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
+        onLoadProject={(projectId) => {
+          setProjectsDropdownOpen(false);
+          void loadProject(projectId);
+          if (isMobile) setMobileDrawerOpen(false);
+        }}
+        archiveBusy={archiveProjectBusy}
+        archiveModalOpen={archiveProjectModalOpen}
+        archiveTarget={archiveProjectTarget}
+        onRequestArchive={(target) => {
+          setArchiveProjectTarget(target);
+          setArchiveProjectModalOpen(true);
+        }}
+        onCancelArchive={() => {
+          if (archiveProjectBusy) return;
+          setArchiveProjectModalOpen(false);
+          setArchiveProjectTarget(null);
+        }}
+        onConfirmArchive={(target) => {
+          void archiveProjectById(target.id, target.title);
+        }}
+      />
 
       {/* Template Card */}
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">

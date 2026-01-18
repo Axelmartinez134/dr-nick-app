@@ -16,14 +16,20 @@ This is a practical map of the `/editor` code so changes can be made without sea
   - Redirects to `/` if not authed
   - Shows “Access denied” if not in `editor_users`
 
-## The big client file (current)
-- **Main editor UI + orchestration**: `src/app/editor/EditorShell.tsx`
-  - Sidebar UI (Projects, Templates, Prompts, Typography)
-  - Project list/load/create, slide switching
-  - Debounced saves and stale-closure guards
-  - Job orchestration (Generate Copy, Image prompts, AI image)
-  - Image ops (upload/delete/reprocess/bg removal)
-  - Lock layout, on-canvas styling persistence, auto realign-on-release
+## Refactor end-state (feature folder)
+`src/app/editor/EditorShell.tsx` remains the route entry, but most editor logic now lives in `src/features/editor/`.
+
+### Feature root
+- `src/features/editor/`
+  - `components/` (UI subcomponents)
+  - `hooks/` (stateful orchestration)
+  - `services/` (client-safe API callers)
+  - `state/` (types + pure state helpers)
+  - `utils/` (pure helpers)
+
+### Still route-adjacent
+- `src/app/editor/EditorShell.tsx`: composition + wiring (calls hooks, renders layout)
+- `src/app/editor/RichTextInput.tsx`: RichText editor widget
 
 ## Canvas + interactions (Fabric)
 - **Canvas renderer & event wiring**: `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx`
@@ -38,6 +44,30 @@ This is a practical map of the `/editor` code so changes can be made without sea
   - Emits `{ text, ranges }` (inline style ranges)
 - **On-canvas text styling toolbar logic**: implemented in `src/app/editor/EditorShell.tsx`
   - Persists bold/italic/underline into `input_snapshot.*StyleRanges`
+
+## Editor feature modules (what was extracted)
+### Projects
+- **UI**: `src/features/editor/components/SavedProjectsCard.tsx`
+- **Hook**: `src/features/editor/hooks/useProjects.ts`
+- **API**: `src/features/editor/services/projectsApi.ts`
+
+### Slide persistence
+- **Hook**: `src/features/editor/hooks/useSlidePersistence.ts`
+- **API**: `src/features/editor/services/slidesApi.ts`
+
+### Slide state + editor flags
+- **Types/init**: `src/features/editor/state/slideState.ts`
+- **Persisted flags helpers**: `src/features/editor/state/editorFlags.ts`
+  - `layoutLocked` and `autoRealignOnImageRelease` live under `input_snapshot.editor.*`
+
+### Image ops + auto realign on release
+- **Auto realign scheduler**: `src/features/editor/hooks/useAutoRealignOnImageRelease.ts`
+- **Image ops**: `src/features/editor/hooks/useImageOps.ts`
+
+### Generation jobs
+- **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
+- **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
+- **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
 
 ## Template system (editor)
 - **Template editor modal**: `src/app/components/health/marketing/ai-carousel/TemplateEditorModal.tsx`
@@ -97,16 +127,20 @@ Key tables used by `/editor`:
 - `public.carousel_generation_jobs` (job tracking for AI)
 
 ## “Where do I change X?” (common tasks)
-- **Saved Projects dropdown UI**: `src/app/editor/EditorShell.tsx` (Saved Projects card)
-- **Archive project behavior**: `src/app/editor/EditorShell.tsx` + `src/app/api/editor/projects/archive/route.ts`
-- **Project list ordering**: `src/app/api/editor/projects/list/route.ts` + `EditorShell.refreshProjectsList`
-- **Lock layout**: `src/app/editor/EditorShell.tsx` (flag stored in `input_snapshot.editor.layoutLocked`) + `CarouselPreviewVision.tsx` `lockTextLayout` prop
-- **Auto realign on image release**: `src/app/editor/EditorShell.tsx` + suppression hook in `CarouselPreviewVision.tsx`
-- **Realign button behavior**: `src/app/editor/EditorShell.tsx` (calls engine `handleRealign` / live-layout path)
+- **Saved Projects dropdown UI**: `src/features/editor/components/SavedProjectsCard.tsx`
+- **Projects list/load/archive orchestration**: `src/features/editor/hooks/useProjects.ts`
+- **Archive endpoint**: `src/app/api/editor/projects/archive/route.ts`
+- **Slide autosave debouncing**: `src/features/editor/hooks/useSlidePersistence.ts`
+- **Lock layout flag helpers**: `src/features/editor/state/editorFlags.ts`
+- **Auto realign on image release**: `src/features/editor/hooks/useImageOps.ts` + `src/features/editor/hooks/useAutoRealignOnImageRelease.ts`
+- **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
+- **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
+- **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
+- **Realign button behavior**: `src/app/editor/EditorShell.tsx` (calls the existing live-layout pipeline)
 - **Canvas selection/overlay issues**: `CarouselPreviewVision.tsx` (especially `contextTop` drawing and transforms)
 - **Smart Guides behavior**: `smartGuides.ts` + wiring in `CarouselPreviewVision.tsx`
 - **Template Settings mappings**: `EditorShell.tsx` + `POST /api/editor/projects/update-mappings`
 
 ## Refactor note
-`src/app/editor/EditorShell.tsx` is intentionally targeted for phased refactor into `src/features/editor/`.\nSee: `~/.cursor/plans/editorshell_phased_refactor_4b6598db.plan.md`
+This refactor followed the phased plan at `~/.cursor/plans/editorshell_phased_refactor_4b6598db.plan.md`.
 
