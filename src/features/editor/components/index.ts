@@ -25,3 +25,9 @@ export type { MobileSaveSlidesPanelProps } from './MobileSaveSlidesPanel';
 export { EditorSlidesRow } from './EditorSlidesRow';
 export type { EditorSlidesRowProps } from './EditorSlidesRow';
 
+export { EditorTopBar } from './EditorTopBar';
+export type { EditorTopBarProps } from './EditorTopBar';
+
+export { EditorBottomPanel } from './EditorBottomPanel';
+export type { EditorBottomPanelProps } from './EditorBottomPanel';
+
