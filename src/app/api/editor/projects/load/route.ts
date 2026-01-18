@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     )
     .eq('id', id)
     .eq('owner_user_id', user.id)
+    .is('archived_at', null)
     .single();
   if (projectErr || !project) {
     return NextResponse.json({ success: false, error: projectErr?.message || 'Project not found' }, { status: 404 });

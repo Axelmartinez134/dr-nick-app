@@ -83,6 +83,9 @@ export default function EditorShell() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projects, setProjects] = useState<Array<{ id: string; title: string; template_type_id: string; updated_at: string }>>([]);
   const [projectsDropdownOpen, setProjectsDropdownOpen] = useState(false);
+  const [archiveProjectModalOpen, setArchiveProjectModalOpen] = useState(false);
+  const [archiveProjectTarget, setArchiveProjectTarget] = useState<{ id: string; title: string } | null>(null);
+  const [archiveProjectBusy, setArchiveProjectBusy] = useState(false);
   const [projectSaveStatus, setProjectSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const projectSaveTimeoutRef = useRef<number | null>(null);
   const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -3561,6 +3564,46 @@ export default function EditorShell() {
     }
   };
 
+  const archiveProjectById = async (projectId: string, titleForUi: string) => {
+    const pid = String(projectId || '').trim();
+    if (!pid) return;
+    if (archiveProjectBusy) return;
+    setArchiveProjectBusy(true);
+    try {
+      await fetchJson('/api/editor/projects/archive', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: pid }),
+      });
+      addLog(`🗄️ Archived project: ${titleForUi || pid}`);
+
+      // Optimistic local removal
+      setProjects((prev) => prev.filter((p) => p.id !== pid));
+
+      // Close modal/dropdown
+      setArchiveProjectModalOpen(false);
+      setArchiveProjectTarget(null);
+      setProjectsDropdownOpen(false);
+
+      // If the archived project was active, auto-load the next most recent remaining project.
+      if (currentProjectIdRef.current === pid) {
+        const remaining = projects.filter((p) => p.id !== pid);
+        const next = remaining[0] || null;
+        if (next?.id) {
+          await loadProject(next.id);
+        } else {
+          // No projects left: create a new one (Enhanced default).
+          void createNewProject('enhanced');
+        }
+      } else {
+        void refreshProjectsList();
+      }
+    } catch (e: any) {
+      addLog(`❌ Archive project failed: ${String(e?.message || e || 'unknown error')}`);
+    } finally {
+      setArchiveProjectBusy(false);
+    }
+  };
+
   const projectMappingSaveRunIdRef = useRef(0);
   const persistCurrentProjectTemplateMappings = async (patch: {
     slide1TemplateIdSnapshot?: string | null;
@@ -5016,29 +5059,89 @@ export default function EditorShell() {
             ) : (
               <div className="divide-y divide-slate-100">
                 {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors"
-                    onClick={() => {
-                      setProjectsDropdownOpen(false);
-                      void loadProject(p.id);
-                      if (isMobile) setMobileDrawerOpen(false);
-                    }}
-                  >
-                    <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
-                    <div className="text-xs text-slate-500 truncate">
-                      Type: {p.template_type_id}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Updated: {new Date(p.updated_at).toLocaleDateString()}
-                    </div>
-                  </button>
+                  <div key={p.id} className="flex items-stretch">
+                    <button
+                      className="flex-1 text-left px-3 py-2 hover:bg-slate-50 transition-colors"
+                      onClick={() => {
+                        setProjectsDropdownOpen(false);
+                        void loadProject(p.id);
+                        if (isMobile) setMobileDrawerOpen(false);
+                      }}
+                    >
+                      <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
+                      <div className="text-xs text-slate-500 truncate">Type: {p.template_type_id}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Updated: {new Date(p.updated_at).toLocaleDateString()}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="w-12 flex items-center justify-center border-l border-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-40"
+                      title="Archive project"
+                      aria-label={`Archive project ${p.title}`}
+                      disabled={projectsLoading || switchingSlides || archiveProjectBusy}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setArchiveProjectTarget({ id: p.id, title: p.title });
+                        setArchiveProjectModalOpen(true);
+                      }}
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Archive Project Confirmation Modal */}
+      {archiveProjectModalOpen && archiveProjectTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (archiveProjectBusy) return;
+              setArchiveProjectModalOpen(false);
+              setArchiveProjectTarget(null);
+            }}
+          />
+          <div className="relative w-[92vw] max-w-md rounded-xl bg-white border border-slate-200 shadow-xl p-4">
+            <div className="text-sm font-semibold text-slate-900">Archive project?</div>
+            <div className="mt-1 text-sm text-slate-600">
+              This removes it from your Saved Projects list. You can’t load it from the editor once archived.
+            </div>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="text-sm font-semibold text-slate-900 truncate">{archiveProjectTarget.title}</div>
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-40"
+                disabled={archiveProjectBusy}
+                onClick={() => {
+                  setArchiveProjectModalOpen(false);
+                  setArchiveProjectTarget(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40"
+                disabled={archiveProjectBusy}
+                onClick={() => {
+                  void archiveProjectById(archiveProjectTarget.id, archiveProjectTarget.title);
+                }}
+              >
+                {archiveProjectBusy ? 'Archiving…' : 'Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Template Card */}
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">

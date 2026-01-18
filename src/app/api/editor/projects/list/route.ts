@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     .from('carousel_projects')
     .select('id, title, template_type_id, caption, updated_at, created_at')
     .eq('owner_user_id', user.id)
+    .is('archived_at', null)
     .order('updated_at', { ascending: false });
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
