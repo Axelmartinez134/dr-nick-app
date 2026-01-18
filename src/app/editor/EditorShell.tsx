@@ -15,6 +15,13 @@ import { remapRangesByDiff } from "@/lib/text-placement";
 import JSZip from "jszip";
 import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { SavedProjectsCard } from "@/features/editor/components/SavedProjectsCard";
+import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
+import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
+import { PromptsModal } from "@/features/editor/components/PromptsModal";
+import { DebugCard } from "@/features/editor/components/DebugCard";
+import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
+import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSlidesPanel";
+import { EditorSlidesRow } from "@/features/editor/components/EditorSlidesRow";
 import { useProjects } from "@/features/editor/hooks/useProjects";
 import { useSlidePersistence } from "@/features/editor/hooks/useSlidePersistence";
 import { useAutoRealignOnImageRelease } from "@/features/editor/hooks/useAutoRealignOnImageRelease";
@@ -3943,230 +3950,76 @@ export default function EditorShell() {
   };
 
   const SidebarInner = (
-    <div className="p-4 space-y-4 overflow-auto">
-      {/* Project Card */}
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-7 h-7 rounded-lg bg-emerald-500 text-white text-sm flex items-center justify-center">➕</span>
-          <span className="text-sm font-semibold text-slate-900">Project</span>
-        </div>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="text-xs text-slate-600">
-            Current project type:{" "}
-            <span className="font-semibold uppercase">{templateTypeId}</span>
-          </div>
-          <div className="text-xs text-slate-600">
-            New project type:
-          </div>
-        </div>
-        <select
-          className="mb-3 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
-          value={newProjectTemplateTypeId}
-          onChange={(e) => setNewProjectTemplateTypeId(e.target.value === "regular" ? "regular" : "enhanced")}
-          disabled={switchingSlides}
-          title="Choose the type for the next new project (does not change the current project)"
-        >
-          <option value="enhanced">Enhanced</option>
-          <option value="regular">Regular</option>
-        </select>
-        <button
-          className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
-          onClick={() => {
-            setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
-            handleNewCarousel();
-            void createNewProject(newProjectTemplateTypeId);
+    <EditorSidebar
+      templateTypeId={templateTypeId}
+      newProjectTemplateTypeId={newProjectTemplateTypeId}
+      switchingSlides={switchingSlides}
+      onChangeNewProjectTemplateTypeId={(next) => setNewProjectTemplateTypeId(next)}
+      onClickNewProject={() => {
+        setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
+        handleNewCarousel();
+        void createNewProject(newProjectTemplateTypeId);
+      }}
+      savedProjectsCard={
+        <SavedProjectsCard
+          projects={projects}
+          projectsLoading={projectsLoading}
+          switchingSlides={switchingSlides}
+          currentProjectId={currentProjectId}
+          projectTitle={projectTitle}
+          dropdownOpen={projectsDropdownOpen}
+          onToggleDropdown={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
+          onLoadProject={(projectId) => {
+            setProjectsDropdownOpen(false);
+            void loadProject(projectId);
+            if (isMobile) setMobileDrawerOpen(false);
           }}
-          disabled={switchingSlides}
-        >
-          New Project
-        </button>
-      </div>
-
-      {/* Saved Projects Card */}
-      <SavedProjectsCard
-        projects={projects}
-        projectsLoading={projectsLoading}
-        switchingSlides={switchingSlides}
-        currentProjectId={currentProjectId}
-        projectTitle={projectTitle}
-        dropdownOpen={projectsDropdownOpen}
-        onToggleDropdown={() => setProjectsDropdownOpen(!projectsDropdownOpen)}
-        onLoadProject={(projectId) => {
-          setProjectsDropdownOpen(false);
-          void loadProject(projectId);
-          if (isMobile) setMobileDrawerOpen(false);
-        }}
-        archiveBusy={archiveProjectBusy}
-        archiveModalOpen={archiveProjectModalOpen}
-        archiveTarget={archiveProjectTarget}
-        onRequestArchive={(target) => {
-          setArchiveProjectTarget(target);
-          setArchiveProjectModalOpen(true);
-        }}
-        onCancelArchive={() => {
-          if (archiveProjectBusy) return;
-          setArchiveProjectModalOpen(false);
-          setArchiveProjectTarget(null);
-        }}
-        onConfirmArchive={(target) => {
-          void archiveProjectById(target.id, target.title);
-        }}
-      />
-
-      {/* Template Card */}
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 text-white text-sm flex items-center justify-center">🎨</span>
-            <span className="text-sm font-semibold text-slate-900">Template</span>
-          </div>
-          <button
-            className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
-            onClick={() => setTemplateSettingsOpen(true)}
-            disabled={switchingSlides}
-            title="Edit template type settings"
-          >
-            Edit Template
-          </button>
-        </div>
-        <div className="space-y-3">
-          <button
-            type="button"
-            className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-            onClick={() => {
-              setPromptModalSection("prompt");
-              setPromptModalOpen(true);
-            }}
-            title="Edit Poppy Prompt"
-          >
-            <div className="text-xs font-semibold text-slate-700">Poppy Prompt</div>
-            <div className="mt-0.5 text-[11px] text-slate-500 truncate">
-              {(templateTypePrompt || "").split("\n")[0] || "Click to edit..."}
-            </div>
-          </button>
-
-          <button
-            type="button"
-            className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-            onClick={() => {
-              setPromptModalSection("emphasis");
-              setPromptModalOpen(true);
-            }}
-            title="Edit Text Styling Prompt"
-          >
-            <div className="text-xs font-semibold text-slate-700">Text Styling Prompt</div>
-            <div className="mt-0.5 text-[11px] text-slate-500 truncate">
-              {(templateTypeEmphasisPrompt || "").split("\n")[0] || "Click to edit..."}
-            </div>
-          </button>
-
-          {templateTypeId === "enhanced" && (
-            <button
-              type="button"
-              className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-              onClick={() => {
-                setPromptModalSection("image");
-                setPromptModalOpen(true);
-              }}
-              title="Edit Image Generation Prompt"
-            >
-              <div className="text-xs font-semibold text-slate-700">Image Generation Prompt</div>
-              <div className="mt-0.5 text-[11px] text-slate-500 truncate">
-                {(templateTypeImageGenPrompt || "").split("\n")[0] || "Click to edit..."}
-              </div>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Typography Card */}
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-xs font-bold flex items-center justify-center">Aa</span>
-          <span className="text-sm font-semibold text-slate-900">Typography (Global)</span>
-        </div>
-        <div className="space-y-3">
-          <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Headline Font</div>
-            <select
-              className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
-              value={fontKey(headlineFontFamily, headlineFontWeight)}
-              onChange={(e) => {
-                const raw = e.target.value || "";
-                const [family, w] = raw.split("@@");
-                const weight = Number(w);
-                setHeadlineFontFamily(family || "Inter, sans-serif");
-                setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
-              }}
-            >
-              {FONT_OPTIONS.map((o) => (
-                <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Body Font</div>
-            <select
-              className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
-              value={fontKey(bodyFontFamily, bodyFontWeight)}
-              onChange={(e) => {
-                const raw = e.target.value || "";
-                const [family, w] = raw.split("@@");
-                const weight = Number(w);
-                setBodyFontFamily(family || "Inter, sans-serif");
-                setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
-              }}
-            >
-              {FONT_OPTIONS.map((o) => (
-                <option key={fontKey(o.family, o.weight)} value={fontKey(o.family, o.weight)}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Colors Card */}
-      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 text-white text-sm flex items-center justify-center">🖌️</span>
-          <span className="text-sm font-semibold text-slate-900">Colors</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Background</div>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
-                value={projectBackgroundColor || "#ffffff"}
-                onChange={(e) => updateProjectColors(e.target.value, projectTextColor)}
-                disabled={loading || switchingSlides}
-                aria-label="Background color"
-              />
-              <div className="text-xs text-slate-600 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
-                value={projectTextColor || "#000000"}
-                onChange={(e) => updateProjectColors(projectBackgroundColor, e.target.value)}
-                disabled={loading || switchingSlides}
-                aria-label="Text color"
-              />
-              <div className="text-xs text-slate-600 tabular-nums">{projectTextColor || "#000000"}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          archiveBusy={archiveProjectBusy}
+          archiveModalOpen={archiveProjectModalOpen}
+          archiveTarget={archiveProjectTarget}
+          onRequestArchive={(target) => {
+            setArchiveProjectTarget(target);
+            setArchiveProjectModalOpen(true);
+          }}
+          onCancelArchive={() => {
+            if (archiveProjectBusy) return;
+            setArchiveProjectModalOpen(false);
+            setArchiveProjectTarget(null);
+          }}
+          onConfirmArchive={(target) => {
+            void archiveProjectById(target.id, target.title);
+          }}
+        />
+      }
+      onOpenTemplateSettings={() => setTemplateSettingsOpen(true)}
+      onOpenPromptModal={(section) => {
+        setPromptModalSection(section);
+        setPromptModalOpen(true);
+      }}
+      templateTypePromptPreviewLine={(templateTypePrompt || "").split("\n")[0] || ""}
+      templateTypeEmphasisPromptPreviewLine={(templateTypeEmphasisPrompt || "").split("\n")[0] || ""}
+      templateTypeImageGenPromptPreviewLine={(templateTypeImageGenPrompt || "").split("\n")[0] || ""}
+      fontOptions={FONT_OPTIONS}
+      headlineFontKey={fontKey(headlineFontFamily, headlineFontWeight)}
+      bodyFontKey={fontKey(bodyFontFamily, bodyFontWeight)}
+      onChangeHeadlineFontKey={(raw) => {
+        const [family, w] = String(raw || "").split("@@");
+        const weight = Number(w);
+        setHeadlineFontFamily(family || "Inter, sans-serif");
+        setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
+      }}
+      onChangeBodyFontKey={(raw) => {
+        const [family, w] = String(raw || "").split("@@");
+        const weight = Number(w);
+        setBodyFontFamily(family || "Inter, sans-serif");
+        setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
+      }}
+      loading={loading}
+      projectBackgroundColor={projectBackgroundColor}
+      projectTextColor={projectTextColor}
+      onChangeBackgroundColor={(next) => updateProjectColors(next, projectTextColor)}
+      onChangeTextColor={(next) => updateProjectColors(projectBackgroundColor, next)}
+    />
   );
 
   return (
@@ -4298,44 +4151,17 @@ export default function EditorShell() {
           {/* Mobile: manual left drawer */}
           {isMobile ? (
             <>
-              {/* Open handle */}
-              {!mobileDrawerOpen ? (
-                <button
-                  type="button"
-                  className="fixed left-2 top-24 z-40 h-10 w-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
-                  onClick={() => setMobileDrawerOpen(true)}
-                  aria-label="Open menu"
-                  title="Open menu"
-                >
-                  ☰
-                </button>
-              ) : null}
-
-              {/* Backdrop */}
-              {mobileDrawerOpen ? (
-                <button
-                  type="button"
-                  className="fixed inset-0 z-40 bg-black/40"
-                  aria-label="Close menu"
-                  onClick={() => setMobileDrawerOpen(false)}
-                />
-              ) : null}
-
-              {/* Drawer */}
-              <aside
-                className="fixed top-0 left-0 z-50 h-full bg-white border-r border-slate-200 shadow-xl"
-                style={{
-                  width: "min(88vw, 420px)",
-                  transform: mobileDrawerOpen ? "translateX(0)" : "translateX(-110%)",
-                  transition: "transform 200ms ease",
-                }}
-                onPointerDown={(e) => {
+              <MobileDrawer
+                open={mobileDrawerOpen}
+                onOpen={() => setMobileDrawerOpen(true)}
+                onClose={() => setMobileDrawerOpen(false)}
+                onDrawerPointerDown={(e) => {
                   if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
                   const x = (e as any).clientX ?? 0;
                   const y = (e as any).clientY ?? 0;
                   mobileGestureRef.current = { mode: "drawer-close", startX: x, startY: y, lastX: x, lastY: y, fired: false };
                 }}
-                onPointerMove={(e) => {
+                onDrawerPointerMove={(e) => {
                   const g = mobileGestureRef.current;
                   if (g.mode !== "drawer-close") return;
                   const x = (e as any).clientX ?? 0;
@@ -4350,770 +4176,443 @@ export default function EditorShell() {
                     setMobileDrawerOpen(false);
                   }
                 }}
-                onPointerUp={() => {
+                onDrawerPointerUp={() => {
                   const g = mobileGestureRef.current;
                   if (g.mode === "drawer-close") mobileGestureRef.current.mode = null;
                 }}
-                onPointerCancel={() => {
+                onDrawerPointerCancel={() => {
                   const g = mobileGestureRef.current;
                   if (g.mode === "drawer-close") mobileGestureRef.current.mode = null;
                 }}
               >
-                <div className="h-14 flex items-center justify-between px-4 border-b border-slate-200">
-                  <div className="text-sm font-semibold text-slate-900">Menu</div>
-                  <button
-                    type="button"
-                    className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-                    onClick={() => setMobileDrawerOpen(false)}
-                  >
-                    Close
-                  </button>
-                </div>
                 {SidebarInner}
-              </aside>
+              </MobileDrawer>
 
-              {/* Mobile "Save slides" panel (per-slide share) */}
-              {mobileSaveOpen ? (
-                <>
-                  <button
-                    type="button"
-                    className="fixed inset-0 z-[60] bg-black/50"
-                    aria-label="Close save panel"
-                    onClick={() => setMobileSaveOpen(false)}
-                  />
-                  <div
-                    className="fixed left-1/2 top-1/2 z-[70] w-[92vw] max-w-[520px] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-slate-200 shadow-2xl overflow-hidden"
-                    role="dialog"
-                    aria-modal="true"
-                  >
-                    <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                      <div className="text-sm font-semibold text-slate-900">Save slides</div>
-                      <button
-                        type="button"
-                        className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-                        onClick={() => setMobileSaveOpen(false)}
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      <div className="text-sm text-slate-700">
-                        Your browser can’t save all 6 images at once. Tap each slide below to open the Share Sheet, then choose <b>Save Image</b>/<b>Save to Photos</b>.
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {Array.from({ length: slideCount }).map((_, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            className="h-11 rounded-md bg-[#6D28D9] text-white text-sm font-semibold disabled:opacity-50"
-                            disabled={mobileSaveBusy !== null || topExporting}
-                            onClick={() => void shareSingleSlide(i)}
-                          >
-                            {mobileSaveBusy === i ? "Preparing..." : `Save Slide ${i + 1}`}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className="w-full h-11 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold disabled:opacity-50"
-                        disabled={topExporting}
-                        onClick={() => void handleDownloadAll()}
-                        title="Fallback: downloads a ZIP to the Files app"
-                      >
-                        Download ZIP (Files)
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : null}
+              <MobileSaveSlidesPanel
+                open={mobileSaveOpen}
+                slideCount={slideCount}
+                mobileSaveBusy={mobileSaveBusy}
+                topExporting={topExporting}
+                onClose={() => setMobileSaveOpen(false)}
+                onShareSingleSlide={(i) => void shareSingleSlide(i)}
+                onDownloadZip={() => void handleDownloadAll()}
+              />
             </>
           ) : null}
           {/* Slides row */}
           {/* Lock desktop slide-row height to prevent layout shift while Fabric/templates load. */}
           {/* Slightly bias padding to the top so slides sit a touch lower without moving the bottom panel. */}
-          <div className="flex flex-col items-center justify-center md:justify-start p-3 md:px-6 md:pb-6 md:pt-8 md:h-[696px]">
-            <div className="w-full max-w-[1400px]">
-              {/* Hidden file input for per-slide image upload */}
-              <input
-                ref={imageFileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  // Reset input so selecting the same file again triggers onChange.
-                  e.currentTarget.value = "";
-                  void uploadImageForActiveSlide(f);
-                }}
-              />
-
-              {/* Image context menu (active slide only) */}
-              {imageMenuOpen && imageMenuPos ? (
-                <div
-                  data-image-menu="1"
-                  className="fixed z-[200] bg-white border border-slate-200 rounded-lg shadow-xl p-2 w-[200px]"
-                  style={{ left: imageMenuPos.x, top: imageMenuPos.y }}
-                  onMouseDown={(e) => e.stopPropagation()}
+          <EditorSlidesRow
+            slideCount={slideCount}
+            activeSlideIndex={activeSlideIndex}
+            switchingSlides={switchingSlides}
+            copyGenerating={copyGenerating}
+            isMobile={isMobile}
+            canGoPrev={canGoPrev}
+            canGoNext={canGoNext}
+            goPrev={goPrev}
+            goNext={goNext}
+            switchToSlide={switchToSlide}
+            viewportRef={viewportRef}
+            imageFileInputRef={imageFileInputRef}
+            slideCanvasRefs={slideCanvasRefs}
+            slideRefs={slideRefs}
+            canvasRef={canvasRef}
+            lastActiveFabricCanvasRef={lastActiveFabricCanvasRef}
+            setActiveCanvasNonce={setActiveCanvasNonce}
+            CarouselPreviewVision={CarouselPreviewVision}
+            SlideCard={SlideCard}
+            templateTypeId={templateTypeId}
+            templateSnapshots={templateSnapshots}
+            computeTemplateIdForSlide={computeTemplateIdForSlide}
+            layoutData={layoutData}
+            EMPTY_LAYOUT={EMPTY_LAYOUT}
+            slides={slides}
+            viewportWidth={viewportWidth}
+            showLayoutOverlays={showLayoutOverlays}
+            projectBackgroundColor={projectBackgroundColor}
+            projectTextColor={projectTextColor}
+            headlineFontFamily={headlineFontFamily}
+            bodyFontFamily={bodyFontFamily}
+            headlineFontWeight={headlineFontWeight}
+            bodyFontWeight={bodyFontWeight}
+            addLog={addLog}
+            VIEWPORT_PAD={VIEWPORT_PAD}
+            translateX={translateX}
+            totalW={totalW}
+            imageMenuOpen={imageMenuOpen}
+            imageMenuPos={imageMenuPos}
+            imageBusy={imageBusy}
+            hasImageForActiveSlide={hasImageForActiveSlide}
+            deleteImageForActiveSlide={(source) => void deleteImageForActiveSlide(source)}
+            uploadImageForActiveSlide={(file) => void uploadImageForActiveSlide(file)}
+            handleUserImageChange={handleUserImageChange}
+            onUserTextChangeRegular={handleRegularCanvasTextChange}
+            onUserTextChangeEnhanced={handleEnhancedCanvasTextChange}
+            onMobileViewportPointerDown={(e: any) => {
+              if (!isMobile) return;
+              if (mobileDrawerOpen) return;
+              if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
+              if (switchingSlides || copyGenerating) return;
+              if (isEditableTarget(e.target)) return;
+              const x = (e as any).clientX ?? 0;
+              const y = (e as any).clientY ?? 0;
+              mobileGestureRef.current = { mode: "slide", startX: x, startY: y, lastX: x, lastY: y, fired: false };
+            }}
+            onMobileViewportPointerMove={(e: any) => {
+              const g = mobileGestureRef.current;
+              if (g.mode !== "slide") return;
+              const x = (e as any).clientX ?? 0;
+              const y = (e as any).clientY ?? 0;
+              g.lastX = x;
+              g.lastY = y;
+              const dx = x - g.startX;
+              const dy = y - g.startY;
+              if (Math.abs(dy) > Math.abs(dx)) return;
+              if (g.fired) return;
+              if (dx < -60) {
+                g.fired = true;
+                void switchToSlide(activeSlideIndex + 1);
+              } else if (dx > 60) {
+                g.fired = true;
+                void switchToSlide(activeSlideIndex - 1);
+              }
+            }}
+            onMobileViewportPointerUp={() => {
+              const g = mobileGestureRef.current;
+              if (g.mode === "slide") mobileGestureRef.current.mode = null;
+            }}
+            onMobileViewportPointerCancel={() => {
+              const g = mobileGestureRef.current;
+              if (g.mode === "slide") mobileGestureRef.current.mode = null;
+            }}
+            renderActiveSlideControlsRow={() => (
+              <div className="absolute left-2 bottom-0 translate-y-10 flex items-center gap-3">
+                <button
+                  type="button"
+                  className="w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
+                  title={
+                    !currentProjectId
+                      ? "Create or load a project to upload an image"
+                      : imageBusy
+                        ? "Working…"
+                        : "Upload image"
+                  }
+                  aria-label="Upload image"
+                  disabled={!currentProjectId || imageBusy || switchingSlides || copyGenerating}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    imageFileInputRef.current?.click();
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openImageMenu(e.clientX, e.clientY);
+                  }}
+                  onPointerDown={(e) => {
+                    // Long-press to open menu
+                    if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                    const x = (e as any).clientX ?? 0;
+                    const y = (e as any).clientY ?? 0;
+                    imageLongPressRef.current = window.setTimeout(() => {
+                      openImageMenu(x, y);
+                    }, 520);
+                  }}
+                  onPointerUp={() => {
+                    if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                    imageLongPressRef.current = null;
+                  }}
+                  onPointerCancel={() => {
+                    if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                    imageLongPressRef.current = null;
+                  }}
+                  onPointerLeave={() => {
+                    if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
+                    imageLongPressRef.current = null;
+                  }}
                 >
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
-                    disabled={imageBusy || !hasImageForActiveSlide()}
-                    onClick={() => void deleteImageForActiveSlide("menu")}
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="w-9 h-9"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    Remove image
-                  </button>
-                </div>
-              ) : null}
+                    {/* Camera body */}
+                    <rect x="3" y="7" width="14" height="12" rx="3" />
+                    {/* Camera top bump */}
+                    <path d="M7 7l1.2-2h3.6L13 7" />
+                    {/* Lens */}
+                    <circle cx="10" cy="13" r="3" />
+                    {/* Plus (add photo) */}
+                    <path d="M20 4v4" />
+                    <path d="M18 6h4" />
+                  </svg>
+                </button>
 
-              {isMobile ? (
-                <div className="w-full">
-                  <div className="flex items-center justify-between gap-3 mb-3">
+                {templateTypeId === "enhanced" ? (
+                  <div className="flex items-center gap-2">
                     <button
-                      className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
-                      aria-label="Previous"
-                      onClick={goPrev}
-                      disabled={!canGoPrev || switchingSlides}
+                      type="button"
+                      role="switch"
+                      aria-checked={!!slides[activeSlideIndex]?.layoutLocked}
+                      aria-label="Lock layout"
+                      className={[
+                        "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
+                        !currentProjectId || switchingSlides || copyGenerating
+                          ? "opacity-40 cursor-not-allowed"
+                          : "cursor-pointer",
+                        slides[activeSlideIndex]?.layoutLocked
+                          ? "bg-emerald-500 border-emerald-500"
+                          : "bg-slate-300 border-slate-300",
+                      ].join(" ")}
+                      disabled={!currentProjectId || switchingSlides || copyGenerating}
+                      title={!currentProjectId ? "Create or load a project to use Lock layout" : "Toggle Lock layout for this slide"}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!currentProjectId) return;
+                        const slideIndex = activeSlideIndexRef.current;
+                        const prev = slidesRef.current[slideIndex] || initSlide();
+                        const nextLocked = !prev.layoutLocked;
+                        const baseInput =
+                          (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
+                          (prev as any)?.inputData ||
+                          null;
+                        const nextInput = withLayoutLockedInInput(baseInput, nextLocked);
+                        setSlides((arr) =>
+                          arr.map((s, ii) =>
+                            ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
+                          )
+                        );
+                        slidesRef.current = slidesRef.current.map((s, ii) =>
+                          ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
+                        );
+                        if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
+                        // If enabling lock, cancel any pending/in-flight live-layout for this slide so it can't "snap" after the toggle.
+                        try {
+                          const key = liveLayoutKey(currentProjectId, slideIndex);
+                          const t = liveLayoutTimeoutsRef.current[key];
+                          if (t) window.clearTimeout(t);
+                          liveLayoutTimeoutsRef.current[key] = null;
+                          liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((x) => x.key !== key);
+                          liveLayoutRunIdByKeyRef.current[key] = (liveLayoutRunIdByKeyRef.current[key] || 0) + 1;
+                        } catch {
+                          // ignore
+                        }
+                        schedulePersistLayoutAndInput({
+                          projectId: currentProjectId,
+                          slideIndex,
+                          layoutSnapshot: ((layoutData as any)?.layout || (prev as any)?.layoutData?.layout || null),
+                          inputSnapshot: nextInput,
+                        });
+                      }}
                     >
-                      ←
+                      <span
+                        className={[
+                          "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
+                          slides[activeSlideIndex]?.layoutLocked ? "opacity-100" : "opacity-0",
+                        ].join(" ")}
+                      >
+                        ON
+                      </span>
+                      <span
+                        className={[
+                          "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
+                          slides[activeSlideIndex]?.layoutLocked ? "opacity-0" : "opacity-100",
+                        ].join(" ")}
+                      >
+                        OFF
+                      </span>
+                      <span
+                        className={[
+                          "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
+                          slides[activeSlideIndex]?.layoutLocked ? "translate-x-8" : "translate-x-1",
+                        ].join(" ")}
+                      />
                     </button>
-                    <div className="text-sm font-semibold text-slate-700">
-                      Slide {activeSlideIndex + 1} / {slideCount}
-                    </div>
-                    <button
-                      className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
-                      aria-label="Next"
-                      onClick={goNext}
-                      disabled={!canGoNext || switchingSlides}
-                    >
-                      →
-                    </button>
+                    <div className="text-sm font-semibold text-slate-900 select-none">Lock layout</div>
                   </div>
+                ) : null}
 
-                  <div
-                    ref={viewportRef}
-                    className="w-full flex items-center justify-center"
-                    onPointerDown={(e) => {
-                      if (!isMobile) return;
-                      if (mobileDrawerOpen) return;
-                      if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
-                      if (switchingSlides || copyGenerating) return;
-                      if (isEditableTarget(e.target)) return;
-                      const x = (e as any).clientX ?? 0;
-                      const y = (e as any).clientY ?? 0;
-                      mobileGestureRef.current = { mode: "slide", startX: x, startY: y, lastX: x, lastY: y, fired: false };
-                    }}
-                    onPointerMove={(e) => {
-                      const g = mobileGestureRef.current;
-                      if (g.mode !== "slide") return;
-                      const x = (e as any).clientX ?? 0;
-                      const y = (e as any).clientY ?? 0;
-                      g.lastX = x;
-                      g.lastY = y;
-                      const dx = x - g.startX;
-                      const dy = y - g.startY;
-                      if (Math.abs(dy) > Math.abs(dx)) return;
-                      if (g.fired) return;
-                      if (dx < -60) {
-                        g.fired = true;
-                        void switchToSlide(activeSlideIndex + 1);
-                      } else if (dx > 60) {
-                        g.fired = true;
-                        void switchToSlide(activeSlideIndex - 1);
+                {templateTypeId === "enhanced" && activeImageSelected ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={!!slides[activeSlideIndex]?.autoRealignOnImageRelease}
+                      aria-label="Auto realign on release"
+                      className={[
+                        "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
+                        !currentProjectId || switchingSlides || copyGenerating || !!slides[activeSlideIndex]?.layoutLocked
+                          ? "opacity-40 cursor-not-allowed"
+                          : "cursor-pointer",
+                        slides[activeSlideIndex]?.autoRealignOnImageRelease
+                          ? "bg-slate-900 border-slate-900"
+                          : "bg-slate-300 border-slate-300",
+                      ].join(" ")}
+                      disabled={
+                        !currentProjectId ||
+                        switchingSlides ||
+                        copyGenerating ||
+                        !!slides[activeSlideIndex]?.layoutLocked
                       }
-                    }}
-                    onPointerUp={() => {
-                      const g = mobileGestureRef.current;
-                      if (g.mode === "slide") mobileGestureRef.current.mode = null;
-                    }}
-                    onPointerCancel={() => {
-                      const g = mobileGestureRef.current;
-                      if (g.mode === "slide") mobileGestureRef.current.mode = null;
-                    }}
-                  >
+                      title={
+                        !currentProjectId
+                          ? "Create or load a project to use Auto realign on release"
+                          : slides[activeSlideIndex]?.layoutLocked
+                            ? "Turn off Lock layout to use Auto realign on release"
+                            : "Toggle Auto realign on release"
+                      }
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!currentProjectId) return;
+                        const slideIndex = activeSlideIndexRef.current;
+                        const prev = slidesRef.current[slideIndex] || initSlide();
+                        if (prev.layoutLocked) return;
+                        const nextEnabled = !prev.autoRealignOnImageRelease;
+                        const baseInput =
+                          (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
+                          (prev as any)?.inputData ||
+                          null;
+                        const nextInput = withAutoRealignOnImageReleaseInInput(baseInput, nextEnabled);
+
+                        setSlides((arr) =>
+                          arr.map((s, ii) =>
+                            ii !== slideIndex
+                              ? s
+                              : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
+                          )
+                        );
+                        slidesRef.current = slidesRef.current.map((s, ii) =>
+                          ii !== slideIndex
+                            ? s
+                            : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
+                        );
+                        if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
+
+                        // Persist immediately (not debounced). This is a user-intent toggle and should survive refresh.
+                        void saveSlidePatchForProject(currentProjectId, slideIndex, { inputSnapshot: nextInput });
+                      }}
+                    >
+                      <span
+                        className={[
+                          "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
+                          slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-100" : "opacity-0",
+                        ].join(" ")}
+                      >
+                        ON
+                      </span>
+                      <span
+                        className={[
+                          "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
+                          slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-0" : "opacity-100",
+                        ].join(" ")}
+                      >
+                        OFF
+                      </span>
+                      <span
+                        className={[
+                          "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
+                          slides[activeSlideIndex]?.autoRealignOnImageRelease ? "translate-x-8" : "translate-x-1",
+                        ].join(" ")}
+                      />
+                    </button>
+                    <div className="text-sm font-semibold text-slate-900 select-none">
+                      Auto realign on release
+                    </div>
+                  </div>
+                ) : null}
+
+                {canvasTextSelection?.active ? (
+                  <div className="flex items-center gap-2">
                     {(() => {
-                      const i = activeSlideIndex;
-                      const tid = computeTemplateIdForSlide(i);
-                      const snap = (tid ? templateSnapshots[tid] : null) || null;
-                      const layoutForThisCard =
-                        layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT;
-
-                      const maxW = Math.max(240, Math.min(540, (viewportWidth || 540) - 24));
-                      const scale = Math.max(0.35, Math.min(1, maxW / 540));
-
-                      const displayW = Math.round(maxW);
-                      const displayH = Math.round(720 * scale);
-
+                      const disabled = !currentProjectId || switchingSlides || copyGenerating;
+                      const pillBase =
+                        "h-8 px-3 rounded-full border text-sm font-semibold select-none transition-colors";
+                      const pillOn = "bg-slate-900 border-slate-900 text-white";
+                      const pillOff = "bg-white border-slate-300 text-slate-900 hover:bg-slate-50";
+                      const pillDis = "opacity-40 cursor-not-allowed";
+                      const btn = (on: boolean) =>
+                        [pillBase, disabled ? pillDis : "cursor-pointer", on ? pillOn : pillOff].join(" ");
+                      const stop = (e: any) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      };
                       return (
-                        <div style={{ width: displayW, height: displayH, overflow: "hidden" }}>
-                            {!tid ? (
-                              <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
-                                No template selected
-                              </div>
-                            ) : !snap ? (
-                              <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
-                                Loading template…
-                              </div>
-                            ) : (
-                              <CarouselPreviewVision
-                                ref={(node: any) => {
-                                  (canvasRef as any).current = node;
-                                  slideCanvasRefs.current[i]!.current = node;
-                                }}
-                                templateId={tid}
-                                slideIndex={i}
-                                layout={layoutForThisCard}
-                                backgroundColor={projectBackgroundColor}
-                                textColor={projectTextColor}
-                                templateSnapshot={snap}
-                                hasHeadline={templateTypeId !== "regular"}
-                                tightUserTextWidth={templateTypeId !== "regular"}
-                                onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
-                                showLayoutOverlays={showLayoutOverlays}
-                                headlineFontFamily={headlineFontFamily}
-                                bodyFontFamily={bodyFontFamily}
-                                  headlineFontWeight={headlineFontWeight}
-                                  bodyFontWeight={bodyFontWeight}
-                                // Regular should use the same safe-area inset as the teal overlay (40px).
-                                contentPaddingPx={40}
-                                clampUserTextToContentRect={true}
-                                clampUserImageToContentRect={false}
-                                pushTextOutOfUserImage={templateTypeId !== "regular"}
-                                lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
-                                displayWidthPx={displayW}
-                                displayHeightPx={displayH}
-                                onUserTextChange={
-                                  templateTypeId === "regular"
-                                    ? handleRegularCanvasTextChange
-                                    : handleEnhancedCanvasTextChange
-                                }
-                                onUserImageChange={handleUserImageChange}
-                              />
-                            )}
-                        </div>
+                        <>
+                          <button
+                            type="button"
+                            className={btn(!!canvasTextSelection?.isBold)}
+                            disabled={disabled}
+                            tabIndex={-1}
+                            aria-label="Bold"
+                            title="Bold"
+                            onMouseDown={stop}
+                            onClick={(e) => {
+                              stop(e);
+                              applyCanvasInlineMark("bold", !canvasTextSelection.isBold);
+                            }}
+                          >
+                            B
+                          </button>
+                          <button
+                            type="button"
+                            className={btn(!!canvasTextSelection?.isItalic)}
+                            disabled={disabled}
+                            tabIndex={-1}
+                            aria-label="Italic"
+                            title="Italic"
+                            onMouseDown={stop}
+                            onClick={(e) => {
+                              stop(e);
+                              applyCanvasInlineMark("italic", !canvasTextSelection.isItalic);
+                            }}
+                          >
+                            I
+                          </button>
+                          <button
+                            type="button"
+                            className={btn(!!canvasTextSelection?.isUnderline)}
+                            disabled={disabled}
+                            tabIndex={-1}
+                            aria-label="Underline"
+                            title="Underline"
+                            onMouseDown={stop}
+                            onClick={(e) => {
+                              stop(e);
+                              applyCanvasInlineMark("underline", !canvasTextSelection.isUnderline);
+                            }}
+                          >
+                            <span className="underline underline-offset-2">U</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={btn(false)}
+                            disabled={disabled}
+                            tabIndex={-1}
+                            aria-label="Clear text styling"
+                            title="Clear (bold/italic/underline)"
+                            onMouseDown={stop}
+                            onClick={(e) => {
+                              stop(e);
+                              clearCanvasInlineMarks();
+                            }}
+                          >
+                            Clear
+                          </button>
+                        </>
                       );
                     })()}
                   </div>
-                  {/* Hidden render of non-active slides so Download/Share All can export them on mobile. */}
-                  <div style={{ position: "absolute", left: -100000, top: -100000, width: 1, height: 1, overflow: "hidden" }}>
-                    {Array.from({ length: slideCount }).map((_, i) => {
-                      if (i === activeSlideIndex) return null;
-                      const tid = computeTemplateIdForSlide(i);
-                      const snap = (tid ? templateSnapshots[tid] : null) || null;
-                      const layoutForThisCard =
-                        slides[i]?.layoutData?.layout ? (slides[i].layoutData.layout as any) : EMPTY_LAYOUT;
-                      if (!tid || !snap) return null;
-                      return (
-                        <CarouselPreviewVision
-                          key={i}
-                          ref={slideCanvasRefs.current[i] as any}
-                          templateId={tid}
-                          slideIndex={i}
-                          layout={layoutForThisCard}
-                          backgroundColor={projectBackgroundColor}
-                          textColor={projectTextColor}
-                          templateSnapshot={snap}
-                          hasHeadline={templateTypeId !== "regular"}
-                          tightUserTextWidth={templateTypeId !== "regular"}
-                          showLayoutOverlays={showLayoutOverlays}
-                          headlineFontFamily={headlineFontFamily}
-                          bodyFontFamily={bodyFontFamily}
-                            headlineFontWeight={headlineFontWeight}
-                            bodyFontWeight={bodyFontWeight}
-                          contentPaddingPx={40}
-                          clampUserTextToContentRect={true}
-                          clampUserImageToContentRect={false}
-                          pushTextOutOfUserImage={templateTypeId !== "regular"}
-                          lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="w-full flex items-center gap-3 min-h-[648px]">
-                  <button
-                    className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
-                    aria-label="Previous"
-                    onClick={goPrev}
-                    disabled={!canGoPrev || switchingSlides}
-                  >
-                    ←
-                  </button>
-                  <div
-                    ref={viewportRef}
-                    // IMPORTANT: prevent vertical scroll/overflow in the dotted workspace.
-                    // The upload icon is intentionally positioned slightly below the slide card.
-                    // We reserve a small bottom gutter so the icon stays visible without increasing scroll height.
-                    className="flex-1 overflow-x-hidden overflow-y-hidden pb-10"
-                    style={{ paddingLeft: VIEWPORT_PAD, paddingRight: VIEWPORT_PAD }}
-                  >
-                    <div
-                      className="flex items-center gap-6 px-2 py-6"
-                      style={{
-                        transform: `translateX(${translateX}px)`,
-                        transition: "transform 300ms ease",
-                        width: totalW,
-                      }}
-                    >
-                      {Array.from({ length: slideCount }).map((_, i) => (
-                        <div
-                          key={i}
-                          ref={(node) => {
-                            slideRefs[i].current = node;
-                          }}
-                          className="relative"
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`Select slide ${i + 1}`}
-                          onClick={() => {
-                            if (i === activeSlideIndex) return;
-                            if (switchingSlides || copyGenerating) return;
-                            void switchToSlide(i);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter" && e.key !== " ") return;
-                            e.preventDefault();
-                            if (i === activeSlideIndex) return;
-                            if (switchingSlides || copyGenerating) return;
-                            void switchToSlide(i);
-                          }}
-                        >
-                          {/* Per-slide controls under the active slide (active slide only). */}
-                          {i === activeSlideIndex ? (
-                            <div className="absolute left-2 bottom-0 translate-y-10 flex items-center gap-3">
-                              <button
-                                type="button"
-                                className="w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
-                                title={
-                                  !currentProjectId
-                                    ? "Create or load a project to upload an image"
-                                    : imageBusy
-                                      ? "Working…"
-                                      : "Upload image"
-                                }
-                                aria-label="Upload image"
-                                disabled={!currentProjectId || imageBusy || switchingSlides || copyGenerating}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  imageFileInputRef.current?.click();
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  openImageMenu(e.clientX, e.clientY);
-                                }}
-                                onPointerDown={(e) => {
-                                  // Long-press to open menu
-                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                  const x = (e as any).clientX ?? 0;
-                                  const y = (e as any).clientY ?? 0;
-                                  imageLongPressRef.current = window.setTimeout(() => {
-                                    openImageMenu(x, y);
-                                  }, 520);
-                                }}
-                                onPointerUp={() => {
-                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                  imageLongPressRef.current = null;
-                                }}
-                                onPointerCancel={() => {
-                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                  imageLongPressRef.current = null;
-                                }}
-                                onPointerLeave={() => {
-                                  if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-                                  imageLongPressRef.current = null;
-                                }}
-                              >
-                                <svg
-                                  viewBox="0 0 24 24"
-                                  className="w-9 h-9"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  {/* Camera body */}
-                                  <rect x="3" y="7" width="14" height="12" rx="3" />
-                                  {/* Camera top bump */}
-                                  <path d="M7 7l1.2-2h3.6L13 7" />
-                                  {/* Lens */}
-                                  <circle cx="10" cy="13" r="3" />
-                                  {/* Plus (add photo) */}
-                                  <path d="M20 4v4" />
-                                  <path d="M18 6h4" />
-                                </svg>
-                              </button>
-
-                              {templateTypeId === "enhanced" ? (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={!!slides[activeSlideIndex]?.layoutLocked}
-                                    aria-label="Lock layout"
-                                    className={[
-                                      "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
-                                      !currentProjectId || switchingSlides || copyGenerating
-                                        ? "opacity-40 cursor-not-allowed"
-                                        : "cursor-pointer",
-                                      slides[activeSlideIndex]?.layoutLocked
-                                        ? "bg-emerald-500 border-emerald-500"
-                                        : "bg-slate-300 border-slate-300",
-                                    ].join(" ")}
-                                    disabled={!currentProjectId || switchingSlides || copyGenerating}
-                                    title={!currentProjectId ? "Create or load a project to use Lock layout" : "Toggle Lock layout for this slide"}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      if (!currentProjectId) return;
-                                      const slideIndex = activeSlideIndexRef.current;
-                                      const prev = slidesRef.current[slideIndex] || initSlide();
-                                      const nextLocked = !prev.layoutLocked;
-                                      const baseInput =
-                                        (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
-                                        (prev as any)?.inputData ||
-                                        null;
-                                      const nextInput = withLayoutLockedInInput(baseInput, nextLocked);
-                                      setSlides((arr) =>
-                                        arr.map((s, ii) =>
-                                          ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
-                                        )
-                                      );
-                                      slidesRef.current = slidesRef.current.map((s, ii) =>
-                                        ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
-                                      );
-                                      if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
-                                      // If enabling lock, cancel any pending/in-flight live-layout for this slide so it can't "snap" after the toggle.
-                                      try {
-                                        const key = liveLayoutKey(currentProjectId, slideIndex);
-                                        const t = liveLayoutTimeoutsRef.current[key];
-                                        if (t) window.clearTimeout(t);
-                                        liveLayoutTimeoutsRef.current[key] = null;
-                                        liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((x) => x.key !== key);
-                                        liveLayoutRunIdByKeyRef.current[key] = (liveLayoutRunIdByKeyRef.current[key] || 0) + 1;
-                                      } catch {
-                                        // ignore
-                                      }
-                                      schedulePersistLayoutAndInput({
-                                        projectId: currentProjectId,
-                                        slideIndex,
-                                        layoutSnapshot: ((layoutData as any)?.layout || (prev as any)?.layoutData?.layout || null),
-                                        inputSnapshot: nextInput,
-                                      });
-                                    }}
-                                  >
-                                    <span
-                                      className={[
-                                        "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
-                                        slides[activeSlideIndex]?.layoutLocked ? "opacity-100" : "opacity-0",
-                                      ].join(" ")}
-                                    >
-                                      ON
-                                    </span>
-                                    <span
-                                      className={[
-                                        "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
-                                        slides[activeSlideIndex]?.layoutLocked ? "opacity-0" : "opacity-100",
-                                      ].join(" ")}
-                                    >
-                                      OFF
-                                    </span>
-                                    <span
-                                      className={[
-                                        "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
-                                        slides[activeSlideIndex]?.layoutLocked ? "translate-x-8" : "translate-x-1",
-                                      ].join(" ")}
-                                    />
-                                  </button>
-                                  <div className="text-sm font-semibold text-slate-900 select-none">Lock layout</div>
-                                </div>
-                              ) : null}
-
-                              {templateTypeId === "enhanced" && activeImageSelected ? (
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={!!slides[activeSlideIndex]?.autoRealignOnImageRelease}
-                                    aria-label="Auto realign on release"
-                                    className={[
-                                      "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
-                                      !currentProjectId || switchingSlides || copyGenerating || !!slides[activeSlideIndex]?.layoutLocked
-                                        ? "opacity-40 cursor-not-allowed"
-                                        : "cursor-pointer",
-                                      slides[activeSlideIndex]?.autoRealignOnImageRelease
-                                        ? "bg-slate-900 border-slate-900"
-                                        : "bg-slate-300 border-slate-300",
-                                    ].join(" ")}
-                                    disabled={
-                                      !currentProjectId ||
-                                      switchingSlides ||
-                                      copyGenerating ||
-                                      !!slides[activeSlideIndex]?.layoutLocked
-                                    }
-                                    title={
-                                      !currentProjectId
-                                        ? "Create or load a project to use Auto realign on release"
-                                        : slides[activeSlideIndex]?.layoutLocked
-                                          ? "Turn off Lock layout to use Auto realign on release"
-                                          : "Toggle Auto realign on release"
-                                    }
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      if (!currentProjectId) return;
-                                      const slideIndex = activeSlideIndexRef.current;
-                                      const prev = slidesRef.current[slideIndex] || initSlide();
-                                      if (prev.layoutLocked) return;
-                                      const nextEnabled = !prev.autoRealignOnImageRelease;
-                                      const baseInput =
-                                        (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) ||
-                                        (prev as any)?.inputData ||
-                                        null;
-                                      const nextInput = withAutoRealignOnImageReleaseInInput(baseInput, nextEnabled);
-
-                                      setSlides((arr) =>
-                                        arr.map((s, ii) =>
-                                          ii !== slideIndex
-                                            ? s
-                                            : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
-                                        )
-                                      );
-                                      slidesRef.current = slidesRef.current.map((s, ii) =>
-                                        ii !== slideIndex
-                                          ? s
-                                          : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
-                                      );
-                                      if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
-
-                                      // Persist immediately (not debounced). This is a user-intent toggle and should survive refresh.
-                                      void saveSlidePatchForProject(currentProjectId, slideIndex, { inputSnapshot: nextInput });
-                                    }}
-                                  >
-                                    <span
-                                      className={[
-                                        "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
-                                        slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-100" : "opacity-0",
-                                      ].join(" ")}
-                                    >
-                                      ON
-                                    </span>
-                                    <span
-                                      className={[
-                                        "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
-                                        slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-0" : "opacity-100",
-                                      ].join(" ")}
-                                    >
-                                      OFF
-                                    </span>
-                                    <span
-                                      className={[
-                                        "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
-                                        slides[activeSlideIndex]?.autoRealignOnImageRelease ? "translate-x-8" : "translate-x-1",
-                                      ].join(" ")}
-                                    />
-                                  </button>
-                                  <div className="text-sm font-semibold text-slate-900 select-none">
-                                    Auto realign on release
-                                  </div>
-                                </div>
-                              ) : null}
-
-                              {canvasTextSelection?.active ? (
-                                <div className="flex items-center gap-2">
-                                  {(() => {
-                                    const disabled = !currentProjectId || switchingSlides || copyGenerating;
-                                    const pillBase =
-                                      "h-8 px-3 rounded-full border text-sm font-semibold select-none transition-colors";
-                                    const pillOn = "bg-slate-900 border-slate-900 text-white";
-                                    const pillOff = "bg-white border-slate-300 text-slate-900 hover:bg-slate-50";
-                                    const pillDis = "opacity-40 cursor-not-allowed";
-                                    const btn = (on: boolean) =>
-                                      [pillBase, disabled ? pillDis : "cursor-pointer", on ? pillOn : pillOff].join(" ");
-                                    const stop = (e: any) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                    };
-                                    return (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className={btn(!!canvasTextSelection?.isBold)}
-                                          disabled={disabled}
-                                          tabIndex={-1}
-                                          aria-label="Bold"
-                                          title="Bold"
-                                          onMouseDown={stop}
-                                          onClick={(e) => {
-                                            stop(e);
-                                            applyCanvasInlineMark("bold", !canvasTextSelection.isBold);
-                                          }}
-                                        >
-                                          B
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={btn(!!canvasTextSelection?.isItalic)}
-                                          disabled={disabled}
-                                          tabIndex={-1}
-                                          aria-label="Italic"
-                                          title="Italic"
-                                          onMouseDown={stop}
-                                          onClick={(e) => {
-                                            stop(e);
-                                            applyCanvasInlineMark("italic", !canvasTextSelection.isItalic);
-                                          }}
-                                        >
-                                          I
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={btn(!!canvasTextSelection?.isUnderline)}
-                                          disabled={disabled}
-                                          tabIndex={-1}
-                                          aria-label="Underline"
-                                          title="Underline"
-                                          onMouseDown={stop}
-                                          onClick={(e) => {
-                                            stop(e);
-                                            applyCanvasInlineMark("underline", !canvasTextSelection.isUnderline);
-                                          }}
-                                        >
-                                          <span className="underline underline-offset-2">U</span>
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className={btn(false)}
-                                          disabled={disabled}
-                                          tabIndex={-1}
-                                          aria-label="Clear text styling"
-                                          title="Clear (bold/italic/underline)"
-                                          onMouseDown={stop}
-                                          onClick={(e) => {
-                                            stop(e);
-                                            clearCanvasInlineMarks();
-                                          }}
-                                        >
-                                          Clear
-                                        </button>
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          <SlideCard index={i + 1} active={i === activeSlideIndex}>
-                            <div
-                              className="w-full h-full flex flex-col items-center justify-start"
-                              style={i === activeSlideIndex ? undefined : { pointerEvents: "none" }}
-                            >
-                              {/* Render at 420x560 without CSS transforms (Fabric hit-testing depends on it). */}
-                              <div style={{ width: 420, height: 560, overflow: "hidden" }}>
-                                  {(() => {
-                                    const tid = computeTemplateIdForSlide(i);
-                                    const snap = (tid ? templateSnapshots[tid] : null) || null;
-                                    const layoutForThisCard =
-                                      i === activeSlideIndex
-                                        ? (layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT)
-                                        : (slides[i]?.layoutData?.layout ? (slides[i].layoutData.layout as any) : EMPTY_LAYOUT);
-
-                                    if (!tid) {
-                                      return (
-                                        <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
-                                          No template selected
-                                        </div>
-                                      );
-                                    }
-                                    if (!snap) {
-                                      return (
-                                        <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
-                                          Loading template…
-                                        </div>
-                                      );
-                                    }
-
-                                    const refProp =
-                                      i === activeSlideIndex
-                                        ? (node: any) => {
-                                            (canvasRef as any).current = node;
-                                            slideCanvasRefs.current[i]!.current = node;
-                                            try {
-                                              const fabricCanvas = (node as any)?.canvas || null;
-                                              if (fabricCanvas && lastActiveFabricCanvasRef.current !== fabricCanvas) {
-                                                lastActiveFabricCanvasRef.current = fabricCanvas;
-                                                setActiveCanvasNonce((x) => x + 1);
-                                              }
-                                            } catch {
-                                              // ignore
-                                            }
-                                          }
-                                        : slideCanvasRefs.current[i];
-
-                                    return (
-                                      <CarouselPreviewVision
-                                        ref={refProp as any}
-                                        templateId={tid}
-                                        slideIndex={i}
-                                        layout={layoutForThisCard}
-                                        backgroundColor={projectBackgroundColor}
-                                        textColor={projectTextColor}
-                                        templateSnapshot={snap}
-                                        hasHeadline={templateTypeId !== "regular"}
-                                        tightUserTextWidth={templateTypeId !== "regular"}
-                                        onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
-                                        showLayoutOverlays={showLayoutOverlays}
-                                        headlineFontFamily={headlineFontFamily}
-                                        bodyFontFamily={bodyFontFamily}
-                                          headlineFontWeight={headlineFontWeight}
-                                          bodyFontWeight={bodyFontWeight}
-                                        contentPaddingPx={40}
-                                        clampUserTextToContentRect={true}
-                                        clampUserImageToContentRect={false}
-                                        pushTextOutOfUserImage={templateTypeId !== "regular"}
-                                        lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
-                                        suppressTextInvariantsWhileDraggingUserImage={
-                                          templateTypeId === "enhanced"
-                                            ? (!!slides[i]?.autoRealignOnImageRelease && !slides[i]?.layoutLocked)
-                                            : false
-                                        }
-                                        displayWidthPx={420}
-                                        displayHeightPx={560}
-                                        onUserTextChange={
-                                          i === activeSlideIndex
-                                            ? (templateTypeId === "regular" ? handleRegularCanvasTextChange : handleEnhancedCanvasTextChange)
-                                            : undefined
-                                        }
-                                        onUserImageChange={
-                                          i === activeSlideIndex ? handleUserImageChange : undefined
-                                        }
-                                      />
-                                    );
-                                  })()}
-                              </div>
-                            </div>
-                          </SlideCard>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <button
-                    className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
-                    aria-label="Next"
-                    onClick={goNext}
-                    disabled={!canGoNext || switchingSlides}
-                  >
-                    →
-                  </button>
-                </div>
-              )}
-            </div>
-            {/* Text styling UI lives under the active slide (no floating toolbar). */}
-          </div>
+                ) : null}
+              </div>
+            )}
+          />
 
           {/* Bottom panel */}
           <section className="bg-white border-t border-slate-200">
@@ -5969,47 +5468,12 @@ export default function EditorShell() {
                 />
               </div>
 
-              {/* Debug Card */}
-              <details className="mt-4 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 shadow-sm group">
-                <summary className="cursor-pointer px-4 py-3 flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-slate-500 text-white text-sm flex items-center justify-center">🔧</span>
-                  <span className="text-sm font-semibold text-slate-900">Debug</span>
-                  <span className="ml-auto text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-                </summary>
-                <div className="px-4 pb-4 space-y-3">
-                  {debugScreenshot && (
-                    <div>
-                      <button
-                        className="text-xs text-violet-700 font-medium hover:underline"
-                        onClick={() => setShowDebugPreview(!showDebugPreview)}
-                      >
-                        {showDebugPreview ? "Hide" : "Show"} Screenshot
-                      </button>
-                      {showDebugPreview && (
-                        <div className="mt-2 bg-white rounded-lg border border-slate-200 p-2 overflow-auto max-h-64 shadow-sm">
-                          <img
-                            src={debugScreenshot}
-                            alt="Screenshot sent to Claude Vision"
-                            className="max-w-full h-auto mx-auto"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {debugLogs.length > 0 ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-950 p-3 max-h-64 overflow-y-auto font-mono text-[11px] text-green-300 shadow-inner">
-                      {debugLogs.map((log, idx) => (
-                        <div key={idx} className="mb-1">
-                          {log}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500">No debug logs yet.</div>
-                  )}
-                </div>
-              </details>
+              <DebugCard
+                debugScreenshot={debugScreenshot || null}
+                showDebugPreview={showDebugPreview}
+                setShowDebugPreview={setShowDebugPreview}
+                debugLogs={Array.isArray(debugLogs) ? debugLogs : []}
+              />
             </div>
           </section>
         </main>
@@ -6035,217 +5499,73 @@ export default function EditorShell() {
         onRefreshTemplates={loadTemplatesList}
       />
 
-      {/* Template Settings modal */}
-      {templateSettingsOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
-          onMouseDown={(e) => {
-            // Only close on true backdrop clicks (not inside the panel).
-            if (e.target === e.currentTarget) setTemplateSettingsOpen(false);
-          }}
-        >
-          <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div className="text-base font-semibold text-slate-900">
-                Template Settings ({templateTypeId === "enhanced" ? "Enhanced" : "Regular"})
-              </div>
-              <button
-                type="button"
-                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                onClick={() => setTemplateSettingsOpen(false)}
-                aria-label="Close"
-                title="Close"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="px-5 py-4">
-              <div className="mt-2 grid grid-cols-1 gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Slide 1 Template</div>
-                  <select
-                    className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={templateTypeMappingSlide1 || ""}
-                    onChange={(e) => {
-                      const next = e.target.value || null;
-                      promptDirtyRef.current = true;
-                      setTemplateTypeMappingSlide1(next);
-                      // Also apply to the currently loaded project so visuals update immediately.
-                      if (currentProjectIdRef.current) {
-                        setProjectMappingSlide1(next);
-                        void persistCurrentProjectTemplateMappings({ slide1TemplateIdSnapshot: next });
-                      }
-                    }}
-                    disabled={loadingTemplates}
-                  >
-                    <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+      <TemplateSettingsModal
+        open={templateSettingsOpen}
+        templateTypeId={templateTypeId}
+        loadingTemplates={loadingTemplates}
+        templates={(Array.isArray(templates) ? templates : []).map((t: any) => ({ id: String(t?.id || ""), name: String(t?.name || "") }))}
+        templateTypeMappingSlide1={templateTypeMappingSlide1}
+        templateTypeMappingSlide2to5={templateTypeMappingSlide2to5}
+        templateTypeMappingSlide6={templateTypeMappingSlide6}
+        onChangeTemplateTypeMappingSlide1={(next) => {
+          promptDirtyRef.current = true;
+          setTemplateTypeMappingSlide1(next);
+          // Also apply to the currently loaded project so visuals update immediately.
+          if (currentProjectIdRef.current) {
+            setProjectMappingSlide1(next);
+            void persistCurrentProjectTemplateMappings({ slide1TemplateIdSnapshot: next });
+          }
+        }}
+        onChangeTemplateTypeMappingSlide2to5={(next) => {
+          promptDirtyRef.current = true;
+          setTemplateTypeMappingSlide2to5(next);
+          // Also apply to the currently loaded project so visuals update immediately.
+          if (currentProjectIdRef.current) {
+            setProjectMappingSlide2to5(next);
+            void persistCurrentProjectTemplateMappings({ slide2to5TemplateIdSnapshot: next });
+          }
+        }}
+        onChangeTemplateTypeMappingSlide6={(next) => {
+          promptDirtyRef.current = true;
+          setTemplateTypeMappingSlide6(next);
+          // Also apply to the currently loaded project so visuals update immediately.
+          if (currentProjectIdRef.current) {
+            setProjectMappingSlide6(next);
+            void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
+          }
+        }}
+        onClose={() => setTemplateSettingsOpen(false)}
+        onOpenTemplateEditor={() => {
+          // Avoid two stacked modals; template editor should be the only open overlay.
+          setTemplateSettingsOpen(false);
+          setPromptModalOpen(false);
+          setTemplateEditorOpen(true);
+        }}
+      />
 
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Slides 2–5 Template</div>
-                  <select
-                    className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={templateTypeMappingSlide2to5 || ""}
-                    onChange={(e) => {
-                      const next = e.target.value || null;
-                      promptDirtyRef.current = true;
-                      setTemplateTypeMappingSlide2to5(next);
-                      // Also apply to the currently loaded project so visuals update immediately.
-                      if (currentProjectIdRef.current) {
-                        setProjectMappingSlide2to5(next);
-                        void persistCurrentProjectTemplateMappings({ slide2to5TemplateIdSnapshot: next });
-                      }
-                    }}
-                    disabled={loadingTemplates}
-                  >
-                    <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Slide 6 Template</div>
-                  <select
-                    className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
-                    value={templateTypeMappingSlide6 || ""}
-                    onChange={(e) => {
-                      const next = e.target.value || null;
-                      promptDirtyRef.current = true;
-                      setTemplateTypeMappingSlide6(next);
-                      // Also apply to the currently loaded project so visuals update immediately.
-                      if (currentProjectIdRef.current) {
-                        setProjectMappingSlide6(next);
-                        void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
-                      }
-                    }}
-                    disabled={loadingTemplates}
-                  >
-                    <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-3 flex items-center justify-end">
-                <button
-                  className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-                  onClick={() => {
-                    // Avoid two stacked modals; template editor should be the only open overlay.
-                    setTemplateSettingsOpen(false);
-                    setPromptModalOpen(false);
-                    setTemplateEditorOpen(true);
-                  }}
-                  title="Open Template Editor"
-                >
-                  Template Editor
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Prompts modal (quick edit) */}
-      {promptModalOpen && (
-        <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-6"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setPromptModalOpen(false);
-          }}
-        >
-          <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div className="text-base font-semibold text-slate-900">
-                Prompts ({templateTypeId === "enhanced" ? "Enhanced" : "Regular"})
-              </div>
-              <button
-                type="button"
-                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                onClick={() => setPromptModalOpen(false)}
-                aria-label="Close"
-                title="Close"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="px-5 py-4">
-              <div className="space-y-4">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Poppy Prompt</div>
-                  <div className="mt-0.5 text-xs text-slate-500">
-                    Used for generating the 6-slide copy for this template type (saved per user).
-                  </div>
-                  <textarea
-                    ref={promptTextareaRef}
-                    className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
-                    rows={10}
-                    value={templateTypePrompt}
-                    onChange={(e) => {
-                      promptDirtyRef.current = true;
-                      setTemplateTypePrompt(e.target.value);
-                    }}
-                    placeholder="Enter the Poppy prompt for this template type..."
-                  />
-                </div>
-
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Text Styling Prompt</div>
-                  <div className="mt-0.5 text-xs text-slate-500">
-                    Controls bold/italic/underline for scannability. It never changes characters—only formatting ranges (saved per user).
-                  </div>
-                  <textarea
-                    ref={emphasisTextareaRef}
-                    className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
-                    rows={10}
-                    value={templateTypeEmphasisPrompt}
-                    onChange={(e) => {
-                      promptDirtyRef.current = true;
-                      setTemplateTypeEmphasisPrompt(e.target.value);
-                    }}
-                    placeholder="Enter the text styling prompt for this template type..."
-                  />
-                </div>
-
-                {templateTypeId === "enhanced" && (
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">Image Generation Prompt</div>
-                    <div className="mt-0.5 text-xs text-slate-500">
-                      System prompt sent to Claude for generating per-slide image prompts. Used when "Generate Copy" is clicked (Enhanced only).
-                    </div>
-                    <textarea
-                      className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
-                      rows={10}
-                      value={templateTypeImageGenPrompt}
-                      onChange={(e) => {
-                        promptDirtyRef.current = true;
-                        setTemplateTypeImageGenPrompt(e.target.value);
-                      }}
-                      placeholder="Enter the image generation prompt for this template type..."
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="mt-2 text-xs text-slate-500">
-                Auto-saves as you type. Press <span className="font-mono">Esc</span> to close.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <PromptsModal
+        open={promptModalOpen}
+        templateTypeId={templateTypeId}
+        section={promptModalSection}
+        templateTypePrompt={templateTypePrompt}
+        templateTypeEmphasisPrompt={templateTypeEmphasisPrompt}
+        templateTypeImageGenPrompt={templateTypeImageGenPrompt}
+        onChangeTemplateTypePrompt={(next) => {
+          promptDirtyRef.current = true;
+          setTemplateTypePrompt(next);
+        }}
+        onChangeTemplateTypeEmphasisPrompt={(next) => {
+          promptDirtyRef.current = true;
+          setTemplateTypeEmphasisPrompt(next);
+        }}
+        onChangeTemplateTypeImageGenPrompt={(next) => {
+          promptDirtyRef.current = true;
+          setTemplateTypeImageGenPrompt(next);
+        }}
+        promptTextareaRef={promptTextareaRef}
+        emphasisTextareaRef={emphasisTextareaRef}
+        onClose={() => setPromptModalOpen(false)}
+      />
     </div>
   );
 }
