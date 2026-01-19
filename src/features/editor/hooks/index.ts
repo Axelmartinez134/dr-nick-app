@@ -14,7 +14,6 @@ export { useProjectLifecycle } from './useProjectLifecycle';
 export { useEditorPersistence } from './useEditorPersistence';
 export { useEditorJobs } from './useEditorJobs';
 export { useEditorStoreActionsSync } from './useEditorStoreActionsSync';
-export { useEditorStoreWorkspaceSync } from './useEditorStoreWorkspaceSync';
 export { useEditorStoreWorkspaceRegistry } from './useEditorStoreWorkspaceRegistry';
 export { useLiveLayoutQueue } from './useLiveLayoutQueue';
 export { useCanvasTextStyling } from './useCanvasTextStyling';

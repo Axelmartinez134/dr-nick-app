@@ -30,6 +30,26 @@ const noopActions: EditorActions = {
   onChangeTemplateTypeMappingSlide1: () => {},
   onChangeTemplateTypeMappingSlide2to5: () => {},
   onChangeTemplateTypeMappingSlide6: () => {},
+
+  onChangeHeadlineFontSize: () => {},
+  onClickHeadlineAlign: () => {},
+  onChangeHeadlineRichText: () => {},
+  onChangeBodyFontSize: () => {},
+  onClickBodyAlign: () => {},
+  onChangeBodyRichText: () => {},
+  onClickRegenerateImagePrompt: () => {},
+  onChangeAiImagePrompt: () => {},
+  onClickGenerateAiImage: () => {},
+  onClickGenerateCopy: () => {},
+  onClickRetry: () => {},
+  onClickRealignText: () => {},
+  onClickUndo: () => {},
+  onClickToggleOverlays: () => {},
+  onClickCopyCaption: () => {},
+  onChangeCaption: () => {},
+  setShowDebugPreview: () => {},
+  setActiveSlideImageBgRemoval: () => {},
+  deleteImageForActiveSlide: () => {},
 };
 
 const defaultState: EditorState = {
@@ -80,7 +100,6 @@ const defaultState: EditorState = {
   workspaceActions: null,
   bottomPanel: null,
   bottomPanelUi: null,
-  bottomPanelActions: null,
   actions: noopActions,
 };
 

@@ -53,6 +53,33 @@ export type EditorActions = {
   onChangeTemplateTypeMappingSlide1: (next: string | null) => void;
   onChangeTemplateTypeMappingSlide2to5: (next: string | null) => void;
   onChangeTemplateTypeMappingSlide6: (next: string | null) => void;
+
+  // Bottom panel + slide-level controls
+  onChangeHeadlineFontSize: (e: any) => void;
+  onClickHeadlineAlign: (align: "left" | "center" | "right") => void;
+  onChangeHeadlineRichText: (next: any) => void;
+
+  onChangeBodyFontSize: (e: any) => void;
+  onClickBodyAlign: (align: "left" | "center" | "right") => void;
+  onChangeBodyRichText: (next: any) => void;
+
+  onClickRegenerateImagePrompt: () => void;
+  onChangeAiImagePrompt: (next: string) => void;
+  onClickGenerateAiImage: () => void;
+
+  onClickGenerateCopy: () => void;
+  onClickRetry: () => void;
+  onClickRealignText: () => void;
+  onClickUndo: () => void;
+  onClickToggleOverlays: () => void;
+
+  onClickCopyCaption: () => void;
+  onChangeCaption: (next: string) => void;
+
+  setShowDebugPreview: (next: boolean) => void;
+
+  setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
+  deleteImageForActiveSlide: (source: "menu" | "button") => void;
 };
 
 export type EditorWorkspaceState = {
@@ -278,41 +305,6 @@ export type EditorBottomPanelUiState = {
   debugLogs: string[];
 };
 
-export type EditorBottomPanelActionsState = {
-  // Headline UI (Enhanced)
-  onChangeHeadlineFontSize: (e: any) => void;
-  onClickHeadlineAlign: (align: "left" | "center" | "right") => void;
-  onChangeHeadlineRichText: (next: any) => void;
-
-  // Body UI
-  onChangeBodyFontSize: (e: any) => void;
-  onClickBodyAlign: (align: "left" | "center" | "right") => void;
-  onChangeBodyRichText: (next: any) => void;
-
-  // AI image prompt card (Enhanced)
-  onClickRegenerateImagePrompt: () => void;
-  onChangeAiImagePrompt: (next: string) => void;
-  onClickGenerateAiImage: () => void;
-
-  // Controls
-  onClickGenerateCopy: () => void;
-  onClickRetry: () => void;
-  onClickRealignText: () => void;
-  onClickUndo: () => void;
-  onClickToggleOverlays: () => void;
-
-  // Caption
-  onClickCopyCaption: () => void;
-  onChangeCaption: (next: string) => void;
-
-  // Debug card
-  setShowDebugPreview: (next: boolean) => void;
-
-  // Image controls (Enhanced)
-  setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
-  deleteImageForActiveSlide: (source: "menu" | "button") => void;
-};
-
 export type EditorState = {
   // Top bar
   titleText: string;
@@ -388,7 +380,6 @@ export type EditorState = {
   bottomPanel: EditorBottomPanelState | null;
   // Bottom panel slices (Phase 5E3): step toward deleting the `bottomPanel` blob mirror.
   bottomPanelUi: EditorBottomPanelUiState | null;
-  bottomPanelActions: EditorBottomPanelActionsState | null;
 
   actions: EditorActions;
 };

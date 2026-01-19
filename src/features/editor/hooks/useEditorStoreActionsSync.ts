@@ -57,6 +57,27 @@ type Args = {
   setProjectMappingSlide1: (next: string | null) => void;
   setProjectMappingSlide2to5: (next: string | null) => void;
   setProjectMappingSlide6: (next: string | null) => void;
+
+  // Bottom panel actions (Phase 5E6-ish): unify bottom panel handlers into `state.actions`
+  onChangeHeadlineFontSize: (e: any) => void;
+  onClickHeadlineAlign: (align: "left" | "center" | "right") => void;
+  onChangeHeadlineRichText: (next: any) => void;
+  onChangeBodyFontSize: (e: any) => void;
+  onClickBodyAlign: (align: "left" | "center" | "right") => void;
+  onChangeBodyRichText: (next: any) => void;
+  onClickRegenerateImagePrompt: () => void;
+  onChangeAiImagePrompt: (next: string) => void;
+  onClickGenerateAiImage: () => void;
+  onClickGenerateCopy: () => void;
+  onClickRetry: () => void;
+  onClickRealignText: () => void;
+  onClickUndo: () => void;
+  onClickToggleOverlays: () => void;
+  onClickCopyCaption: () => void;
+  onChangeCaption: (next: string) => void;
+  setShowDebugPreview: (next: boolean) => void;
+  setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
+  deleteImageForActiveSlide: (source: "menu" | "button") => void;
 };
 
 export function useEditorStoreActionsSync(args: Args) {
@@ -109,6 +130,26 @@ export function useEditorStoreActionsSync(args: Args) {
     setProjectMappingSlide1,
     setProjectMappingSlide2to5,
     setProjectMappingSlide6,
+
+    onChangeHeadlineFontSize,
+    onClickHeadlineAlign,
+    onChangeHeadlineRichText,
+    onChangeBodyFontSize,
+    onClickBodyAlign,
+    onChangeBodyRichText,
+    onClickRegenerateImagePrompt,
+    onChangeAiImagePrompt,
+    onClickGenerateAiImage,
+    onClickGenerateCopy,
+    onClickRetry,
+    onClickRealignText,
+    onClickUndo,
+    onClickToggleOverlays,
+    onClickCopyCaption,
+    onChangeCaption,
+    setShowDebugPreview,
+    setActiveSlideImageBgRemoval,
+    deleteImageForActiveSlide,
   } = args;
 
   // Phase 5E: stop mirroring `actions` into the store on every render.
@@ -251,6 +292,26 @@ export function useEditorStoreActionsSync(args: Args) {
         void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
       }
     },
+
+    onChangeHeadlineFontSize: (e: any) => onChangeHeadlineFontSize(e),
+    onClickHeadlineAlign: (a: "left" | "center" | "right") => onClickHeadlineAlign(a),
+    onChangeHeadlineRichText: (next: any) => onChangeHeadlineRichText(next),
+    onChangeBodyFontSize: (e: any) => onChangeBodyFontSize(e),
+    onClickBodyAlign: (a: "left" | "center" | "right") => onClickBodyAlign(a),
+    onChangeBodyRichText: (next: any) => onChangeBodyRichText(next),
+    onClickRegenerateImagePrompt: () => onClickRegenerateImagePrompt(),
+    onChangeAiImagePrompt: (next: string) => onChangeAiImagePrompt(next),
+    onClickGenerateAiImage: () => onClickGenerateAiImage(),
+    onClickGenerateCopy: () => onClickGenerateCopy(),
+    onClickRetry: () => onClickRetry(),
+    onClickRealignText: () => onClickRealignText(),
+    onClickUndo: () => onClickUndo(),
+    onClickToggleOverlays: () => onClickToggleOverlays(),
+    onClickCopyCaption: () => onClickCopyCaption(),
+    onChangeCaption: (next: string) => onChangeCaption(next),
+    setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
+    setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
+    deleteImageForActiveSlide: (source: "menu" | "button") => deleteImageForActiveSlide(source),
   };
 
   const stableActions = useMemo(
@@ -289,6 +350,26 @@ export function useEditorStoreActionsSync(args: Args) {
       onChangeTemplateTypeMappingSlide2to5: (next: string | null) =>
         implRef.current?.onChangeTemplateTypeMappingSlide2to5?.(next),
       onChangeTemplateTypeMappingSlide6: (next: string | null) => implRef.current?.onChangeTemplateTypeMappingSlide6?.(next),
+
+      onChangeHeadlineFontSize: (e: any) => implRef.current?.onChangeHeadlineFontSize?.(e),
+      onClickHeadlineAlign: (a: "left" | "center" | "right") => implRef.current?.onClickHeadlineAlign?.(a),
+      onChangeHeadlineRichText: (next: any) => implRef.current?.onChangeHeadlineRichText?.(next),
+      onChangeBodyFontSize: (e: any) => implRef.current?.onChangeBodyFontSize?.(e),
+      onClickBodyAlign: (a: "left" | "center" | "right") => implRef.current?.onClickBodyAlign?.(a),
+      onChangeBodyRichText: (next: any) => implRef.current?.onChangeBodyRichText?.(next),
+      onClickRegenerateImagePrompt: () => implRef.current?.onClickRegenerateImagePrompt?.(),
+      onChangeAiImagePrompt: (next: string) => implRef.current?.onChangeAiImagePrompt?.(next),
+      onClickGenerateAiImage: () => implRef.current?.onClickGenerateAiImage?.(),
+      onClickGenerateCopy: () => implRef.current?.onClickGenerateCopy?.(),
+      onClickRetry: () => implRef.current?.onClickRetry?.(),
+      onClickRealignText: () => implRef.current?.onClickRealignText?.(),
+      onClickUndo: () => implRef.current?.onClickUndo?.(),
+      onClickToggleOverlays: () => implRef.current?.onClickToggleOverlays?.(),
+      onClickCopyCaption: () => implRef.current?.onClickCopyCaption?.(),
+      onChangeCaption: (next: string) => implRef.current?.onChangeCaption?.(next),
+      setShowDebugPreview: (next: boolean) => implRef.current?.setShowDebugPreview?.(next),
+      setActiveSlideImageBgRemoval: (nextEnabled: boolean) => implRef.current?.setActiveSlideImageBgRemoval?.(nextEnabled),
+      deleteImageForActiveSlide: (source: "menu" | "button") => implRef.current?.deleteImageForActiveSlide?.(source),
     }),
     []
   );

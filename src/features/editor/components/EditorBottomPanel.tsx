@@ -8,7 +8,7 @@ import { useEditorSelector } from "@/features/editor/store";
 export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
-  const actions = useEditorSelector((s: any) => (s as any).bottomPanelActions);
+  const actions = useEditorSelector((s: any) => (s as any).actions);
   if (!ui || !actions) return null;
 
   const {
