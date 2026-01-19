@@ -1788,6 +1788,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                   `text=${JSON.stringify(String(line.text || '').slice(0, 60))} ` +
                   `block=${String((line as any)?.block || '')} align=${String(line.textAlign)} ` +
                   `maxW=${Math.round(Number(line.maxWidth || 0))} baseSize=${Math.round(Number(line.baseSize || 0))} ` +
+                  `pos=(${Math.round(Number((line as any)?.position?.x ?? 0))},${Math.round(Number((line as any)?.position?.y ?? 0))}) ` +
                   `useTight=${willUseTight ? "1" : "0"} isSingleLine=${isSingleLine ? "1" : "0"} ` +
                   `forceLaneWidthBox=${forceLaneWidthBox ? "1" : "0"} choose=${wouldUseIText ? "IText" : "Textbox"}`
               );

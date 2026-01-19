@@ -905,62 +905,28 @@ export function wrapFlowLayout(
       }
     }
 
-    // BODY paragraphs: split on "\n\n" (blank line). Within a paragraph, "\n" acts as a hard line break.
-    const bodyStr = String(body || '');
-    const paragraphs: Array<{ start: number; text: string }> = [];
-    {
-      let start = 0;
-      let i = 0;
-      while (i < bodyStr.length) {
-        if (bodyStr[i] === '\n' && bodyStr[i + 1] === '\n') {
-          // consume all consecutive newlines as a paragraph break
-          const text = bodyStr.slice(start, i);
-          paragraphs.push({ start, text });
-          while (i < bodyStr.length && bodyStr[i] === '\n') i++;
-          start = i;
-          continue;
-        }
-        i++;
-      }
-      paragraphs.push({ start, text: bodyStr.slice(start) });
-    }
-
-    let paragraphIndex = 0;
-    for (const p of paragraphs) {
-      if (truncated) break;
-      const tokens = tokenizeRich(p.text, 120).map((t) => {
-        if (t.kind === 'word') return { ...t, start: t.start + p.start, end: t.end + p.start } as RichToken;
-        return { ...t, start: t.start + p.start, end: t.end + p.start } as RichToken;
-      });
-      let bIdx = 0;
-      const hasWords = tokens.some((t) => t.kind === 'word');
-      if (!hasWords) {
-        paragraphIndex++;
-        // Still respect blank paragraphs as a vertical gap
-        y += o.blockGapPx;
+    // BODY newlines:
+    // - Enter ("\n\n") and Shift+Enter ("\n") should behave IDENTICALLY as a single normal line break.
+    // - Double Enter (typically "\n\n\n\n") should create an intentional blank line (two line breaks).
+    // Therefore we reuse the same newline-run collapsing rules as headline tokenization, and we do NOT
+    // add `blockGapPx` paragraph gaps for body; spacing is driven purely by line-height advances.
+    const bodyTokens = tokenizeHeadlineRich(String(body || ''), 120);
+    let bIdx = 0;
+    while (!truncated && bIdx < bodyTokens.length) {
+      // Consume explicit breaks as vertical advances (normal line breaks).
+      if (bodyTokens[bIdx]?.kind === 'break') {
+        bIdx += 1;
+        y += lineHeightPx(bodyFont, o.bodyLineHeight);
         continue;
       }
-
-      while (!truncated && bIdx < tokens.length) {
-        // Skip any leading hard breaks
-        if (tokens[bIdx]?.kind === 'break') {
-          bIdx += 1;
-          y += lineHeightPx(bodyFont, o.bodyLineHeight);
-          continue;
-        }
-        const res = placeNextLine(bodyFont, o.bodyLineHeight, tokens, bIdx, 'BODY', paragraphIndex);
-        if (!res.placed) {
-          // If it didn't place due to constraints, try again on next loop; avoid infinite loops by advancing.
-          if (res.nextIdx === bIdx) break;
-        }
+      const res = placeNextLine(bodyFont, o.bodyLineHeight, bodyTokens, bIdx, 'BODY');
+      if (!res.placed) {
+        // If it didn't place and we made no progress, stop to avoid infinite loops.
+        if (res.nextIdx === bIdx) break;
+      }
       bIdx = res.nextIdx;
     }
-      if (!truncated && bIdx < tokens.length && tokens.slice(bIdx).some((t) => t.kind === 'word')) truncated = true;
-
-      // Paragraph gap (new block)
-      if (!truncated) y += o.blockGapPx;
-      paragraphIndex++;
-    }
+    if (!truncated && bIdx < bodyTokens.length && bodyTokens.slice(bIdx).some((t) => t.kind === 'word')) truncated = true;
 
     // If truncated and we have at least one line, ensure last line ends with ellipsis and fits
     if (truncated && lines.length > 0) {

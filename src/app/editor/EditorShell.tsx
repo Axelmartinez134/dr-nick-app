@@ -1807,14 +1807,15 @@ export default function EditorShell() {
     // Log tokenization so we can see exactly why the last line ends up starting with "\n\n...".
     try {
       const raw = String(text || "");
-      if (raw.includes("\n") && String(block).toUpperCase() === "HEADLINE") {
+      const blk = String(block).toUpperCase();
+      if (raw.includes("\n") && (blk === "HEADLINE" || blk === "BODY")) {
         const preview = tokens
           .slice(0, 50)
           .map((t: any) => (t.kind === "break" ? "\\n" : t.text))
           .join(" ");
         const breakCount = tokens.filter((t: any) => t.kind === "break").length;
         const wordCount = tokens.filter((t: any) => t.kind === "word").length;
-        addLog(`🧷 wrapNoMove HEADLINE: raw=${JSON.stringify(raw)} tokens words=${wordCount} breaks=${breakCount} preview="${preview}"`);
+        addLog(`🧷 wrapNoMove ${blk}: raw=${JSON.stringify(raw)} tokens words=${wordCount} breaks=${breakCount} preview="${preview}"`);
       }
     } catch {
       // ignore
@@ -1866,9 +1867,10 @@ export default function EditorShell() {
         nextLine.styles = buildTextStylesForLine(parts, ranges);
         nextLines[li] = nextLine;
         try {
-          if (String(block).toUpperCase() === "HEADLINE" && String(text || "").includes("\n")) {
+          const blk = String(block).toUpperCase();
+          if ((blk === "HEADLINE" || blk === "BODY") && String(text || "").includes("\n")) {
             addLog(
-              `🧷 wrapNoMove HEADLINE lastLine: li=${li} leadingBreaks=${leadingBreaks} ` +
+              `🧷 wrapNoMove ${blk} lastLine: li=${li} leadingBreaks=${leadingBreaks} ` +
                 `textHead=${JSON.stringify(String(txt || "").slice(0, 80))}`
             );
           }
@@ -3493,6 +3495,59 @@ export default function EditorShell() {
     const isFormattingOnly = nextText === prevText && !rangesEqual(prevRanges, nextRanges);
     const isPuncOnly = nextText !== prevText && isPunctuationOnlyChange(prevText, nextText);
     const locked = templateTypeId === "enhanced" ? !!cur.layoutLocked : false;
+    const debugNL = String(nextText || "").includes("\n");
+    const summarizeNL = (s: string) => {
+      const runs: number[] = [];
+      let cur = 0;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === "\n") cur++;
+        else if (cur) {
+          runs.push(cur);
+          cur = 0;
+        }
+      }
+      if (cur) runs.push(cur);
+      return runs.join(",");
+    };
+    const prevNLSig = summarizeNL(prevText);
+    const nextNLSig = summarizeNL(nextText);
+    const newlineStructureChanged = prevNLSig !== nextNLSig;
+
+    // Debug: BODY newline edits (Enter) can trigger the same fastPath behavior as headline.
+    try {
+      if (debugNL || newlineStructureChanged) {
+        addLog(
+          `🧷 RTE body ctx: templateType=${templateTypeId} slide=${slideIndexNow + 1} ` +
+            `locked=${locked ? "1" : "0"} enhancedLockOn=${enhancedLockOn ? "1" : "0"} ` +
+            `isFormattingOnly=${isFormattingOnly ? "1" : "0"} isPuncOnly=${isPuncOnly ? "1" : "0"} ` +
+            `prevNL="${prevNLSig}" nextNL="${nextNLSig}"`
+        );
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      if ((debugNL || newlineStructureChanged) && isPuncOnly) {
+        const a = String(prevText || "");
+        const b = String(nextText || "");
+        const aAlnum = a.replace(/[^0-9A-Za-z]/g, "");
+        const bAlnum = b.replace(/[^0-9A-Za-z]/g, "");
+        const aNon = a.replace(/[0-9A-Za-z]/g, "");
+        const bNon = b.replace(/[0-9A-Za-z]/g, "");
+        addLog(
+          `🧷 BODY isPuncOnly=true details: ` +
+            `aAlnumEq=${aAlnum === bAlnum ? "1" : "0"} aAlnumLen=${aAlnum.length} bAlnumLen=${bAlnum.length} ` +
+            `aNon=${JSON.stringify(aNon)} bNon=${JSON.stringify(bNon)}`
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    // If nothing changed (common on blur: parseDom returns same text/ranges), do nothing.
+    if (nextText === prevText && rangesEqual(prevRanges, nextRanges)) {
+      return;
+    }
 
     setSlides((prev: any) =>
       prev.map((s: any, i: number) => (i === slideIndexNow ? { ...s, draftBody: nextText, draftBodyRanges: nextRanges } : s))
@@ -3500,6 +3555,40 @@ export default function EditorShell() {
     slidesRef.current = slidesRef.current.map((s: any, i: number) =>
       i === slideIndexNow ? ({ ...s, draftBody: nextText, draftBodyRanges: nextRanges } as any) : s
     );
+
+    // IMPORTANT: BODY newline edits are structural. If we treat them as "punc-only" and run the fastPath,
+    // it can create empty BODY lines and/or embed "\n\n..." inside a single line (Textbox + pre-blur spacing glitch).
+    // Fix: for BODY in Enhanced /editor, bypass fastPath whenever newline structure changes and immediately run live layout.
+    if (
+      templateTypeId === "enhanced" &&
+      !locked &&
+      newlineStructureChanged &&
+      currentProjectId &&
+      !(slidesRef.current[slideIndexNow] as any)?.layoutLocked
+    ) {
+      // Cancel any pending debounce timer for this slide to avoid double reflows.
+      try {
+        const key = liveLayoutKey(currentProjectId, slideIndexNow);
+        const t = liveLayoutTimeoutsRef.current[key];
+        if (t) {
+          window.clearTimeout(t);
+          liveLayoutTimeoutsRef.current[key] = null;
+          addLog(`🧷 BODY newline bypass: cleared pending debounce timer (key=${key})`);
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        addLog(
+          `🧷 BODY newline structure changed: bypass fastPath + enqueue live layout now ` +
+            `(prevNL="${prevNLSig}" nextNL="${nextNLSig}" slide=${slideIndexNow + 1})`
+        );
+      } catch {
+        // ignore
+      }
+      enqueueLiveLayoutForProject(currentProjectId, [slideIndexNow]);
+      return;
+    }
 
     if (templateTypeId === "enhanced" && (locked || isFormattingOnly || isPuncOnly)) {
       const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
@@ -3510,6 +3599,14 @@ export default function EditorShell() {
       const baseInput =
         (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
       if (baseLayout) {
+        try {
+          if (debugNL || newlineStructureChanged) {
+            const lineCount = Array.isArray((baseLayout as any)?.textLines) ? (baseLayout as any).textLines.length : 0;
+            addLog(`🧷 RTE body fastPath enter: baseLayoutLines=${lineCount}`);
+          }
+        } catch {
+          // ignore
+        }
         const headlineRanges = Array.isArray(baseSlide.draftHeadlineRanges) ? baseSlide.draftHeadlineRanges : [];
         const bodyRanges = nextRanges;
         const updatedInput = withLayoutLockedInInput(
@@ -3540,6 +3637,20 @@ export default function EditorShell() {
           nextLayout = applied.layout;
         }
 
+        try {
+          if (debugNL || newlineStructureChanged) {
+            const lines = Array.isArray((nextLayout as any)?.textLines) ? (nextLayout as any).textLines : [];
+            const bodyPreview = lines
+              .map((l: any) => ({ t: String(l?.text || ""), b: String(l?.block || "") }))
+              .filter((x: any) => String(x.b).toUpperCase() === "BODY")
+              .slice(0, 8)
+              .map((x: any) => (x.t === "" ? "<empty>" : x.t.replace(/\n/g, "\\n").slice(0, 50)));
+            addLog(`🧷 RTE body fastPath result preview: ${JSON.stringify(bodyPreview)}`);
+          }
+        } catch {
+          // ignore
+        }
+
         const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
         setSlides((prev: any) =>
           prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, layoutData: nextLayoutData, inputData: updatedInput } as any)))
@@ -3557,6 +3668,11 @@ export default function EditorShell() {
           layoutSnapshot: nextLayout,
           inputSnapshot: updatedInput,
         });
+        try {
+          if (debugNL || newlineStructureChanged) addLog(`🧷 RTE body fastPath exit: persistedWithoutLiveLayout=1`);
+        } catch {
+          // ignore
+        }
         return;
       }
     }
