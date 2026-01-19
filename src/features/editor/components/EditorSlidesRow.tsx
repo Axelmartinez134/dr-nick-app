@@ -7,14 +7,15 @@ import { useFabricCanvasBinding } from "@/features/editor/hooks/useFabricCanvasB
 export function EditorSlidesRow() {
   const workspaceNav = useEditorSelector((s: any) => (s as any).workspaceNav);
   const workspaceRefs = useEditorSelector((s: any) => (s as any).workspaceRefs);
-  const workspace = useEditorSelector((s) => s.workspace);
+  const workspaceUi = useEditorSelector((s: any) => (s as any).workspaceUi);
+  const workspaceActions = useEditorSelector((s: any) => (s as any).workspaceActions);
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const switchingSlides = useEditorSelector((s) => s.switchingSlides);
   const activeSlideIndexStore = useEditorSelector((s) => s.activeSlideIndex);
   const copyGenerating = useEditorSelector((s: any) => {
     const nav = (s as any).workspaceNav;
     if (nav) return !!nav.copyGenerating;
-    return s.workspace ? !!s.workspace.copyGenerating : false;
+    return false;
   });
   const isMobile = useEditorSelector((s) => s.isMobile);
 
@@ -51,13 +52,12 @@ export function EditorSlidesRow() {
       (workspaceRefs ? (workspaceRefs as any).setActiveCanvasNonce : null) || (noop as any),
   });
 
-  if (!workspace) return null;
+  if (!workspaceUi || !workspaceActions) return null;
 
   const {
     CarouselPreviewVision,
     SlideCard,
     templateSnapshots,
-    computeTemplateIdForSlide,
     layoutData,
     EMPTY_LAYOUT,
     slides,
@@ -66,6 +66,10 @@ export function EditorSlidesRow() {
     imageMenuOpen,
     imageMenuPos,
     imageBusy,
+  } = workspaceUi;
+
+  const {
+    computeTemplateIdForSlide,
     hasImageForActiveSlide,
     deleteImageForActiveSlide,
     uploadImageForActiveSlide,
@@ -77,7 +81,7 @@ export function EditorSlidesRow() {
     onMobileViewportPointerUp,
     onMobileViewportPointerCancel,
     renderActiveSlideControlsRow,
-  } = workspace;
+  } = workspaceActions;
 
   const nav = workspaceNav || null;
   const effectiveSlideCount =

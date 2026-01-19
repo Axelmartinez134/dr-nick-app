@@ -36,6 +36,7 @@ import { useEditorPersistence } from "@/features/editor/hooks/useEditorPersisten
 import { useEditorJobs } from "@/features/editor/hooks/useEditorJobs";
 import { useEditorStoreActionsSync } from "@/features/editor/hooks/useEditorStoreActionsSync";
 import { useEditorStoreWorkspaceSync } from "@/features/editor/hooks/useEditorStoreWorkspaceSync";
+import { useEditorStoreWorkspaceRegistry } from "@/features/editor/hooks/useEditorStoreWorkspaceRegistry";
 import { useLiveLayoutQueue } from "@/features/editor/hooks/useLiveLayoutQueue";
 import { useCanvasTextStyling } from "@/features/editor/hooks/useCanvasTextStyling";
 import { useActiveImageSelection } from "@/features/editor/hooks/useActiveImageSelection";
@@ -109,7 +110,7 @@ export default function EditorShell() {
 
   const switchingSlides = useEditorSelector((s) => !!s.switchingSlides);
   const setSwitchingSlides = useCallback((next: boolean) => {
-    editorStore.setState({ switchingSlides: next } as any);
+    editorStore.setState({ switchingSlides: next, projectTitleDisabled: next } as any);
   }, [editorStore]);
 
   const topExporting = useEditorSelector((s) => !!s.topExporting);
@@ -126,17 +127,29 @@ export default function EditorShell() {
   const setProjectTitle = useCallback((next: string) => {
     editorStore.setState({ projectTitle: next } as any);
   }, [editorStore]);
-  const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">("regular");
+  const templateTypeId = useEditorSelector((s) => (s.templateTypeId === "enhanced" ? "enhanced" : "regular"));
+  const setTemplateTypeId = useCallback((next: "regular" | "enhanced") => {
+    editorStore.setState({ templateTypeId: next } as any);
+  }, [editorStore]);
   const templateTypeIdRef = useRef<"regular" | "enhanced">(templateTypeId);
   useEffect(() => {
     templateTypeIdRef.current = templateTypeId;
   }, [templateTypeId]);
   // UX: Template Type is chosen ONLY when creating a new project (never mutates an existing project).
   // Defaults to Enhanced on each /editor load.
-  const [newProjectTemplateTypeId, setNewProjectTemplateTypeId] = useState<"regular" | "enhanced">("enhanced");
-  const [projectSaveStatus, setProjectSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const newProjectTemplateTypeId = useEditorSelector((s) => (s.newProjectTemplateTypeId === "regular" ? "regular" : "enhanced"));
+  const setNewProjectTemplateTypeId = useCallback((next: "regular" | "enhanced") => {
+    editorStore.setState({ newProjectTemplateTypeId: next } as any);
+  }, [editorStore]);
+  const projectSaveStatus = useEditorSelector((s) => (s.projectSaveStatus as any) || "idle");
+  const setProjectSaveStatus = useCallback((next: "idle" | "saving" | "saved" | "error") => {
+    editorStore.setState({ projectSaveStatus: next } as any);
+  }, [editorStore]);
   const projectSaveTimeoutRef = useRef<number | null>(null);
-  const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const slideSaveStatus = useEditorSelector((s) => (s.slideSaveStatus as any) || "idle");
+  const setSlideSaveStatus = useCallback((next: "idle" | "saving" | "saved" | "error") => {
+    editorStore.setState({ slideSaveStatus: next } as any);
+  }, [editorStore]);
   const layoutDirtyRef = useRef(false);
   const LIVE_LAYOUT_DEBOUNCE_MS = 500;
 
@@ -437,7 +450,10 @@ export default function EditorShell() {
 
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
-  const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const promptSaveStatus = useEditorSelector((s) => (s.promptSaveStatus as any) || "idle");
+  const setPromptSaveStatus = useCallback((next: "idle" | "saving" | "saved" | "error") => {
+    editorStore.setState({ promptSaveStatus: next } as any);
+  }, [editorStore]);
   // Long-running generation jobs are extracted into dedicated hooks (Section 7).
   const [aiImagePromptSaveStatus, setAiImagePromptSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
@@ -449,6 +465,9 @@ export default function EditorShell() {
   const imageOpRunIdByKeyRef = useRef<Record<string, number>>({});
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const { viewportWidth, isMobile, VIEWPORT_PAD, totalW, translateX } = useSlidesViewport({ viewportRef, slideCount, activeSlideIndex });
+  useEffect(() => {
+    editorStore.setState({ isMobile: !!isMobile } as any);
+  }, [editorStore, isMobile]);
   // Resizable left sidebar (desktop-only)
   const SIDEBAR_MIN = 320;
   const SIDEBAR_MAX = 560;
@@ -541,6 +560,23 @@ export default function EditorShell() {
     addLog,
     loadTemplatesList,
   } = useCarouselEditorEngine({ enableLegacyAutoSave: false, enableLegacySavedCarouselsOnMount: false, enableTemplatesOnMount: false });
+
+  // Phase 5E: move core store fields to direct ownership (no giant mirroring effect needed).
+  useEffect(() => {
+    editorStore.setState(
+      {
+        loading: !!loading,
+        loadingTemplates: !!loadingTemplates,
+        templates: (Array.isArray(templates) ? templates : []).map((t: any) => ({
+          id: String(t?.id || ""),
+          name: String(t?.name || ""),
+        })),
+        fontOptions: FONT_OPTIONS,
+        headlineFontKey: fontKey(headlineFontFamily, headlineFontWeight),
+        bodyFontKey: fontKey(bodyFontFamily, bodyFontWeight),
+      } as any
+    );
+  }, [editorStore, loading, loadingTemplates, templates, FONT_OPTIONS, headlineFontFamily, headlineFontWeight, bodyFontFamily, bodyFontWeight]);
 
   useActiveImageSelection({
     canvasRef,
@@ -719,6 +755,9 @@ export default function EditorShell() {
   // Project-wide colors (shared across all slides; affects canvas + generation).
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
+  useEffect(() => {
+    editorStore.setState({ projectBackgroundColor, projectTextColor } as any);
+  }, [editorStore, projectBackgroundColor, projectTextColor]);
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [showLayoutOverlays, setShowLayoutOverlays] = useState(false);
@@ -1134,6 +1173,9 @@ export default function EditorShell() {
         await createNewProject("enhanced");
       },
     });
+  useEffect(() => {
+    editorStore.setState({ projects, projectsLoading } as any);
+  }, [editorStore, projects, projectsLoading]);
   // Make refresh available to project lifecycle without creating a circular hook dependency.
   refreshProjectsListRef.current = refreshProjectsList;
 
@@ -3089,6 +3131,74 @@ export default function EditorShell() {
     setProjectMappingSlide1,
     setProjectMappingSlide2to5,
     setProjectMappingSlide6,
+  });
+
+  // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).
+  useEditorStoreWorkspaceRegistry({
+    editorStore,
+    isMobile,
+    mobileDrawerOpen,
+    switchingSlides,
+    copyGenerating,
+    isEditableTarget,
+    mobileGestureRef,
+    switchToSlide,
+    activeSlideIndex,
+    currentProjectId,
+    activeSlideIndexRef,
+    slidesRef,
+    initSlide,
+    inputData,
+    layoutData,
+    setSlides,
+    setInputData,
+    schedulePersistLayoutAndInput,
+    liveLayoutKey,
+    liveLayoutTimeoutsRef,
+    liveLayoutQueueRef,
+    liveLayoutRunIdByKeyRef,
+    withLayoutLockedInInput,
+    withAutoRealignOnImageReleaseInInput,
+    saveSlidePatchForProject,
+    scheduleLiveLayout,
+    imageBusy,
+    imageFileInputRef,
+    openImageMenu,
+    imageLongPressRef,
+    activeImageSelected,
+    hasImageForActiveSlide,
+    deleteImageForActiveSlide,
+    uploadImageForActiveSlide,
+    handleUserImageChange,
+    canvasTextSelection,
+    applyCanvasInlineMark,
+    clearCanvasInlineMarks,
+    slideCount,
+    viewportWidth,
+    goPrev,
+    goNext,
+    viewportRef,
+    slideCanvasRefs,
+    slideRefs,
+    canvasRef,
+    lastActiveFabricCanvasRef,
+    setActiveCanvasNonce,
+    CarouselPreviewVision,
+    SlideCard,
+    templateSnapshots,
+    computeTemplateIdForSlide,
+    EMPTY_LAYOUT,
+    slides,
+    showLayoutOverlays,
+    addLog,
+    imageMenuOpen,
+    imageMenuPos,
+    VIEWPORT_PAD,
+    translateX,
+    totalW,
+    templateTypeId,
+    handleRegularCanvasTextChange,
+    handleEnhancedCanvasTextChange,
   });
 
   useEditorStoreWorkspaceSync({

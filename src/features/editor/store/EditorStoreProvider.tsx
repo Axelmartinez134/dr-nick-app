@@ -76,7 +76,11 @@ const defaultState: EditorState = {
   workspace: null,
   workspaceNav: null,
   workspaceRefs: null,
+  workspaceUi: null,
+  workspaceActions: null,
   bottomPanel: null,
+  bottomPanelUi: null,
+  bottomPanelActions: null,
   actions: noopActions,
 };
 

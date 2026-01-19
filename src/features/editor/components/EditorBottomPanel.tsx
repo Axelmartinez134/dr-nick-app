@@ -7,8 +7,9 @@ import { useEditorSelector } from "@/features/editor/store";
 
 export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
-  const panel = useEditorSelector((s) => s.bottomPanel);
-  if (!panel) return null;
+  const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
+  const actions = useEditorSelector((s: any) => (s as any).bottomPanelActions);
+  if (!ui || !actions) return null;
 
   const {
     activeSlideIndex,
@@ -24,7 +25,7 @@ export function EditorBottomPanel() {
     layoutHistoryLength,
     showLayoutOverlays,
     addLog,
-  } = panel;
+  } = ui;
 
   return (
     <section className="bg-white border-t border-slate-200">
@@ -49,7 +50,7 @@ export function EditorBottomPanel() {
                       className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                       value={Number(slides[activeSlideIndex]?.draftHeadlineFontSizePx ?? 76)}
                       disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
-                      onChange={panel.onChangeHeadlineFontSize}
+                      onChange={actions.onChangeHeadlineFontSize}
                       title="Font size (24–120px)"
                     />
                     <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -66,7 +67,7 @@ export function EditorBottomPanel() {
                             ].join(" ")}
                             disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                             title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
-                            onClick={() => panel.onClickHeadlineAlign(a)}
+                            onClick={() => actions.onClickHeadlineAlign(a)}
                           >
                             {label}
                           </button>
@@ -82,7 +83,7 @@ export function EditorBottomPanel() {
                     valueRanges={slides[activeSlideIndex]?.draftHeadlineRanges || []}
                     onDebugLog={addLog}
                     debugId={`headline proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
-                    onChange={panel.onChangeHeadlineRichText}
+                    onChange={actions.onChangeHeadlineRichText}
                     disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                     placeholder={enhancedLockOn ? "Headline locked" : "Enter headline..."}
                     minHeightPx={40}
@@ -142,7 +143,7 @@ export function EditorBottomPanel() {
                       className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                       value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 48)}
                       disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
-                      onChange={panel.onChangeBodyFontSize}
+                      onChange={actions.onChangeBodyFontSize}
                       title="Font size (24–120px)"
                     />
                     <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -159,7 +160,7 @@ export function EditorBottomPanel() {
                             ].join(" ")}
                             disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                             title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
-                            onClick={() => panel.onClickBodyAlign(a)}
+                            onClick={() => actions.onClickBodyAlign(a)}
                           >
                             {label}
                           </button>
@@ -176,7 +177,7 @@ export function EditorBottomPanel() {
                   valueRanges={slides[activeSlideIndex]?.draftBodyRanges || []}
                   onDebugLog={addLog}
                   debugId={`body proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
-                  onChange={panel.onChangeBodyRichText}
+                  onChange={actions.onChangeBodyRichText}
                   disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                   placeholder={enhancedLockOn ? "Body locked" : "Enter body..."}
                   minHeightPx={96}
@@ -225,33 +226,33 @@ export function EditorBottomPanel() {
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white text-sm flex items-center justify-center">🎨</span>
                     <label className="text-sm font-semibold text-slate-900">AI Image Prompt</label>
-                    {panel.aiImagePromptSaveStatus === "saving" && (
+                    {ui.aiImagePromptSaveStatus === "saving" && (
                       <span className="text-xs text-slate-500">Saving...</span>
                     )}
-                    {panel.aiImagePromptSaveStatus === "saved" && (
+                    {ui.aiImagePromptSaveStatus === "saved" && (
                       <span className="text-xs text-emerald-600">Saved ✓</span>
                     )}
                   </div>
                   <button
                     type="button"
                     className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
-                    onClick={panel.onClickRegenerateImagePrompt}
-                    disabled={panel.imagePromptGenerating || !currentProjectId || copyGenerating || switchingSlides}
+                    onClick={actions.onClickRegenerateImagePrompt}
+                    disabled={ui.imagePromptGenerating || !currentProjectId || copyGenerating || switchingSlides}
                     title="Regenerate AI image prompt for this slide"
                   >
-                    {panel.imagePromptGenerating ? "Generating..." : "Regenerate"}
+                    {ui.imagePromptGenerating ? "Generating..." : "Regenerate"}
                   </button>
                 </div>
                 <textarea
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 text-sm shadow-sm"
                   rows={4}
                   value={slides[activeSlideIndex]?.draftAiImagePrompt || ""}
-                  onChange={(e) => panel.onChangeAiImagePrompt(e.target.value)}
-                  disabled={loading || switchingSlides || copyGenerating || panel.imagePromptGenerating}
+                  onChange={(e) => actions.onChangeAiImagePrompt(e.target.value)}
+                  disabled={loading || switchingSlides || copyGenerating || ui.imagePromptGenerating}
                   placeholder="AI-generated image prompt will appear here after Generate Copy..."
                 />
-                {panel.imagePromptError && (
-                  <div className="mt-2 text-xs text-red-600">{panel.imagePromptError}</div>
+                {ui.imagePromptError && (
+                  <div className="mt-2 text-xs text-red-600">{ui.imagePromptError}</div>
                 )}
 
                 {/* Generate Image Button with Progress Bar */}
@@ -260,24 +261,24 @@ export function EditorBottomPanel() {
                     className="w-full h-12 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
                     disabled={
                       !currentProjectId ||
-                      panel.aiImageGeneratingThis ||
+                      ui.aiImageGeneratingThis ||
                       copyGenerating ||
                       switchingSlides ||
-                      panel.imagePromptGenerating ||
+                      ui.imagePromptGenerating ||
                       !(slides[activeSlideIndex]?.draftAiImagePrompt || "").trim()
                     }
-                    onClick={panel.onClickGenerateAiImage}
+                    onClick={actions.onClickGenerateAiImage}
                   >
-                    {panel.aiImageGeneratingThis ? (
+                    {ui.aiImageGeneratingThis ? (
                       <>
                         <div
                           className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
-                          style={{ width: `${panel.aiImageProgressThis || 0}%` }}
+                          style={{ width: `${ui.aiImageProgressThis || 0}%` }}
                         />
                         <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
-                          <span className="text-xs opacity-90">{panel.aiImageStatusThis || "Working..."}</span>
+                          <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
                           <span className="text-sm font-bold">
-                            {Math.round(panel.aiImageProgressThis || 0)}%
+                            {Math.round(ui.aiImageProgressThis || 0)}%
                           </span>
                         </span>
                       </>
@@ -285,8 +286,8 @@ export function EditorBottomPanel() {
                       "🎨 Generate Image"
                     )}
                   </button>
-                  {panel.aiImageErrorThis && (
-                    <div className="mt-2 text-xs text-red-600">{panel.aiImageErrorThis}</div>
+                  {ui.aiImageErrorThis && (
+                    <div className="mt-2 text-xs text-red-600">{ui.aiImageErrorThis}</div>
                   )}
                   <div className="mt-2 text-xs text-slate-500 text-center">
                     Uses AI to create an image matching this prompt. Takes 90 seconds to 2 minutes.
@@ -301,24 +302,24 @@ export function EditorBottomPanel() {
             <div className="flex items-center gap-2 mb-4">
               <span className="w-7 h-7 rounded-lg bg-slate-600 text-white text-sm flex items-center justify-center">⚙️</span>
               <span className="text-sm font-semibold text-slate-900">Controls</span>
-              {panel.copyProgressIcon}
+              {ui.copyProgressIcon}
             </div>
             <div className="space-y-3">
               <button
                 className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
                 disabled={!currentProjectId || copyGenerating || switchingSlides}
-                onClick={panel.onClickGenerateCopy}
+                onClick={actions.onClickGenerateCopy}
               >
                 {copyGenerating ? "Generating Copy..." : "Generate Copy"}
               </button>
 
-              {panel.activeImageSelected ? (
+              {ui.activeImageSelected ? (
                 <>
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
                     {(() => {
                       const pid = currentProjectId;
-                      const key = pid ? panel.aiKey(pid, activeSlideIndex) : "";
-                      const busy = key ? panel.bgRemovalBusyKeys.has(key) : false;
+                      const key = pid ? ui.aiKey(pid, activeSlideIndex) : "";
+                      const busy = key ? ui.bgRemovalBusyKeys.has(key) : false;
                       const enabled = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
                       const statusRaw = String((layoutData as any)?.layout?.image?.bgRemovalStatus || (enabled ? "idle" : "disabled"));
                       const statusLabel = busy ? (enabled ? "processing" : "saving") : statusRaw;
@@ -344,14 +345,14 @@ export function EditorBottomPanel() {
                         ].join(" ")}
                         onClick={() => {
                           const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
-                          panel.setActiveSlideImageBgRemoval(!cur);
+                          actions.setActiveSlideImageBgRemoval(!cur);
                         }}
                         disabled={
-                          panel.imageBusy ||
+                          ui.imageBusy ||
                           switchingSlides ||
                           copyGenerating ||
                           !currentProjectId ||
-                          (currentProjectId ? panel.bgRemovalBusyKeys.has(panel.aiKey(currentProjectId, activeSlideIndex)) : false)
+                          (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
                         }
                         title="Toggle background removal for this image (persists per slide)"
                       >
@@ -367,17 +368,17 @@ export function EditorBottomPanel() {
                       <button
                         type="button"
                         className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => panel.setActiveSlideImageBgRemoval(true)}
+                        onClick={() => actions.setActiveSlideImageBgRemoval(true)}
                         disabled={
-                          panel.imageBusy ||
+                          ui.imageBusy ||
                           switchingSlides ||
                           copyGenerating ||
                           !currentProjectId ||
-                          (currentProjectId ? panel.bgRemovalBusyKeys.has(panel.aiKey(currentProjectId, activeSlideIndex)) : false)
+                          (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
                         }
                         title="Try background removal again"
                       >
-                        {currentProjectId && panel.bgRemovalBusyKeys.has(panel.aiKey(currentProjectId, activeSlideIndex))
+                        {currentProjectId && ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex))
                           ? "Processing…"
                           : "Try again"}
                       </button>
@@ -385,32 +386,32 @@ export function EditorBottomPanel() {
                   </div>
                   <button
                     className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50"
-                    onClick={() => panel.deleteImageForActiveSlide("button")}
-                    disabled={panel.imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                    onClick={() => actions.deleteImageForActiveSlide("button")}
+                    disabled={ui.imageBusy || switchingSlides || copyGenerating || !currentProjectId}
                     title="Delete the selected image from this slide"
                   >
-                    {panel.imageBusy ? "Working…" : "Delete Image"}
+                    {ui.imageBusy ? "Working…" : "Delete Image"}
                   </button>
                 </>
               ) : null}
 
-              {panel.copyError ? <div className="text-xs text-red-600">❌ {panel.copyError}</div> : null}
+              {ui.copyError ? <div className="text-xs text-red-600">❌ {ui.copyError}</div> : null}
               {templateTypeId !== "regular" ? (
                 <>
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    onClick={panel.onClickRealignText}
-                    disabled={loading || panel.realigning || !layoutData || switchingSlides || copyGenerating}
+                    onClick={actions.onClickRealignText}
+                    disabled={loading || ui.realigning || !layoutData || switchingSlides || copyGenerating}
                   >
-                    {panel.realigning ? "Realigning..." : "Realign Text"}
+                    {ui.realigning ? "Realigning..." : "Realign Text"}
                   </button>
                 </>
               ) : null}
 
               <button
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                onClick={panel.onClickUndo}
-                disabled={layoutHistoryLength === 0 || panel.realigning || switchingSlides || copyGenerating}
+                onClick={actions.onClickUndo}
+                disabled={layoutHistoryLength === 0 || ui.realigning || switchingSlides || copyGenerating}
               >
                 Undo
               </button>
@@ -422,21 +423,21 @@ export function EditorBottomPanel() {
                     ? "bg-gradient-to-b from-slate-600 to-slate-700 text-white border-slate-500 hover:from-slate-500 hover:to-slate-600"
                     : "bg-gradient-to-b from-slate-100 to-slate-200 text-slate-600 border-slate-300 hover:from-slate-50 hover:to-slate-100",
                 ].join(" ")}
-                onClick={panel.onClickToggleOverlays}
+                onClick={actions.onClickToggleOverlays}
               >
                 {showLayoutOverlays ? "Hide Layout Overlays" : "Show Layout Overlays"}
               </button>
 
-              {panel.saveError && <div className="text-xs text-red-600">❌ {panel.saveError}</div>}
-              {panel.error && <div className="text-xs text-red-600">❌ {panel.error}</div>}
+              {ui.saveError && <div className="text-xs text-red-600">❌ {ui.saveError}</div>}
+              {ui.error && <div className="text-xs text-red-600">❌ {ui.error}</div>}
 
-              {panel.error && inputData && (
+              {ui.error && inputData && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                   <div className="text-sm font-semibold text-red-800">Generation Failed</div>
-                  <div className="text-xs text-red-700 mt-1">{panel.error}</div>
+                  <div className="text-xs text-red-700 mt-1">{ui.error}</div>
                   <button
                     className="mt-2 w-full h-9 rounded-lg bg-red-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                    onClick={panel.onClickRetry}
+                    onClick={actions.onClickRetry}
                     disabled={!inputData || loading || switchingSlides}
                   >
                     Try Again
@@ -455,15 +456,15 @@ export function EditorBottomPanel() {
               <span className="text-sm font-semibold text-slate-900">Caption</span>
             </div>
             <div className="flex items-center gap-2">
-              {panel.captionCopyStatus === "copied" ? (
+                {ui.captionCopyStatus === "copied" ? (
                 <span className="text-xs text-emerald-700 font-medium">Copied!</span>
-              ) : panel.captionCopyStatus === "error" ? (
+                ) : ui.captionCopyStatus === "error" ? (
                 <span className="text-xs text-red-600 font-medium">Copy failed</span>
               ) : null}
               <button
                 type="button"
                 className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                onClick={panel.onClickCopyCaption}
+                  onClick={actions.onClickCopyCaption}
                 disabled={copyGenerating}
                 title="Copy caption to clipboard"
               >
@@ -475,17 +476,17 @@ export function EditorBottomPanel() {
             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
             rows={3}
             placeholder="Write a caption..."
-            value={panel.captionDraft}
-            onChange={(e) => panel.onChangeCaption(e.target.value)}
+            value={ui.captionDraft}
+            onChange={(e) => actions.onChangeCaption(e.target.value)}
             disabled={copyGenerating}
           />
         </div>
 
         <DebugCard
-          debugScreenshot={panel.debugScreenshot || null}
-          showDebugPreview={panel.showDebugPreview}
-          setShowDebugPreview={panel.setShowDebugPreview}
-          debugLogs={Array.isArray(panel.debugLogs) ? panel.debugLogs : []}
+          debugScreenshot={ui.debugScreenshot || null}
+          showDebugPreview={ui.showDebugPreview}
+          setShowDebugPreview={actions.setShowDebugPreview}
+          debugLogs={Array.isArray(ui.debugLogs) ? ui.debugLogs : []}
         />
       </div>
     </section>

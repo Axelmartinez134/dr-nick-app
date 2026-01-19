@@ -113,6 +113,42 @@ export type EditorWorkspaceRefsState = {
   setActiveCanvasNonce: any;
 };
 
+// Phase 5E4: replace `workspace` blob mirroring with smaller slices.
+export type EditorWorkspaceUiState = {
+  CarouselPreviewVision: any;
+  SlideCard: any;
+  templateSnapshots: Record<string, any>;
+  layoutData: any;
+  EMPTY_LAYOUT: any;
+  slides: any[];
+  showLayoutOverlays: boolean;
+  addLog?: ((msg: string) => void) | undefined;
+
+  // Image menu / busy state
+  imageMenuOpen: boolean;
+  imageMenuPos: { x: number; y: number } | null;
+  imageBusy: boolean;
+};
+
+export type EditorWorkspaceActionsState = {
+  computeTemplateIdForSlide: (slideIndex: number) => string | null;
+
+  hasImageForActiveSlide: () => boolean;
+  deleteImageForActiveSlide: (source: "menu" | "button") => void;
+  uploadImageForActiveSlide: (file: File) => void;
+  handleUserImageChange: (payload: any) => void;
+
+  onUserTextChangeRegular: (change: any) => void;
+  onUserTextChangeEnhanced: (change: any) => void;
+
+  onMobileViewportPointerDown: (e: any) => void;
+  onMobileViewportPointerMove: (e: any) => void;
+  onMobileViewportPointerUp: (e: any) => void;
+  onMobileViewportPointerCancel: (e: any) => void;
+
+  renderActiveSlideControlsRow: () => any;
+};
+
 export type EditorBottomPanelState = {
   // Core state
   activeSlideIndex: number;
@@ -190,6 +226,93 @@ export type EditorBottomPanelState = {
   debugLogs: string[];
 };
 
+// Phase 5E3: replace `bottomPanel` blob mirroring with smaller slices.
+export type EditorBottomPanelUiState = {
+  // Core state
+  activeSlideIndex: number;
+  slideCount: number;
+  currentProjectId: string | null;
+  loading: boolean;
+  switchingSlides: boolean;
+  copyGenerating: boolean;
+  enhancedLockOn: boolean;
+
+  // Data needed for rendering
+  slides: any[];
+  layoutData: any;
+  inputData: any;
+  layoutHistoryLength: number;
+  showLayoutOverlays: boolean;
+
+  // Debug/log
+  addLog: (msg: string) => void;
+
+  // AI image prompt card (Enhanced)
+  aiImagePromptSaveStatus: "idle" | "saving" | "saved" | "error";
+  imagePromptGenerating: boolean;
+  imagePromptError: string | null;
+  aiImageGeneratingThis: boolean;
+  aiImageProgressThis: number;
+  aiImageStatusThis: string | null;
+  aiImageErrorThis: string | null;
+
+  // Controls card
+  copyProgressIcon?: any;
+  copyError: string | null;
+  saveError: string | null;
+  error: string | null;
+
+  // Image controls (Enhanced)
+  activeImageSelected: boolean;
+  imageBusy: boolean;
+  aiKey: (projectId: string, slideIndex: number) => string;
+  bgRemovalBusyKeys: Set<string>;
+
+  // Caption
+  captionDraft: string;
+  captionCopyStatus: "idle" | "copied" | "error";
+
+  // Debug card
+  debugScreenshot: string | null;
+  showDebugPreview: boolean;
+  debugLogs: string[];
+};
+
+export type EditorBottomPanelActionsState = {
+  // Headline UI (Enhanced)
+  onChangeHeadlineFontSize: (e: any) => void;
+  onClickHeadlineAlign: (align: "left" | "center" | "right") => void;
+  onChangeHeadlineRichText: (next: any) => void;
+
+  // Body UI
+  onChangeBodyFontSize: (e: any) => void;
+  onClickBodyAlign: (align: "left" | "center" | "right") => void;
+  onChangeBodyRichText: (next: any) => void;
+
+  // AI image prompt card (Enhanced)
+  onClickRegenerateImagePrompt: () => void;
+  onChangeAiImagePrompt: (next: string) => void;
+  onClickGenerateAiImage: () => void;
+
+  // Controls
+  onClickGenerateCopy: () => void;
+  onClickRetry: () => void;
+  onClickRealignText: () => void;
+  onClickUndo: () => void;
+  onClickToggleOverlays: () => void;
+
+  // Caption
+  onClickCopyCaption: () => void;
+  onChangeCaption: (next: string) => void;
+
+  // Debug card
+  setShowDebugPreview: (next: boolean) => void;
+
+  // Image controls (Enhanced)
+  setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
+  deleteImageForActiveSlide: (source: "menu" | "button") => void;
+};
+
 export type EditorState = {
   // Top bar
   titleText: string;
@@ -257,9 +380,15 @@ export type EditorState = {
   // Workspace slices (Phase 5D): step toward deleting the giant `workspace` mirror.
   workspaceNav: EditorWorkspaceNavState | null;
   workspaceRefs: EditorWorkspaceRefsState | null;
+  // Workspace slices (Phase 5E4): step toward deleting the `workspace` blob mirror.
+  workspaceUi: EditorWorkspaceUiState | null;
+  workspaceActions: EditorWorkspaceActionsState | null;
 
   // Bottom panel bindings (Phase 2D)
   bottomPanel: EditorBottomPanelState | null;
+  // Bottom panel slices (Phase 5E3): step toward deleting the `bottomPanel` blob mirror.
+  bottomPanelUi: EditorBottomPanelUiState | null;
+  bottomPanelActions: EditorBottomPanelActionsState | null;
 
   actions: EditorActions;
 };
