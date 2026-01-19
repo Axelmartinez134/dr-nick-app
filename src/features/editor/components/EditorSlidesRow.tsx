@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { useEditorSelector } from "@/features/editor/store";
+import { useFabricCanvasBinding } from "@/features/editor/hooks/useFabricCanvasBinding";
 
 export function EditorSlidesRow() {
   const workspace = useEditorSelector((s) => s.workspace);
@@ -23,6 +25,20 @@ export function EditorSlidesRow() {
     const weight = Number(w);
     return [family || "Inter, sans-serif", Number.isFinite(weight) ? weight : 400] as const;
   })();
+
+  // IMPORTANT: Hooks must be called unconditionally. `workspace` can be null briefly during boot.
+  // So we compute stable fallbacks and call the Fabric binding hook regardless.
+  const noop = useMemo(() => () => {}, []);
+  const fallbackCanvasRef = useMemo(() => ({ current: null as any }), []);
+  const fallbackSlideCanvasRefs = useMemo(() => ({ current: [] as Array<{ current: any }> }), []);
+  const fallbackLastActiveFabricCanvasRef = useMemo(() => ({ current: null as any }), []);
+
+  const { bindActiveSlideCanvasMobile, bindActiveSlideCanvasDesktop } = useFabricCanvasBinding({
+    canvasRef: workspace ? (workspace as any).canvasRef : (fallbackCanvasRef as any),
+    slideCanvasRefs: workspace ? (workspace as any).slideCanvasRefs : (fallbackSlideCanvasRefs as any),
+    lastActiveFabricCanvasRef: workspace ? (workspace as any).lastActiveFabricCanvasRef : (fallbackLastActiveFabricCanvasRef as any),
+    setActiveCanvasNonce: workspace ? (workspace as any).setActiveCanvasNonce : (noop as any),
+  });
 
   if (!workspace) return null;
 
@@ -164,8 +180,7 @@ export function EditorSlidesRow() {
                     ) : (
                       <CarouselPreviewVision
                         ref={(node: any) => {
-                          (canvasRef as any).current = node;
-                          slideCanvasRefs.current[i]!.current = node;
+                          bindActiveSlideCanvasMobile(i)(node);
                         }}
                         templateId={tid}
                         slideIndex={i}
@@ -314,19 +329,7 @@ export function EditorSlidesRow() {
 
                             const refProp =
                               i === activeSlideIndex
-                                ? (node: any) => {
-                                    (canvasRef as any).current = node;
-                                    slideCanvasRefs.current[i]!.current = node;
-                                    try {
-                                      const fabricCanvas = (node as any)?.canvas || null;
-                                      if (fabricCanvas && lastActiveFabricCanvasRef.current !== fabricCanvas) {
-                                        lastActiveFabricCanvasRef.current = fabricCanvas;
-                                        setActiveCanvasNonce((x: number) => x + 1);
-                                      }
-                                    } catch {
-                                      // ignore
-                                    }
-                                  }
+                                ? bindActiveSlideCanvasDesktop(i)
                                 : slideCanvasRefs.current[i];
 
                             return (

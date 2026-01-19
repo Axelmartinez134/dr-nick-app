@@ -16,4 +16,9 @@ export { useEditorJobs } from './useEditorJobs';
 export { useEditorStoreActionsSync } from './useEditorStoreActionsSync';
 export { useEditorStoreWorkspaceSync } from './useEditorStoreWorkspaceSync';
 export { useLiveLayoutQueue } from './useLiveLayoutQueue';
+export { useCanvasTextStyling } from './useCanvasTextStyling';
+export { useActiveImageSelection } from './useActiveImageSelection';
+export { useCanvasExport } from './useCanvasExport';
+export { useFabricCanvasBinding } from './useFabricCanvasBinding';
+export { useMultiCanvasRefs } from './useMultiCanvasRefs';
 
