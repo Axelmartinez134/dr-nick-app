@@ -76,6 +76,7 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - `src/features/editor/components/TemplateSettingsModal.tsx` (reads store)
   - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
 - **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspaceNav`, `state.workspaceRefs`, `state.workspaceUi`, `state.workspaceActions`)
+  - **Empty-state placeholder centering**: keep placeholders `w-full h-full` (don’t hard-code 540×720) so “No template selected” stays centered at all display sizes
 - **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanelUi` + `state.actions`)
 
 ### Still route-adjacent
@@ -169,6 +170,10 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 - Right-click a **text** layer and change **Color** (verify on-canvas updates)
 - Click **Save Template**, close modal, reopen the same template → shape persists with same styling
 - Open a project using that template → confirm the shape renders behind user content on the main canvas
+
+### Manual QA (Headline paragraph breaks + Realign)
+- In `/editor`, type a Headline with **Enter** (two headline lines, no blank gap) and confirm Realign keeps both lines
+- Type a Headline with **Enter twice** (blank line between) and confirm the blank line gap is preserved on canvas after Realign
 
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.

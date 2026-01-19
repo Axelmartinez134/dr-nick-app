@@ -168,6 +168,66 @@ function tokenizeRich(text: string, maxChars: number): RichToken[] {
   return out;
 }
 
+/**
+ * Headline-specific tokenization:
+ * - RichTextInput encodes paragraph breaks as "\n\n" (Enter) and soft breaks as "\n" (Shift+Enter).
+ * - For HEADLINE we want:
+ *   - "\n\n" to behave like a single new line (no extra blank line)
+ *   - "\n\n\n\n" (blank paragraph) to create a visible empty line gap (two line breaks)
+ *
+ * We therefore collapse runs of newlines by pairing them: each pair becomes one break token.
+ * Any leftover single "\n" remains a break token.
+ *
+ * IMPORTANT: We preserve source indices for styling by emitting break tokens with start/end spanning
+ * the original newline characters they consume.
+ */
+function tokenizeHeadlineRich(text: string, maxChars: number): RichToken[] {
+  const out: RichToken[] = [];
+  const s = String(text || '');
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i]!;
+    if (ch === '\n') {
+      let j = i;
+      while (j < s.length && s[j] === '\n') j++;
+      const runLen = j - i;
+      const breakCount = Math.floor(runLen / 2) + (runLen % 2); // 2->1, 4->2, 3->2
+      for (let b = 0; b < breakCount; b++) {
+        const start = i + (b * 2);
+        const end = Math.min(j, start + 2); // usually consumes 2; last may consume 1 if odd runLen
+        out.push({ kind: 'break', start, end });
+      }
+      i = j;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < s.length && !/\s/.test(s[j]!) && s[j] !== '\n') j += 1;
+    const rawWord = s.slice(i, j);
+    if (rawWord.length > maxChars) {
+      const parts = splitLongWord(rawWord, maxChars);
+      let offset = 0;
+      for (const p of parts) {
+        const coreLen = p.endsWith('-') ? p.length - 1 : p.length;
+        out.push({
+          kind: 'word',
+          text: p,
+          start: i + offset,
+          end: i + offset + Math.max(1, coreLen),
+        });
+        offset += Math.max(1, coreLen);
+      }
+    } else {
+      out.push({ kind: 'word', text: rawWord, start: i, end: j });
+    }
+    i = j;
+  }
+  return out;
+}
+
 function takeLineRich(tokens: RichToken[], idx: number, maxChars: number): { line: string; consumed: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> } {
   if (idx >= tokens.length) return { line: '', consumed: 0, parts: [] };
   if (tokens[idx]?.kind === 'break') {
@@ -539,7 +599,8 @@ export function wrapFlowLayout(
       const lineSources: Array<{ block: 'HEADLINE' | 'BODY'; paragraphIndex?: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> }> = [];
       let y = content.top;
 
-      const headlineTokens = tokenizeRich(headline || '', 60); // per-line maxChars computed later
+      // Headline: treat "\n\n" (Enter paragraph break) as ONE line break, while preserving blank lines.
+      const headlineTokens = tokenizeHeadlineRich(headline || '', 60); // per-line maxChars computed later
 
       let hIdx = 0;
       let inHeadline = headlineTokens.some((t) => t.kind === 'word');
@@ -674,7 +735,18 @@ export function wrapFlowLayout(
     // Headline block
     while (inHeadline && hIdx < headlineTokens.length) {
       const res = placeNextLine(headlineFont, o.headlineLineHeight, headlineTokens, hIdx, 'HEADLINE');
-      if (!res.placed) break;
+      // Important: allow explicit newlines in the headline.
+      // `placeNextLine` treats a '\n' token as a hard break (advance y, consume token) and returns placed=false.
+      // For headline paragraphs, we must CONTINUE consuming breaks and placing subsequent words.
+      if (!res.placed) {
+        // If we advanced the token index, we consumed a break (or otherwise made progress). Keep going.
+        if (res.nextIdx > hIdx) {
+          hIdx = res.nextIdx;
+          continue;
+        }
+        // No progress means we truly cannot place (out of space or constraints). Stop headline block.
+        break;
+      }
       hIdx = res.nextIdx;
     }
 
