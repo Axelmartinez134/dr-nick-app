@@ -54,7 +54,10 @@ type Rect = { left: number; top: number; right: number; bottom: number };
 type Span = { left: number; right: number };
 
 const DEFAULTS: Required<
-  Omit<WrapFlowOptions, 'contentRect' | 'headlineAvgCharWidthEm' | 'bodyAvgCharWidthEm' | 'imageAlphaMask'>
+  Omit<
+    WrapFlowOptions,
+    'contentRect' | 'headlineAvgCharWidthEm' | 'bodyAvgCharWidthEm' | 'imageAlphaMask' | 'debugLog' | 'debugTag'
+  >
 > = {
   canvasWidth: 1080,
   canvasHeight: 1440,
