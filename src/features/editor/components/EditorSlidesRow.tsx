@@ -204,11 +204,11 @@ export function EditorSlidesRow() {
                 return (
                   <div style={{ width: displayW, height: displayH, overflow: "hidden" }}>
                     {!tid ? (
-                      <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                      <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
                         No template selected
                       </div>
                     ) : !snap ? (
-                      <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                      <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
                         Loading template…
                       </div>
                     ) : (
@@ -349,14 +349,14 @@ export function EditorSlidesRow() {
 
                             if (!tid) {
                               return (
-                                <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
                                   No template selected
                                 </div>
                               );
                             }
                             if (!snap) {
                               return (
-                                <div className="w-[540px] h-[720px] flex items-center justify-center text-slate-400 text-sm">
+                                <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
                                   Loading template…
                                 </div>
                               );
