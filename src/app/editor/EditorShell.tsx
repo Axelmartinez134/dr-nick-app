@@ -1451,7 +1451,8 @@ export default function EditorShell() {
         };
 
     // Loosen conservatism to pack lines tighter, then validate using real pixel measurement and retry if needed.
-    const headlineAvgBase = estimateAvgCharWidthEmRelaxed(headlineFontFamily, headlineFontWeight);
+    // Further relax HEADLINE only (Enhanced /editor) so we pack more words per line before wrapping.
+    const headlineAvgBase = estimateAvgCharWidthEmRelaxed(headlineFontFamily, headlineFontWeight) * 0.88;
     const bodyAvgBase = estimateAvgCharWidthEmRelaxed(bodyFontFamily, bodyFontWeight);
 
     const canMeasure = typeof document !== "undefined";
@@ -1517,6 +1518,7 @@ export default function EditorShell() {
     const wrapOnce = (headlineAvg: number, bodyAvg: number) => {
       const headlineSizePx = Math.max(24, Math.min(120, Math.round(Number(params.headlineFontSizePx) || 76)));
       const bodySizePx = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
+      const debugWrap = typeof addLog === "function" && String(params.headline || "").includes("\n");
       return wrapFlowLayout(params.headline, params.body, imageBounds, {
         ...(inset ? { contentRect: inset } : { margin: 40 }),
         clearancePx: 1,
@@ -1535,6 +1537,12 @@ export default function EditorShell() {
         headlineAvgCharWidthEm: headlineAvg,
         bodyAvgCharWidthEm: bodyAvg,
         imageAlphaMask: (params.image as any)?.bgRemovalEnabled === false ? undefined : (params.image as any)?.mask || undefined,
+        ...(debugWrap
+          ? {
+              debugLog: (msg: string) => addLog(msg),
+              debugTag: `slide=${Number(params.slideIndex ?? 0) + 1}`,
+            }
+          : {}),
       });
     };
 
@@ -1794,6 +1802,23 @@ export default function EditorShell() {
     if (!idxs.length) return { layout, overflow: false };
 
     const tokens = tokenizeFixedWrap(String(text || ""));
+    // Debug: when the headline includes newlines during focused editing, we sometimes hit the "punc-only" fast-path.
+    // That fast-path wraps into existing lines and (for the last line) consumes breaks into the line text itself.
+    // Log tokenization so we can see exactly why the last line ends up starting with "\n\n...".
+    try {
+      const raw = String(text || "");
+      if (raw.includes("\n") && String(block).toUpperCase() === "HEADLINE") {
+        const preview = tokens
+          .slice(0, 50)
+          .map((t: any) => (t.kind === "break" ? "\\n" : t.text))
+          .join(" ");
+        const breakCount = tokens.filter((t: any) => t.kind === "break").length;
+        const wordCount = tokens.filter((t: any) => t.kind === "word").length;
+        addLog(`🧷 wrapNoMove HEADLINE: raw=${JSON.stringify(raw)} tokens words=${wordCount} breaks=${breakCount} preview="${preview}"`);
+      }
+    } catch {
+      // ignore
+    }
     let tIdx = 0;
     // Lock Layout mode: overflow is allowed; we do not truncate or drop tokens.
     let overflow = false;
@@ -1818,11 +1843,13 @@ export default function EditorShell() {
         let txt = "";
         const parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> = [];
         let outIdx = 0;
+        let leadingBreaks = 0;
         while (tIdx < tokens.length) {
           const t = tokens[tIdx]!;
           if (t.kind === "break") {
             txt += "\n";
             outIdx += 1;
+            if (!txt.replace(/\n/g, "").length) leadingBreaks++;
             tIdx += 1;
             continue;
           }
@@ -1838,6 +1865,16 @@ export default function EditorShell() {
         nextLine.__sourceParts = parts;
         nextLine.styles = buildTextStylesForLine(parts, ranges);
         nextLines[li] = nextLine;
+        try {
+          if (String(block).toUpperCase() === "HEADLINE" && String(text || "").includes("\n")) {
+            addLog(
+              `🧷 wrapNoMove HEADLINE lastLine: li=${li} leadingBreaks=${leadingBreaks} ` +
+                `textHead=${JSON.stringify(String(txt || "").slice(0, 80))}`
+            );
+          }
+        } catch {
+          // ignore
+        }
         break;
       }
 
@@ -3167,9 +3204,87 @@ export default function EditorShell() {
     const prevRanges = Array.isArray(cur.draftHeadlineRanges) ? cur.draftHeadlineRanges : [];
     const nextText = String(next.text || "");
     const nextRanges = Array.isArray(next.ranges) ? next.ranges : [];
+    const summarizeNL = (s: string) => {
+      const runs: number[] = [];
+      let cur = 0;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === "\n") cur++;
+        else if (cur) {
+          runs.push(cur);
+          cur = 0;
+        }
+      }
+      if (cur) runs.push(cur);
+      return runs.join(",");
+    };
+    const prevNLSig = summarizeNL(prevText);
+    const nextNLSig = summarizeNL(nextText);
+    const newlineStructureChanged = prevNLSig !== nextNLSig;
     const isFormattingOnly = nextText === prevText && !rangesEqual(prevRanges, nextRanges);
     const isPuncOnly = nextText !== prevText && isPunctuationOnlyChange(prevText, nextText);
     const locked = templateTypeId === "enhanced" ? !!cur.layoutLocked : false;
+    const debugNL = String(nextText || "").includes("\n");
+
+    // If nothing changed (common on blur: parseDom returns same text/ranges), do nothing.
+    if (nextText === prevText && rangesEqual(prevRanges, nextRanges)) {
+      return;
+    }
+    try {
+      if (debugNL && isPuncOnly) {
+        const a = String(prevText || "");
+        const b = String(nextText || "");
+        // Mirror isPunctuationOnlyChange logic so we can see exactly why it returned true.
+        const aAlnum = a.replace(/[^0-9A-Za-z]/g, "");
+        const bAlnum = b.replace(/[^0-9A-Za-z]/g, "");
+        const aNon = a.replace(/[0-9A-Za-z]/g, "");
+        const bNon = b.replace(/[0-9A-Za-z]/g, "");
+        addLog(
+          `🧷 isPuncOnly=true details: ` +
+            `aAlnumEq=${aAlnum === bAlnum ? "1" : "0"} aAlnumLen=${aAlnum.length} bAlnumLen=${bAlnum.length} ` +
+            `aNon=${JSON.stringify(aNon)} bNon=${JSON.stringify(bNon)}`
+        );
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      if (debugNL) {
+        addLog(
+          `🧷 RTE headline ctx: templateType=${templateTypeId} slide=${slideIndexNow + 1} ` +
+            `locked=${locked ? "1" : "0"} enhancedLockOn=${enhancedLockOn ? "1" : "0"} ` +
+            `isFormattingOnly=${isFormattingOnly ? "1" : "0"} isPuncOnly=${isPuncOnly ? "1" : "0"}`
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    // Debug: capture exact raw headline text and newline runs whenever it changes.
+    try {
+      const summarize = (s: string) => {
+        const runs: number[] = [];
+        let cur = 0;
+        for (let i = 0; i < s.length; i++) {
+          if (s[i] === "\n") cur++;
+          else if (cur) {
+            runs.push(cur);
+            cur = 0;
+          }
+        }
+        if (cur) runs.push(cur);
+        const maxRun = runs.length ? Math.max(...runs) : 0;
+        return { runs, maxRun, count: runs.reduce((a, b) => a + b, 0) };
+      };
+      if (prevText !== nextText) {
+        addLog(
+          `🧷 RTE headline change: prev=${JSON.stringify(prevText)} next=${JSON.stringify(nextText)} ` +
+            `prevNL=${JSON.stringify(summarize(prevText))} nextNL=${JSON.stringify(summarize(nextText))} ` +
+            `prevLen=${prevText.length} nextLen=${nextText.length} ranges=${Array.isArray(nextRanges) ? nextRanges.length : 0}`
+        );
+      }
+    } catch {
+      // ignore
+    }
 
     setSlides((prev: any) =>
       prev.map((s: any, i: number) => (i === slideIndexNow ? { ...s, draftHeadline: nextText, draftHeadlineRanges: nextRanges } : s))
@@ -3177,6 +3292,40 @@ export default function EditorShell() {
     slidesRef.current = slidesRef.current.map((s: any, i: number) =>
       i === slideIndexNow ? ({ ...s, draftHeadline: nextText, draftHeadlineRanges: nextRanges } as any) : s
     );
+
+    // IMPORTANT: newline edits are structural. If we treat them as "punc-only" and run the fastPath,
+    // we can end up embedding "\n\n..." at the start of the last headline line (Textbox + pre-blur jump).
+    // Fix: for HEADLINE only, bypass fastPath whenever newline structure changes and immediately run live layout.
+    if (
+      templateTypeId === "enhanced" &&
+      !locked &&
+      newlineStructureChanged &&
+      currentProjectId &&
+      !(slidesRef.current[slideIndexNow] as any)?.layoutLocked
+    ) {
+      // If a debounced live layout was already scheduled for this slide, cancel it to avoid double reflows.
+      try {
+        const key = liveLayoutKey(currentProjectId, slideIndexNow);
+        const t = liveLayoutTimeoutsRef.current[key];
+        if (t) {
+          window.clearTimeout(t);
+          liveLayoutTimeoutsRef.current[key] = null;
+          addLog(`🧷 HEADLINE newline bypass: cleared pending debounce timer (key=${key})`);
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        addLog(
+          `🧷 HEADLINE newline structure changed: bypass fastPath + enqueue live layout now ` +
+            `(prevNL="${prevNLSig}" nextNL="${nextNLSig}" slide=${slideIndexNow + 1})`
+        );
+      } catch {
+        // ignore
+      }
+      enqueueLiveLayoutForProject(currentProjectId, [slideIndexNow]);
+      return;
+    }
 
     if (templateTypeId === "enhanced" && (locked || isFormattingOnly || isPuncOnly)) {
       const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
@@ -3187,6 +3336,14 @@ export default function EditorShell() {
       const baseInput =
         (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
       if (baseLayout) {
+        try {
+          if (debugNL) {
+            const lineCount = Array.isArray((baseLayout as any)?.textLines) ? (baseLayout as any).textLines.length : 0;
+            addLog(`🧷 RTE headline fastPath enter: baseLayoutLines=${lineCount}`);
+          }
+        } catch {
+          // ignore
+        }
         const headlineRanges = nextRanges;
         const bodyRanges = Array.isArray(baseSlide.draftBodyRanges) ? baseSlide.draftBodyRanges : [];
         const updatedInput = withLayoutLockedInInput(
@@ -3234,8 +3391,18 @@ export default function EditorShell() {
           layoutSnapshot: nextLayout,
           inputSnapshot: updatedInput,
         });
+        try {
+          if (debugNL) addLog(`🧷 RTE headline fastPath exit: persistedWithoutLiveLayout=1`);
+        } catch {
+          // ignore
+        }
         return;
       }
+    }
+    try {
+      if (debugNL) addLog(`🧷 RTE headline scheduling live layout: slide=${slideIndexNow + 1}`);
+    } catch {
+      // ignore
     }
     scheduleLiveLayout(slideIndexNow);
   };

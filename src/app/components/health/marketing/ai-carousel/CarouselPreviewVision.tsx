@@ -1774,6 +1774,28 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // headline when using center/right.
           const forceLaneWidthBox = isHeadlineBlock && (line.textAlign === 'center' || line.textAlign === 'right');
 
+          // Debug: when headline contains newline edits, we sometimes see a pre-blur "temporary" render
+          // where one line becomes a Textbox unexpectedly (and moves again on blur).
+          // Emit a targeted log when we see suspicious line text (leading space/empty) OR when we fall back to Textbox
+          // while tight mode is enabled.
+          try {
+            const suspicious = String(line.text || '') === '' || /^\s+/.test(String(line.text || ''));
+            const willUseTight = !!tightUserTextWidth && effectiveHasHeadline;
+            const wouldUseIText = (willUseTight && isSingleLine && typeof fabric.IText === 'function' && !forceLaneWidthBox);
+            if (dbg && willUseTight && (suspicious || !wouldUseIText)) {
+              dbg(
+                `🧪 TightText choose line ${index + 1}: ` +
+                  `text=${JSON.stringify(String(line.text || '').slice(0, 60))} ` +
+                  `block=${String((line as any)?.block || '')} align=${String(line.textAlign)} ` +
+                  `maxW=${Math.round(Number(line.maxWidth || 0))} baseSize=${Math.round(Number(line.baseSize || 0))} ` +
+                  `useTight=${willUseTight ? "1" : "0"} isSingleLine=${isSingleLine ? "1" : "0"} ` +
+                  `forceLaneWidthBox=${forceLaneWidthBox ? "1" : "0"} choose=${wouldUseIText ? "IText" : "Textbox"}`
+              );
+            }
+          } catch {
+            // ignore
+          }
+
           const textObj = (useTight && isSingleLine && typeof fabric.IText === 'function' && !forceLaneWidthBox)
             ? new fabric.IText(line.text, {
                 left: line.position.x,

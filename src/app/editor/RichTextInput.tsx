@@ -218,6 +218,7 @@ export function RichTextInput(props: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const isFocusedRef = useRef(false);
   const lastCommittedRef = useRef<{ text: string; rangesKey: string } | null>(null);
+  const lastDebugRef = useRef<{ text: string; at: number } | null>(null);
 
   const rangesKey = useMemo(() => JSON.stringify(mergeRanges(valueRanges)), [valueRanges]);
   const html = useMemo(() => renderHtmlFromTextAndRanges(valueText, valueRanges), [valueText, valueRanges]);
@@ -270,6 +271,37 @@ export function RichTextInput(props: Props) {
         const el = rootRef.current;
         if (!el) return;
         const parsed = parseDomToTextAndRanges(el);
+        try {
+          if (onDebugLog && debugId) {
+            const t = String(parsed.text || "");
+            const hasNL = t.includes("\n");
+            // Avoid spamming: only log when newlines exist OR when the text changed since last debug log.
+            const now = Date.now();
+            const last = lastDebugRef.current;
+            const changed = !last || last.text !== t;
+            const elapsed = !last ? 999999 : (now - last.at);
+            if (hasNL || (changed && elapsed > 250)) {
+              const runs: number[] = [];
+              let cur = 0;
+              for (let i = 0; i < t.length; i++) {
+                if (t[i] === "\n") cur++;
+                else if (cur) {
+                  runs.push(cur);
+                  cur = 0;
+                }
+              }
+              if (cur) runs.push(cur);
+              const maxRun = runs.length ? Math.max(...runs) : 0;
+              onDebugLog(
+                `⌨️ RTE input: ${debugId} focused=${isFocusedRef.current ? "1" : "0"} textLen=${t.length} ` +
+                  `nlRuns=${JSON.stringify(runs)} maxRun=${maxRun} head="${t.slice(0, 40).replace(/\s+/g, " ").trim()}"`
+              );
+              lastDebugRef.current = { text: t, at: now };
+            }
+          }
+        } catch {
+          // ignore
+        }
         onChange(parsed);
         lastCommittedRef.current = { text: parsed.text, rangesKey: JSON.stringify(parsed.ranges) };
       }}

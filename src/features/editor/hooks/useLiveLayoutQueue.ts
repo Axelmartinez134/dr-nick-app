@@ -404,8 +404,25 @@ export function useLiveLayoutQueue(params: {
       const pid = currentProjectId;
       const key = liveLayoutKey(pid, slideIndex);
       const prev = liveLayoutTimeoutsRef.current[key];
+      const draftHeadlineNow = templateTypeId === "regular" ? "" : String((slidesRef.current?.[slideIndex] as any)?.draftHeadline || "");
+      const debugNL = draftHeadlineNow.includes("\n");
+      try {
+        if (debugNL) {
+          addLog(
+            `⏱️ scheduleLiveLayout slide ${slideIndex + 1}: key=${key} prevTimer=${prev ? "1" : "0"} ` +
+              `debounceMs=${LIVE_LAYOUT_DEBOUNCE_MS} locked=${(slidesRef.current?.[slideIndex] as any)?.layoutLocked ? "1" : "0"}`
+          );
+        }
+      } catch {
+        // ignore
+      }
       if (prev) window.clearTimeout(prev);
       liveLayoutTimeoutsRef.current[key] = window.setTimeout(() => {
+        try {
+          if (debugNL) addLog(`⏱️ scheduleLiveLayout fire slide ${slideIndex + 1}: key=${key}`);
+        } catch {
+          // ignore
+        }
         // Enhanced Lock Layout: never auto-reflow a slide that is currently locked
         // (unless there is no layout yet, in which case we allow the initial layout to be generated).
         try {
@@ -415,7 +432,14 @@ export function useLiveLayoutQueue(params: {
             const hasLayout = !!(
               (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) || (s as any)?.layoutData?.layout
             );
-            if (locked && hasLayout) return;
+            if (locked && hasLayout) {
+              try {
+                if (debugNL) addLog(`⏱️ scheduleLiveLayout skip slide ${slideIndex + 1}: locked=1 hasLayout=1`);
+              } catch {
+                // ignore
+              }
+              return;
+            }
           }
         } catch {
           // ignore
@@ -431,6 +455,7 @@ export function useLiveLayoutQueue(params: {
       layoutData,
       liveLayoutKey,
       liveLayoutTimeoutsRef,
+      addLog,
       slidesRef,
       templateTypeId,
     ]

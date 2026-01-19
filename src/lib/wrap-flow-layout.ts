@@ -36,6 +36,11 @@ export interface WrapFlowOptions {
   // as rendered with the provided ImageBounds (x/y/width/height).
   // `dataB64` should decode into a Uint8Array of length w*h where each byte is 0 (empty) or 1 (solid).
   imageAlphaMask?: { w: number; h: number; dataB64: string; alphaThreshold?: number };
+
+  // Debug (optional): when provided, wrap-flow emits detailed logs for investigation.
+  // Intended for /editor debugging: pass a logger that surfaces into the in-app Debug panel.
+  debugLog?: (msg: string) => void;
+  debugTag?: string; // e.g. "proj=... slide=..."
 }
 
 export interface ImageBounds {
@@ -108,6 +113,22 @@ function normalizeWhitespace(s: string) {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+function summarizeNewlines(s: string) {
+  const runs: number[] = [];
+  let cur = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\n') cur++;
+    else if (cur) {
+      runs.push(cur);
+      cur = 0;
+    }
+  }
+  if (cur) runs.push(cur);
+  const maxRun = runs.length ? Math.max(...runs) : 0;
+  const count = runs.reduce((a, b) => a + b, 0);
+  return { runs, maxRun, count };
+}
+
 type RichToken =
   | { kind: 'word'; text: string; start: number; end: number } // [start,end) in ORIGINAL string
   | { kind: 'break'; start: number; end: number }; // hard line break ("\n")
@@ -168,19 +189,11 @@ function tokenizeRich(text: string, maxChars: number): RichToken[] {
   return out;
 }
 
-/**
- * Headline-specific tokenization:
- * - RichTextInput encodes paragraph breaks as "\n\n" (Enter) and soft breaks as "\n" (Shift+Enter).
- * - For HEADLINE we want:
- *   - "\n\n" to behave like a single new line (no extra blank line)
- *   - "\n\n\n\n" (blank paragraph) to create a visible empty line gap (two line breaks)
- *
- * We therefore collapse runs of newlines by pairing them: each pair becomes one break token.
- * Any leftover single "\n" remains a break token.
- *
- * IMPORTANT: We preserve source indices for styling by emitting break tokens with start/end spanning
- * the original newline characters they consume.
- */
+// Headline-specific tokenization:
+// - RichTextInput often encodes a single Enter as "\n\n" (paragraph-ish).
+// - For headline UX, a single Enter should behave like ONE line break (no blank-line gap).
+// - Preserve multi-paragraph intent by mapping larger newline runs to multiple breaks.
+// - Treat "\n[spaces/tabs]\n" as part of the same newline run (common contenteditable artifact: "\n \n").
 function tokenizeHeadlineRich(text: string, maxChars: number): RichToken[] {
   const out: RichToken[] = [];
   const s = String(text || '');
@@ -188,16 +201,32 @@ function tokenizeHeadlineRich(text: string, maxChars: number): RichToken[] {
   while (i < s.length) {
     const ch = s[i]!;
     if (ch === '\n') {
-      let j = i;
-      while (j < s.length && s[j] === '\n') j++;
-      const runLen = j - i;
-      const breakCount = Math.floor(runLen / 2) + (runLen % 2); // 2->1, 4->2, 3->2
-      for (let b = 0; b < breakCount; b++) {
-        const start = i + (b * 2);
-        const end = Math.min(j, start + 2); // usually consumes 2; last may consume 1 if odd runLen
-        out.push({ kind: 'break', start, end });
+      const start = i;
+      let newlines = 0;
+      let end = i;
+      while (i < s.length) {
+        if (s[i] === '\n') {
+          newlines++;
+          end = i + 1;
+          i++;
+          continue;
+        }
+        // Treat whitespace between newline characters as part of the same "newline run"
+        // (common contenteditable artifact: "\n \n").
+        if (/[ \t]/.test(s[i]!) && i + 1 < s.length && s[i + 1] === '\n') {
+          end = i + 1;
+          i++;
+          continue;
+        }
+        break;
       }
-      i = j;
+
+      let breaksToEmit = 1;
+      if (newlines <= 1) breaksToEmit = 1;
+      else if (newlines <= 3) breaksToEmit = 1;
+      else breaksToEmit = Math.max(1, Math.round(newlines / 2));
+
+      for (let k = 0; k < breaksToEmit; k++) out.push({ kind: 'break', start, end });
       continue;
     }
     if (/\s/.test(ch)) {
@@ -388,6 +417,35 @@ export function wrapFlowLayout(
   const maskW = mask?.w || 0;
   const maskH = mask?.h || 0;
   const hasMask = !!(maskU8 && maskW > 0 && maskH > 0 && maskU8.length >= maskW * maskH);
+
+  const debugEnabled = typeof opts?.debugLog === 'function';
+  const dbg = (msg: string) => {
+    if (!debugEnabled) return;
+    try {
+      const tag = opts?.debugTag ? ` ${opts.debugTag}` : '';
+      opts!.debugLog!(`🧷 WF${tag} ${msg}`);
+    } catch {
+      // ignore
+    }
+  };
+
+  if (debugEnabled) {
+    const h = String(headline || '');
+    const b = String(body || '');
+    dbg(
+      `start headlineLen=${h.length} bodyLen=${b.length} ` +
+        `headlineNL=${JSON.stringify(summarizeNewlines(h))} bodyNL=${JSON.stringify(summarizeNewlines(b))} ` +
+        `image=(${Math.round(image.x)},${Math.round(image.y)}) ${Math.round(image.width)}x${Math.round(image.height)}`
+    );
+    dbg(`headlineRaw=${JSON.stringify(h)}`);
+    try {
+      // Helpful for debugging contenteditable "paragraph" encodings like "\n \n" (newline + whitespace + newline).
+      const gaps = Array.from(h.matchAll(/\n[ \t]+\n/g)).map((m) => m[0].length);
+      if (gaps.length) dbg(`headlineNLWhitespaceGaps count=${gaps.length} lens=${JSON.stringify(gaps)}`);
+    } catch {
+      // ignore
+    }
+  }
 
   const contentRect = o.contentRect || {
     x: o.margin,
@@ -599,8 +657,21 @@ export function wrapFlowLayout(
       const lineSources: Array<{ block: 'HEADLINE' | 'BODY'; paragraphIndex?: number; parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> }> = [];
       let y = content.top;
 
-      // Headline: treat "\n\n" (Enter paragraph break) as ONE line break, while preserving blank lines.
       const headlineTokens = tokenizeHeadlineRich(headline || '', 60); // per-line maxChars computed later
+      if (debugEnabled) {
+        const wordCount = headlineTokens.filter((t) => t.kind === 'word').length;
+        const breakCount = headlineTokens.filter((t) => t.kind === 'break').length;
+        const headPreview = headlineTokens
+          .slice(0, 50)
+          .map((t) => (t.kind === 'break' ? '\\n' : t.text))
+          .join(' ');
+        dbg(
+          `attempt hf=${headlineFont} bf=${bodyFont} ` +
+            `content=(${content.left},${content.top})-(${content.right},${content.bottom}) ` +
+            `blocked=(${blocked.left},${blocked.top})-(${blocked.right},${blocked.bottom}) ` +
+            `headlineTokens words=${wordCount} breaks=${breakCount} preview="${headPreview}"`
+        );
+      }
 
       let hIdx = 0;
       let inHeadline = headlineTokens.some((t) => t.kind === 'word');
@@ -618,6 +689,7 @@ export function wrapFlowLayout(
         const lhPx = lineHeightPx(fontSize, lh);
       // If out of vertical space, truncate
       if (y + lhPx > content.bottom) {
+        if (debugEnabled) dbg(`${block} stop: outOfVerticalSpace y=${Math.round(y)} lhPx=${Math.round(lhPx)} bottom=${content.bottom}`);
         truncated = true;
         return { nextIdx: idx, placed: false };
       }
@@ -625,6 +697,7 @@ export function wrapFlowLayout(
       // Typography polish: do not allow headline to enter the image vertical span.
       // If the next headline line would overlap the image span, signal and force smaller headline font.
       if (block === 'HEADLINE' && blockedSpansForYBand(y, y + lhPx).length > 0) {
+        if (debugEnabled) dbg(`HEADLINE stop: wouldIntersectImageBand y=${Math.round(y)} lhPx=${Math.round(lhPx)}`);
         headlineHitImage = true;
         return { nextIdx: idx, placed: false };
       }
@@ -633,6 +706,7 @@ export function wrapFlowLayout(
       if (!lane) {
         // Shouldn't happen, but be safe
         y = Math.max(y, blocked.bottom);
+        if (debugEnabled) dbg(`${block} lane=null → y jump to blocked.bottom=${blocked.bottom}`);
         return { nextIdx: idx, placed: false };
       }
 
@@ -656,6 +730,7 @@ export function wrapFlowLayout(
           ? maxCharsForWidth(fontSize, lane.width, headlineAvgCharWidthEm)
           : maxCharsForWidth(fontSize, lane.width, bodyAvgCharWidthEm);
       if (lane.width <= 0 || maxChars < 4) {
+        if (debugEnabled) dbg(`${block} lane too narrow width=${Math.round(lane.width)} maxChars=${maxChars} y=${Math.round(y)}`);
         if (blockedSpansForYBand(y, y + lhPx).length > 0) {
           y = Math.max(y, blocked.bottom);
           return { nextIdx: idx, placed: false };
@@ -667,13 +742,17 @@ export function wrapFlowLayout(
 
       // Hard line breaks (Shift+Enter) are represented as break tokens.
       if (tokens[idx]?.kind === 'break') {
-        y += lhPx;
+        // HEADLINE: a break should move to the next line without adding EXTRA vertical space.
+        // The normal line-to-line advance already happens after placing the previous line.
+        if (block !== 'HEADLINE') y += lhPx;
+        if (debugEnabled) dbg(`${block} consume break → y=${Math.round(y)} idx=${idx}->${idx + 1}`);
         return { nextIdx: idx + 1, placed: false };
       }
 
       const { line, consumed, parts } = takeLineRich(tokens, idx, maxChars);
       if (!line || consumed <= 0) {
         y += lhPx;
+        if (debugEnabled) dbg(`${block} noLine(consumed=${consumed}) → y=${Math.round(y)} idx=${idx}`);
         return { nextIdx: idx, placed: false };
       }
 
@@ -728,6 +807,13 @@ export function wrapFlowLayout(
 
       lines.push(textLine);
       lineSources.push({ block, paragraphIndex, parts });
+      if (debugEnabled) {
+        dbg(
+          `${block} placed: y=${Math.round(textLine.position.y)} x=${Math.round(textLine.position.x)} ` +
+            `w=${Math.round(textLine.maxWidth || 0)} font=${fontSize} lh=${lh} maxChars=${maxChars} ` +
+            `idx=${idx} consumed=${consumed} text="${String(textLine.text || '').slice(0, 60)}"`
+        );
+      }
       y += lhPx; // one object per y line
       return { nextIdx: idx + consumed, placed: true };
     };
@@ -735,28 +821,47 @@ export function wrapFlowLayout(
     // Headline block
     while (inHeadline && hIdx < headlineTokens.length) {
       const res = placeNextLine(headlineFont, o.headlineLineHeight, headlineTokens, hIdx, 'HEADLINE');
-      // Important: allow explicit newlines in the headline.
-      // `placeNextLine` treats a '\n' token as a hard break (advance y, consume token) and returns placed=false.
-      // For headline paragraphs, we must CONTINUE consuming breaks and placing subsequent words.
-      if (!res.placed) {
-        // If we advanced the token index, we consumed a break (or otherwise made progress). Keep going.
-        if (res.nextIdx > hIdx) {
-          hIdx = res.nextIdx;
-          continue;
-        }
-        // No progress means we truly cannot place (out of space or constraints). Stop headline block.
-        break;
+      if (res.placed) {
+        hIdx = res.nextIdx;
+        continue;
       }
-      hIdx = res.nextIdx;
+      // IMPORTANT: non-placed results can still make progress (e.g., consuming a break token).
+      // In that case we should continue; otherwise we'd incorrectly stop at the first newline.
+      if (res.nextIdx > hIdx) {
+        if (debugEnabled) {
+          const t = headlineTokens[hIdx];
+          dbg(
+            `HEADLINE loop advance: placed=false but nextIdx>${hIdx} (curIdx=${hIdx} nextIdx=${res.nextIdx} tokenKind=${t?.kind || 'none'})`
+          );
+        }
+        hIdx = res.nextIdx;
+        continue;
+      }
+      if (debugEnabled) {
+        const t = headlineTokens[hIdx];
+        dbg(
+          `HEADLINE loop stop: placed=false curIdx=${hIdx} nextIdx=${res.nextIdx} ` +
+            `tokenKind=${t?.kind || 'none'} y=${Math.round(y)}`
+        );
+      }
+      break;
     }
 
     // If headline couldn't fit above image at this font, try smaller headline (keep body fonts available)
     if (headlineHitImage) {
+      if (debugEnabled) dbg(`attempt hf=${headlineFont} bf=${bodyFont} rejected: headlineHitImage=true`);
       continue;
     }
 
     // If headline incomplete, truncate last available line
     if (headlineTokens.slice(hIdx).some((t) => t.kind === 'word')) {
+      if (debugEnabled) {
+        const remainingPreview = headlineTokens
+          .slice(hIdx, Math.min(headlineTokens.length, hIdx + 30))
+          .map((t) => (t.kind === 'break' ? '\\n' : t.text))
+          .join(' ');
+        dbg(`HEADLINE incomplete → truncated=true hIdx=${hIdx}/${headlineTokens.length} remainingPreview="${remainingPreview}"`);
+      }
       truncated = true;
     } else {
       // Block gap before body
@@ -863,6 +968,7 @@ export function wrapFlowLayout(
       const trimmed = base.length >= maxChars ? base.slice(0, Math.max(1, maxChars - 1)).trimEnd() : base;
       const withEllipsis = trimmed.endsWith('…') ? trimmed : `${trimmed}…`;
       last.text = withEllipsis.replace(/…{2,}$/g, '…');
+      if (debugEnabled) dbg(`ellipsis applied to last line → "${String(last.text || '')}"`);
     }
 
     // If not truncated, great — return immediately
