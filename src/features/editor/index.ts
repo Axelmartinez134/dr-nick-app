@@ -6,4 +6,5 @@ export * as editorHooks from './hooks';
 export * as editorServices from './services';
 export * as editorState from './state';
 export * as editorUtils from './utils';
+export * as editorStore from './store';
 

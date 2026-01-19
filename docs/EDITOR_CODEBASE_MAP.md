@@ -25,7 +25,21 @@ This is a practical map of the `/editor` code so changes can be made without sea
   - `hooks/` (stateful orchestration)
   - `services/` (client-safe API callers)
   - `state/` (types + pure state helpers)
+  - `store/` (selector-based editor store; Stage 2)
   - `utils/` (pure helpers)
+
+## Current UI composition (after Stage 2 wiring)
+At this point, **UI components read from the editor store**, and `EditorShell.tsx` still owns the behavior and mirrors state/handlers into the store.
+
+- **Top bar**: `src/features/editor/components/EditorTopBar.tsx` (reads `state.*` + `state.actions`)
+- **Left sidebar + saved projects**:
+  - `src/features/editor/components/EditorSidebar.tsx` (reads store)
+  - `src/features/editor/components/SavedProjectsCard.tsx` (reads store)
+- **Modals**:
+  - `src/features/editor/components/TemplateSettingsModal.tsx` (reads store)
+  - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
+- **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspace`)
+- **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanel`)
 
 ### Still route-adjacent
 - `src/app/editor/EditorShell.tsx`: composition + wiring (calls hooks, renders layout)
@@ -42,8 +56,10 @@ This is a practical map of the `/editor` code so changes can be made without sea
 ## Rich text editor (bottom panel)
 - **RichText component**: `src/app/editor/RichTextInput.tsx`
   - Emits `{ text, ranges }` (inline style ranges)
-- **On-canvas text styling toolbar logic**: implemented in `src/app/editor/EditorShell.tsx`
-  - Persists bold/italic/underline into `input_snapshot.*StyleRanges`
+- **Bottom panel UI container**: `src/features/editor/components/EditorBottomPanel.tsx`
+  - Render-only container for the Headline/Body RichText areas + other cards
+- **On-canvas text styling persistence**: implemented in `src/app/editor/EditorShell.tsx`
+  - Applies Fabric selection styles + persists bold/italic/underline into `input_snapshot.*StyleRanges`
 
 ## Editor feature modules (what was extracted)
 ### Projects
@@ -143,4 +159,29 @@ Key tables used by `/editor`:
 
 ## Refactor note
 This refactor followed the phased plan at `~/.cursor/plans/editorshell_phased_refactor_4b6598db.plan.md`.
+
+### Why `EditorShell.tsx` is still large (expected)
+Even after Stage 2, `EditorShell.tsx` still owns the **actual behavior** (effects, handlers, Fabric wiring, debounced saves, job orchestration). Stage 2’s goal so far is to remove **prop drilling** and make UI subscribe to state slices cleanly.
+
+## Store + selectors (Stage 2)
+Stage 2 introduces a lightweight store (no new dependencies) so UI can subscribe to just the slices it needs.
+
+- **Provider wrap (current)**: `src/app/editor/page.tsx` wraps `<EditorShell />` in `EditorStoreProvider`
+- **Store implementation**: `src/features/editor/store/`
+  - `EditorStoreProvider.tsx` (creates the store instance)
+  - `useEditorSelector.ts` (selector hook)
+  - `editorStore.ts` (subscribe/getState/setState)
+  - `types.ts` (store state + actions types)
+
+### Current ownership (after Phase 2D)
+- **Provider wrap**: `src/app/editor/page.tsx` wraps the editor in `EditorStoreProvider`.
+- **UI reads from store**:
+  - Top/left/modals: `EditorTopBar`, `EditorSidebar`, `SavedProjectsCard`, `TemplateSettingsModal`, `PromptsModal`
+  - Workspace: `EditorSlidesRow` (reads `state.workspace`)
+  - Bottom panel: `EditorBottomPanel` (reads `state.bottomPanel`)
+- **EditorShell still owns behavior**:
+  - It mirrors state into the store via `useLayoutEffect(...)` and provides callbacks via:
+    - `state.actions` (top/left/modals)
+    - `state.workspace` (slides strip + canvas wiring)
+    - `state.bottomPanel` (RichText + jobs + controls + caption)
 

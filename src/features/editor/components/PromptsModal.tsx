@@ -1,39 +1,25 @@
+"use client";
+
 import type { RefObject } from "react";
+import { useEditorSelector } from "@/features/editor/store";
 
 export type PromptsModalProps = {
-  open: boolean;
-  templateTypeId: "regular" | "enhanced";
-  section: "prompt" | "emphasis" | "image";
-
-  templateTypePrompt: string;
-  templateTypeEmphasisPrompt: string;
-  templateTypeImageGenPrompt: string;
-
-  onChangeTemplateTypePrompt: (next: string) => void;
-  onChangeTemplateTypeEmphasisPrompt: (next: string) => void;
-  onChangeTemplateTypeImageGenPrompt: (next: string) => void;
-
   promptTextareaRef: RefObject<HTMLTextAreaElement | null>;
   emphasisTextareaRef: RefObject<HTMLTextAreaElement | null>;
-
-  onClose: () => void;
 };
 
 export function PromptsModal(props: PromptsModalProps) {
-  const {
-    open,
-    templateTypeId,
-    section,
-    templateTypePrompt,
-    templateTypeEmphasisPrompt,
-    templateTypeImageGenPrompt,
-    onChangeTemplateTypePrompt,
-    onChangeTemplateTypeEmphasisPrompt,
-    onChangeTemplateTypeImageGenPrompt,
-    promptTextareaRef,
-    emphasisTextareaRef,
-    onClose,
-  } = props;
+  const { promptTextareaRef, emphasisTextareaRef } = props;
+
+  const open = useEditorSelector((s) => s.promptModalOpen);
+  const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  const section = useEditorSelector((s) => s.promptModalSection);
+
+  const templateTypePrompt = useEditorSelector((s) => s.templateTypePrompt);
+  const templateTypeEmphasisPrompt = useEditorSelector((s) => s.templateTypeEmphasisPrompt);
+  const templateTypeImageGenPrompt = useEditorSelector((s) => s.templateTypeImageGenPrompt);
+
+  const actions = useEditorSelector((s) => s.actions);
 
   if (!open) return null;
 
@@ -41,7 +27,7 @@ export function PromptsModal(props: PromptsModalProps) {
     <div
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-6"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) actions.onClosePromptsModal();
       }}
     >
       <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200">
@@ -52,7 +38,7 @@ export function PromptsModal(props: PromptsModalProps) {
           <button
             type="button"
             className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            onClick={onClose}
+            onClick={actions.onClosePromptsModal}
             aria-label="Close"
             title="Close"
           >
@@ -71,7 +57,7 @@ export function PromptsModal(props: PromptsModalProps) {
                 className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                 rows={10}
                 value={templateTypePrompt}
-                onChange={(e) => onChangeTemplateTypePrompt(e.target.value)}
+                onChange={(e) => actions.onChangeTemplateTypePrompt(e.target.value)}
                 placeholder="Enter the Poppy prompt for this template type..."
                 data-prompt-section={section === "prompt" ? "active" : "inactive"}
               />
@@ -87,7 +73,7 @@ export function PromptsModal(props: PromptsModalProps) {
                 className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                 rows={10}
                 value={templateTypeEmphasisPrompt}
-                onChange={(e) => onChangeTemplateTypeEmphasisPrompt(e.target.value)}
+                onChange={(e) => actions.onChangeTemplateTypeEmphasisPrompt(e.target.value)}
                 placeholder="Enter the text styling prompt for this template type..."
                 data-prompt-section={section === "emphasis" ? "active" : "inactive"}
               />
@@ -103,7 +89,7 @@ export function PromptsModal(props: PromptsModalProps) {
                   className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
                   rows={10}
                   value={templateTypeImageGenPrompt}
-                  onChange={(e) => onChangeTemplateTypeImageGenPrompt(e.target.value)}
+                  onChange={(e) => actions.onChangeTemplateTypeImageGenPrompt(e.target.value)}
                   placeholder="Enter the image generation prompt for this template type..."
                   data-prompt-section={section === "image" ? "active" : "inactive"}
                 />

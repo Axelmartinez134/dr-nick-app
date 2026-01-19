@@ -7,38 +7,21 @@ export type SavedProjectListItem = {
   updated_at: string;
 };
 
-export function SavedProjectsCard(props: {
-  projects: SavedProjectListItem[];
-  projectsLoading: boolean;
-  switchingSlides: boolean;
-  currentProjectId: string | null;
-  projectTitle: string;
-  dropdownOpen: boolean;
-  onToggleDropdown: () => void;
-  onLoadProject: (projectId: string) => void;
-  archiveBusy: boolean;
-  archiveModalOpen: boolean;
-  archiveTarget: { id: string; title: string } | null;
-  onRequestArchive: (target: { id: string; title: string }) => void;
-  onCancelArchive: () => void;
-  onConfirmArchive: (target: { id: string; title: string }) => void;
-}) {
-  const {
-    projects,
-    projectsLoading,
-    switchingSlides,
-    currentProjectId,
-    projectTitle,
-    dropdownOpen,
-    onToggleDropdown,
-    onLoadProject,
-    archiveBusy,
-    archiveModalOpen,
-    archiveTarget,
-    onRequestArchive,
-    onCancelArchive,
-    onConfirmArchive,
-  } = props;
+import { useEditorSelector } from "@/features/editor/store";
+
+export function SavedProjectsCard() {
+  const projects = useEditorSelector((s) => s.projects);
+  const projectsLoading = useEditorSelector((s) => s.projectsLoading);
+  const switchingSlides = useEditorSelector((s) => s.switchingSlides);
+  const currentProjectId = useEditorSelector((s) => s.currentProjectId);
+  const projectTitle = useEditorSelector((s) => s.projectTitle);
+  const dropdownOpen = useEditorSelector((s) => s.projectsDropdownOpen);
+
+  const archiveBusy = useEditorSelector((s) => s.archiveProjectBusy);
+  const archiveModalOpen = useEditorSelector((s) => s.archiveProjectModalOpen);
+  const archiveTarget = useEditorSelector((s) => s.archiveProjectTarget);
+
+  const actions = useEditorSelector((s) => s.actions);
 
   return (
     <>
@@ -52,7 +35,7 @@ export function SavedProjectsCard(props: {
         </div>
 
         <button
-          onClick={onToggleDropdown}
+          onClick={actions.onToggleProjectsDropdown}
           className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-medium shadow-sm flex items-center justify-between px-3 hover:bg-slate-50 transition-colors"
           disabled={projectsLoading || switchingSlides}
         >
@@ -72,7 +55,7 @@ export function SavedProjectsCard(props: {
                   <div key={p.id} className="flex items-stretch">
                     <button
                       className="flex-1 text-left px-3 py-2 hover:bg-slate-50 transition-colors"
-                      onClick={() => onLoadProject(p.id)}
+                      onClick={() => actions.onLoadProject(p.id)}
                     >
                       <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
                       <div className="text-xs text-slate-500 truncate">Type: {p.template_type_id}</div>
@@ -89,7 +72,7 @@ export function SavedProjectsCard(props: {
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        onRequestArchive({ id: p.id, title: p.title });
+                        actions.onRequestArchive({ id: p.id, title: p.title });
                       }}
                     >
                       🗑️
@@ -109,7 +92,7 @@ export function SavedProjectsCard(props: {
             className="absolute inset-0 bg-black/40"
             onClick={() => {
               if (archiveBusy) return;
-              onCancelArchive();
+              actions.onCancelArchive();
             }}
           />
           <div className="relative w-[92vw] max-w-md rounded-xl bg-white border border-slate-200 shadow-xl p-4">
@@ -125,7 +108,7 @@ export function SavedProjectsCard(props: {
                 type="button"
                 className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-40"
                 disabled={archiveBusy}
-                onClick={onCancelArchive}
+                onClick={actions.onCancelArchive}
               >
                 Cancel
               </button>
@@ -133,7 +116,7 @@ export function SavedProjectsCard(props: {
                 type="button"
                 className="h-9 px-3 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-40"
                 disabled={archiveBusy}
-                onClick={() => onConfirmArchive(archiveTarget)}
+                onClick={() => actions.onConfirmArchive(archiveTarget)}
               >
                 {archiveBusy ? 'Archiving…' : 'Archive'}
               </button>

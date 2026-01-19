@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../components/auth/AuthContext";
 import EditorShell from "./EditorShell";
+import { EditorStoreProvider } from "@/features/editor/store";
 
 function LoadingScreen({ message }: { message: string }) {
   return (
@@ -46,7 +47,11 @@ export default function EditorPage() {
   if (!isEditorUser) return <AccessDenied />;
 
   // Option A: Shell-first (pixel-perfect scaffolding first, then dock existing editor into it).
-  return <EditorShell />;
+  return (
+    <EditorStoreProvider>
+      <EditorShell />
+    </EditorStoreProvider>
+  );
 }
 
 

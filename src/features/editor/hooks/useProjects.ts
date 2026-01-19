@@ -45,17 +45,24 @@ export function useProjects(params: {
       const pid = String(args.projectId || '').trim();
       if (!pid) return;
 
-      await projectsApi.archiveProject(fetchJson, pid);
-      addLog(`🗄️ Archived project: ${args.titleForUi || pid}`);
-
       const wasActive = currentProjectIdRef.current === pid;
-      let nextProjectId: string | null = null;
+      addLog(`🗄️ Archiving project start: ${args.titleForUi || pid} (${pid})`);
 
-      setProjects((prev) => {
-        const remaining = prev.filter((p) => p.id !== pid);
-        nextProjectId = remaining[0]?.id || null;
-        return remaining;
-      });
+      // Do not rely on optimistic UI for this action; verify server state so archived projects
+      // never “appear removed” and then come back after refresh/reload.
+      await projectsApi.archiveProject(fetchJson, pid);
+
+      const refreshed = await projectsApi.listProjects(fetchJson);
+      const sorted = sortByUpdatedAtDesc(refreshed);
+      const stillPresent = sorted.some((p) => p.id === pid);
+      if (stillPresent) {
+        addLog(`❌ Archive verification failed (still present after refresh): ${pid}`);
+      } else {
+        addLog(`✅ Archived project verified (removed from list): ${pid}`);
+      }
+
+      setProjects(sorted);
+      const nextProjectId = sorted[0]?.id || null;
 
       // Close modal/dropdown in the caller.
       try {
@@ -71,8 +78,6 @@ export function useProjects(params: {
         } else {
           await onCreateNewEnhancedProject();
         }
-      } else {
-        void refreshProjectsList();
       }
     },
     [fetchJson, addLog, currentProjectIdRef, onLoadProject, onCreateNewEnhancedProject, refreshProjectsList]

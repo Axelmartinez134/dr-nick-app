@@ -1,62 +1,27 @@
-import type { ReactNode } from "react";
+/* eslint-disable react/no-unstable-nested-components */
+"use client";
 
-export type EditorSidebarProps = {
-  // Project card
-  templateTypeId: "regular" | "enhanced";
-  newProjectTemplateTypeId: "regular" | "enhanced";
-  switchingSlides: boolean;
-  onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => void;
-  onClickNewProject: () => void;
+import { SavedProjectsCard } from "@/features/editor/components/SavedProjectsCard";
+import { useEditorSelector } from "@/features/editor/store";
 
-  // Saved projects card (already extracted)
-  savedProjectsCard: ReactNode;
+export function EditorSidebar() {
+  const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  const newProjectTemplateTypeId = useEditorSelector((s) => s.newProjectTemplateTypeId);
+  const switchingSlides = useEditorSelector((s) => s.switchingSlides);
+  const loading = useEditorSelector((s) => s.loading);
 
-  // Template card
-  onOpenTemplateSettings: () => void;
-  onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => void;
-  templateTypePromptPreviewLine: string;
-  templateTypeEmphasisPromptPreviewLine: string;
-  templateTypeImageGenPromptPreviewLine: string;
+  const templateTypePromptPreviewLine = useEditorSelector((s) => s.templateTypePromptPreviewLine);
+  const templateTypeEmphasisPromptPreviewLine = useEditorSelector((s) => s.templateTypeEmphasisPromptPreviewLine);
+  const templateTypeImageGenPromptPreviewLine = useEditorSelector((s) => s.templateTypeImageGenPromptPreviewLine);
 
-  // Typography card
-  fontOptions: Array<{ label: string; family: string; weight: number }>;
-  headlineFontKey: string;
-  bodyFontKey: string;
-  onChangeHeadlineFontKey: (nextKey: string) => void;
-  onChangeBodyFontKey: (nextKey: string) => void;
+  const fontOptions = useEditorSelector((s) => s.fontOptions);
+  const headlineFontKey = useEditorSelector((s) => s.headlineFontKey);
+  const bodyFontKey = useEditorSelector((s) => s.bodyFontKey);
 
-  // Colors card
-  loading: boolean;
-  projectBackgroundColor: string;
-  projectTextColor: string;
-  onChangeBackgroundColor: (next: string) => void;
-  onChangeTextColor: (next: string) => void;
-};
+  const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
+  const projectTextColor = useEditorSelector((s) => s.projectTextColor);
 
-export function EditorSidebar(props: EditorSidebarProps) {
-  const {
-    templateTypeId,
-    newProjectTemplateTypeId,
-    switchingSlides,
-    onChangeNewProjectTemplateTypeId,
-    onClickNewProject,
-    savedProjectsCard,
-    onOpenTemplateSettings,
-    onOpenPromptModal,
-    templateTypePromptPreviewLine,
-    templateTypeEmphasisPromptPreviewLine,
-    templateTypeImageGenPromptPreviewLine,
-    fontOptions,
-    headlineFontKey,
-    bodyFontKey,
-    onChangeHeadlineFontKey,
-    onChangeBodyFontKey,
-    loading,
-    projectBackgroundColor,
-    projectTextColor,
-    onChangeBackgroundColor,
-    onChangeTextColor,
-  } = props;
+  const actions = useEditorSelector((s) => s.actions);
 
   return (
     <div className="p-4 space-y-4 overflow-auto">
@@ -75,7 +40,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
         <select
           className="mb-3 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
           value={newProjectTemplateTypeId}
-          onChange={(e) => onChangeNewProjectTemplateTypeId(e.target.value === "regular" ? "regular" : "enhanced")}
+          onChange={(e) => actions.onChangeNewProjectTemplateTypeId(e.target.value === "regular" ? "regular" : "enhanced")}
           disabled={switchingSlides}
           title="Choose the type for the next new project (does not change the current project)"
         >
@@ -84,7 +49,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
         </select>
         <button
           className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
-          onClick={onClickNewProject}
+          onClick={actions.onClickNewProject}
           disabled={switchingSlides}
         >
           New Project
@@ -92,7 +57,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
       </div>
 
       {/* Saved Projects Card */}
-      {savedProjectsCard}
+      <SavedProjectsCard />
 
       {/* Template Card */}
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
@@ -103,7 +68,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
           </div>
           <button
             className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
-            onClick={onOpenTemplateSettings}
+            onClick={actions.onOpenTemplateSettings}
             disabled={switchingSlides}
             title="Edit template type settings"
           >
@@ -114,7 +79,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
           <button
             type="button"
             className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-            onClick={() => onOpenPromptModal("prompt")}
+            onClick={() => actions.onOpenPromptModal("prompt")}
             title="Edit Poppy Prompt"
           >
             <div className="text-xs font-semibold text-slate-700">Poppy Prompt</div>
@@ -124,7 +89,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
           <button
             type="button"
             className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-            onClick={() => onOpenPromptModal("emphasis")}
+            onClick={() => actions.onOpenPromptModal("emphasis")}
             title="Edit Text Styling Prompt"
           >
             <div className="text-xs font-semibold text-slate-700">Text Styling Prompt</div>
@@ -137,7 +102,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
             <button
               type="button"
               className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-              onClick={() => onOpenPromptModal("image")}
+              onClick={() => actions.onOpenPromptModal("image")}
               title="Edit Image Generation Prompt"
             >
               <div className="text-xs font-semibold text-slate-700">Image Generation Prompt</div>
@@ -161,7 +126,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
             <select
               className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
               value={headlineFontKey}
-              onChange={(e) => onChangeHeadlineFontKey(e.target.value || "")}
+              onChange={(e) => actions.onChangeHeadlineFontKey(e.target.value || "")}
             >
               {fontOptions.map((o) => (
                 <option key={`${o.family}@@${o.weight}`} value={`${o.family}@@${o.weight}`}>
@@ -175,7 +140,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
             <select
               className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
               value={bodyFontKey}
-              onChange={(e) => onChangeBodyFontKey(e.target.value || "")}
+              onChange={(e) => actions.onChangeBodyFontKey(e.target.value || "")}
             >
               {fontOptions.map((o) => (
                 <option key={`${o.family}@@${o.weight}`} value={`${o.family}@@${o.weight}`}>
@@ -201,7 +166,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
                 type="color"
                 className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
                 value={projectBackgroundColor || "#ffffff"}
-                onChange={(e) => onChangeBackgroundColor(e.target.value)}
+                onChange={(e) => actions.onChangeBackgroundColor(e.target.value)}
                 disabled={loading || switchingSlides}
                 aria-label="Background color"
               />
@@ -215,7 +180,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
                 type="color"
                 className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
                 value={projectTextColor || "#000000"}
-                onChange={(e) => onChangeTextColor(e.target.value)}
+                onChange={(e) => actions.onChangeTextColor(e.target.value)}
                 disabled={loading || switchingSlides}
                 aria-label="Text color"
               />

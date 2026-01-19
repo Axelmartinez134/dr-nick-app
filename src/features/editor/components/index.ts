@@ -5,10 +5,8 @@ export { SavedProjectsCard } from './SavedProjectsCard';
 export type { SavedProjectListItem } from './SavedProjectsCard';
 
 export { EditorSidebar } from './EditorSidebar';
-export type { EditorSidebarProps } from './EditorSidebar';
 
 export { TemplateSettingsModal } from './TemplateSettingsModal';
-export type { TemplateSettingsModalProps, TemplateListItem } from './TemplateSettingsModal';
 
 export { PromptsModal } from './PromptsModal';
 export type { PromptsModalProps } from './PromptsModal';
@@ -23,11 +21,8 @@ export { MobileSaveSlidesPanel } from './MobileSaveSlidesPanel';
 export type { MobileSaveSlidesPanelProps } from './MobileSaveSlidesPanel';
 
 export { EditorSlidesRow } from './EditorSlidesRow';
-export type { EditorSlidesRowProps } from './EditorSlidesRow';
 
 export { EditorTopBar } from './EditorTopBar';
-export type { EditorTopBarProps } from './EditorTopBar';
 
 export { EditorBottomPanel } from './EditorBottomPanel';
-export type { EditorBottomPanelProps } from './EditorBottomPanel';
 

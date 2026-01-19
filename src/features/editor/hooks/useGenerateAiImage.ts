@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 function getAiImageStatusLabel(progressCode: string): string {
   const code = String(progressCode || '').toLowerCase();
@@ -68,6 +68,156 @@ export function useGenerateAiImage(params: {
   const aiImageRunIdByKeyRef = useRef<Record<string, number>>({});
   const aiImageProgressRefsByKeyRef = useRef<Record<string, number | null>>({});
   const aiImagePollRefsByKeyRef = useRef<Record<string, number | null>>({});
+
+  const stopTrackingKey = useCallback((key: string) => {
+    if (!key) return;
+    const poll = aiImagePollRefsByKeyRef.current[key];
+    if (poll) window.clearInterval(poll);
+    aiImagePollRefsByKeyRef.current[key] = null;
+    const prog = aiImageProgressRefsByKeyRef.current[key];
+    if (prog) window.clearInterval(prog);
+    aiImageProgressRefsByKeyRef.current[key] = null;
+  }, []);
+
+  const refreshSlideFromServer = useCallback(
+    async (projectId: string, slideIndex: number) => {
+      try {
+        const token = await getAuthToken();
+        if (!token) return;
+        const res = await fetch(`/api/editor/projects/load?id=${encodeURIComponent(projectId)}`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) return;
+        const row = Array.isArray(data?.slides) ? data.slides.find((s: any) => s?.slide_index === slideIndex) : null;
+        const layoutSnap = row?.layout_snapshot ?? null;
+        const url = String((layoutSnap as any)?.image?.url || '');
+        if (currentProjectIdRef.current === projectId) {
+          setSlides((prev: any[]) =>
+            prev.map((s: any, i: number) =>
+              i !== slideIndex
+                ? s
+                : { ...s, layoutData: layoutSnap ? ({ success: true, layout: layoutSnap, imageUrl: url || null } as any) : null }
+            )
+          );
+          slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+            i !== slideIndex
+              ? s
+              : ({ ...s, layoutData: layoutSnap ? ({ success: true, layout: layoutSnap, imageUrl: url || null } as any) : null } as any)
+          );
+          if (activeSlideIndexRef.current === slideIndex) {
+            setLayoutData(layoutSnap ? ({ success: true, layout: layoutSnap, imageUrl: url || null } as any) : null);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    },
+    [activeSlideIndexRef, currentProjectIdRef, getAuthToken, setLayoutData, setSlides, slidesRef]
+  );
+
+  const beginTrackingExistingJob = useCallback(
+    async (args: { projectId: string; slideIndex: number; startedAt?: string | null }) => {
+      const pid = String(args.projectId || '').trim();
+      if (!pid) return;
+      const slideIndex = Number(args.slideIndex);
+      if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex > 5) return;
+      const key = aiKey(pid, slideIndex);
+      if (aiImageGeneratingKeys.has(key)) return;
+
+      const runId = (aiImageRunIdByKeyRef.current[key] || 0) + 1;
+      aiImageRunIdByKeyRef.current[key] = runId;
+
+      setAiImageGeneratingKeys((prev) => new Set(prev).add(key));
+      setAiImageErrorByKey((prev) => ({ ...prev, [key]: null }));
+      setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Working...' }));
+
+      // Approximate progress based on job started_at to avoid jumping back to 0 on reload.
+      const startedMs = args.startedAt ? new Date(args.startedAt).getTime() : Date.now();
+      const startTime = Number.isFinite(startedMs) ? startedMs : Date.now();
+      const totalDuration = 90000;
+      const initialElapsed = Math.max(0, Date.now() - startTime);
+      const initialProgress = Math.min(95, (initialElapsed / totalDuration) * 100);
+      setAiImageProgressByKey((prev) => ({ ...prev, [key]: initialProgress }));
+
+      stopTrackingKey(key);
+
+      aiImageProgressRefsByKeyRef.current[key] = window.setInterval(() => {
+        if (aiImageRunIdByKeyRef.current[key] !== runId) return;
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(95, (elapsed / totalDuration) * 100);
+        setAiImageProgressByKey((prev) => ({ ...prev, [key]: progress }));
+      }, 200);
+
+      const pollOnce = async () => {
+        try {
+          const token = await getAuthToken();
+          if (!token) return;
+          const statusRes = await fetch(
+            `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=generate-ai-image&slideIndex=${slideIndex}`,
+            { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+          );
+          const statusData = await statusRes.json().catch(() => ({}));
+          const activeJob = statusData?.activeJob || null;
+          const recentJobs = Array.isArray(statusData?.recentJobs) ? statusData.recentJobs : [];
+          if (aiImageRunIdByKeyRef.current[key] !== runId) return;
+
+          if (activeJob && (activeJob.status === 'pending' || activeJob.status === 'running')) {
+            const err = String(activeJob.error || '');
+            if (err.startsWith('progress:')) {
+              const progressCode = err.slice('progress:'.length);
+              setAiImageStatusByKey((prev) => ({ ...prev, [key]: getAiImageStatusLabel(progressCode) }));
+            } else if (String(activeJob.status) === 'pending') {
+              setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Queued...' }));
+            } else {
+              setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Working...' }));
+            }
+            return;
+          }
+
+          // No active job; treat the most recent job as the terminal state.
+          const mostRecent = recentJobs[0] || null;
+          const status = String(mostRecent?.status || '');
+          if (status === 'completed') {
+            setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Done' }));
+            setAiImageProgressByKey((prev) => ({ ...prev, [key]: 100 }));
+            await refreshSlideFromServer(pid, slideIndex);
+          } else if (status === 'failed') {
+            const msg = String(mostRecent?.error || 'Image generation failed');
+            setAiImageStatusByKey((prev) => ({ ...prev, [key]: 'Error' }));
+            setAiImageErrorByKey((prev) => ({ ...prev, [key]: msg }));
+          }
+
+          stopTrackingKey(key);
+          window.setTimeout(() => {
+            if (aiImageRunIdByKeyRef.current[key] !== runId) return;
+            setAiImageGeneratingKeys((prev) => {
+              const next = new Set(prev);
+              next.delete(key);
+              return next;
+            });
+            setAiImageProgressByKey((prev) => ({ ...prev, [key]: 0 }));
+            setAiImageStatusByKey((prev) => ({ ...prev, [key]: '' }));
+          }, 800);
+        } catch {
+          // ignore
+        }
+      };
+
+      void pollOnce();
+      aiImagePollRefsByKeyRef.current[key] = window.setInterval(() => {
+        void pollOnce();
+      }, 500);
+    },
+    [
+      aiKey,
+      aiImageGeneratingKeys,
+      getAuthToken,
+      refreshSlideFromServer,
+      stopTrackingKey,
+    ]
+  );
 
   const aiKeyCurrent = currentProjectId ? aiKey(currentProjectId, activeSlideIndex) : '';
   const aiImageGeneratingThis = aiKeyCurrent ? aiImageGeneratingKeys.has(aiKeyCurrent) : false;
@@ -268,6 +418,65 @@ export function useGenerateAiImage(params: {
       templateTypeId,
     ]
   );
+
+  // Resume UI tracking after reload: if a job is already running for the active slide,
+  // re-show progress/status and refresh slide snapshot on completion.
+  useEffect(() => {
+    const pid = String(currentProjectId || '').trim();
+    const slideIndex = Number(activeSlideIndex);
+    if (!pid) return;
+    if (templateTypeId !== 'enhanced') return;
+    if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex > 5) return;
+
+    let cancelled = false;
+    // On a hard refresh, auth/session can be slightly delayed; retry briefly so the UI
+    // reliably re-attaches to an in-flight job.
+    const startedAtMs = Date.now();
+    const MAX_RETRY_MS = 15_000;
+    const INTERVAL_MS = 500;
+    let timer: number | null = null;
+
+    const attempt = async () => {
+      try {
+        if (cancelled) return;
+        const token = await getAuthToken();
+        if (!token) {
+          if (Date.now() - startedAtMs > MAX_RETRY_MS) return;
+          return;
+        }
+        const statusRes = await fetch(
+          `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=generate-ai-image&slideIndex=${slideIndex}`,
+          { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+        );
+        const statusData = await statusRes.json().catch(() => ({}));
+        if (cancelled) return;
+        const job = statusData?.activeJob || null;
+        if (job && (job.status === 'pending' || job.status === 'running')) {
+          void beginTrackingExistingJob({ projectId: pid, slideIndex, startedAt: job.started_at || null });
+          // Once we attach tracking, stop retries.
+          if (timer) window.clearInterval(timer);
+          timer = null;
+        } else {
+          // No active job; no need to keep retrying.
+          if (timer) window.clearInterval(timer);
+          timer = null;
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    void attempt();
+    timer = window.setInterval(() => {
+      void attempt();
+    }, INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+      timer = null;
+    };
+  }, [activeSlideIndex, beginTrackingExistingJob, currentProjectId, getAuthToken, templateTypeId]);
 
   return {
     runGenerateAiImage,

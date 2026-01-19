@@ -1,84 +1,35 @@
-import type { RefObject } from "react";
+"use client";
 
-export type EditorSlidesRowProps = {
-  // Core
-  slideCount: number;
-  activeSlideIndex: number;
-  switchingSlides: boolean;
-  copyGenerating: boolean;
-  isMobile: boolean;
+import { useEditorSelector } from "@/features/editor/store";
 
-  // Navigation
-  canGoPrev: boolean;
-  canGoNext: boolean;
-  goPrev: () => void;
-  goNext: () => void;
-  switchToSlide: (nextIndex: number) => Promise<void> | void;
+export function EditorSlidesRow() {
+  const workspace = useEditorSelector((s) => s.workspace);
+  const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  const switchingSlides = useEditorSelector((s) => s.switchingSlides);
+  const copyGenerating = useEditorSelector((s) => (s.workspace ? s.workspace.copyGenerating : false));
+  const isMobile = useEditorSelector((s) => s.isMobile);
 
-  // Refs
-  viewportRef: RefObject<HTMLDivElement | null>;
-  imageFileInputRef: RefObject<HTMLInputElement | null>;
-  slideCanvasRefs: any; // Ref<Array<RefObject<any>>>
-  slideRefs: Array<{ current: HTMLDivElement | null }>;
-  canvasRef: any;
-  lastActiveFabricCanvasRef: any;
-  setActiveCanvasNonce: (updater: (x: number) => number) => void;
+  const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
+  const projectTextColor = useEditorSelector((s) => s.projectTextColor);
+  const headlineFontKey = useEditorSelector((s) => s.headlineFontKey);
+  const bodyFontKey = useEditorSelector((s) => s.bodyFontKey);
+  const [headlineFontFamily, headlineFontWeight] = (() => {
+    const [family, w] = String(headlineFontKey || "").split("@@");
+    const weight = Number(w);
+    return [family || "Inter, sans-serif", Number.isFinite(weight) ? weight : 700] as const;
+  })();
+  const [bodyFontFamily, bodyFontWeight] = (() => {
+    const [family, w] = String(bodyFontKey || "").split("@@");
+    const weight = Number(w);
+    return [family || "Inter, sans-serif", Number.isFinite(weight) ? weight : 400] as const;
+  })();
 
-  // Layout/template/canvas
-  CarouselPreviewVision: any;
-  SlideCard: any;
-  templateTypeId: "regular" | "enhanced";
-  templateSnapshots: Record<string, any>;
-  computeTemplateIdForSlide: (slideIndex: number) => string | null;
-  layoutData: any;
-  EMPTY_LAYOUT: any;
-  slides: any[];
-  viewportWidth: number;
-  showLayoutOverlays: boolean;
-  projectBackgroundColor: string;
-  projectTextColor: string;
-  headlineFontFamily: string;
-  bodyFontFamily: string;
-  headlineFontWeight: number;
-  bodyFontWeight: number;
-  addLog?: ((msg: string) => void) | undefined;
+  if (!workspace) return null;
 
-  // Desktop strip positioning
-  VIEWPORT_PAD: number;
-  translateX: number;
-  totalW: number;
-
-  // Image ops
-  imageMenuOpen: boolean;
-  imageMenuPos: { x: number; y: number } | null;
-  imageBusy: boolean;
-  hasImageForActiveSlide: () => boolean;
-  deleteImageForActiveSlide: (source: "menu" | "button") => void;
-  uploadImageForActiveSlide: (file: File) => void;
-  handleUserImageChange: (payload: any) => void;
-
-  onUserTextChangeRegular: (change: any) => void;
-  onUserTextChangeEnhanced: (change: any) => void;
-
-  // Mobile swipe helpers (kept external so behavior stays identical)
-  onMobileViewportPointerDown: (e: any) => void;
-  onMobileViewportPointerMove: (e: any) => void;
-  onMobileViewportPointerUp: (e: any) => void;
-  onMobileViewportPointerCancel: (e: any) => void;
-
-  // Desktop active under-card controls row is passed through (kept in EditorShell for now)
-  renderActiveSlideControlsRow: () => any;
-};
-
-export function EditorSlidesRow(props: EditorSlidesRowProps) {
   const {
     slideCount,
     activeSlideIndex,
-    switchingSlides,
-    copyGenerating,
-    isMobile,
-    canGoPrev,
-    canGoNext,
+    viewportWidth,
     goPrev,
     goNext,
     switchToSlide,
@@ -91,20 +42,12 @@ export function EditorSlidesRow(props: EditorSlidesRowProps) {
     setActiveCanvasNonce,
     CarouselPreviewVision,
     SlideCard,
-    templateTypeId,
     templateSnapshots,
     computeTemplateIdForSlide,
     layoutData,
     EMPTY_LAYOUT,
     slides,
-    viewportWidth,
     showLayoutOverlays,
-    projectBackgroundColor,
-    projectTextColor,
-    headlineFontFamily,
-    bodyFontFamily,
-    headlineFontWeight,
-    bodyFontWeight,
     addLog,
     VIEWPORT_PAD,
     translateX,
@@ -123,7 +66,10 @@ export function EditorSlidesRow(props: EditorSlidesRowProps) {
     onMobileViewportPointerUp,
     onMobileViewportPointerCancel,
     renderActiveSlideControlsRow,
-  } = props;
+  } = workspace;
+
+  const canGoPrev = activeSlideIndex > 0;
+  const canGoNext = activeSlideIndex < slideCount - 1;
 
   return (
     <div className="flex flex-col items-center justify-center md:justify-start p-3 md:px-6 md:pb-6 md:pt-8 md:h-[696px]">
@@ -375,7 +321,7 @@ export function EditorSlidesRow(props: EditorSlidesRowProps) {
                                       const fabricCanvas = (node as any)?.canvas || null;
                                       if (fabricCanvas && lastActiveFabricCanvasRef.current !== fabricCanvas) {
                                         lastActiveFabricCanvasRef.current = fabricCanvas;
-                                        setActiveCanvasNonce((x) => x + 1);
+                                        setActiveCanvasNonce((x: number) => x + 1);
                                       }
                                     } catch {
                                       // ignore

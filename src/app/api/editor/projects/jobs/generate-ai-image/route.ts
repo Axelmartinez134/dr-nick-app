@@ -4,11 +4,41 @@ import { createClient } from '@supabase/supabase-js';
 import { getAuthedSupabase } from '../../../_utils';
 import { generateMedicalImage } from '@/lib/gpt-image-generator';
 import { computeAlphaMask128FromPngBytes } from '../../slides/image/_mask';
+import { computeDefaultUploadedImagePlacement } from '@/lib/templatePlacement';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180; // 3 minutes for image generation + RemoveBG
 
 const BUCKET = 'carousel-project-images' as const;
+
+function getPngDimensions(buf: Buffer | Uint8Array | null): { w: number; h: number } {
+  try {
+    if (!buf) return { w: 1, h: 1 };
+    const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    // PNG signature (8 bytes)
+    if (
+      u8.length < 24 ||
+      u8[0] !== 0x89 ||
+      u8[1] !== 0x50 ||
+      u8[2] !== 0x4e ||
+      u8[3] !== 0x47 ||
+      u8[4] !== 0x0d ||
+      u8[5] !== 0x0a ||
+      u8[6] !== 0x1a ||
+      u8[7] !== 0x0a
+    ) {
+      return { w: 1, h: 1 };
+    }
+    // IHDR starts at byte 8, width/height are big-endian at bytes 16..23.
+    const w = (u8[16]! << 24) | (u8[17]! << 16) | (u8[18]! << 8) | u8[19]!;
+    const h = (u8[20]! << 24) | (u8[21]! << 16) | (u8[22]! << 8) | u8[23]!;
+    const width = Math.max(1, Number(w) || 1);
+    const height = Math.max(1, Number(h) || 1);
+    return { w: width, h: height };
+  } catch {
+    return { w: 1, h: 1 };
+  }
+}
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -114,7 +144,9 @@ export async function POST(req: NextRequest) {
   // Ownership check
   const { data: project, error: projErr } = await supabase
     .from('carousel_projects')
-    .select('id, owner_user_id, template_type_id')
+    .select(
+      'id, owner_user_id, template_type_id, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot'
+    )
     .eq('id', projectId)
     .eq('owner_user_id', user.id)
     .maybeSingle();
@@ -230,6 +262,7 @@ export async function POST(req: NextRequest) {
     let processed: GenerateResponse['processed'] = undefined;
     let finalUrl = original.url;
     let finalPath = originalPath;
+    let finalBufferForDims: Buffer | null = originalBuffer;
 
     if (apiKey) {
       try {
@@ -270,6 +303,7 @@ export async function POST(req: NextRequest) {
             processed = { bucket: BUCKET, path: processedPath, url: withVersion(procUrl.publicUrl, v), contentType: 'image/png' };
             finalUrl = processed.url;
             finalPath = processedPath;
+            finalBufferForDims = processedBuffer;
             bgRemovalStatus = 'succeeded';
             console.log('[generate-ai-image] ✅ Processed image uploaded to storage');
           }
@@ -282,7 +316,76 @@ export async function POST(req: NextRequest) {
       console.warn('[generate-ai-image] ⚠️ No REMOVEBG_API_KEY, skipping background removal');
     }
 
-    // Mark job as complete
+    // Persist the image to this slide's layout_snapshot server-side so reloads can't "lose" it.
+    const templateIdForSlide =
+      slideIndex === 0
+        ? (project as any)?.slide1_template_id_snapshot
+        : slideIndex === 5
+          ? (project as any)?.slide6_template_id_snapshot
+          : (project as any)?.slide2_5_template_id_snapshot;
+
+    let templateSnapshot: any | null = null;
+    if (templateIdForSlide) {
+      const { data: tpl, error: tplErr } = await supabase
+        .from('carousel_templates')
+        .select('id, owner_user_id, definition')
+        .eq('id', templateIdForSlide)
+        .eq('owner_user_id', user.id)
+        .maybeSingle();
+      if (tplErr) {
+        console.warn('[generate-ai-image] ⚠️ Failed to load template snapshot (falling back to default placement):', tplErr);
+      } else {
+        templateSnapshot = (tpl as any)?.definition || null;
+      }
+    }
+
+    const dims = getPngDimensions(finalBufferForDims);
+    const placement = computeDefaultUploadedImagePlacement(templateSnapshot, dims.w, dims.h);
+
+    const { data: slideRow, error: slideErr } = await supabase
+      .from('carousel_project_slides')
+      .select('id, layout_snapshot')
+      .eq('project_id', project.id)
+      .eq('slide_index', slideIndex)
+      .maybeSingle();
+    if (slideErr || !slideRow?.id) {
+      throw new Error('Slide not found (cannot persist AI image)');
+    }
+
+    const baseLayout =
+      slideRow.layout_snapshot && typeof slideRow.layout_snapshot === 'object'
+        ? { ...(slideRow.layout_snapshot as any) }
+        : {};
+
+    const nextLayoutSnapshot = {
+      ...baseLayout,
+      image: {
+        x: placement.x,
+        y: placement.y,
+        width: placement.width,
+        height: placement.height,
+        url: finalUrl,
+        storage: { bucket: BUCKET, path: finalPath },
+        bgRemovalEnabled: true,
+        bgRemovalStatus,
+        ...(original ? { original: { url: original.url, storage: { bucket: original.bucket, path: original.path } } } : {}),
+        ...(processed
+          ? { processed: { url: processed.url, storage: { bucket: processed.bucket, path: processed.path } } }
+          : {}),
+        ...(outMask ? { mask: outMask } : {}),
+        isAiGenerated: true,
+      },
+    };
+
+    const { error: upSlideErr } = await supabase
+      .from('carousel_project_slides')
+      .update({ layout_snapshot: nextLayoutSnapshot })
+      .eq('id', slideRow.id);
+    if (upSlideErr) {
+      throw new Error(`Failed to persist AI image to slide: ${upSlideErr.message}`);
+    }
+
+    // Mark job as complete AFTER persistence succeeds.
     await completeJob(supabase, jobId, true);
 
     return NextResponse.json({

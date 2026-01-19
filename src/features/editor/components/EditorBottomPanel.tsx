@@ -1,88 +1,16 @@
-import type { ReactNode } from "react";
+/* eslint-disable react/no-unstable-nested-components */
+"use client";
+
 import { RichTextInput } from "@/app/editor/RichTextInput";
 import { DebugCard } from "./DebugCard";
+import { useEditorSelector } from "@/features/editor/store";
 
-export type EditorBottomPanelProps = {
-  // Core state
-  templateTypeId: "regular" | "enhanced";
-  activeSlideIndex: number;
-  slideCount: number;
-  currentProjectId: string | null;
-  loading: boolean;
-  switchingSlides: boolean;
-  copyGenerating: boolean;
-  enhancedLockOn: boolean;
+export function EditorBottomPanel() {
+  const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  const panel = useEditorSelector((s) => s.bottomPanel);
+  if (!panel) return null;
 
-  // Data
-  slides: any[];
-  layoutData: any;
-  inputData: any;
-  layoutHistoryLength: number;
-  showLayoutOverlays: boolean;
-
-  // Debug/log
-  addLog: (msg: string) => void;
-
-  // Headline UI (Enhanced)
-  onChangeHeadlineFontSize: (e: any) => void;
-  onClickHeadlineAlign: (align: "left" | "center" | "right") => void;
-  onChangeHeadlineRichText: (next: any) => void;
-
-  // Body UI
-  onChangeBodyFontSize: (e: any) => void;
-  onClickBodyAlign: (align: "left" | "center" | "right") => void;
-  onChangeBodyRichText: (next: any) => void;
-
-  // AI image prompt card (Enhanced)
-  aiImagePromptSaveStatus: "idle" | "saving" | "saved" | "error";
-  imagePromptGenerating: boolean;
-  imagePromptError: string | null;
-  onClickRegenerateImagePrompt: () => void;
-  onChangeAiImagePrompt: (next: string) => void;
-  onClickGenerateAiImage: () => void;
-  aiImageGeneratingThis: boolean;
-  aiImageProgressThis: number;
-  aiImageStatusThis: string | null;
-  aiImageErrorThis: string | null;
-
-  // Controls card
-  copyProgressIcon?: ReactNode;
-  onClickGenerateCopy: () => void;
-  copyError: string | null;
-  saveError: string | null;
-  error: string | null;
-  onClickRetry: () => void;
-
-  // Image controls (Enhanced)
-  activeImageSelected: boolean;
-  imageBusy: boolean;
-  aiKey: (projectId: string, slideIndex: number) => string;
-  bgRemovalBusyKeys: Set<string>;
-  setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
-  deleteImageForActiveSlide: (source: "menu" | "button") => void;
-
-  // Layout controls
-  realigning: boolean;
-  onClickRealignText: () => void;
-  onClickUndo: () => void;
-  onClickToggleOverlays: () => void;
-
-  // Caption
-  captionDraft: string;
-  captionCopyStatus: "idle" | "copied" | "error";
-  onClickCopyCaption: () => void;
-  onChangeCaption: (next: string) => void;
-
-  // Debug card
-  debugScreenshot: string | null;
-  showDebugPreview: boolean;
-  setShowDebugPreview: (next: boolean) => void;
-  debugLogs: string[];
-};
-
-export function EditorBottomPanel(props: EditorBottomPanelProps) {
   const {
-    templateTypeId,
     activeSlideIndex,
     slideCount,
     currentProjectId,
@@ -96,7 +24,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
     layoutHistoryLength,
     showLayoutOverlays,
     addLog,
-  } = props;
+  } = panel;
 
   return (
     <section className="bg-white border-t border-slate-200">
@@ -121,7 +49,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                       className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                       value={Number(slides[activeSlideIndex]?.draftHeadlineFontSizePx ?? 76)}
                       disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
-                      onChange={props.onChangeHeadlineFontSize}
+                      onChange={panel.onChangeHeadlineFontSize}
                       title="Font size (24–120px)"
                     />
                     <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -138,7 +66,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                             ].join(" ")}
                             disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                             title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
-                            onClick={() => props.onClickHeadlineAlign(a)}
+                            onClick={() => panel.onClickHeadlineAlign(a)}
                           >
                             {label}
                           </button>
@@ -154,7 +82,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                     valueRanges={slides[activeSlideIndex]?.draftHeadlineRanges || []}
                     onDebugLog={addLog}
                     debugId={`headline proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
-                    onChange={props.onChangeHeadlineRichText}
+                    onChange={panel.onChangeHeadlineRichText}
                     disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                     placeholder={enhancedLockOn ? "Headline locked" : "Enter headline..."}
                     minHeightPx={40}
@@ -214,7 +142,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                       className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
                       value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 48)}
                       disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
-                      onChange={props.onChangeBodyFontSize}
+                      onChange={panel.onChangeBodyFontSize}
                       title="Font size (24–120px)"
                     />
                     <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -231,7 +159,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                             ].join(" ")}
                             disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                             title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
-                            onClick={() => props.onClickBodyAlign(a)}
+                            onClick={() => panel.onClickBodyAlign(a)}
                           >
                             {label}
                           </button>
@@ -248,7 +176,7 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                   valueRanges={slides[activeSlideIndex]?.draftBodyRanges || []}
                   onDebugLog={addLog}
                   debugId={`body proj=${currentProjectId || "none"} slide=${activeSlideIndex + 1}`}
-                  onChange={props.onChangeBodyRichText}
+                  onChange={panel.onChangeBodyRichText}
                   disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                   placeholder={enhancedLockOn ? "Body locked" : "Enter body..."}
                   minHeightPx={96}
@@ -297,33 +225,33 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 text-white text-sm flex items-center justify-center">🎨</span>
                     <label className="text-sm font-semibold text-slate-900">AI Image Prompt</label>
-                    {props.aiImagePromptSaveStatus === "saving" && (
+                    {panel.aiImagePromptSaveStatus === "saving" && (
                       <span className="text-xs text-slate-500">Saving...</span>
                     )}
-                    {props.aiImagePromptSaveStatus === "saved" && (
+                    {panel.aiImagePromptSaveStatus === "saved" && (
                       <span className="text-xs text-emerald-600">Saved ✓</span>
                     )}
                   </div>
                   <button
                     type="button"
                     className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50 transition-colors"
-                    onClick={props.onClickRegenerateImagePrompt}
-                    disabled={props.imagePromptGenerating || !currentProjectId || copyGenerating || switchingSlides}
+                    onClick={panel.onClickRegenerateImagePrompt}
+                    disabled={panel.imagePromptGenerating || !currentProjectId || copyGenerating || switchingSlides}
                     title="Regenerate AI image prompt for this slide"
                   >
-                    {props.imagePromptGenerating ? "Generating..." : "Regenerate"}
+                    {panel.imagePromptGenerating ? "Generating..." : "Regenerate"}
                   </button>
                 </div>
                 <textarea
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 text-sm shadow-sm"
                   rows={4}
                   value={slides[activeSlideIndex]?.draftAiImagePrompt || ""}
-                  onChange={(e) => props.onChangeAiImagePrompt(e.target.value)}
-                  disabled={loading || switchingSlides || copyGenerating || props.imagePromptGenerating}
+                  onChange={(e) => panel.onChangeAiImagePrompt(e.target.value)}
+                  disabled={loading || switchingSlides || copyGenerating || panel.imagePromptGenerating}
                   placeholder="AI-generated image prompt will appear here after Generate Copy..."
                 />
-                {props.imagePromptError && (
-                  <div className="mt-2 text-xs text-red-600">{props.imagePromptError}</div>
+                {panel.imagePromptError && (
+                  <div className="mt-2 text-xs text-red-600">{panel.imagePromptError}</div>
                 )}
 
                 {/* Generate Image Button with Progress Bar */}
@@ -332,24 +260,24 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                     className="w-full h-12 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
                     disabled={
                       !currentProjectId ||
-                      props.aiImageGeneratingThis ||
+                      panel.aiImageGeneratingThis ||
                       copyGenerating ||
                       switchingSlides ||
-                      props.imagePromptGenerating ||
+                      panel.imagePromptGenerating ||
                       !(slides[activeSlideIndex]?.draftAiImagePrompt || "").trim()
                     }
-                    onClick={props.onClickGenerateAiImage}
+                    onClick={panel.onClickGenerateAiImage}
                   >
-                    {props.aiImageGeneratingThis ? (
+                    {panel.aiImageGeneratingThis ? (
                       <>
                         <div
                           className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
-                          style={{ width: `${props.aiImageProgressThis || 0}%` }}
+                          style={{ width: `${panel.aiImageProgressThis || 0}%` }}
                         />
                         <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
-                          <span className="text-xs opacity-90">{props.aiImageStatusThis || "Working..."}</span>
+                          <span className="text-xs opacity-90">{panel.aiImageStatusThis || "Working..."}</span>
                           <span className="text-sm font-bold">
-                            {Math.round(props.aiImageProgressThis || 0)}%
+                            {Math.round(panel.aiImageProgressThis || 0)}%
                           </span>
                         </span>
                       </>
@@ -357,8 +285,8 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                       "🎨 Generate Image"
                     )}
                   </button>
-                  {props.aiImageErrorThis && (
-                    <div className="mt-2 text-xs text-red-600">{props.aiImageErrorThis}</div>
+                  {panel.aiImageErrorThis && (
+                    <div className="mt-2 text-xs text-red-600">{panel.aiImageErrorThis}</div>
                   )}
                   <div className="mt-2 text-xs text-slate-500 text-center">
                     Uses AI to create an image matching this prompt. Takes 90 seconds to 2 minutes.
@@ -373,24 +301,24 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
             <div className="flex items-center gap-2 mb-4">
               <span className="w-7 h-7 rounded-lg bg-slate-600 text-white text-sm flex items-center justify-center">⚙️</span>
               <span className="text-sm font-semibold text-slate-900">Controls</span>
-              {props.copyProgressIcon}
+              {panel.copyProgressIcon}
             </div>
             <div className="space-y-3">
               <button
                 className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
                 disabled={!currentProjectId || copyGenerating || switchingSlides}
-                onClick={props.onClickGenerateCopy}
+                onClick={panel.onClickGenerateCopy}
               >
                 {copyGenerating ? "Generating Copy..." : "Generate Copy"}
               </button>
 
-              {props.activeImageSelected ? (
+              {panel.activeImageSelected ? (
                 <>
                   <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
                     {(() => {
                       const pid = currentProjectId;
-                      const key = pid ? props.aiKey(pid, activeSlideIndex) : "";
-                      const busy = key ? props.bgRemovalBusyKeys.has(key) : false;
+                      const key = pid ? panel.aiKey(pid, activeSlideIndex) : "";
+                      const busy = key ? panel.bgRemovalBusyKeys.has(key) : false;
                       const enabled = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
                       const statusRaw = String((layoutData as any)?.layout?.image?.bgRemovalStatus || (enabled ? "idle" : "disabled"));
                       const statusLabel = busy ? (enabled ? "processing" : "saving") : statusRaw;
@@ -416,14 +344,14 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                         ].join(" ")}
                         onClick={() => {
                           const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
-                          props.setActiveSlideImageBgRemoval(!cur);
+                          panel.setActiveSlideImageBgRemoval(!cur);
                         }}
                         disabled={
-                          props.imageBusy ||
+                          panel.imageBusy ||
                           switchingSlides ||
                           copyGenerating ||
                           !currentProjectId ||
-                          (currentProjectId ? props.bgRemovalBusyKeys.has(props.aiKey(currentProjectId, activeSlideIndex)) : false)
+                          (currentProjectId ? panel.bgRemovalBusyKeys.has(panel.aiKey(currentProjectId, activeSlideIndex)) : false)
                         }
                         title="Toggle background removal for this image (persists per slide)"
                       >
@@ -439,17 +367,17 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                       <button
                         type="button"
                         className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => props.setActiveSlideImageBgRemoval(true)}
+                        onClick={() => panel.setActiveSlideImageBgRemoval(true)}
                         disabled={
-                          props.imageBusy ||
+                          panel.imageBusy ||
                           switchingSlides ||
                           copyGenerating ||
                           !currentProjectId ||
-                          (currentProjectId ? props.bgRemovalBusyKeys.has(props.aiKey(currentProjectId, activeSlideIndex)) : false)
+                          (currentProjectId ? panel.bgRemovalBusyKeys.has(panel.aiKey(currentProjectId, activeSlideIndex)) : false)
                         }
                         title="Try background removal again"
                       >
-                        {currentProjectId && props.bgRemovalBusyKeys.has(props.aiKey(currentProjectId, activeSlideIndex))
+                        {currentProjectId && panel.bgRemovalBusyKeys.has(panel.aiKey(currentProjectId, activeSlideIndex))
                           ? "Processing…"
                           : "Try again"}
                       </button>
@@ -457,32 +385,32 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                   </div>
                   <button
                     className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50"
-                    onClick={() => props.deleteImageForActiveSlide("button")}
-                    disabled={props.imageBusy || switchingSlides || copyGenerating || !currentProjectId}
+                    onClick={() => panel.deleteImageForActiveSlide("button")}
+                    disabled={panel.imageBusy || switchingSlides || copyGenerating || !currentProjectId}
                     title="Delete the selected image from this slide"
                   >
-                    {props.imageBusy ? "Working…" : "Delete Image"}
+                    {panel.imageBusy ? "Working…" : "Delete Image"}
                   </button>
                 </>
               ) : null}
 
-              {props.copyError ? <div className="text-xs text-red-600">❌ {props.copyError}</div> : null}
+              {panel.copyError ? <div className="text-xs text-red-600">❌ {panel.copyError}</div> : null}
               {templateTypeId !== "regular" ? (
                 <>
                   <button
                     className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    onClick={props.onClickRealignText}
-                    disabled={loading || props.realigning || !layoutData || switchingSlides || copyGenerating}
+                    onClick={panel.onClickRealignText}
+                    disabled={loading || panel.realigning || !layoutData || switchingSlides || copyGenerating}
                   >
-                    {props.realigning ? "Realigning..." : "Realign Text"}
+                    {panel.realigning ? "Realigning..." : "Realign Text"}
                   </button>
                 </>
               ) : null}
 
               <button
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                onClick={props.onClickUndo}
-                disabled={layoutHistoryLength === 0 || props.realigning || switchingSlides || copyGenerating}
+                onClick={panel.onClickUndo}
+                disabled={layoutHistoryLength === 0 || panel.realigning || switchingSlides || copyGenerating}
               >
                 Undo
               </button>
@@ -494,21 +422,21 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
                     ? "bg-gradient-to-b from-slate-600 to-slate-700 text-white border-slate-500 hover:from-slate-500 hover:to-slate-600"
                     : "bg-gradient-to-b from-slate-100 to-slate-200 text-slate-600 border-slate-300 hover:from-slate-50 hover:to-slate-100",
                 ].join(" ")}
-                onClick={props.onClickToggleOverlays}
+                onClick={panel.onClickToggleOverlays}
               >
                 {showLayoutOverlays ? "Hide Layout Overlays" : "Show Layout Overlays"}
               </button>
 
-              {props.saveError && <div className="text-xs text-red-600">❌ {props.saveError}</div>}
-              {props.error && <div className="text-xs text-red-600">❌ {props.error}</div>}
+              {panel.saveError && <div className="text-xs text-red-600">❌ {panel.saveError}</div>}
+              {panel.error && <div className="text-xs text-red-600">❌ {panel.error}</div>}
 
-              {props.error && inputData && (
+              {panel.error && inputData && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3">
                   <div className="text-sm font-semibold text-red-800">Generation Failed</div>
-                  <div className="text-xs text-red-700 mt-1">{props.error}</div>
+                  <div className="text-xs text-red-700 mt-1">{panel.error}</div>
                   <button
                     className="mt-2 w-full h-9 rounded-lg bg-red-600 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                    onClick={props.onClickRetry}
+                    onClick={panel.onClickRetry}
                     disabled={!inputData || loading || switchingSlides}
                   >
                     Try Again
@@ -527,15 +455,15 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
               <span className="text-sm font-semibold text-slate-900">Caption</span>
             </div>
             <div className="flex items-center gap-2">
-              {props.captionCopyStatus === "copied" ? (
+              {panel.captionCopyStatus === "copied" ? (
                 <span className="text-xs text-emerald-700 font-medium">Copied!</span>
-              ) : props.captionCopyStatus === "error" ? (
+              ) : panel.captionCopyStatus === "error" ? (
                 <span className="text-xs text-red-600 font-medium">Copy failed</span>
               ) : null}
               <button
                 type="button"
                 className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                onClick={props.onClickCopyCaption}
+                onClick={panel.onClickCopyCaption}
                 disabled={copyGenerating}
                 title="Copy caption to clipboard"
               >
@@ -547,17 +475,17 @@ export function EditorBottomPanel(props: EditorBottomPanelProps) {
             className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
             rows={3}
             placeholder="Write a caption..."
-            value={props.captionDraft}
-            onChange={(e) => props.onChangeCaption(e.target.value)}
+            value={panel.captionDraft}
+            onChange={(e) => panel.onChangeCaption(e.target.value)}
             disabled={copyGenerating}
           />
         </div>
 
         <DebugCard
-          debugScreenshot={props.debugScreenshot || null}
-          showDebugPreview={props.showDebugPreview}
-          setShowDebugPreview={props.setShowDebugPreview}
-          debugLogs={Array.isArray(props.debugLogs) ? props.debugLogs : []}
+          debugScreenshot={panel.debugScreenshot || null}
+          showDebugPreview={panel.showDebugPreview}
+          setShowDebugPreview={panel.setShowDebugPreview}
+          debugLogs={Array.isArray(panel.debugLogs) ? panel.debugLogs : []}
         />
       </div>
     </section>

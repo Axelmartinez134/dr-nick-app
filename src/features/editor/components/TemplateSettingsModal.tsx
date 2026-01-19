@@ -1,42 +1,18 @@
-import type { ReactNode } from "react";
+"use client";
 
-export type TemplateListItem = { id: string; name: string };
+import { useEditorSelector } from "@/features/editor/store";
 
-export type TemplateSettingsModalProps = {
-  open: boolean;
-  templateTypeId: "regular" | "enhanced";
-  loadingTemplates: boolean;
-  templates: TemplateListItem[];
+export function TemplateSettingsModal() {
+  const open = useEditorSelector((s) => s.templateSettingsOpen);
+  const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  const loadingTemplates = useEditorSelector((s) => s.loadingTemplates);
+  const templates = useEditorSelector((s) => s.templates);
 
-  templateTypeMappingSlide1: string | null;
-  templateTypeMappingSlide2to5: string | null;
-  templateTypeMappingSlide6: string | null;
-  onChangeTemplateTypeMappingSlide1: (next: string | null) => void;
-  onChangeTemplateTypeMappingSlide2to5: (next: string | null) => void;
-  onChangeTemplateTypeMappingSlide6: (next: string | null) => void;
+  const templateTypeMappingSlide1 = useEditorSelector((s) => s.templateTypeMappingSlide1);
+  const templateTypeMappingSlide2to5 = useEditorSelector((s) => s.templateTypeMappingSlide2to5);
+  const templateTypeMappingSlide6 = useEditorSelector((s) => s.templateTypeMappingSlide6);
 
-  onClose: () => void;
-  onOpenTemplateEditor: () => void;
-
-  footer?: ReactNode;
-};
-
-export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
-  const {
-    open,
-    templateTypeId,
-    loadingTemplates,
-    templates,
-    templateTypeMappingSlide1,
-    templateTypeMappingSlide2to5,
-    templateTypeMappingSlide6,
-    onChangeTemplateTypeMappingSlide1,
-    onChangeTemplateTypeMappingSlide2to5,
-    onChangeTemplateTypeMappingSlide6,
-    onClose,
-    onOpenTemplateEditor,
-    footer,
-  } = props;
+  const actions = useEditorSelector((s) => s.actions);
 
   if (!open) return null;
 
@@ -45,7 +21,7 @@ export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6"
       onMouseDown={(e) => {
         // Only close on true backdrop clicks (not inside the panel).
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) actions.onCloseTemplateSettings();
       }}
     >
       <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-slate-200">
@@ -56,7 +32,7 @@ export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
           <button
             type="button"
             className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-            onClick={onClose}
+            onClick={actions.onCloseTemplateSettings}
             aria-label="Close"
             title="Close"
           >
@@ -70,7 +46,7 @@ export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
               <select
                 className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
                 value={templateTypeMappingSlide1 || ""}
-                onChange={(e) => onChangeTemplateTypeMappingSlide1(e.target.value || null)}
+                onChange={(e) => actions.onChangeTemplateTypeMappingSlide1(e.target.value || null)}
                 disabled={loadingTemplates}
               >
                 <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
@@ -87,7 +63,7 @@ export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
               <select
                 className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
                 value={templateTypeMappingSlide2to5 || ""}
-                onChange={(e) => onChangeTemplateTypeMappingSlide2to5(e.target.value || null)}
+                onChange={(e) => actions.onChangeTemplateTypeMappingSlide2to5(e.target.value || null)}
                 disabled={loadingTemplates}
               >
                 <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
@@ -104,7 +80,7 @@ export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
               <select
                 className="mt-2 w-full h-10 rounded-md border border-slate-200 px-3 text-sm text-slate-900 bg-white"
                 value={templateTypeMappingSlide6 || ""}
-                onChange={(e) => onChangeTemplateTypeMappingSlide6(e.target.value || null)}
+                onChange={(e) => actions.onChangeTemplateTypeMappingSlide6(e.target.value || null)}
                 disabled={loadingTemplates}
               >
                 <option value="">{loadingTemplates ? "Loading..." : "Select template…"}</option>
@@ -120,14 +96,12 @@ export function TemplateSettingsModal(props: TemplateSettingsModalProps) {
           <div className="mt-3 flex items-center justify-end">
             <button
               className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm"
-              onClick={onOpenTemplateEditor}
+              onClick={actions.onOpenTemplateEditor}
               title="Open Template Editor"
             >
               Template Editor
             </button>
           </div>
-
-          {footer}
         </div>
       </div>
     </div>
