@@ -141,6 +141,23 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 ### Live layout queue + realign orchestration (Stage 4B)
 - **Hook**: `src/features/editor/hooks/useLiveLayoutQueue.ts`
 
+## Text layout (Enhanced /editor)
+Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabric on the canvas.
+
+- **Deterministic layout computation (Enhanced)**: `src/app/editor/EditorShell.tsx` (`computeDeterministicLayout`)
+  - Calls `wrapFlowLayout(...)` in `src/lib/wrap-flow-layout.ts`
+  - HEADLINE: packing is relaxed (avg-char-width em scaled) to reduce overly-early wraps while staying inside the allowed rect (pixel overflow validator + retry loop)
+- **RichText widget**: `src/app/editor/RichTextInput.tsx`
+  - DOM encoding:
+    - **Enter** typically becomes `\n\n`
+    - **Shift+Enter** becomes `\n`
+- **Newline behavior (Enhanced)**: `src/app/editor/EditorShell.tsx`
+  - Headline + Body: when newline structure changes while typing, bypass the “fast path” wrapper and enqueue live layout immediately to avoid pre-blur spacing glitches (empty lines / multiline Textbox artifacts).
+- **Wrap-flow core**: `src/lib/wrap-flow-layout.ts`
+  - Headline + Body newlines:
+    - **Enter (`\n\n`)** and **Shift+Enter (`\n`)** behave as a single normal line break
+    - **Double Enter** creates an intentional blank line (multiple break tokens)
+
 ### Workspace/canvas wiring helpers (Stage 4C/4D)
 - **Active image selection tracking**: `src/features/editor/hooks/useActiveImageSelection.ts`
   - Keeps active-slide image UI in sync with Fabric selection listeners
@@ -174,6 +191,16 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 ### Manual QA (Headline paragraph breaks + Realign)
 - In `/editor`, type a Headline with **Enter** (two headline lines, no blank gap) and confirm Realign keeps both lines
 - Type a Headline with **Enter twice** (blank line between) and confirm the blank line gap is preserved on canvas after Realign
+
+### Manual QA (Body Enter behavior in Enhanced)
+- In `/editor` (Enhanced), type body text and press **Enter** once mid-sentence
+  - Expected: immediate new line while still typing (no “empty line objects” / no weird spacing until blur)
+- Press **Shift+Enter** once
+  - Expected: identical behavior to Enter (single normal new line)
+- Press **Enter twice**
+  - Expected: an intentional blank line (visible empty line between paragraphs)
+- Click away (blur) after Enter/Shift+Enter edits
+  - Expected: no “snap” to a different spacing/layout after blur; what you saw while typing matches the final layout
 
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.
