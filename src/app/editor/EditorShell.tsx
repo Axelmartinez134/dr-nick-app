@@ -31,10 +31,10 @@ import { useProjects } from "@/features/editor/hooks/useProjects";
 import { useSlidePersistence } from "@/features/editor/hooks/useSlidePersistence";
 import { useAutoRealignOnImageRelease } from "@/features/editor/hooks/useAutoRealignOnImageRelease";
 import { useImageOps } from "@/features/editor/hooks/useImageOps";
-import { useGenerateCopy } from "@/features/editor/hooks/useGenerateCopy";
-import { useGenerateImagePrompts } from "@/features/editor/hooks/useGenerateImagePrompts";
-import { useGenerateAiImage } from "@/features/editor/hooks/useGenerateAiImage";
-import * as projectsApi from "@/features/editor/services/projectsApi";
+import { useEditorBootstrap } from "@/features/editor/hooks/useEditorBootstrap";
+import { useProjectLifecycle } from "@/features/editor/hooks/useProjectLifecycle";
+import { useEditorPersistence } from "@/features/editor/hooks/useEditorPersistence";
+import { useEditorJobs } from "@/features/editor/hooks/useEditorJobs";
 import {
   type SlideState,
   initSlide,
@@ -90,11 +90,6 @@ const CarouselPreviewVision = dynamic(
     ssr: false,
   }
 );
-const ExportButton = dynamic(
-  () => import("../components/health/marketing/ai-carousel/ExportButton"),
-  { ssr: false }
-);
-
 export default function EditorShell() {
   const { user, signOut } = useAuth();
   const editorStore = useEditorStore();
@@ -1241,6 +1236,44 @@ export default function EditorShell() {
     return data;
   }
 
+  const refreshProjectsListRef = useRef<null | (() => Promise<void>)>(null);
+  const { loadProject, createNewProject } = useProjectLifecycle({
+    fetchJson,
+    slideCount,
+    initSlide,
+    slidesRef,
+    setSlides,
+    setActiveSlideIndex,
+    setCurrentProjectId,
+    setProjectTitle,
+    setTemplateTypeId,
+    setCaptionDraft,
+    setProjectPromptSnapshot,
+    setProjectMappingSlide1,
+    setProjectMappingSlide2to5,
+    setProjectMappingSlide6,
+    setProjectsDropdownOpen,
+    setLayoutData,
+    setInputData,
+    setLayoutHistory,
+    handleNewCarousel,
+    getLayoutLockedFromInput,
+    getAutoRealignOnImageReleaseFromInput,
+    refreshProjectsListRef,
+  });
+
+  const {
+    saveProjectMeta,
+    saveProjectMetaForProject,
+    scheduleDebouncedProjectTitleSave,
+    scheduleDebouncedCaptionSave,
+  } = useEditorPersistence({
+    fetchJson,
+    currentProjectId,
+    setProjectSaveStatus,
+    projectSaveTimeoutRef,
+  });
+
   const { projects, projectsLoading, hydrateProjects, refreshProjectsList, archiveProjectById: archiveProjectByIdCore } =
     useProjects({
       fetchJson,
@@ -1253,6 +1286,8 @@ export default function EditorShell() {
         await createNewProject("enhanced");
       },
     });
+  // Make refresh available to project lifecycle without creating a circular hook dependency.
+  refreshProjectsListRef.current = refreshProjectsList;
 
   const {
     saveSlidePatchForProject,
@@ -1279,90 +1314,32 @@ export default function EditorShell() {
     activeSlideIndexRef,
   });
 
-  // Initial editor state load (single round trip):
-  // - Bootstraps starter template if user has none
-  // - Loads templates list, projects list, effective template-type settings
-  // - Preloads the 3 mapped template definitions for instant preview rendering
-  useEffect(() => {
-    if (!user?.id) return;
-    if (editorBootstrapDoneRef.current) return;
-    editorBootstrapDoneRef.current = true;
-    void (async () => {
-      try {
-        const data = await fetchJson('/api/editor/initial-state', {
-          method: 'POST',
-          body: JSON.stringify({ templateTypeId }),
-        });
-        if (!data?.success) throw new Error(data?.error || 'Failed to load editor state');
-
-        // Hydrate templates + snapshots
-        if (Array.isArray(data.templates)) {
-          setTemplates(data.templates);
-        }
-        if (data.templateSnapshotsById && typeof data.templateSnapshotsById === 'object') {
-          setTemplateSnapshots((prev) => ({ ...prev, ...(data.templateSnapshotsById as any) }));
-        }
-
-        // Hydrate projects list
-        if (Array.isArray(data.projects)) {
-          const sortedProjects = [...data.projects].sort(
-            (a: any, b: any) => Date.parse(String(b?.updated_at || 0)) - Date.parse(String(a?.updated_at || 0))
-          );
-          hydrateProjects(sortedProjects);
-          // Phase 1/2: auto-load most recent project if any, otherwise auto-create an Enhanced project.
-          // Guarded so it can't double-run under StrictMode/dev re-renders.
-          if (!initialProjectAutoLoadDoneRef.current) {
-            initialProjectAutoLoadDoneRef.current = true;
-            if (sortedProjects.length > 0) {
-              try {
-                await loadProject(String(sortedProjects[0]?.id || ""));
-              } catch (e: any) {
-                addLog(
-                  `⚠️ Auto-load most recent project failed: ${String(e?.message || e || "unknown error")}`
-                );
-              }
-            } else {
-              try {
-                await createNewProject("enhanced");
-              } catch (e: any) {
-                addLog(
-                  `⚠️ Auto-create Enhanced project failed: ${String(e?.message || e || "unknown error")}`
-                );
-              }
-            }
-          }
-        }
-
-        // Hydrate effective per-user template-type settings
-        const effective = data?.templateType?.effective || null;
-        if (effective) {
-          setTemplateTypePrompt(String(effective.prompt || ''));
-          setTemplateTypeEmphasisPrompt(String(effective.emphasisPrompt || ''));
-          setTemplateTypeImageGenPrompt(String(effective.imageGenPrompt || ''));
-          setTemplateTypeMappingSlide1(effective.slide1TemplateId ?? null);
-          setTemplateTypeMappingSlide2to5(effective.slide2to5TemplateId ?? null);
-          setTemplateTypeMappingSlide6(effective.slide6TemplateId ?? null);
-          promptDirtyRef.current = false;
-          setPromptSaveStatus('idle');
-        }
-
-        // Mark template-type as loaded so downstream effects don't refetch on first render.
-        initialTemplateTypeLoadDoneRef.current = true;
-        lastLoadedTemplateTypeIdRef.current = templateTypeId;
-
-        if (data?.bootstrap?.created) {
-          addLog(`🧩 Starter template created for new user`);
-        }
-      } catch (e: any) {
-        addLog(`⚠️ Initial editor load failed: ${String(e?.message || e || 'unknown error')}`);
-        // Fallback: best-effort load the two critical things.
-        void loadTemplatesList();
-        void loadTemplateTypeEffective(templateTypeId);
-        void refreshProjectsList();
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  useEditorBootstrap({
+    userId: user?.id || null,
+    templateTypeId,
+    fetchJson,
+    addLog,
+    setTemplates,
+    setTemplateSnapshots,
+    hydrateProjects,
+    loadProject,
+    createNewProject,
+    setTemplateTypePrompt,
+    setTemplateTypeEmphasisPrompt,
+    setTemplateTypeImageGenPrompt,
+    setTemplateTypeMappingSlide1,
+    setTemplateTypeMappingSlide2to5,
+    setTemplateTypeMappingSlide6,
+    promptDirtyRef,
+    setPromptSaveStatus,
+    editorBootstrapDoneRef,
+    initialProjectAutoLoadDoneRef,
+    initialTemplateTypeLoadDoneRef,
+    lastLoadedTemplateTypeIdRef,
+    loadTemplatesList,
+    loadTemplateTypeEffective,
+    refreshProjectsList,
+  });
 
   // NOTE: image operations + image-move persistence live in `useImageOps`.
 
@@ -2191,30 +2168,42 @@ export default function EditorShell() {
     imagePromptErrorThis,
     imagePromptGenerating,
     imagePromptError,
-  } = useGenerateImagePrompts({
+    runGenerateCopy,
+    copyGenerating,
+    copyError,
+    copyProgressState,
+    copyProgressLabel,
+    runGenerateAiImage,
+    aiImageGeneratingThis,
+    aiImageProgressThis,
+    aiImageStatusThis,
+    aiImageErrorThis,
+  } = useEditorJobs({
     currentProjectId,
     currentProjectIdRef,
     activeSlideIndex,
-    templateTypeId,
-    fetchJson,
-    addLog,
-    setSlides,
-  });
-
-  const { runGenerateCopy, copyGenerating, copyError, copyProgressState, copyProgressLabel } = useGenerateCopy({
-    currentProjectId,
-    currentProjectIdRef,
+    activeSlideIndexRef,
     templateTypeId,
     slideCount,
+    fetchJson,
+    getAuthToken,
+    addLog,
     slidesRef,
     initSlide,
     setSlides,
     setCaptionDraft,
     refreshProjectsList,
     enqueueLiveLayoutForProject,
-    runGenerateImagePrompts,
-    fetchJson,
-    addLog,
+    aiKey,
+    getDraftAiImagePromptForSlide: (slideIndex: number) =>
+      String((slidesRef.current?.[slideIndex] as any)?.draftAiImagePrompt || ''),
+    computeTemplateIdForSlide,
+    templateSnapshots,
+    computeDefaultUploadedImagePlacement,
+    EMPTY_LAYOUT,
+    layoutData,
+    setLayoutData,
+    saveSlidePatchForProject,
   });
 
   const CopyProgressIcon = () => {
@@ -2883,7 +2872,7 @@ export default function EditorShell() {
     }, 500);
   };
 
-  const loadTemplateTypeEffective = async (type: 'regular' | 'enhanced') => {
+  async function loadTemplateTypeEffective(type: 'regular' | 'enhanced') {
     addLog(`🧾 Loading template-type settings: ${type.toUpperCase()}`);
     const data = await fetchJson(`/api/editor/template-types/effective?type=${type}`);
     const effective = data?.effective;
@@ -2899,7 +2888,7 @@ export default function EditorShell() {
     // Reset prompt status on type switch
     setPromptSaveStatus('idle');
     promptDirtyRef.current = false;
-  };
+  }
 
   const archiveProjectById = async (projectId: string, titleForUi: string) => {
     const pid = String(projectId || '').trim();
@@ -2953,164 +2942,6 @@ export default function EditorShell() {
       addLog(`✅ Applied template mappings to project`);
     } catch (e: any) {
       addLog(`❌ Apply template mappings failed: ${String(e?.message || e || 'unknown error')}`);
-    }
-  };
-
-  const loadProject = async (projectId: string) => {
-    const data = await projectsApi.loadProject(fetchJson, projectId);
-    const project = data.project;
-    const loadedSlides = data.slides || [];
-    setCurrentProjectId(project.id);
-    setProjectTitle(project.title || 'Untitled Project');
-    setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
-    setCaptionDraft(project.caption || '');
-
-    // Apply snapshot mapping for render/layout to avoid morphing
-    setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
-    setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
-    setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
-    setProjectPromptSnapshot(project.prompt_snapshot || '');
-
-    const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
-      const prev = slidesRef.current[i] || initSlide();
-      const row = loadedSlides.find((r: any) => r.slide_index === i);
-      const layoutSnap = row?.layout_snapshot ?? null;
-      const inputSnap = row?.input_snapshot ?? null;
-      const loadedHeadline = row?.headline || '';
-      const loadedBody = row?.body || '';
-      const loadedAiImagePrompt = row?.ai_image_prompt || '';
-      return {
-        ...prev,
-        savedHeadline: loadedHeadline,
-        savedBody: loadedBody,
-        draftHeadline: loadedHeadline,
-        draftBody: loadedBody,
-        draftHeadlineRanges: Array.isArray(inputSnap?.headlineStyleRanges) ? inputSnap.headlineStyleRanges : [],
-        draftBodyRanges: Array.isArray(inputSnap?.bodyStyleRanges) ? inputSnap.bodyStyleRanges : [],
-        draftHeadlineFontSizePx: Number.isFinite((inputSnap as any)?.headlineFontSizePx as any)
-          ? Math.max(24, Math.min(120, Math.round(Number((inputSnap as any).headlineFontSizePx))))
-          : 76,
-          draftHeadlineTextAlign: (String((inputSnap as any)?.headlineTextAlign || "left") === "center"
-            ? "center"
-            : String((inputSnap as any)?.headlineTextAlign || "left") === "right"
-              ? "right"
-              : "left"),
-          draftBodyFontSizePx: Number.isFinite((inputSnap as any)?.bodyFontSizePx as any)
-            ? Math.max(24, Math.min(120, Math.round(Number((inputSnap as any).bodyFontSizePx))))
-            : 48,
-          draftBodyTextAlign: (String((inputSnap as any)?.bodyTextAlign || "left") === "center"
-            ? "center"
-            : String((inputSnap as any)?.bodyTextAlign || "left") === "right"
-              ? "right"
-              : "left"),
-        layoutData: layoutSnap ? { success: true, layout: layoutSnap, imageUrl: null } : null,
-        inputData: inputSnap || null,
-        layoutHistory: [],
-        savedAiImagePrompt: loadedAiImagePrompt,
-        draftAiImagePrompt: loadedAiImagePrompt,
-        layoutLocked: getLayoutLockedFromInput(inputSnap || null),
-        autoRealignOnImageRelease: getAutoRealignOnImageReleaseFromInput(inputSnap || null),
-      };
-    });
-    setSlides(nextSlides);
-    slidesRef.current = nextSlides;
-    setActiveSlideIndex(0);
-    // Restore slide 1 (index 0) snapshots into the engine immediately.
-    if (nextSlides[0]?.layoutData && nextSlides[0]?.inputData) {
-      setLayoutData(nextSlides[0].layoutData);
-      setInputData(nextSlides[0].inputData);
-      setLayoutHistory(nextSlides[0].layoutHistory || []);
-    } else {
-      handleNewCarousel();
-    }
-  };
-
-  const createNewProject = async (type: 'regular' | 'enhanced') => {
-    const data = await projectsApi.createProject(fetchJson, { templateTypeId: type, title: 'Untitled Project' });
-    const project = data.project;
-    const slidesRows = data.slides || [];
-    setCurrentProjectId(project.id);
-    setProjectTitle(project.title || 'Untitled Project');
-    setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
-    setCaptionDraft(project.caption || '');
-    setProjectPromptSnapshot(project.prompt_snapshot || '');
-    setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
-    setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
-    setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
-    const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
-      const prev = slidesRef.current[i] || initSlide();
-      const row = slidesRows.find((r: any) => r.slide_index === i);
-      const loadedHeadline = row?.headline || '';
-      const loadedBody = row?.body || '';
-      const loadedAiImagePrompt = row?.ai_image_prompt || '';
-      return {
-        ...prev,
-        savedHeadline: loadedHeadline,
-        savedBody: loadedBody,
-        draftHeadline: loadedHeadline,
-        draftBody: loadedBody,
-        draftHeadlineRanges: [],
-        draftBodyRanges: [],
-        draftHeadlineFontSizePx: 76,
-        draftHeadlineTextAlign: "left",
-        draftBodyFontSizePx: 48,
-        draftBodyTextAlign: "left",
-        layoutData: null,
-        inputData: null,
-        layoutHistory: [],
-        error: null,
-        debugLogs: [],
-        debugScreenshot: null,
-        savedAiImagePrompt: loadedAiImagePrompt,
-        draftAiImagePrompt: loadedAiImagePrompt,
-        layoutLocked: false,
-        autoRealignOnImageRelease: false,
-      };
-    });
-    setSlides(nextSlides);
-    slidesRef.current = nextSlides;
-    setActiveSlideIndex(0);
-    setProjectsDropdownOpen(false);
-    await refreshProjectsList();
-    handleNewCarousel();
-  };
-
-  const saveProjectMeta = async (patch: { title?: string; caption?: string | null }) => {
-    if (!currentProjectId) return;
-    setProjectSaveStatus('saving');
-    try {
-      await fetchJson('/api/editor/projects/update', {
-        method: 'POST',
-        body: JSON.stringify({ projectId: currentProjectId, ...patch }),
-      });
-      setProjectSaveStatus('saved');
-      window.setTimeout(() => setProjectSaveStatus('idle'), 1200);
-    } catch {
-      setProjectSaveStatus('error');
-      window.setTimeout(() => setProjectSaveStatus('idle'), 2000);
-    }
-  };
-
-  // Phase 1 (stale-context fix groundwork): project-scoped save helpers.
-  // These do NOT use `currentProjectId`; callers pass the intended project explicitly.
-  // No call sites use these yet (Phase 2 will), so behavior is unchanged for now.
-  const saveProjectMetaForProject = async (
-    projectId: string,
-    patch: { title?: string; caption?: string | null }
-  ) => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return;
-    setProjectSaveStatus('saving');
-    try {
-      await fetchJson('/api/editor/projects/update', {
-        method: 'POST',
-        body: JSON.stringify({ projectId: pid, ...patch }),
-      });
-      setProjectSaveStatus('saved');
-      window.setTimeout(() => setProjectSaveStatus('idle'), 1200);
-    } catch {
-      setProjectSaveStatus('error');
-      window.setTimeout(() => setProjectSaveStatus('idle'), 2000);
     }
   };
 
@@ -3457,11 +3288,9 @@ export default function EditorShell() {
     return false;
   };
 
-  const computeDefaultUploadedImagePlacement = (
-    templateSnapshot: any | null,
-    imageW: number,
-    imageH: number
-  ) => computeDefaultUploadedImagePlacementShared(templateSnapshot, imageW, imageH);
+  function computeDefaultUploadedImagePlacement(templateSnapshot: any | null, imageW: number, imageH: number) {
+    return computeDefaultUploadedImagePlacementShared(templateSnapshot, imageW, imageH);
+  }
 
   const openImageMenu = (x: number, y: number) => {
     setImageMenuPos({ x, y });
@@ -3472,29 +3301,6 @@ export default function EditorShell() {
     setImageMenuOpen(false);
     setImageMenuPos(null);
   };
-
-  const { runGenerateAiImage, aiImageGeneratingThis, aiImageProgressThis, aiImageStatusThis, aiImageErrorThis } =
-    useGenerateAiImage({
-      currentProjectId,
-      currentProjectIdRef,
-      activeSlideIndex,
-      activeSlideIndexRef,
-      templateTypeId,
-      aiKey,
-      getAuthToken,
-      addLog,
-      getDraftAiImagePromptForSlide: (slideIndex: number) =>
-        String((slidesRef.current?.[slideIndex] as any)?.draftAiImagePrompt || ''),
-      computeTemplateIdForSlide,
-      templateSnapshots,
-      computeDefaultUploadedImagePlacement,
-      EMPTY_LAYOUT,
-      layoutData,
-      setLayoutData,
-      slidesRef,
-      setSlides,
-      saveSlidePatchForProject,
-    });
 
   const {
     uploadImageForActiveSlide,
@@ -3913,12 +3719,7 @@ export default function EditorShell() {
           setProjectTitle(v);
           // Keep store in sync immediately so the input caret doesn't jump.
           editorStore.setState({ projectTitle: v } as any);
-          if (projectSaveTimeoutRef.current) window.clearTimeout(projectSaveTimeoutRef.current);
-          const projectIdAtSchedule = currentProjectId;
-          projectSaveTimeoutRef.current = window.setTimeout(() => {
-            if (!projectIdAtSchedule) return;
-            void saveProjectMetaForProject(projectIdAtSchedule, { title: v });
-          }, 600);
+          scheduleDebouncedProjectTitleSave({ projectId: currentProjectId, title: v, debounceMs: 600 });
         },
         onDownloadAll: () => void handleDownloadAll(),
         onShareAll: () => void handleShareAll(),
@@ -4869,12 +4670,7 @@ export default function EditorShell() {
           editorStore.setState((prev: any) => ({
             bottomPanel: prev?.bottomPanel ? { ...prev.bottomPanel, captionDraft: v } : prev?.bottomPanel,
           }));
-          if (projectSaveTimeoutRef.current) window.clearTimeout(projectSaveTimeoutRef.current);
-          const projectIdAtSchedule = currentProjectId;
-          projectSaveTimeoutRef.current = window.setTimeout(() => {
-            if (!projectIdAtSchedule) return;
-            void saveProjectMetaForProject(projectIdAtSchedule, { caption: v });
-          }, 600);
+          scheduleDebouncedCaptionSave({ projectId: currentProjectId, caption: v, debounceMs: 600 });
         },
 
         debugScreenshot: debugScreenshot || null,

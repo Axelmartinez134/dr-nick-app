@@ -5,6 +5,7 @@ This is a practical map of the `/editor` code so changes can be made without sea
 ## Quick orientation
 - **Route**: `/editor`
 - **Entry UI**: `src/app/editor/page.tsx` → renders `src/app/editor/EditorShell.tsx`
+- **Route error boundary**: `src/app/editor/error.tsx` (prevents “blank screen” on crashes)
 - **Core canvas**: `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx` (Fabric.js)
 - **Editor “engine” state**: `src/app/components/health/marketing/ai-carousel/useCarouselEditorEngine.ts`
 - **Server APIs (editor)**: `src/app/api/editor/**/route.ts`
@@ -62,10 +63,23 @@ At this point, **UI components read from the editor store**, and `EditorShell.ts
   - Applies Fabric selection styles + persists bold/italic/underline into `input_snapshot.*StyleRanges`
 
 ## Editor feature modules (what was extracted)
+### Bootstrap + hydration (Stage 3A)
+- **Hook**: `src/features/editor/hooks/useEditorBootstrap.ts`
+  - Calls `POST /api/editor/initial-state` and hydrates templates/projects/template-type effective settings
+  - Handles auto-load most recent project or auto-create Enhanced project
+
 ### Projects
 - **UI**: `src/features/editor/components/SavedProjectsCard.tsx`
 - **Hook**: `src/features/editor/hooks/useProjects.ts`
 - **API**: `src/features/editor/services/projectsApi.ts`
+
+### Project lifecycle (Stage 3B)
+- **Hook**: `src/features/editor/hooks/useProjectLifecycle.ts`
+  - Owns `loadProject` and `createNewProject` + slide hydration from `carousel_project_slides`
+
+### Project meta persistence (Stage 3C)
+- **Hook**: `src/features/editor/hooks/useEditorPersistence.ts`
+  - Debounced `title` + `caption` saves to `POST /api/editor/projects/update`
 
 ### Slide persistence
 - **Hook**: `src/features/editor/hooks/useSlidePersistence.ts`
@@ -84,6 +98,7 @@ At this point, **UI components read from the editor store**, and `EditorShell.ts
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
+- **Wiring wrapper (Stage 3D)**: `src/features/editor/hooks/useEditorJobs.ts` (centralizes how the three job hooks are wired together)
 
 ## Template system (editor)
 - **Template editor modal**: `src/app/components/health/marketing/ai-carousel/TemplateEditorModal.tsx`
@@ -125,6 +140,11 @@ All editor project data is owner-scoped and accessed via `/api/editor/...`.
   - Loads templates + projects (owner-only)
   - Bootstraps starter template for first-time editor users (if needed)
   - Returns effective template type settings + template snapshots
+ - **Client orchestration**: `src/features/editor/hooks/useEditorBootstrap.ts`
+
+## Shared helpers
+- **Template content region + default image placement**: `src/lib/templatePlacement.ts`
+  - Used by both the editor (client) and AI-image persistence (server)
 
 ## Database (high level)
 Key tables used by `/editor`:

@@ -9,4 +9,8 @@ export { useAutoRealignOnImageRelease } from './useAutoRealignOnImageRelease';
 export { useGenerateCopy } from './useGenerateCopy';
 export { useGenerateImagePrompts } from './useGenerateImagePrompts';
 export { useGenerateAiImage } from './useGenerateAiImage';
+export { useEditorBootstrap } from './useEditorBootstrap';
+export { useProjectLifecycle } from './useProjectLifecycle';
+export { useEditorPersistence } from './useEditorPersistence';
+export { useEditorJobs } from './useEditorJobs';
 
