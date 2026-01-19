@@ -12,7 +12,7 @@ import {
   getTemplateContentRectRaw as getTemplateContentRectRawShared,
 } from "@/lib/templatePlacement";
 import TemplateEditorModal from "../components/health/marketing/ai-carousel/TemplateEditorModal";
-import { ensureTypographyFontsLoaded, estimateAvgCharWidthEm, estimateAvgCharWidthEmRelaxed } from "../components/health/marketing/ai-carousel/fontMetrics";
+import { estimateAvgCharWidthEm, estimateAvgCharWidthEmRelaxed } from "../components/health/marketing/ai-carousel/fontMetrics";
 import { supabase, useAuth } from "../components/auth/AuthContext";
 import { RichTextInput, type InlineStyleRange } from "./RichTextInput";
 import { remapRangesByDiff } from "@/lib/text-placement";
@@ -35,6 +35,9 @@ import { useEditorBootstrap } from "@/features/editor/hooks/useEditorBootstrap";
 import { useProjectLifecycle } from "@/features/editor/hooks/useProjectLifecycle";
 import { useEditorPersistence } from "@/features/editor/hooks/useEditorPersistence";
 import { useEditorJobs } from "@/features/editor/hooks/useEditorJobs";
+import { useEditorStoreActionsSync } from "@/features/editor/hooks/useEditorStoreActionsSync";
+import { useEditorStoreWorkspaceSync } from "@/features/editor/hooks/useEditorStoreWorkspaceSync";
+import { useLiveLayoutQueue } from "@/features/editor/hooks/useLiveLayoutQueue";
 import {
   type SlideState,
   initSlide,
@@ -114,6 +117,9 @@ export default function EditorShell() {
   const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const layoutDirtyRef = useRef(false);
   const LIVE_LAYOUT_DEBOUNCE_MS = 500;
+  // Stage 4B: live layout queue is extracted; layout compute fns are provided via refs to avoid TDZ ordering issues.
+  const computeDeterministicLayoutRef = useRef<((params: any) => any) | null>(null);
+  const computeRegularBodyTextboxLayoutRef = useRef<((params: any) => any) | null>(null);
   type LiveLayoutWorkItem = {
     key: string; // projectId:slideIndex
     runId: number;
@@ -1803,6 +1809,7 @@ export default function EditorShell() {
     }
     return layout;
   };
+  computeDeterministicLayoutRef.current = computeDeterministicLayout;
 
   const applyInlineStylesToExistingLayout = (params: {
     layout: any;
@@ -2084,81 +2091,47 @@ export default function EditorShell() {
 
     return layout;
   };
+  computeRegularBodyTextboxLayoutRef.current = computeRegularBodyTextboxLayout;
 
-  const enqueueLiveLayoutForProject = (projectId: string, indices: number[]) => {
-    const pid = String(projectId || "").trim();
-    if (!pid) return;
-    indices.forEach((i) => {
-      if (i < 0 || i >= slideCount) return;
-      const key = liveLayoutKey(pid, i);
-      const runId = (liveLayoutRunIdByKeyRef.current[key] || 0) + 1;
-      liveLayoutRunIdByKeyRef.current[key] = runId;
-
-      // Snapshot the slide state and template snapshot NOW so background processing can't bleed across projects.
-      const slide = slidesRef.current[i] || initSlide();
-      const tid = computeTemplateIdForSlide(i);
-      const snap = (tid ? templateSnapshots[tid] : null) || null;
-
-      const templateTypeAtSchedule = templateTypeId;
-      const headline = templateTypeAtSchedule === "regular" ? "" : (slide.draftHeadline || "");
-      const body = slide.draftBody || "";
-      const headlineRanges = Array.isArray(slide.draftHeadlineRanges) ? slide.draftHeadlineRanges : [];
-      const bodyRanges = Array.isArray(slide.draftBodyRanges) ? slide.draftBodyRanges : [];
-      const headlineFontSizePx =
-        Number.isFinite((slide as any)?.draftHeadlineFontSizePx as any)
-          ? Math.max(24, Math.min(120, Math.round(Number((slide as any).draftHeadlineFontSizePx))))
-          : 76;
-      const _hAlign = (slide as any)?.draftHeadlineTextAlign;
-      const headlineTextAlign: "left" | "center" | "right" =
-        _hAlign === "center" || _hAlign === "right" ? _hAlign : "left";
-      const bodyFontSizePxSnap =
-        Number.isFinite((slide as any)?.draftBodyFontSizePx as any)
-          ? Math.max(24, Math.min(120, Math.round(Number((slide as any).draftBodyFontSizePx))))
-          : 48;
-      const _bAlign = (slide as any)?.draftBodyTextAlign;
-      const bodyTextAlign: "left" | "center" | "right" = _bAlign === "center" || _bAlign === "right" ? _bAlign : "left";
-
-      const prevInput = (slide as any)?.inputData || null;
-      const lineOverridesByKey =
-        prevInput && typeof prevInput === "object" && prevInput.lineOverridesByKey && typeof prevInput.lineOverridesByKey === "object"
-          ? prevInput.lineOverridesByKey
-          : null;
-
-      const existingLayout = (slide as any)?.layoutData?.layout || null;
-      const image = existingLayout && typeof existingLayout === "object" ? (existingLayout as any).image || null : null;
-
-      const item: LiveLayoutWorkItem = {
-        key,
-        runId,
-        projectId: pid,
-        slideIndex: i,
-        templateTypeId: templateTypeAtSchedule,
-        templateId: tid || null,
-        templateSnapshot: snap,
-        headline,
-        body,
-        headlineRanges,
-        bodyRanges,
-        headlineFontSizePx,
-        bodyFontSizePx: bodyFontSizePxSnap,
-        headlineTextAlign,
-        bodyTextAlign,
-        lineOverridesByKey,
-        image,
-        existingLayout,
-        settings: {
-          backgroundColor: projectBackgroundColor || "#ffffff",
-          textColor: projectTextColor || "#000000",
-          includeImage: false,
-        },
-      };
-
-      // De-dupe: remove any older queued item for same key (we keep only the newest snapshot).
-      liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((x) => x.key !== key);
-      liveLayoutQueueRef.current.push(item);
-    });
-    void processLiveLayoutQueue();
-  };
+  const { enqueueLiveLayoutForProject, processLiveLayoutQueue } = useLiveLayoutQueue({
+    slideCount,
+    templateTypeId,
+    currentProjectId,
+    currentProjectIdRef,
+    activeSlideIndex,
+    activeSlideIndexRef,
+    realignmentModel,
+    slidesRef,
+    initSlide,
+    setSlides,
+    layoutData,
+    inputData,
+    setLayoutData,
+    setInputData,
+    setLayoutHistory,
+    saveSlidePatchForProject,
+    schedulePersistLayoutAndInput,
+    addLog,
+    headlineFontFamily,
+    headlineFontWeight,
+    bodyFontFamily,
+    bodyFontWeight,
+    projectBackgroundColor,
+    projectTextColor,
+    LIVE_LAYOUT_DEBOUNCE_MS,
+    liveLayoutKey,
+    liveLayoutTimeoutsRef,
+    liveLayoutQueueRef,
+    liveLayoutRunIdByKeyRef,
+    liveLayoutRunningRef,
+    computeTemplateIdForSlide,
+    templateSnapshots,
+    computeDeterministicLayoutRef,
+    computeRegularBodyTextboxLayoutRef,
+    handleRealign,
+    layoutDirtyRef,
+    pushUndoSnapshot,
+  });
 
   const {
     runGenerateImagePrompts,
@@ -2206,205 +2179,7 @@ export default function EditorShell() {
     saveSlidePatchForProject,
   });
 
-  const CopyProgressIcon = () => {
-    if (copyProgressState === "idle") return null;
-    const title =
-      copyProgressState === "running"
-        ? (copyProgressLabel || "Working…")
-        : copyProgressState === "success"
-          ? "Done"
-          : "Error";
-    if (copyProgressState === "running") {
-      return (
-        <span className="inline-flex items-center gap-2" title={title} aria-label={title}>
-          <span className="inline-flex items-center justify-center w-4 h-4">
-            <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
-          </span>
-          <span className="text-xs font-medium text-slate-500">{title}</span>
-        </span>
-      );
-    }
-    if (copyProgressState === "success") {
-      return (
-        <span
-          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] leading-none"
-          title={title}
-          aria-label={title}
-        >
-          ✓
-        </span>
-      );
-    }
-    return (
-      <span
-        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] leading-none"
-        title={title}
-        aria-label={title}
-      >
-        !
-      </span>
-    );
-  };
-
-  const processLiveLayoutQueue = async () => {
-    if (liveLayoutRunningRef.current) return;
-    liveLayoutRunningRef.current = true;
-    try {
-      // Ensure fonts (including italic/bold variants) are loaded before measuring/wrapping.
-      // This prevents Fabric from falling back mid-render (which causes odd spacing/kerning and unexpected wraps).
-      await ensureTypographyFontsLoaded({
-        headlineFontFamily,
-        headlineFontWeight,
-        bodyFontFamily,
-        bodyFontWeight,
-      });
-
-      while (liveLayoutQueueRef.current.length > 0) {
-        const item = liveLayoutQueueRef.current.shift() as LiveLayoutWorkItem;
-        const slideIndex = item.slideIndex;
-        const pid = item.projectId;
-        const key = item.key;
-        // Ignore stale completions for this project+slide.
-        if (liveLayoutRunIdByKeyRef.current[key] !== item.runId) continue;
-
-        // Enhanced Lock Layout: if the slide is currently locked, do not apply/persist auto-reflow results.
-        // (User explicitly chose to keep positions stable.)
-        try {
-          const cur = slidesRef.current[slideIndex] || null;
-          if (item.templateTypeId === "enhanced" && !!(cur as any)?.layoutLocked) {
-            addLog(`🔒 Live layout skipped slide ${slideIndex + 1}: layout is locked`);
-            continue;
-          }
-        } catch {
-          // ignore
-        }
-
-        const snap = item.templateSnapshot;
-        const tid = item.templateId;
-        if (!snap) {
-          addLog(`⚠️ Live layout skipped slide ${slideIndex + 1}: missing template snapshot`);
-          continue;
-        }
-
-        const headline = item.headline || "";
-        const body = item.body || "";
-        if (!String(body).trim() && !String(headline).trim()) {
-          addLog(`⏭️ Live layout skipped slide ${slideIndex + 1}: empty text`);
-          continue;
-        }
-
-        addLog(
-          `📐 Live layout slide ${slideIndex + 1} start: project=${pid} template=${tid || "none"} headlineLen=${headline.length} bodyLen=${body.length} headlineRanges=${item.headlineRanges.length} bodyRanges=${item.bodyRanges.length}`
-        );
-
-        const headlineTextAlign: "left" | "center" | "right" =
-          item.headlineTextAlign === "center" || item.headlineTextAlign === "right" ? item.headlineTextAlign : "left";
-        const bodyTextAlign: "left" | "center" | "right" =
-          item.bodyTextAlign === "center" || item.bodyTextAlign === "right" ? item.bodyTextAlign : "left";
-
-        const nextLayout =
-          item.templateTypeId === "regular"
-            ? computeRegularBodyTextboxLayout({
-                slideIndex,
-                body,
-                templateSnapshot: snap,
-                image: item.image,
-                existingLayout: item.existingLayout,
-                bodyRanges: item.bodyRanges,
-                bodyFontSizePx: item.bodyFontSizePx,
-              })
-            : computeDeterministicLayout({
-                slideIndex,
-                headline,
-                body,
-                templateSnapshot: snap,
-                image: item.image,
-                headlineRanges: item.headlineRanges,
-                bodyRanges: item.bodyRanges,
-                lineOverridesByKey: item.lineOverridesByKey,
-                headlineFontSizePx: item.headlineFontSizePx,
-                bodyFontSizePx: item.bodyFontSizePx,
-                headlineTextAlign,
-                bodyTextAlign,
-              });
-        if (!nextLayout) continue;
-
-        const effectiveBodyFontSizePx =
-          item.templateTypeId === "regular"
-            ? Number((nextLayout as any)?.textLines?.[0]?.baseSize ?? item.bodyFontSizePx ?? 48)
-            : item.bodyFontSizePx;
-
-        const textLineCount = Array.isArray((nextLayout as any)?.textLines) ? (nextLayout as any).textLines.length : 0;
-        const styleCount = Array.isArray((nextLayout as any)?.textLines)
-          ? (nextLayout as any).textLines.reduce((acc: number, l: any) => acc + (Array.isArray(l?.styles) ? l.styles.length : 0), 0)
-          : 0;
-        addLog(`✅ Live layout slide ${slideIndex + 1} done: lines=${textLineCount} styles=${styleCount}`);
-
-        const req: any = {
-          headline,
-          body,
-          headlineFontSizePx: item.headlineFontSizePx,
-          bodyFontSizePx: effectiveBodyFontSizePx,
-          headlineTextAlign,
-          bodyTextAlign,
-          settings: item.settings,
-          templateId: tid || undefined,
-          headlineStyleRanges: item.headlineRanges,
-          bodyStyleRanges: item.bodyRanges,
-          ...(item.lineOverridesByKey ? { lineOverridesByKey: item.lineOverridesByKey } : {}),
-        } satisfies CarouselTextRequest as any;
-
-        const nextLayoutData = {
-          success: true,
-          layout: nextLayout,
-          imageUrl: (item.image as any)?.url || null,
-        };
-
-        // Only apply in-memory/UI updates if we're still viewing this project.
-        if (currentProjectIdRef.current === pid) {
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i !== slideIndex
-                ? s
-                : {
-                    ...s,
-                    layoutData: nextLayoutData,
-                    inputData: req,
-                    ...(item.templateTypeId === "regular" ? { draftBodyFontSizePx: effectiveBodyFontSizePx } : {}),
-                  }
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== slideIndex
-              ? s
-              : {
-                  ...s,
-                  layoutData: nextLayoutData,
-                  inputData: req,
-                  ...(item.templateTypeId === "regular" ? { draftBodyFontSizePx: effectiveBodyFontSizePx } : {}),
-                }
-          );
-          // If this is the active slide, also update the engine so Fabric rerenders immediately.
-          if (slideIndex === activeSlideIndexRef.current) {
-            setLayoutData(nextLayoutData as any);
-            setInputData(req as any);
-            setLayoutHistory((h) => h || []);
-          }
-        }
-
-        // Always persist to the original project+slide.
-        void saveSlidePatchForProject(pid, slideIndex, {
-          layoutSnapshot: nextLayout,
-          inputSnapshot: req,
-        });
-
-        // Yield to the browser between slides to keep UI responsive.
-        await new Promise((r) => setTimeout(r, 0));
-      }
-    } finally {
-      liveLayoutRunningRef.current = false;
-    }
-  };
+  // Stage 4B1: `enqueueLiveLayoutForProject` + `processLiveLayoutQueue` are extracted into `useLiveLayoutQueue`.
 
   const scheduleLiveLayout = (slideIndex: number) => {
     if (!currentProjectId) return;
@@ -3218,7 +2993,11 @@ export default function EditorShell() {
   // Track whether the active canvas selection is the user image, so we can show a Delete button.
   useEffect(() => {
     const c = (canvasRef as any)?.current?.canvas;
-    if (!c || typeof c.on !== "function") return;
+    if (!c || typeof c.on !== "function") {
+      // Canvas may not be mounted yet; re-run when `activeCanvasNonce` changes.
+      setActiveImageSelected(false);
+      return;
+    }
     const onSel = () => syncActiveImageSelected();
     try {
       c.on("selection:created", onSel);
@@ -3241,7 +3020,7 @@ export default function EditorShell() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSlideIndex, (layoutData as any)?.layout]);
+  }, [activeSlideIndex, (layoutData as any)?.layout, activeCanvasNonce]);
 
   // Close the image menu on outside click or Escape.
   useEffect(() => {
@@ -3711,149 +3490,14 @@ export default function EditorShell() {
     await signOut();
   };
 
-  // Phase 2B: store-driven UI (components read from store; behavior remains in EditorShell).
-  useLayoutEffect(() => {
-    editorStore.setState({
-      actions: {
-        onChangeProjectTitle: (v: string) => {
-          setProjectTitle(v);
-          // Keep store in sync immediately so the input caret doesn't jump.
-          editorStore.setState({ projectTitle: v } as any);
-          scheduleDebouncedProjectTitleSave({ projectId: currentProjectId, title: v, debounceMs: 600 });
-        },
-        onDownloadAll: () => void handleDownloadAll(),
-        onShareAll: () => void handleShareAll(),
-        onSignOut: () => void handleSignOut(),
+  useEditorStoreActionsSync({
+    editorStore,
 
-        onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
-          setNewProjectTemplateTypeId(next);
-          editorStore.setState({ newProjectTemplateTypeId: next } as any);
-        },
-        onClickNewProject: () => {
-          setSlides((prev) => prev.map((s) => ({ ...s, draftHeadline: "", draftBody: "" })));
-          handleNewCarousel();
-          void createNewProject(newProjectTemplateTypeId);
-        },
-
-        onOpenTemplateSettings: () => {
-          setTemplateSettingsOpen(true);
-          editorStore.setState({ templateSettingsOpen: true } as any);
-        },
-        onCloseTemplateSettings: () => {
-          setTemplateSettingsOpen(false);
-          editorStore.setState({ templateSettingsOpen: false } as any);
-        },
-        onOpenTemplateEditor: () => {
-          setTemplateSettingsOpen(false);
-          setPromptModalOpen(false);
-          editorStore.setState({ templateSettingsOpen: false, promptModalOpen: false } as any);
-          setTemplateEditorOpen(true);
-        },
-
-        onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => {
-          setPromptModalSection(section);
-          setPromptModalOpen(true);
-          editorStore.setState({ promptModalSection: section, promptModalOpen: true } as any);
-        },
-        onClosePromptsModal: () => {
-          setPromptModalOpen(false);
-          editorStore.setState({ promptModalOpen: false } as any);
-        },
-        onChangeTemplateTypePrompt: (next: string) => {
-          promptDirtyRef.current = true;
-          setTemplateTypePrompt(next);
-          // Keep store in sync immediately so the textarea caret doesn't jump.
-          editorStore.setState({
-            templateTypePrompt: next,
-            templateTypePromptPreviewLine: String(next || "").split("\n")[0] || "",
-          } as any);
-        },
-        onChangeTemplateTypeEmphasisPrompt: (next: string) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeEmphasisPrompt(next);
-          editorStore.setState({
-            templateTypeEmphasisPrompt: next,
-            templateTypeEmphasisPromptPreviewLine: String(next || "").split("\n")[0] || "",
-          } as any);
-        },
-        onChangeTemplateTypeImageGenPrompt: (next: string) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeImageGenPrompt(next);
-          editorStore.setState({
-            templateTypeImageGenPrompt: next,
-            templateTypeImageGenPromptPreviewLine: String(next || "").split("\n")[0] || "",
-          } as any);
-        },
-
-        onChangeHeadlineFontKey: (raw: string) => {
-          const [family, w] = String(raw || "").split("@@");
-          const weight = Number(w);
-          setHeadlineFontFamily(family || "Inter, sans-serif");
-          setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
-        },
-        onChangeBodyFontKey: (raw: string) => {
-          const [family, w] = String(raw || "").split("@@");
-          const weight = Number(w);
-          setBodyFontFamily(family || "Inter, sans-serif");
-          setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
-        },
-        onChangeBackgroundColor: (next: string) => updateProjectColors(next, projectTextColor),
-        onChangeTextColor: (next: string) => updateProjectColors(projectBackgroundColor, next),
-
-        onToggleProjectsDropdown: () => setProjectsDropdownOpen((v) => !v),
-        onLoadProject: (projectId: string) => {
-          setProjectsDropdownOpen(false);
-          editorStore.setState({ projectsDropdownOpen: false } as any);
-          void loadProject(projectId);
-          if (isMobile) setMobileDrawerOpen(false);
-        },
-        onRequestArchive: (target: { id: string; title: string }) => {
-          setArchiveProjectTarget(target);
-          setArchiveProjectModalOpen(true);
-          editorStore.setState({ archiveProjectTarget: target, archiveProjectModalOpen: true } as any);
-        },
-        onCancelArchive: () => {
-          if (archiveProjectBusy) return;
-          setArchiveProjectModalOpen(false);
-          setArchiveProjectTarget(null);
-          editorStore.setState({ archiveProjectModalOpen: false, archiveProjectTarget: null } as any);
-        },
-        onConfirmArchive: (target: { id: string; title: string }) => {
-          void archiveProjectById(target.id, target.title);
-        },
-
-        onChangeTemplateTypeMappingSlide1: (next: string | null) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeMappingSlide1(next);
-          if (currentProjectIdRef.current) {
-            setProjectMappingSlide1(next);
-            void persistCurrentProjectTemplateMappings({ slide1TemplateIdSnapshot: next });
-          }
-        },
-        onChangeTemplateTypeMappingSlide2to5: (next: string | null) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeMappingSlide2to5(next);
-          if (currentProjectIdRef.current) {
-            setProjectMappingSlide2to5(next);
-            void persistCurrentProjectTemplateMappings({ slide2to5TemplateIdSnapshot: next });
-          }
-        },
-        onChangeTemplateTypeMappingSlide6: (next: string | null) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeMappingSlide6(next);
-          if (currentProjectIdRef.current) {
-            setProjectMappingSlide6(next);
-            void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
-          }
-        },
-      },
-    } as any);
-  }, [
+    // Keep dependency semantics identical to the original effect.
     archiveProjectBusy,
     archiveProjectById,
     createNewProject,
     currentProjectId,
-    editorStore,
     handleDownloadAll,
     handleNewCarousel,
     handleShareAll,
@@ -3867,889 +3511,194 @@ export default function EditorShell() {
     projectsDropdownOpen,
     saveProjectMetaForProject,
     updateProjectColors,
-  ]);
 
-  useLayoutEffect(() => {
-    // Phase 2C: provide workspace bindings (slides strip/canvas row) to the store
-    // so `EditorSlidesRow` can read them without prop drilling.
-    const mobilePointerDown = (e: any) => {
-      if (!isMobile) return;
-      if (mobileDrawerOpen) return;
-      if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
-      if (switchingSlides || copyGenerating) return;
-      if (isEditableTarget(e.target)) return;
-      const x = (e as any).clientX ?? 0;
-      const y = (e as any).clientY ?? 0;
-      mobileGestureRef.current = { mode: "slide", startX: x, startY: y, lastX: x, lastY: y, fired: false };
-    };
-    const mobilePointerMove = (e: any) => {
-      const g = mobileGestureRef.current;
-      if (g.mode !== "slide") return;
-      const x = (e as any).clientX ?? 0;
-      const y = (e as any).clientY ?? 0;
-      g.lastX = x;
-      g.lastY = y;
-      const dx = x - g.startX;
-      const dy = y - g.startY;
-      if (Math.abs(dy) > Math.abs(dx)) return;
-      if (g.fired) return;
-      if (dx < -60) {
-        g.fired = true;
-        void switchToSlide(activeSlideIndex + 1);
-      } else if (dx > 60) {
-        g.fired = true;
-        void switchToSlide(activeSlideIndex - 1);
-      }
-    };
-    const mobilePointerUp = () => {
-      const g = mobileGestureRef.current;
-      if (g.mode === "slide") mobileGestureRef.current.mode = null;
-    };
-    const mobilePointerCancel = () => {
-      const g = mobileGestureRef.current;
-      if (g.mode === "slide") mobileGestureRef.current.mode = null;
-    };
+    // Captured values used in actions (intentionally not part of the dependency list).
+    setProjectTitle,
+    scheduleDebouncedProjectTitleSave,
+    setNewProjectTemplateTypeId,
+    setSlides,
+    setTemplateSettingsOpen,
+    setPromptModalOpen,
+    setPromptModalSection,
+    setTemplateEditorOpen,
+    promptDirtyRef,
+    setTemplateTypePrompt,
+    setTemplateTypeEmphasisPrompt,
+    setTemplateTypeImageGenPrompt,
+    setHeadlineFontFamily,
+    setHeadlineFontWeight,
+    setBodyFontFamily,
+    setBodyFontWeight,
+    projectTextColorForUpdate: projectTextColor,
+    projectBackgroundColorForUpdate: projectBackgroundColor,
+    setProjectsDropdownOpen,
+    setMobileDrawerOpen,
+    setArchiveProjectTarget,
+    setArchiveProjectModalOpen,
+    setTemplateTypeMappingSlide1,
+    setTemplateTypeMappingSlide2to5,
+    setTemplateTypeMappingSlide6,
+    currentProjectIdRef,
+    setProjectMappingSlide1,
+    setProjectMappingSlide2to5,
+    setProjectMappingSlide6,
+  });
 
-    const renderActiveSlideControlsRow = () => (
-      <div className="absolute left-2 bottom-0 translate-y-10 flex items-center gap-3">
-        <button
-          type="button"
-          className="w-9 h-9 bg-transparent text-slate-900 hover:text-black disabled:opacity-40"
-          title={
-            !currentProjectId
-              ? "Create or load a project to upload an image"
-              : imageBusy
-                ? "Working…"
-                : "Upload image"
-          }
-          aria-label="Upload image"
-          disabled={!currentProjectId || imageBusy || switchingSlides || copyGenerating}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            imageFileInputRef.current?.click();
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openImageMenu(e.clientX, e.clientY);
-          }}
-          onPointerDown={(e) => {
-            if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-            const x = (e as any).clientX ?? 0;
-            const y = (e as any).clientY ?? 0;
-            imageLongPressRef.current = window.setTimeout(() => {
-              openImageMenu(x, y);
-            }, 520);
-          }}
-          onPointerUp={() => {
-            if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-            imageLongPressRef.current = null;
-          }}
-          onPointerCancel={() => {
-            if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-            imageLongPressRef.current = null;
-          }}
-          onPointerLeave={() => {
-            if (imageLongPressRef.current) window.clearTimeout(imageLongPressRef.current);
-            imageLongPressRef.current = null;
-          }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="w-9 h-9"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="3" y="7" width="14" height="12" rx="3" />
-            <path d="M7 7l1.2-2h3.6L13 7" />
-            <circle cx="10" cy="13" r="3" />
-            <path d="M20 4v4" />
-            <path d="M18 6h4" />
-          </svg>
-        </button>
-
-        {templateTypeId === "enhanced" ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!!slides[activeSlideIndex]?.layoutLocked}
-              aria-label="Lock layout"
-              className={[
-                "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
-                !currentProjectId || switchingSlides || copyGenerating ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
-                slides[activeSlideIndex]?.layoutLocked ? "bg-emerald-500 border-emerald-500" : "bg-slate-300 border-slate-300",
-              ].join(" ")}
-              disabled={!currentProjectId || switchingSlides || copyGenerating}
-              title={!currentProjectId ? "Create or load a project to use Lock layout" : "Toggle Lock layout for this slide"}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!currentProjectId) return;
-                const slideIndex = activeSlideIndexRef.current;
-                const prev = slidesRef.current[slideIndex] || initSlide();
-                const nextLocked = !prev.layoutLocked;
-                const baseInput =
-                  (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) || (prev as any)?.inputData || null;
-                const nextInput = withLayoutLockedInInput(baseInput, nextLocked);
-                setSlides((arr) =>
-                  arr.map((s, ii) => (ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)))
-                );
-                slidesRef.current = slidesRef.current.map((s, ii) =>
-                  ii !== slideIndex ? s : ({ ...s, layoutLocked: nextLocked, inputData: nextInput } as any)
-                );
-                if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
-                try {
-                  const key = liveLayoutKey(currentProjectId, slideIndex);
-                  const t = liveLayoutTimeoutsRef.current[key];
-                  if (t) window.clearTimeout(t);
-                  liveLayoutTimeoutsRef.current[key] = null;
-                  liveLayoutQueueRef.current = liveLayoutQueueRef.current.filter((x) => x.key !== key);
-                  liveLayoutRunIdByKeyRef.current[key] = (liveLayoutRunIdByKeyRef.current[key] || 0) + 1;
-                } catch {
-                  // ignore
-                }
-                schedulePersistLayoutAndInput({
-                  projectId: currentProjectId,
-                  slideIndex,
-                  layoutSnapshot: ((layoutData as any)?.layout || (prev as any)?.layoutData?.layout || null),
-                  inputSnapshot: nextInput,
-                });
-              }}
-            >
-              <span
-                className={[
-                  "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
-                  slides[activeSlideIndex]?.layoutLocked ? "opacity-100" : "opacity-0",
-                ].join(" ")}
-              >
-                ON
-              </span>
-              <span
-                className={[
-                  "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
-                  slides[activeSlideIndex]?.layoutLocked ? "opacity-0" : "opacity-100",
-                ].join(" ")}
-              >
-                OFF
-              </span>
-              <span
-                className={[
-                  "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
-                  slides[activeSlideIndex]?.layoutLocked ? "translate-x-8" : "translate-x-1",
-                ].join(" ")}
-              />
-            </button>
-            <div className="text-sm font-semibold text-slate-900 select-none">Lock layout</div>
-          </div>
-        ) : null}
-
-        {templateTypeId === "enhanced" && activeImageSelected ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!!slides[activeSlideIndex]?.autoRealignOnImageRelease}
-              aria-label="Auto realign on release"
-              className={[
-                "relative inline-flex h-8 w-16 items-center rounded-full border transition-colors select-none",
-                !currentProjectId || switchingSlides || copyGenerating || !!slides[activeSlideIndex]?.layoutLocked
-                  ? "opacity-40 cursor-not-allowed"
-                  : "cursor-pointer",
-                slides[activeSlideIndex]?.autoRealignOnImageRelease ? "bg-slate-900 border-slate-900" : "bg-slate-300 border-slate-300",
-              ].join(" ")}
-              disabled={!currentProjectId || switchingSlides || copyGenerating || !!slides[activeSlideIndex]?.layoutLocked}
-              title={
-                !currentProjectId
-                  ? "Create or load a project to use Auto realign on release"
-                  : slides[activeSlideIndex]?.layoutLocked
-                    ? "Turn off Lock layout to use Auto realign on release"
-                    : "Toggle Auto realign on release"
-              }
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!currentProjectId) return;
-                const slideIndex = activeSlideIndexRef.current;
-                const prev = slidesRef.current[slideIndex] || initSlide();
-                if (prev.layoutLocked) return;
-                const nextEnabled = !prev.autoRealignOnImageRelease;
-                const baseInput =
-                  (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) || (prev as any)?.inputData || null;
-                const nextInput = withAutoRealignOnImageReleaseInInput(baseInput, nextEnabled);
-
-                setSlides((arr) =>
-                  arr.map((s, ii) =>
-                    ii !== slideIndex ? s : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
-                  )
-                );
-                slidesRef.current = slidesRef.current.map((s, ii) =>
-                  ii !== slideIndex ? s : ({ ...s, autoRealignOnImageRelease: nextEnabled, inputData: nextInput } as any)
-                );
-                if (slideIndex === activeSlideIndexRef.current) setInputData(nextInput as any);
-
-                void saveSlidePatchForProject(currentProjectId, slideIndex, { inputSnapshot: nextInput });
-              }}
-            >
-              <span
-                className={[
-                  "absolute left-2 text-[10px] font-bold tracking-wide text-white transition-opacity",
-                  slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-100" : "opacity-0",
-                ].join(" ")}
-              >
-                ON
-              </span>
-              <span
-                className={[
-                  "absolute right-2 text-[10px] font-bold tracking-wide text-slate-700 transition-opacity",
-                  slides[activeSlideIndex]?.autoRealignOnImageRelease ? "opacity-0" : "opacity-100",
-                ].join(" ")}
-              >
-                OFF
-              </span>
-              <span
-                className={[
-                  "inline-block h-7 w-7 rounded-full bg-white shadow-sm transform transition-transform",
-                  slides[activeSlideIndex]?.autoRealignOnImageRelease ? "translate-x-8" : "translate-x-1",
-                ].join(" ")}
-              />
-            </button>
-            <div className="text-sm font-semibold text-slate-900 select-none">Auto realign on release</div>
-          </div>
-        ) : null}
-
-        {canvasTextSelection?.active ? (
-          <div className="flex items-center gap-2">
-            {(() => {
-              const disabled = !currentProjectId || switchingSlides || copyGenerating;
-              const pillBase = "h-8 px-3 rounded-full border text-sm font-semibold select-none transition-colors";
-              const pillOn = "bg-slate-900 border-slate-900 text-white";
-              const pillOff = "bg-white border-slate-300 text-slate-900 hover:bg-slate-50";
-              const pillDis = "opacity-40 cursor-not-allowed";
-              const btn = (on: boolean) => [pillBase, disabled ? pillDis : "cursor-pointer", on ? pillOn : pillOff].join(" ");
-              const stop = (e: any) => {
-                e.preventDefault();
-                e.stopPropagation();
-              };
-              return (
-                <>
-                  <button
-                    type="button"
-                    className={btn(!!canvasTextSelection?.isBold)}
-                    disabled={disabled}
-                    tabIndex={-1}
-                    aria-label="Bold"
-                    title="Bold"
-                    onMouseDown={stop}
-                    onClick={(e) => {
-                      stop(e);
-                      applyCanvasInlineMark("bold", !canvasTextSelection.isBold);
-                    }}
-                  >
-                    B
-                  </button>
-                  <button
-                    type="button"
-                    className={btn(!!canvasTextSelection?.isItalic)}
-                    disabled={disabled}
-                    tabIndex={-1}
-                    aria-label="Italic"
-                    title="Italic"
-                    onMouseDown={stop}
-                    onClick={(e) => {
-                      stop(e);
-                      applyCanvasInlineMark("italic", !canvasTextSelection.isItalic);
-                    }}
-                  >
-                    I
-                  </button>
-                  <button
-                    type="button"
-                    className={btn(!!canvasTextSelection?.isUnderline)}
-                    disabled={disabled}
-                    tabIndex={-1}
-                    aria-label="Underline"
-                    title="Underline"
-                    onMouseDown={stop}
-                    onClick={(e) => {
-                      stop(e);
-                      applyCanvasInlineMark("underline", !canvasTextSelection.isUnderline);
-                    }}
-                  >
-                    <span className="underline underline-offset-2">U</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={btn(false)}
-                    disabled={disabled}
-                    tabIndex={-1}
-                    aria-label="Clear text styling"
-                    title="Clear (bold/italic/underline)"
-                    onMouseDown={stop}
-                    onClick={(e) => {
-                      stop(e);
-                      clearCanvasInlineMarks();
-                    }}
-                  >
-                    Clear
-                  </button>
-                </>
-              );
-            })()}
-          </div>
-        ) : null}
-      </div>
-    );
-
-    editorStore.setState({
-      titleText: "The Fittest You - AI Carousel Generator",
-      projectTitle,
-      projectTitleDisabled: switchingSlides,
-      isMobile,
-      topExporting,
-      engineSaveStatus: saveStatus as any,
-      promptSaveStatus,
-      projectSaveStatus,
-      slideSaveStatus,
-      currentProjectId,
-      templateTypeId,
-      newProjectTemplateTypeId,
-      switchingSlides,
-      loading,
-      templateTypePromptPreviewLine: (templateTypePrompt || "").split("\n")[0] || "",
-      templateTypeEmphasisPromptPreviewLine: (templateTypeEmphasisPrompt || "").split("\n")[0] || "",
-      templateTypeImageGenPromptPreviewLine: (templateTypeImageGenPrompt || "").split("\n")[0] || "",
-      templateSettingsOpen,
-      promptModalOpen,
-      promptModalSection,
-      templateTypePrompt,
-      templateTypeEmphasisPrompt,
-      templateTypeImageGenPrompt,
-      templateTypeMappingSlide1,
-      templateTypeMappingSlide2to5,
-      templateTypeMappingSlide6,
-      loadingTemplates,
-      templates: (Array.isArray(templates) ? templates : []).map((t: any) => ({ id: String(t?.id || ""), name: String(t?.name || "") })),
-      fontOptions: FONT_OPTIONS,
-      headlineFontKey: fontKey(headlineFontFamily, headlineFontWeight),
-      bodyFontKey: fontKey(bodyFontFamily, bodyFontWeight),
-      projectBackgroundColor,
-      projectTextColor,
-      projects,
-      projectsLoading,
-      projectsDropdownOpen,
-      archiveProjectModalOpen,
-      archiveProjectTarget,
-      archiveProjectBusy,
-      workspace: {
-        slideCount,
-        activeSlideIndex,
-        copyGenerating,
-        viewportWidth,
-        goPrev,
-        goNext,
-        switchToSlide,
-        viewportRef,
-        imageFileInputRef,
-        slideCanvasRefs,
-        slideRefs,
-        canvasRef,
-        lastActiveFabricCanvasRef,
-        setActiveCanvasNonce,
-        CarouselPreviewVision,
-        SlideCard,
-        templateSnapshots,
-        computeTemplateIdForSlide,
-        layoutData,
-        EMPTY_LAYOUT,
-        slides,
-        showLayoutOverlays,
-        addLog,
-        VIEWPORT_PAD,
-        translateX,
-        totalW,
-        imageMenuOpen,
-        imageMenuPos,
-        imageBusy,
-        hasImageForActiveSlide,
-        deleteImageForActiveSlide: (source: "menu" | "button") => void deleteImageForActiveSlide(source),
-        uploadImageForActiveSlide: (file: File) => void uploadImageForActiveSlide(file),
-        handleUserImageChange,
-        onUserTextChangeRegular: handleRegularCanvasTextChange,
-        onUserTextChangeEnhanced: handleEnhancedCanvasTextChange,
-        onMobileViewportPointerDown: mobilePointerDown,
-        onMobileViewportPointerMove: mobilePointerMove,
-        onMobileViewportPointerUp: mobilePointerUp,
-        onMobileViewportPointerCancel: mobilePointerCancel,
-        renderActiveSlideControlsRow,
-      },
-      bottomPanel: {
-        activeSlideIndex,
-        slideCount,
-        currentProjectId,
-        loading,
-        switchingSlides,
-        copyGenerating,
-        enhancedLockOn,
-        slides,
-        layoutData,
-        inputData,
-        layoutHistoryLength: layoutHistory.length,
-        showLayoutOverlays,
-        addLog,
-
-        onChangeHeadlineFontSize: (e: any) => {
-          const raw = Number((e.target as any).value);
-          const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 76;
-          pushUndoSnapshot();
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i !== activeSlideIndex
-                ? s
-                : ({
-                    ...s,
-                    draftHeadlineFontSizePx: nextSize,
-                    inputData:
-                      s.inputData && typeof s.inputData === "object"
-                        ? { ...(s.inputData as any), headlineFontSizePx: nextSize }
-                        : s.inputData,
-                  } as any)
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== activeSlideIndex
-              ? s
-              : ({
-                  ...s,
-                  draftHeadlineFontSizePx: nextSize,
-                  inputData:
-                    (s as any).inputData && typeof (s as any).inputData === "object"
-                      ? { ...((s as any).inputData as any), headlineFontSizePx: nextSize }
-                      : (s as any).inputData,
-                } as any)
-          );
-          if (!enhancedLockOn) scheduleLiveLayout(activeSlideIndex);
-        },
-        onClickHeadlineAlign: (a: "left" | "center" | "right") => {
-          const nextAlign = a;
-          pushUndoSnapshot();
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i !== activeSlideIndex
-                ? s
-                : ({
-                    ...s,
-                    draftHeadlineTextAlign: nextAlign,
-                    inputData:
-                      s.inputData && typeof s.inputData === "object"
-                        ? { ...(s.inputData as any), headlineTextAlign: nextAlign }
-                        : s.inputData,
-                  } as any)
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== activeSlideIndex
-              ? s
-              : ({
-                  ...s,
-                  draftHeadlineTextAlign: nextAlign,
-                  inputData:
-                    (s as any).inputData && typeof (s as any).inputData === "object"
-                      ? { ...((s as any).inputData as any), headlineTextAlign: nextAlign }
-                      : (s as any).inputData,
-                } as any)
-          );
-          if (!enhancedLockOn && currentProjectId && !(slidesRef.current[activeSlideIndex] as any)?.layoutLocked) {
-            enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
-          }
-        },
-        onChangeHeadlineRichText: (next: any) => {
-          try {
-            const nowProj = currentProjectIdRef.current || "none";
-            const nowSlide = activeSlideIndexRef.current + 1;
-            const srcProj = currentProjectId || "none";
-            const srcSlide = activeSlideIndex + 1;
-            if (nowProj !== srcProj || nowSlide !== srcSlide) {
-              addLog(
-                `🚨 RTE MISMATCH headline: src proj=${srcProj} slide=${srcSlide} -> now proj=${nowProj} slide=${nowSlide} (len=${String(next.text || "").length})`
-              );
-            }
-          } catch {
-            // ignore
-          }
-          const slideIndexNow = activeSlideIndexRef.current;
-          const cur = slidesRef.current[slideIndexNow] || initSlide();
-          const prevText = String(cur.draftHeadline || "");
-          const prevRanges = Array.isArray(cur.draftHeadlineRanges) ? cur.draftHeadlineRanges : [];
-          const nextText = String(next.text || "");
-          const nextRanges = Array.isArray(next.ranges) ? next.ranges : [];
-          const isFormattingOnly = nextText === prevText && !rangesEqual(prevRanges, nextRanges);
-          const isPuncOnly = nextText !== prevText && isPunctuationOnlyChange(prevText, nextText);
-          const locked = templateTypeId === "enhanced" ? !!cur.layoutLocked : false;
-
-          setSlides((prev) => prev.map((s, i) => (i === slideIndexNow ? { ...s, draftHeadline: nextText, draftHeadlineRanges: nextRanges } : s)));
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i === slideIndexNow ? ({ ...s, draftHeadline: nextText, draftHeadlineRanges: nextRanges } as any) : s
-          );
-
-          if (templateTypeId === "enhanced" && (locked || isFormattingOnly || isPuncOnly)) {
-            const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
-            const baseLayout =
-              (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
-              (baseSlide as any)?.layoutData?.layout ||
-              null;
-            const baseInput =
-              (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
-            if (baseLayout) {
-              const headlineRanges = nextRanges;
-              const bodyRanges = Array.isArray(baseSlide.draftBodyRanges) ? baseSlide.draftBodyRanges : [];
-              const updatedInput = withLayoutLockedInInput(
-                {
-                  ...(baseInput && typeof baseInput === "object" ? baseInput : {}),
-                  headline: nextText,
-                  headlineStyleRanges: headlineRanges,
-                  bodyStyleRanges: bodyRanges,
-                },
-                locked
-              );
-
-              let nextLayout = baseLayout;
-              if (locked || isPuncOnly) {
-                const wrapped = wrapBlockIntoExistingLinesNoMove({
-                  layout: baseLayout,
-                  block: "HEADLINE",
-                  text: nextText,
-                  ranges: headlineRanges,
-                });
-                nextLayout = wrapped.layout;
-              } else {
-                const applied = applyInlineStylesToExistingLayout({
-                  layout: baseLayout,
-                  headlineRanges,
-                  bodyRanges,
-                });
-                nextLayout = applied.layout;
-              }
-
-              const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
-              setSlides((prev) =>
-                prev.map((s, i) => (i !== slideIndexNow ? s : ({ ...s, layoutData: nextLayoutData, inputData: updatedInput } as any)))
-              );
-              slidesRef.current = slidesRef.current.map((s, i) =>
-                i !== slideIndexNow ? s : ({ ...s, layoutData: nextLayoutData, inputData: updatedInput } as any)
-              );
-              if (slideIndexNow === activeSlideIndexRef.current) {
-                setLayoutData(nextLayoutData);
-                setInputData(updatedInput as any);
-              }
-              schedulePersistLayoutAndInput({
-                projectId: currentProjectIdRef.current,
-                slideIndex: slideIndexNow,
-                layoutSnapshot: nextLayout,
-                inputSnapshot: updatedInput,
-              });
-              return;
-            }
-          }
-          scheduleLiveLayout(slideIndexNow);
-        },
-
-        onChangeBodyFontSize: (e: any) => {
-          const raw = Number((e.target as any).value);
-          const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 48;
-          pushUndoSnapshot();
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i !== activeSlideIndex
-                ? s
-                : ({
-                    ...s,
-                    draftBodyFontSizePx: nextSize,
-                    inputData:
-                      s.inputData && typeof s.inputData === "object"
-                        ? { ...(s.inputData as any), bodyFontSizePx: nextSize }
-                        : s.inputData,
-                  } as any)
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== activeSlideIndex
-              ? s
-              : ({
-                  ...s,
-                  draftBodyFontSizePx: nextSize,
-                  inputData:
-                    (s as any).inputData && typeof (s as any).inputData === "object"
-                      ? { ...((s as any).inputData as any), bodyFontSizePx: nextSize }
-                      : (s as any).inputData,
-                } as any)
-          );
-          if (!enhancedLockOn) scheduleLiveLayout(activeSlideIndex);
-        },
-        onClickBodyAlign: (a: "left" | "center" | "right") => {
-          const nextAlign = a;
-          pushUndoSnapshot();
-          setSlides((prev) =>
-            prev.map((s, i) =>
-              i !== activeSlideIndex
-                ? s
-                : ({
-                    ...s,
-                    draftBodyTextAlign: nextAlign,
-                    inputData:
-                      s.inputData && typeof s.inputData === "object"
-                        ? { ...(s.inputData as any), bodyTextAlign: nextAlign }
-                        : s.inputData,
-                  } as any)
-            )
-          );
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== activeSlideIndex
-              ? s
-              : ({
-                  ...s,
-                  draftBodyTextAlign: nextAlign,
-                  inputData:
-                    (s as any).inputData && typeof (s as any).inputData === "object"
-                      ? { ...((s as any).inputData as any), bodyTextAlign: nextAlign }
-                      : (s as any).inputData,
-                } as any)
-          );
-          if (!enhancedLockOn && currentProjectId && !(slidesRef.current[activeSlideIndex] as any)?.layoutLocked) {
-            enqueueLiveLayoutForProject(currentProjectId, [activeSlideIndex]);
-          }
-        },
-        onChangeBodyRichText: (next: any) => {
-          try {
-            const nowProj = currentProjectIdRef.current || "none";
-            const nowSlide = activeSlideIndexRef.current + 1;
-            const srcProj = currentProjectId || "none";
-            const srcSlide = activeSlideIndex + 1;
-            if (nowProj !== srcProj || nowSlide !== srcSlide) {
-              addLog(
-                `🚨 RTE MISMATCH body: src proj=${srcProj} slide=${srcSlide} -> now proj=${nowProj} slide=${nowSlide} (len=${String(next.text || "").length})`
-              );
-            }
-          } catch {
-            // ignore
-          }
-          const slideIndexNow = activeSlideIndexRef.current;
-          const cur = slidesRef.current[slideIndexNow] || initSlide();
-          const prevText = String(cur.draftBody || "");
-          const prevRanges = Array.isArray(cur.draftBodyRanges) ? cur.draftBodyRanges : [];
-          const nextText = String(next.text || "");
-          const nextRanges = Array.isArray(next.ranges) ? next.ranges : [];
-          const isFormattingOnly = nextText === prevText && !rangesEqual(prevRanges, nextRanges);
-          const isPuncOnly = nextText !== prevText && isPunctuationOnlyChange(prevText, nextText);
-          const locked = templateTypeId === "enhanced" ? !!cur.layoutLocked : false;
-
-          setSlides((prev) => prev.map((s, i) => (i === slideIndexNow ? { ...s, draftBody: nextText, draftBodyRanges: nextRanges } : s)));
-          slidesRef.current = slidesRef.current.map((s, i) =>
-            i === slideIndexNow ? ({ ...s, draftBody: nextText, draftBodyRanges: nextRanges } as any) : s
-          );
-
-          if (templateTypeId === "enhanced" && (locked || isFormattingOnly || isPuncOnly)) {
-            const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
-            const baseLayout =
-              (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
-              (baseSlide as any)?.layoutData?.layout ||
-              null;
-            const baseInput =
-              (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
-            if (baseLayout) {
-              const headlineRanges = Array.isArray(baseSlide.draftHeadlineRanges) ? baseSlide.draftHeadlineRanges : [];
-              const bodyRanges = nextRanges;
-              const updatedInput = withLayoutLockedInInput(
-                {
-                  ...(baseInput && typeof baseInput === "object" ? baseInput : {}),
-                  body: nextText,
-                  headlineStyleRanges: headlineRanges,
-                  bodyStyleRanges: bodyRanges,
-                },
-                locked
-              );
-
-              let nextLayout = baseLayout;
-              if (locked || isPuncOnly) {
-                const wrapped = wrapBlockIntoExistingLinesNoMove({
-                  layout: baseLayout,
-                  block: "BODY",
-                  text: nextText,
-                  ranges: bodyRanges,
-                });
-                nextLayout = wrapped.layout;
-              } else {
-                const applied = applyInlineStylesToExistingLayout({
-                  layout: baseLayout,
-                  headlineRanges,
-                  bodyRanges,
-                });
-                nextLayout = applied.layout;
-              }
-
-              const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
-              setSlides((prev) =>
-                prev.map((s, i) => (i !== slideIndexNow ? s : ({ ...s, layoutData: nextLayoutData, inputData: updatedInput } as any)))
-              );
-              slidesRef.current = slidesRef.current.map((s, i) =>
-                i !== slideIndexNow ? s : ({ ...s, layoutData: nextLayoutData, inputData: updatedInput } as any)
-              );
-              if (slideIndexNow === activeSlideIndexRef.current) {
-                setLayoutData(nextLayoutData);
-                setInputData(updatedInput as any);
-              }
-              schedulePersistLayoutAndInput({
-                projectId: currentProjectIdRef.current,
-                slideIndex: slideIndexNow,
-                layoutSnapshot: nextLayout,
-                inputSnapshot: updatedInput,
-              });
-              return;
-            }
-          }
-          scheduleLiveLayout(slideIndexNow);
-        },
-
-        aiImagePromptSaveStatus,
-        imagePromptGenerating,
-        imagePromptError,
-        onClickRegenerateImagePrompt: () => void runGenerateImagePrompts(activeSlideIndex),
-        onChangeAiImagePrompt: (newValue: string) => {
-          setSlides((prev) => prev.map((s, i) => (i === activeSlideIndex ? { ...s, draftAiImagePrompt: newValue } : s)));
-        },
-        onClickGenerateAiImage: () => void runGenerateAiImage(),
-        aiImageGeneratingThis,
-        aiImageProgressThis: aiImageProgressThis || 0,
-        aiImageStatusThis,
-        aiImageErrorThis,
-
-        copyProgressIcon: <CopyProgressIcon />,
-        onClickGenerateCopy: () => void runGenerateCopy(),
-        copyError,
-        saveError: saveError || null,
-        error: error || null,
-        onClickRetry: () => void handleRetry(),
-
-        activeImageSelected,
-        imageBusy,
-        aiKey,
-        bgRemovalBusyKeys,
-        setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void setActiveSlideImageBgRemoval(nextEnabled),
-        deleteImageForActiveSlide: (source: "menu" | "button") => void deleteImageForActiveSlide(source),
-
-        realigning,
-        onClickRealignText: () => runRealignTextForActiveSlide({ pushHistory: true }),
-        onClickUndo: () => {
-          layoutDirtyRef.current = true;
-          handleUndo();
-        },
-        onClickToggleOverlays: () => {
-          const next = !showLayoutOverlays;
-          setShowLayoutOverlays(next);
-          try {
-            addLog(`🧩 Overlays: ${next ? "ON" : "OFF"}`);
-          } catch {
-            // ignore
-          }
-        },
-
-        captionDraft: captionDraft || "",
-        captionCopyStatus,
-        onClickCopyCaption: async () => {
-          const ok = await copyToClipboard(captionDraft || "");
-          setCaptionCopyStatus(ok ? "copied" : "error");
-          window.setTimeout(() => setCaptionCopyStatus("idle"), 1200);
-        },
-        onChangeCaption: (v: string) => {
-          setCaptionDraft(v);
-          // Keep store in sync immediately so the textarea caret doesn't jump.
-          editorStore.setState((prev: any) => ({
-            bottomPanel: prev?.bottomPanel ? { ...prev.bottomPanel, captionDraft: v } : prev?.bottomPanel,
-          }));
-          scheduleDebouncedCaptionSave({ projectId: currentProjectId, caption: v, debounceMs: 600 });
-        },
-
-        debugScreenshot: debugScreenshot || null,
-        showDebugPreview,
-        setShowDebugPreview,
-        debugLogs: Array.isArray(debugLogs) ? debugLogs : [],
-      },
-    } as any);
-  }, [
-    FONT_OPTIONS,
-    archiveProjectBusy,
-    archiveProjectModalOpen,
-    archiveProjectTarget,
-    activeSlideIndex,
-    addLog,
-    canvasRef,
-    CarouselPreviewVision,
-    computeTemplateIdForSlide,
-    copyGenerating,
-    currentProjectId,
-    deleteImageForActiveSlide,
+  useEditorStoreWorkspaceSync({
     editorStore,
-    goNext,
-    goPrev,
-    handleRegularCanvasTextChange,
-    handleEnhancedCanvasTextChange,
-    handleUserImageChange,
-    hasImageForActiveSlide,
+    copyProgressState,
+    copyProgressLabel,
+
+    isMobile,
+    mobileDrawerOpen,
+    switchingSlides,
+    copyGenerating,
+    isEditableTarget,
+    mobileGestureRef,
+    switchToSlide,
+    activeSlideIndex,
+
+    currentProjectId,
+    activeSlideIndexRef,
+    slidesRef,
+    initSlide,
+    inputData,
+    layoutData,
+    setSlides,
+    setInputData,
+    schedulePersistLayoutAndInput,
+    liveLayoutKey,
+    liveLayoutTimeoutsRef,
+    liveLayoutQueueRef,
+    liveLayoutRunIdByKeyRef,
+    withLayoutLockedInInput,
+    withAutoRealignOnImageReleaseInInput,
+    saveSlidePatchForProject,
+    scheduleLiveLayout,
+
     imageBusy,
     imageFileInputRef,
+    openImageMenu,
+    imageLongPressRef,
+    activeImageSelected,
+    hasImageForActiveSlide,
     imageMenuOpen,
     imageMenuPos,
-    headlineFontFamily,
-    headlineFontWeight,
-    isMobile,
-    lastActiveFabricCanvasRef,
-    layoutData,
-    loading,
-    loadingTemplates,
-    newProjectTemplateTypeId,
-    projectBackgroundColor,
-    projectSaveStatus,
-    projectTextColor,
+    deleteImageForActiveSlide,
+    uploadImageForActiveSlide,
+    handleUserImageChange,
+
+    canvasTextSelection,
+    applyCanvasInlineMark,
+    clearCanvasInlineMarks,
+
+    titleText: "The Fittest You - AI Carousel Generator",
     projectTitle,
-    projects,
-    projectsDropdownOpen,
-    projectsLoading,
+    topExporting,
+    saveStatus,
+    promptSaveStatus,
+    projectSaveStatus,
+    slideSaveStatus,
+    templateTypeId,
+    newProjectTemplateTypeId,
+    loading,
+    templateTypePrompt,
+    templateTypeEmphasisPrompt,
+    templateTypeImageGenPrompt,
+    templateSettingsOpen,
     promptModalOpen,
     promptModalSection,
-    promptSaveStatus,
-    saveStatus,
-    slideSaveStatus,
-    slideCanvasRefs,
-    slideCount,
-    slideRefs,
-    slides,
-    switchingSlides,
-    templateSettingsOpen,
-    templateTypeEmphasisPrompt,
-    templateTypeId,
-    templateTypeImageGenPrompt,
     templateTypeMappingSlide1,
     templateTypeMappingSlide2to5,
     templateTypeMappingSlide6,
-    templateTypePrompt,
-    templateSnapshots,
+    loadingTemplates,
     templates,
-    topExporting,
+    FONT_OPTIONS,
+    headlineFontFamily,
+    headlineFontWeight,
     bodyFontFamily,
     bodyFontWeight,
-    setActiveCanvasNonce,
-    SlideCard,
-    viewportRef,
-    showLayoutOverlays,
+    fontKey,
+    projectBackgroundColor,
+    projectTextColor,
+    projects,
+    projectsLoading,
+    projectsDropdownOpen,
+    archiveProjectModalOpen,
+    archiveProjectTarget,
+    archiveProjectBusy,
+
+    slideCount,
     viewportWidth,
+    goPrev,
+    goNext,
+    viewportRef,
+    slideCanvasRefs,
+    slideRefs,
+    canvasRef,
+    lastActiveFabricCanvasRef,
+    setActiveCanvasNonce,
+    CarouselPreviewVision,
+    SlideCard,
+    templateSnapshots,
+    computeTemplateIdForSlide,
+    EMPTY_LAYOUT,
+    slides,
+    showLayoutOverlays,
+    addLog,
     VIEWPORT_PAD,
     translateX,
     totalW,
-  ]);
+    handleRegularCanvasTextChange,
+    handleEnhancedCanvasTextChange,
+
+    enhancedLockOn,
+    layoutHistory,
+    pushUndoSnapshot,
+    currentProjectIdRef,
+    enqueueLiveLayoutForProject,
+    rangesEqual,
+    isPunctuationOnlyChange,
+    wrapBlockIntoExistingLinesNoMove,
+    applyInlineStylesToExistingLayout,
+    setLayoutData,
+
+    scheduleDebouncedCaptionSave,
+    captionDraft,
+    captionCopyStatus,
+    setCaptionDraft,
+    setCaptionCopyStatus,
+    copyToClipboard,
+
+    aiImagePromptSaveStatus,
+    imagePromptGenerating,
+    imagePromptError,
+    runGenerateImagePrompts,
+    runGenerateAiImage,
+    aiImageGeneratingThis,
+    aiImageProgressThis,
+    aiImageStatusThis,
+    aiImageErrorThis,
+    runGenerateCopy,
+    copyError,
+    saveError,
+    error,
+    handleRetry,
+
+    layoutDirtyRef,
+    handleUndo,
+    setShowLayoutOverlays,
+    debugScreenshot,
+    showDebugPreview,
+    setShowDebugPreview,
+    debugLogs,
+
+    aiKey,
+    bgRemovalBusyKeys,
+    setActiveSlideImageBgRemoval,
+    realigning,
+    runRealignTextForActiveSlide,
+  } as any);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">

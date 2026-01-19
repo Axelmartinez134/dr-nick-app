@@ -13,4 +13,7 @@ export { useEditorBootstrap } from './useEditorBootstrap';
 export { useProjectLifecycle } from './useProjectLifecycle';
 export { useEditorPersistence } from './useEditorPersistence';
 export { useEditorJobs } from './useEditorJobs';
+export { useEditorStoreActionsSync } from './useEditorStoreActionsSync';
+export { useEditorStoreWorkspaceSync } from './useEditorStoreWorkspaceSync';
+export { useLiveLayoutQueue } from './useLiveLayoutQueue';
 

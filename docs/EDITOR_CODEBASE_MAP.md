@@ -180,6 +180,15 @@ Key tables used by `/editor`:
 ## Refactor note
 This refactor followed the phased plan at `~/.cursor/plans/editorshell_phased_refactor_4b6598db.plan.md`.
 
+### Stage 3 (ownership migration) summary
+Stage 3 keeps the **store-driven UI** from Stage 2, but starts moving real behavior out of `EditorShell.tsx` into cohesive feature hooks.
+
+- **Phase 3A (bootstrap/hydration)**: moved `/api/editor/initial-state` boot + hydration into `src/features/editor/hooks/useEditorBootstrap.ts`
+- **Phase 3B (project lifecycle)**: moved `loadProject` / `createNewProject` + slide hydration into `src/features/editor/hooks/useProjectLifecycle.ts`
+- **Phase 3C (project meta persistence)**: moved debounced project title/caption saves into `src/features/editor/hooks/useEditorPersistence.ts`
+- **Phase 3D (job wiring)**: centralized `Generate Copy` / `Generate Image Prompts` / `Generate AI Image` wiring into `src/features/editor/hooks/useEditorJobs.ts`
+- **Phase 3E (thin shell + docs)**: removed dead code paths/imports in `EditorShell.tsx` and updated this repo map to reflect new ownership
+
 ### Why `EditorShell.tsx` is still large (expected)
 Even after Stage 2, `EditorShell.tsx` still owns the **actual behavior** (effects, handlers, Fabric wiring, debounced saves, job orchestration). Stage 2’s goal so far is to remove **prop drilling** and make UI subscribe to state slices cleanly.
 
