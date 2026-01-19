@@ -43,6 +43,7 @@ const defaultState: EditorState = {
   projectSaveStatus: "idle",
   slideSaveStatus: "idle",
   currentProjectId: null,
+  activeSlideIndex: 0,
   templateTypeId: "regular",
   newProjectTemplateTypeId: "enhanced",
   switchingSlides: false,
@@ -73,6 +74,8 @@ const defaultState: EditorState = {
   archiveProjectTarget: null,
   archiveProjectBusy: false,
   workspace: null,
+  workspaceNav: null,
+  workspaceRefs: null,
   bottomPanel: null,
   actions: noopActions,
 };

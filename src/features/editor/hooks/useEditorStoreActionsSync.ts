@@ -1,4 +1,4 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 
 type Args = {
   editorStore: any;
@@ -111,163 +111,196 @@ export function useEditorStoreActionsSync(args: Args) {
     setProjectMappingSlide6,
   } = args;
 
-  // Phase 2B: store-driven UI (components read from store; behavior remains in EditorShell).
-  // NOTE: dependency list is intentionally kept identical to the pre-extraction code.
+  // Phase 5E: stop mirroring `actions` into the store on every render.
+  //
+  // Instead:
+  // - Keep a stable `actions` object in the store (so components don't re-render just because action closures changed)
+  // - Delegate each action call to the latest implementation via a ref (so closures are never stale)
+  //
+  // This preserves behavior while removing the continuous "actions mirroring" effect.
+  const implRef = useRef<any>(null);
+  implRef.current = {
+    onChangeProjectTitle: (v: string) => {
+      setProjectTitle(v);
+      // Keep store in sync immediately so the input caret doesn't jump.
+      editorStore.setState({ projectTitle: v } as any);
+      scheduleDebouncedProjectTitleSave({ projectId: currentProjectId, title: v, debounceMs: 600 });
+    },
+    onDownloadAll: () => void handleDownloadAll(),
+    onShareAll: () => void handleShareAll(),
+    onSignOut: () => void handleSignOut(),
+
+    onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
+      setNewProjectTemplateTypeId(next);
+      editorStore.setState({ newProjectTemplateTypeId: next } as any);
+    },
+    onClickNewProject: () => {
+      setSlides((prev: any) => prev.map((s: any) => ({ ...s, draftHeadline: "", draftBody: "" })));
+      handleNewCarousel();
+      void createNewProject(newProjectTemplateTypeId);
+    },
+
+    onOpenTemplateSettings: () => {
+      setTemplateSettingsOpen(true);
+      editorStore.setState({ templateSettingsOpen: true } as any);
+    },
+    onCloseTemplateSettings: () => {
+      setTemplateSettingsOpen(false);
+      editorStore.setState({ templateSettingsOpen: false } as any);
+    },
+    onOpenTemplateEditor: () => {
+      setTemplateSettingsOpen(false);
+      setPromptModalOpen(false);
+      editorStore.setState({ templateSettingsOpen: false, promptModalOpen: false } as any);
+      setTemplateEditorOpen(true);
+    },
+
+    onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => {
+      setPromptModalSection(section);
+      setPromptModalOpen(true);
+      editorStore.setState({ promptModalSection: section, promptModalOpen: true } as any);
+    },
+    onClosePromptsModal: () => {
+      setPromptModalOpen(false);
+      editorStore.setState({ promptModalOpen: false } as any);
+    },
+    onChangeTemplateTypePrompt: (next: string) => {
+      promptDirtyRef.current = true;
+      setTemplateTypePrompt(next);
+      // Keep store in sync immediately so the textarea caret doesn't jump.
+      editorStore.setState({
+        templateTypePrompt: next,
+        templateTypePromptPreviewLine: String(next || "").split("\n")[0] || "",
+      } as any);
+    },
+    onChangeTemplateTypeEmphasisPrompt: (next: string) => {
+      promptDirtyRef.current = true;
+      setTemplateTypeEmphasisPrompt(next);
+      editorStore.setState({
+        templateTypeEmphasisPrompt: next,
+        templateTypeEmphasisPromptPreviewLine: String(next || "").split("\n")[0] || "",
+      } as any);
+    },
+    onChangeTemplateTypeImageGenPrompt: (next: string) => {
+      promptDirtyRef.current = true;
+      setTemplateTypeImageGenPrompt(next);
+      editorStore.setState({
+        templateTypeImageGenPrompt: next,
+        templateTypeImageGenPromptPreviewLine: String(next || "").split("\n")[0] || "",
+      } as any);
+    },
+
+    onChangeHeadlineFontKey: (raw: string) => {
+      const [family, w] = String(raw || "").split("@@");
+      const weight = Number(w);
+      setHeadlineFontFamily(family || "Inter, sans-serif");
+      setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
+    },
+    onChangeBodyFontKey: (raw: string) => {
+      const [family, w] = String(raw || "").split("@@");
+      const weight = Number(w);
+      setBodyFontFamily(family || "Inter, sans-serif");
+      setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
+    },
+    onChangeBackgroundColor: (next: string) => updateProjectColors(next, projectTextColorForUpdate),
+    onChangeTextColor: (next: string) => updateProjectColors(projectBackgroundColorForUpdate, next),
+
+    onToggleProjectsDropdown: () => setProjectsDropdownOpen((v) => !v),
+    onLoadProject: (projectId: string) => {
+      setProjectsDropdownOpen(false);
+      editorStore.setState({ projectsDropdownOpen: false } as any);
+      void loadProject(projectId);
+      if (isMobile) setMobileDrawerOpen(false);
+    },
+    onRequestArchive: (target: { id: string; title: string }) => {
+      setArchiveProjectTarget(target);
+      setArchiveProjectModalOpen(true);
+      editorStore.setState({ archiveProjectTarget: target, archiveProjectModalOpen: true } as any);
+    },
+    onCancelArchive: () => {
+      if (archiveProjectBusy) return;
+      setArchiveProjectModalOpen(false);
+      setArchiveProjectTarget(null);
+      editorStore.setState({ archiveProjectModalOpen: false, archiveProjectTarget: null } as any);
+    },
+    onConfirmArchive: (target: { id: string; title: string }) => {
+      void archiveProjectById(target.id, target.title);
+    },
+
+    onChangeTemplateTypeMappingSlide1: (next: string | null) => {
+      promptDirtyRef.current = true;
+      setTemplateTypeMappingSlide1(next);
+      if (currentProjectIdRef.current) {
+        setProjectMappingSlide1(next);
+        void persistCurrentProjectTemplateMappings({ slide1TemplateIdSnapshot: next });
+      }
+    },
+    onChangeTemplateTypeMappingSlide2to5: (next: string | null) => {
+      promptDirtyRef.current = true;
+      setTemplateTypeMappingSlide2to5(next);
+      if (currentProjectIdRef.current) {
+        setProjectMappingSlide2to5(next);
+        void persistCurrentProjectTemplateMappings({ slide2to5TemplateIdSnapshot: next });
+      }
+    },
+    onChangeTemplateTypeMappingSlide6: (next: string | null) => {
+      promptDirtyRef.current = true;
+      setTemplateTypeMappingSlide6(next);
+      if (currentProjectIdRef.current) {
+        setProjectMappingSlide6(next);
+        void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
+      }
+    },
+  };
+
+  const stableActions = useMemo(
+    () => ({
+      onChangeProjectTitle: (v: string) => implRef.current?.onChangeProjectTitle?.(v),
+      onDownloadAll: () => implRef.current?.onDownloadAll?.(),
+      onShareAll: () => implRef.current?.onShareAll?.(),
+      onSignOut: () => implRef.current?.onSignOut?.(),
+
+      onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") =>
+        implRef.current?.onChangeNewProjectTemplateTypeId?.(next),
+      onClickNewProject: () => implRef.current?.onClickNewProject?.(),
+
+      onOpenTemplateSettings: () => implRef.current?.onOpenTemplateSettings?.(),
+      onCloseTemplateSettings: () => implRef.current?.onCloseTemplateSettings?.(),
+      onOpenTemplateEditor: () => implRef.current?.onOpenTemplateEditor?.(),
+
+      onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => implRef.current?.onOpenPromptModal?.(section),
+      onClosePromptsModal: () => implRef.current?.onClosePromptsModal?.(),
+      onChangeTemplateTypePrompt: (next: string) => implRef.current?.onChangeTemplateTypePrompt?.(next),
+      onChangeTemplateTypeEmphasisPrompt: (next: string) => implRef.current?.onChangeTemplateTypeEmphasisPrompt?.(next),
+      onChangeTemplateTypeImageGenPrompt: (next: string) => implRef.current?.onChangeTemplateTypeImageGenPrompt?.(next),
+
+      onChangeHeadlineFontKey: (raw: string) => implRef.current?.onChangeHeadlineFontKey?.(raw),
+      onChangeBodyFontKey: (raw: string) => implRef.current?.onChangeBodyFontKey?.(raw),
+      onChangeBackgroundColor: (next: string) => implRef.current?.onChangeBackgroundColor?.(next),
+      onChangeTextColor: (next: string) => implRef.current?.onChangeTextColor?.(next),
+
+      onToggleProjectsDropdown: () => implRef.current?.onToggleProjectsDropdown?.(),
+      onLoadProject: (projectId: string) => implRef.current?.onLoadProject?.(projectId),
+      onRequestArchive: (target: { id: string; title: string }) => implRef.current?.onRequestArchive?.(target),
+      onCancelArchive: () => implRef.current?.onCancelArchive?.(),
+      onConfirmArchive: (target: { id: string; title: string }) => implRef.current?.onConfirmArchive?.(target),
+
+      onChangeTemplateTypeMappingSlide1: (next: string | null) => implRef.current?.onChangeTemplateTypeMappingSlide1?.(next),
+      onChangeTemplateTypeMappingSlide2to5: (next: string | null) =>
+        implRef.current?.onChangeTemplateTypeMappingSlide2to5?.(next),
+      onChangeTemplateTypeMappingSlide6: (next: string | null) => implRef.current?.onChangeTemplateTypeMappingSlide6?.(next),
+    }),
+    []
+  );
+
   useLayoutEffect(() => {
-    editorStore.setState({
-      actions: {
-        onChangeProjectTitle: (v: string) => {
-          setProjectTitle(v);
-          // Keep store in sync immediately so the input caret doesn't jump.
-          editorStore.setState({ projectTitle: v } as any);
-          scheduleDebouncedProjectTitleSave({ projectId: currentProjectId, title: v, debounceMs: 600 });
-        },
-        onDownloadAll: () => void handleDownloadAll(),
-        onShareAll: () => void handleShareAll(),
-        onSignOut: () => void handleSignOut(),
-
-        onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
-          setNewProjectTemplateTypeId(next);
-          editorStore.setState({ newProjectTemplateTypeId: next } as any);
-        },
-        onClickNewProject: () => {
-          setSlides((prev: any) => prev.map((s: any) => ({ ...s, draftHeadline: "", draftBody: "" })));
-          handleNewCarousel();
-          void createNewProject(newProjectTemplateTypeId);
-        },
-
-        onOpenTemplateSettings: () => {
-          setTemplateSettingsOpen(true);
-          editorStore.setState({ templateSettingsOpen: true } as any);
-        },
-        onCloseTemplateSettings: () => {
-          setTemplateSettingsOpen(false);
-          editorStore.setState({ templateSettingsOpen: false } as any);
-        },
-        onOpenTemplateEditor: () => {
-          setTemplateSettingsOpen(false);
-          setPromptModalOpen(false);
-          editorStore.setState({ templateSettingsOpen: false, promptModalOpen: false } as any);
-          setTemplateEditorOpen(true);
-        },
-
-        onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => {
-          setPromptModalSection(section);
-          setPromptModalOpen(true);
-          editorStore.setState({ promptModalSection: section, promptModalOpen: true } as any);
-        },
-        onClosePromptsModal: () => {
-          setPromptModalOpen(false);
-          editorStore.setState({ promptModalOpen: false } as any);
-        },
-        onChangeTemplateTypePrompt: (next: string) => {
-          promptDirtyRef.current = true;
-          setTemplateTypePrompt(next);
-          // Keep store in sync immediately so the textarea caret doesn't jump.
-          editorStore.setState({
-            templateTypePrompt: next,
-            templateTypePromptPreviewLine: String(next || "").split("\n")[0] || "",
-          } as any);
-        },
-        onChangeTemplateTypeEmphasisPrompt: (next: string) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeEmphasisPrompt(next);
-          editorStore.setState({
-            templateTypeEmphasisPrompt: next,
-            templateTypeEmphasisPromptPreviewLine: String(next || "").split("\n")[0] || "",
-          } as any);
-        },
-        onChangeTemplateTypeImageGenPrompt: (next: string) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeImageGenPrompt(next);
-          editorStore.setState({
-            templateTypeImageGenPrompt: next,
-            templateTypeImageGenPromptPreviewLine: String(next || "").split("\n")[0] || "",
-          } as any);
-        },
-
-        onChangeHeadlineFontKey: (raw: string) => {
-          const [family, w] = String(raw || "").split("@@");
-          const weight = Number(w);
-          setHeadlineFontFamily(family || "Inter, sans-serif");
-          setHeadlineFontWeight(Number.isFinite(weight) ? weight : 700);
-        },
-        onChangeBodyFontKey: (raw: string) => {
-          const [family, w] = String(raw || "").split("@@");
-          const weight = Number(w);
-          setBodyFontFamily(family || "Inter, sans-serif");
-          setBodyFontWeight(Number.isFinite(weight) ? weight : 400);
-        },
-        onChangeBackgroundColor: (next: string) => updateProjectColors(next, projectTextColorForUpdate),
-        onChangeTextColor: (next: string) => updateProjectColors(projectBackgroundColorForUpdate, next),
-
-        onToggleProjectsDropdown: () => setProjectsDropdownOpen((v) => !v),
-        onLoadProject: (projectId: string) => {
-          setProjectsDropdownOpen(false);
-          editorStore.setState({ projectsDropdownOpen: false } as any);
-          void loadProject(projectId);
-          if (isMobile) setMobileDrawerOpen(false);
-        },
-        onRequestArchive: (target: { id: string; title: string }) => {
-          setArchiveProjectTarget(target);
-          setArchiveProjectModalOpen(true);
-          editorStore.setState({ archiveProjectTarget: target, archiveProjectModalOpen: true } as any);
-        },
-        onCancelArchive: () => {
-          if (archiveProjectBusy) return;
-          setArchiveProjectModalOpen(false);
-          setArchiveProjectTarget(null);
-          editorStore.setState({ archiveProjectModalOpen: false, archiveProjectTarget: null } as any);
-        },
-        onConfirmArchive: (target: { id: string; title: string }) => {
-          void archiveProjectById(target.id, target.title);
-        },
-
-        onChangeTemplateTypeMappingSlide1: (next: string | null) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeMappingSlide1(next);
-          if (currentProjectIdRef.current) {
-            setProjectMappingSlide1(next);
-            void persistCurrentProjectTemplateMappings({ slide1TemplateIdSnapshot: next });
-          }
-        },
-        onChangeTemplateTypeMappingSlide2to5: (next: string | null) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeMappingSlide2to5(next);
-          if (currentProjectIdRef.current) {
-            setProjectMappingSlide2to5(next);
-            void persistCurrentProjectTemplateMappings({ slide2to5TemplateIdSnapshot: next });
-          }
-        },
-        onChangeTemplateTypeMappingSlide6: (next: string | null) => {
-          promptDirtyRef.current = true;
-          setTemplateTypeMappingSlide6(next);
-          if (currentProjectIdRef.current) {
-            setProjectMappingSlide6(next);
-            void persistCurrentProjectTemplateMappings({ slide6TemplateIdSnapshot: next });
-          }
-        },
-      },
-    } as any);
-  }, [
-    archiveProjectBusy,
-    archiveProjectById,
-    createNewProject,
-    currentProjectId,
-    editorStore,
-    handleDownloadAll,
-    handleNewCarousel,
-    handleShareAll,
-    handleSignOut,
-    isMobile,
-    loadProject,
-    newProjectTemplateTypeId,
-    persistCurrentProjectTemplateMappings,
-    projectBackgroundColor,
-    projectTextColor,
-    projectsDropdownOpen,
-    saveProjectMetaForProject,
-    updateProjectColors,
-  ]);
+    try {
+      const cur = editorStore.getState?.().actions;
+      if (cur === stableActions) return;
+    } catch {
+      // ignore
+    }
+    editorStore.setState({ actions: stableActions } as any);
+  }, [editorStore, stableActions]);
 }
 

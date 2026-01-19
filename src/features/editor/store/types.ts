@@ -56,26 +56,6 @@ export type EditorActions = {
 };
 
 export type EditorWorkspaceState = {
-  // Core
-  slideCount: number;
-  activeSlideIndex: number;
-  copyGenerating: boolean;
-  viewportWidth: number;
-
-  // Navigation
-  goPrev: () => void;
-  goNext: () => void;
-  switchToSlide: (nextIndex: number) => Promise<void> | void;
-
-  // Refs (non-serializable but stable)
-  viewportRef: any;
-  imageFileInputRef: any;
-  slideCanvasRefs: any;
-  slideRefs: any;
-  canvasRef: any;
-  lastActiveFabricCanvasRef: any;
-  setActiveCanvasNonce: any;
-
   // Layout/template/canvas
   CarouselPreviewVision: any;
   SlideCard: any;
@@ -86,11 +66,6 @@ export type EditorWorkspaceState = {
   slides: any[];
   showLayoutOverlays: boolean;
   addLog?: ((msg: string) => void) | undefined;
-
-  // Desktop strip positioning
-  VIEWPORT_PAD: number;
-  translateX: number;
-  totalW: number;
 
   // Image ops
   imageMenuOpen: boolean;
@@ -112,6 +87,30 @@ export type EditorWorkspaceState = {
 
   // Desktop active under-card controls row is passed through (kept in EditorShell for now)
   renderActiveSlideControlsRow: () => any;
+};
+
+// Phase 5D: reduce the giant `workspace` mirror into smaller store slices.
+export type EditorWorkspaceNavState = {
+  slideCount: number;
+  activeSlideIndex: number;
+  copyGenerating: boolean;
+  viewportWidth: number;
+  goPrev: () => void;
+  goNext: () => void;
+  switchToSlide: (nextIndex: number) => Promise<void> | void;
+  VIEWPORT_PAD: number;
+  translateX: number;
+  totalW: number;
+};
+
+export type EditorWorkspaceRefsState = {
+  viewportRef: any;
+  imageFileInputRef: any;
+  slideCanvasRefs: any;
+  slideRefs: any;
+  canvasRef: any;
+  lastActiveFabricCanvasRef: any;
+  setActiveCanvasNonce: any;
 };
 
 export type EditorBottomPanelState = {
@@ -206,6 +205,7 @@ export type EditorState = {
 
   // Project
   currentProjectId: string | null;
+  activeSlideIndex: number;
   templateTypeId: TemplateTypeId;
   newProjectTemplateTypeId: TemplateTypeId;
   switchingSlides: boolean;
@@ -254,6 +254,9 @@ export type EditorState = {
 
   // Workspace (slides strip/canvas) bindings (Phase 2C)
   workspace: EditorWorkspaceState | null;
+  // Workspace slices (Phase 5D): step toward deleting the giant `workspace` mirror.
+  workspaceNav: EditorWorkspaceNavState | null;
+  workspaceRefs: EditorWorkspaceRefsState | null;
 
   // Bottom panel bindings (Phase 2D)
   bottomPanel: EditorBottomPanelState | null;

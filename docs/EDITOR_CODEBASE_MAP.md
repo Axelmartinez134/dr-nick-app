@@ -59,8 +59,9 @@ At this point, **UI components read from the editor store**, and `EditorShell.ts
   - Emits `{ text, ranges }` (inline style ranges)
 - **Bottom panel UI container**: `src/features/editor/components/EditorBottomPanel.tsx`
   - Render-only container for the Headline/Body RichText areas + other cards
-- **On-canvas text styling persistence**: implemented in `src/app/editor/EditorShell.tsx`
-  - Applies Fabric selection styles + persists bold/italic/underline into `input_snapshot.*StyleRanges`
+- **On-canvas text styling persistence**: `src/features/editor/hooks/useCanvasTextStyling.ts`
+  - Tracks Fabric `user-text` selection + applies bold/italic/underline/clear without dropping selection
+  - Persists marks into `input_snapshot.*StyleRanges` via the existing `applyInlineStyleFromCanvas` path
 
 ## Editor feature modules (what was extracted)
 ### Bootstrap + hydration (Stage 3A)
@@ -99,6 +100,20 @@ At this point, **UI components read from the editor store**, and `EditorShell.ts
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
 - **Wiring wrapper (Stage 3D)**: `src/features/editor/hooks/useEditorJobs.ts` (centralizes how the three job hooks are wired together)
+
+### Live layout queue + realign orchestration (Stage 4B)
+- **Hook**: `src/features/editor/hooks/useLiveLayoutQueue.ts`
+
+### Workspace/canvas wiring helpers (Stage 4C/4D)
+- **Active image selection tracking**: `src/features/editor/hooks/useActiveImageSelection.ts`
+  - Keeps active-slide image UI in sync with Fabric selection listeners
+- **Export/share helpers**: `src/features/editor/hooks/useCanvasExport.ts`
+  - Download All ZIP + Share All + per-slide share
+- **Viewport + slide strip translateX**: `src/features/editor/hooks/useSlidesViewport.ts`
+- **Fabric canvas binding (active slide)**: `src/features/editor/hooks/useFabricCanvasBinding.ts`
+  - Assigns active slide canvas refs + updates `activeCanvasNonce` when Fabric canvas instance changes
+- **Multi-canvas refs ownership**: `src/features/editor/hooks/useMultiCanvasRefs.ts`
+  - Owns `slideCanvasRefs`, `slideRefs`, `lastActiveFabricCanvasRef`, and `activeCanvasNonce`
 
 ## Template system (editor)
 - **Template editor modal**: `src/app/components/health/marketing/ai-carousel/TemplateEditorModal.tsx`
@@ -188,6 +203,13 @@ Stage 3 keeps the **store-driven UI** from Stage 2, but starts moving real behav
 - **Phase 3C (project meta persistence)**: moved debounced project title/caption saves into `src/features/editor/hooks/useEditorPersistence.ts`
 - **Phase 3D (job wiring)**: centralized `Generate Copy` / `Generate Image Prompts` / `Generate AI Image` wiring into `src/features/editor/hooks/useEditorJobs.ts`
 - **Phase 3E (thin shell + docs)**: removed dead code paths/imports in `EditorShell.tsx` and updated this repo map to reflect new ownership
+
+### Stage 4 (canvas + store ownership) summary
+Stage 4 continues shrinking `EditorShell.tsx` by extracting remaining “behavior islands” into editor-owned hooks.
+
+- **4A (store mirroring)**: `useEditorStoreActionsSync`, `useEditorStoreWorkspaceSync`
+- **4B (live layout queue)**: `useLiveLayoutQueue`
+- **4C/4D (canvas wiring)**: `useCanvasTextStyling`, `useActiveImageSelection`, `useCanvasExport`, `useSlidesViewport`, `useFabricCanvasBinding`, `useMultiCanvasRefs`
 
 ### Why `EditorShell.tsx` is still large (expected)
 Even after Stage 2, `EditorShell.tsx` still owns the **actual behavior** (effects, handlers, Fabric wiring, debounced saves, job orchestration). Stage 2’s goal so far is to remove **prop drilling** and make UI subscribe to state slices cleanly.

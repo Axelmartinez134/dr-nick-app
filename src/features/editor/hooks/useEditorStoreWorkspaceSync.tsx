@@ -724,7 +724,7 @@ export function useEditorStoreWorkspaceSync(args: any) {
       archiveProjectModalOpen,
       archiveProjectTarget,
       archiveProjectBusy,
-      workspace: {
+      workspaceNav: {
         slideCount,
         activeSlideIndex,
         copyGenerating,
@@ -732,6 +732,11 @@ export function useEditorStoreWorkspaceSync(args: any) {
         goPrev,
         goNext,
         switchToSlide,
+        VIEWPORT_PAD,
+        translateX,
+        totalW,
+      },
+      workspaceRefs: {
         viewportRef,
         imageFileInputRef,
         slideCanvasRefs,
@@ -739,6 +744,8 @@ export function useEditorStoreWorkspaceSync(args: any) {
         canvasRef,
         lastActiveFabricCanvasRef,
         setActiveCanvasNonce,
+      },
+      workspace: {
         CarouselPreviewVision,
         SlideCard,
         templateSnapshots,
@@ -748,9 +755,6 @@ export function useEditorStoreWorkspaceSync(args: any) {
         slides,
         showLayoutOverlays,
         addLog,
-        VIEWPORT_PAD,
-        translateX,
-        totalW,
         imageMenuOpen,
         imageMenuPos,
         imageBusy,

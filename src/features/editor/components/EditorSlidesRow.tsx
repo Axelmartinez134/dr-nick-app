@@ -5,10 +5,17 @@ import { useEditorSelector } from "@/features/editor/store";
 import { useFabricCanvasBinding } from "@/features/editor/hooks/useFabricCanvasBinding";
 
 export function EditorSlidesRow() {
+  const workspaceNav = useEditorSelector((s: any) => (s as any).workspaceNav);
+  const workspaceRefs = useEditorSelector((s: any) => (s as any).workspaceRefs);
   const workspace = useEditorSelector((s) => s.workspace);
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const switchingSlides = useEditorSelector((s) => s.switchingSlides);
-  const copyGenerating = useEditorSelector((s) => (s.workspace ? s.workspace.copyGenerating : false));
+  const activeSlideIndexStore = useEditorSelector((s) => s.activeSlideIndex);
+  const copyGenerating = useEditorSelector((s: any) => {
+    const nav = (s as any).workspaceNav;
+    if (nav) return !!nav.copyGenerating;
+    return s.workspace ? !!s.workspace.copyGenerating : false;
+  });
   const isMobile = useEditorSelector((s) => s.isMobile);
 
   const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
@@ -34,28 +41,19 @@ export function EditorSlidesRow() {
   const fallbackLastActiveFabricCanvasRef = useMemo(() => ({ current: null as any }), []);
 
   const { bindActiveSlideCanvasMobile, bindActiveSlideCanvasDesktop } = useFabricCanvasBinding({
-    canvasRef: workspace ? (workspace as any).canvasRef : (fallbackCanvasRef as any),
-    slideCanvasRefs: workspace ? (workspace as any).slideCanvasRefs : (fallbackSlideCanvasRefs as any),
-    lastActiveFabricCanvasRef: workspace ? (workspace as any).lastActiveFabricCanvasRef : (fallbackLastActiveFabricCanvasRef as any),
-    setActiveCanvasNonce: workspace ? (workspace as any).setActiveCanvasNonce : (noop as any),
+    canvasRef:
+      (workspaceRefs ? (workspaceRefs as any).canvasRef : null) || (fallbackCanvasRef as any),
+    slideCanvasRefs:
+      (workspaceRefs ? (workspaceRefs as any).slideCanvasRefs : null) || (fallbackSlideCanvasRefs as any),
+    lastActiveFabricCanvasRef:
+      (workspaceRefs ? (workspaceRefs as any).lastActiveFabricCanvasRef : null) || (fallbackLastActiveFabricCanvasRef as any),
+    setActiveCanvasNonce:
+      (workspaceRefs ? (workspaceRefs as any).setActiveCanvasNonce : null) || (noop as any),
   });
 
   if (!workspace) return null;
 
   const {
-    slideCount,
-    activeSlideIndex,
-    viewportWidth,
-    goPrev,
-    goNext,
-    switchToSlide,
-    viewportRef,
-    imageFileInputRef,
-    slideCanvasRefs,
-    slideRefs,
-    canvasRef,
-    lastActiveFabricCanvasRef,
-    setActiveCanvasNonce,
     CarouselPreviewVision,
     SlideCard,
     templateSnapshots,
@@ -65,9 +63,6 @@ export function EditorSlidesRow() {
     slides,
     showLayoutOverlays,
     addLog,
-    VIEWPORT_PAD,
-    translateX,
-    totalW,
     imageMenuOpen,
     imageMenuPos,
     imageBusy,
@@ -84,15 +79,48 @@ export function EditorSlidesRow() {
     renderActiveSlideControlsRow,
   } = workspace;
 
+  const nav = workspaceNav || null;
+  const effectiveSlideCount =
+    (nav && Number.isFinite((nav as any).slideCount) ? Number((nav as any).slideCount) : null) ??
+    (Array.isArray(slides) ? slides.length : 0);
+  const activeSlideIndex =
+    (nav && Number.isFinite((nav as any).activeSlideIndex) ? Number((nav as any).activeSlideIndex) : null) ??
+    (Number.isFinite(activeSlideIndexStore as any) ? Number(activeSlideIndexStore) : 0);
+  const effectiveViewportWidth =
+    (nav && Number.isFinite((nav as any).viewportWidth) ? Number((nav as any).viewportWidth) : null) ??
+    540;
+  const effectiveGoPrev = (nav ? (nav as any).goPrev : null) || (() => {});
+  const effectiveGoNext = (nav ? (nav as any).goNext : null) || (() => {});
+  const effectiveSwitchToSlide =
+    (nav ? (nav as any).switchToSlide : null) ||
+    (() => {
+      // no-op
+    });
+  const effectiveTranslateX =
+    (nav && Number.isFinite((nav as any).translateX) ? Number((nav as any).translateX) : null) ??
+    0;
+  const effectiveTotalW =
+    (nav && Number.isFinite((nav as any).totalW) ? Number((nav as any).totalW) : null) ??
+    0;
+  const effectiveViewportPad =
+    (nav && Number.isFinite((nav as any).VIEWPORT_PAD) ? Number((nav as any).VIEWPORT_PAD) : null) ??
+    0;
+
+  const refs = workspaceRefs || null;
+  const effectiveViewportRef = (refs ? (refs as any).viewportRef : null) || null;
+  const effectiveImageFileInputRef = (refs ? (refs as any).imageFileInputRef : null) || null;
+  const effectiveSlideCanvasRefs = (refs ? (refs as any).slideCanvasRefs : null) || fallbackSlideCanvasRefs;
+  const effectiveSlideRefs = (refs ? (refs as any).slideRefs : null) || [];
+
   const canGoPrev = activeSlideIndex > 0;
-  const canGoNext = activeSlideIndex < slideCount - 1;
+  const canGoNext = activeSlideIndex < effectiveSlideCount - 1;
 
   return (
     <div className="flex flex-col items-center justify-center md:justify-start p-3 md:px-6 md:pb-6 md:pt-8 md:h-[696px]">
       <div className="w-full max-w-[1400px]">
         {/* Hidden file input for per-slide image upload */}
         <input
-          ref={imageFileInputRef}
+          ref={effectiveImageFileInputRef}
           type="file"
           accept="image/png,image/jpeg,image/webp"
           className="hidden"
@@ -130,18 +158,18 @@ export function EditorSlidesRow() {
               <button
                 className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
                 aria-label="Previous"
-                onClick={goPrev}
+                onClick={effectiveGoPrev}
                 disabled={!canGoPrev || switchingSlides}
               >
                 ←
               </button>
               <div className="text-sm font-semibold text-slate-700">
-                Slide {activeSlideIndex + 1} / {slideCount}
+                Slide {activeSlideIndex + 1} / {effectiveSlideCount}
               </div>
               <button
                 className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
                 aria-label="Next"
-                onClick={goNext}
+                onClick={effectiveGoNext}
                 disabled={!canGoNext || switchingSlides}
               >
                 →
@@ -149,7 +177,7 @@ export function EditorSlidesRow() {
             </div>
 
             <div
-              ref={viewportRef}
+              ref={effectiveViewportRef}
               className="w-full flex items-center justify-center"
               onPointerDown={onMobileViewportPointerDown as any}
               onPointerMove={onMobileViewportPointerMove as any}
@@ -162,7 +190,9 @@ export function EditorSlidesRow() {
                 const snap = (tid ? templateSnapshots[tid] : null) || null;
                 const layoutForThisCard = layoutData?.layout ? (layoutData.layout as any) : EMPTY_LAYOUT;
 
-                const maxW = Math.max(240, Math.min(540, (viewportWidth || 540) - 24));
+                // Prefer slice-owned viewport width when available.
+                const vw = effectiveViewportWidth;
+                const maxW = Math.max(240, Math.min(540, (vw || 540) - 24));
                 const scale = Math.max(0.35, Math.min(1, maxW / 540));
                 const displayW = Math.round(maxW);
                 const displayH = Math.round(720 * scale);
@@ -215,7 +245,7 @@ export function EditorSlidesRow() {
 
             {/* Hidden render of non-active slides so Download/Share All can export them on mobile. */}
             <div style={{ position: "absolute", left: -100000, top: -100000, width: 1, height: 1, overflow: "hidden" }}>
-              {Array.from({ length: slideCount }).map((_, i) => {
+              {Array.from({ length: effectiveSlideCount }).map((_, i) => {
                 if (i === activeSlideIndex) return null;
                 const tid = computeTemplateIdForSlide(i);
                 const snap = (tid ? templateSnapshots[tid] : null) || null;
@@ -224,7 +254,7 @@ export function EditorSlidesRow() {
                 return (
                   <CarouselPreviewVision
                     key={i}
-                    ref={slideCanvasRefs.current[i] as any}
+                    ref={(effectiveSlideCanvasRefs as any).current?.[i] as any}
                     templateId={tid}
                     slideIndex={i}
                     layout={layoutForThisCard}
@@ -253,29 +283,30 @@ export function EditorSlidesRow() {
             <button
               className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
               aria-label="Previous"
-              onClick={goPrev}
+                onClick={effectiveGoPrev}
               disabled={!canGoPrev || switchingSlides}
             >
               ←
             </button>
             <div
-              ref={viewportRef}
+              ref={effectiveViewportRef}
               className="flex-1 overflow-x-hidden overflow-y-hidden pb-10"
-              style={{ paddingLeft: VIEWPORT_PAD, paddingRight: VIEWPORT_PAD }}
+                style={{ paddingLeft: effectiveViewportPad, paddingRight: effectiveViewportPad }}
             >
               <div
                 className="flex items-center gap-6 px-2 py-6"
                 style={{
-                  transform: `translateX(${translateX}px)`,
+                    transform: `translateX(${effectiveTranslateX}px)`,
                   transition: "transform 300ms ease",
-                  width: totalW,
+                    width: effectiveTotalW,
                 }}
               >
-                {Array.from({ length: slideCount }).map((_, i) => (
+                {Array.from({ length: effectiveSlideCount }).map((_, i) => (
                   <div
                     key={i}
                     ref={(node) => {
-                      slideRefs[i].current = node;
+                      const r = (effectiveSlideRefs as any)?.[i];
+                      if (r) r.current = node;
                     }}
                     className="relative"
                     role="button"
@@ -284,14 +315,14 @@ export function EditorSlidesRow() {
                     onClick={() => {
                       if (i === activeSlideIndex) return;
                       if (switchingSlides || copyGenerating) return;
-                      void switchToSlide(i);
+                      void effectiveSwitchToSlide(i);
                     }}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter" && e.key !== " ") return;
                       e.preventDefault();
                       if (i === activeSlideIndex) return;
                       if (switchingSlides || copyGenerating) return;
-                      void switchToSlide(i);
+                      void effectiveSwitchToSlide(i);
                     }}
                   >
                     {/* Per-slide controls under the active slide (active slide only). */}
@@ -330,7 +361,7 @@ export function EditorSlidesRow() {
                             const refProp =
                               i === activeSlideIndex
                                 ? bindActiveSlideCanvasDesktop(i)
-                                : slideCanvasRefs.current[i];
+                                : (effectiveSlideCanvasRefs as any).current?.[i];
 
                             return (
                               <CarouselPreviewVision
@@ -380,7 +411,7 @@ export function EditorSlidesRow() {
             <button
               className="w-10 h-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
               aria-label="Next"
-              onClick={goNext}
+              onClick={effectiveGoNext}
               disabled={!canGoNext || switchingSlides}
             >
               →

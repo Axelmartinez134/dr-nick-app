@@ -7,6 +7,9 @@ type PromptSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export function useEditorBootstrap(params: {
   userId: string | null;
   templateTypeId: TemplateTypeId;
+  // Current template type can change during bootstrap (e.g. auto-load project).
+  // Used to avoid overwriting newer effective settings with stale initial-state values.
+  templateTypeIdRef: { current: TemplateTypeId };
 
   // Network + logging
   fetchJson: (path: string, init?: RequestInit) => Promise<any>;
@@ -45,6 +48,7 @@ export function useEditorBootstrap(params: {
   const {
     userId,
     templateTypeId,
+    templateTypeIdRef,
     fetchJson,
     addLog,
     setTemplates,
@@ -79,11 +83,16 @@ export function useEditorBootstrap(params: {
     editorBootstrapDoneRef.current = true;
     void (async () => {
       try {
+        const templateTypeIdAtRequest = templateTypeId;
         const data = await fetchJson('/api/editor/initial-state', {
           method: 'POST',
-          body: JSON.stringify({ templateTypeId }),
+          body: JSON.stringify({ templateTypeId: templateTypeIdAtRequest }),
         });
         if (!data?.success) throw new Error(data?.error || 'Failed to load editor state');
+
+        // Mark template-type as loaded early so downstream effects can react during auto-load.
+        initialTemplateTypeLoadDoneRef.current = true;
+        lastLoadedTemplateTypeIdRef.current = templateTypeIdAtRequest;
 
         // Hydrate templates + snapshots
         if (Array.isArray(data.templates)) {
@@ -121,20 +130,20 @@ export function useEditorBootstrap(params: {
 
         // Hydrate effective per-user template-type settings
         const effective = data?.templateType?.effective || null;
-        if (effective) {
+        // IMPORTANT: auto-loading a project can change templateTypeId while the request is in flight.
+        // Only apply the initial-state effective settings if the current template type still matches
+        // what we requested, otherwise we'd overwrite newer settings (and make reload look broken).
+        if (effective && templateTypeIdRef.current === templateTypeIdAtRequest) {
           setTemplateTypePrompt(String(effective.prompt || ''));
           setTemplateTypeEmphasisPrompt(String(effective.emphasisPrompt || ''));
           setTemplateTypeImageGenPrompt(String(effective.imageGenPrompt || ''));
           setTemplateTypeMappingSlide1(effective.slide1TemplateId ?? null);
           setTemplateTypeMappingSlide2to5(effective.slide2to5TemplateId ?? null);
           setTemplateTypeMappingSlide6(effective.slide6TemplateId ?? null);
-          promptDirtyRef.current = false;
-          setPromptSaveStatus('idle');
         }
-
-        // Mark template-type as loaded so downstream effects don't refetch on first render.
-        initialTemplateTypeLoadDoneRef.current = true;
-        lastLoadedTemplateTypeIdRef.current = templateTypeId;
+        // Always reset prompt UI state on boot (safe: doesn't overwrite prompt text unless we set it above).
+        promptDirtyRef.current = false;
+        setPromptSaveStatus('idle');
 
         if (data?.bootstrap?.created) {
           addLog(`🧩 Starter template created for new user`);

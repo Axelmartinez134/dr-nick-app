@@ -25,7 +25,7 @@ import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSl
 import { EditorSlidesRow } from "@/features/editor/components/EditorSlidesRow";
 import { EditorTopBar } from "@/features/editor/components/EditorTopBar";
 import { EditorBottomPanel } from "@/features/editor/components/EditorBottomPanel";
-import { useEditorStore } from "@/features/editor/store";
+import { useEditorSelector, useEditorStore } from "@/features/editor/store";
 import { useProjects } from "@/features/editor/hooks/useProjects";
 import { useSlidePersistence } from "@/features/editor/hooks/useSlidePersistence";
 import { useAutoRealignOnImageRelease } from "@/features/editor/hooks/useAutoRealignOnImageRelease";
@@ -101,25 +101,124 @@ export default function EditorShell() {
   const { user, signOut } = useAuth();
   const editorStore = useEditorStore();
   const slideCount = 6;
-  const [activeSlideIndex, setActiveSlideIndex] = useState(0); // 0..5
-  const [switchingSlides, setSwitchingSlides] = useState(false);
-  const [topExporting, setTopExporting] = useState(false);
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [projectTitle, setProjectTitle] = useState<string>("Untitled Project");
+  // Phase 5A: store-owned identity + navigation
+  const activeSlideIndex = useEditorSelector((s) => (Number.isFinite(s.activeSlideIndex as any) ? Number(s.activeSlideIndex) : 0));
+  const setActiveSlideIndex = useCallback((next: number) => {
+    editorStore.setState({ activeSlideIndex: next } as any);
+  }, [editorStore]);
+
+  const switchingSlides = useEditorSelector((s) => !!s.switchingSlides);
+  const setSwitchingSlides = useCallback((next: boolean) => {
+    editorStore.setState({ switchingSlides: next } as any);
+  }, [editorStore]);
+
+  const topExporting = useEditorSelector((s) => !!s.topExporting);
+  const setTopExporting = useCallback((next: boolean) => {
+    editorStore.setState({ topExporting: next } as any);
+  }, [editorStore]);
+
+  const currentProjectId = useEditorSelector((s) => (s.currentProjectId ? String(s.currentProjectId) : null));
+  const setCurrentProjectId = useCallback((next: string | null) => {
+    editorStore.setState({ currentProjectId: next } as any);
+  }, [editorStore]);
+
+  const projectTitle = useEditorSelector((s) => String(s.projectTitle || ""));
+  const setProjectTitle = useCallback((next: string) => {
+    editorStore.setState({ projectTitle: next } as any);
+  }, [editorStore]);
   const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">("regular");
+  const templateTypeIdRef = useRef<"regular" | "enhanced">(templateTypeId);
+  useEffect(() => {
+    templateTypeIdRef.current = templateTypeId;
+  }, [templateTypeId]);
   // UX: Template Type is chosen ONLY when creating a new project (never mutates an existing project).
   // Defaults to Enhanced on each /editor load.
   const [newProjectTemplateTypeId, setNewProjectTemplateTypeId] = useState<"regular" | "enhanced">("enhanced");
-  const [templateSettingsOpen, setTemplateSettingsOpen] = useState(false);
-  const [projectsDropdownOpen, setProjectsDropdownOpen] = useState(false);
-  const [archiveProjectModalOpen, setArchiveProjectModalOpen] = useState(false);
-  const [archiveProjectTarget, setArchiveProjectTarget] = useState<{ id: string; title: string } | null>(null);
-  const [archiveProjectBusy, setArchiveProjectBusy] = useState(false);
   const [projectSaveStatus, setProjectSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const projectSaveTimeoutRef = useRef<number | null>(null);
   const [slideSaveStatus, setSlideSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const layoutDirtyRef = useRef(false);
   const LIVE_LAYOUT_DEBOUNCE_MS = 500;
+
+  // Phase 5B: store-owned modals + prompt/mapping UI state
+  const templateSettingsOpen = useEditorSelector((s) => !!s.templateSettingsOpen);
+  const setTemplateSettingsOpen = useCallback((next: boolean) => {
+    editorStore.setState({ templateSettingsOpen: next } as any);
+  }, [editorStore]);
+
+  const promptModalOpen = useEditorSelector((s) => !!s.promptModalOpen);
+  const setPromptModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ promptModalOpen: next } as any);
+  }, [editorStore]);
+
+  const promptModalSection = useEditorSelector((s) => (s.promptModalSection === "emphasis" || s.promptModalSection === "image" ? s.promptModalSection : "prompt"));
+  const setPromptModalSection = useCallback((next: "prompt" | "emphasis" | "image") => {
+    editorStore.setState({ promptModalSection: next } as any);
+  }, [editorStore]);
+
+  const templateTypePrompt = useEditorSelector((s) => String(s.templateTypePrompt || ""));
+  const setTemplateTypePrompt = useCallback((next: string) => {
+    editorStore.setState({
+      templateTypePrompt: next,
+      templateTypePromptPreviewLine: String(next || "").split("\n")[0] || "",
+    } as any);
+  }, [editorStore]);
+
+  const templateTypeEmphasisPrompt = useEditorSelector((s) => String(s.templateTypeEmphasisPrompt || ""));
+  const setTemplateTypeEmphasisPrompt = useCallback((next: string) => {
+    editorStore.setState({
+      templateTypeEmphasisPrompt: next,
+      templateTypeEmphasisPromptPreviewLine: String(next || "").split("\n")[0] || "",
+    } as any);
+  }, [editorStore]);
+
+  const templateTypeImageGenPrompt = useEditorSelector((s) => String(s.templateTypeImageGenPrompt || ""));
+  const setTemplateTypeImageGenPrompt = useCallback((next: string) => {
+    editorStore.setState({
+      templateTypeImageGenPrompt: next,
+      templateTypeImageGenPromptPreviewLine: String(next || "").split("\n")[0] || "",
+    } as any);
+  }, [editorStore]);
+
+  const templateTypeMappingSlide1 = useEditorSelector((s) => (s.templateTypeMappingSlide1 ? String(s.templateTypeMappingSlide1) : null));
+  const setTemplateTypeMappingSlide1 = useCallback((next: string | null) => {
+    editorStore.setState({ templateTypeMappingSlide1: next } as any);
+  }, [editorStore]);
+
+  const templateTypeMappingSlide2to5 = useEditorSelector((s) => (s.templateTypeMappingSlide2to5 ? String(s.templateTypeMappingSlide2to5) : null));
+  const setTemplateTypeMappingSlide2to5 = useCallback((next: string | null) => {
+    editorStore.setState({ templateTypeMappingSlide2to5: next } as any);
+  }, [editorStore]);
+
+  const templateTypeMappingSlide6 = useEditorSelector((s) => (s.templateTypeMappingSlide6 ? String(s.templateTypeMappingSlide6) : null));
+  const setTemplateTypeMappingSlide6 = useCallback((next: string | null) => {
+    editorStore.setState({ templateTypeMappingSlide6: next } as any);
+  }, [editorStore]);
+
+  // Phase 5C: store-owned Saved Projects dropdown + archive modal state
+  const projectsDropdownOpen = useEditorSelector((s) => !!s.projectsDropdownOpen);
+  const setProjectsDropdownOpen = useCallback((next: boolean | ((prev: boolean) => boolean)) => {
+    editorStore.setState((prev: any) => {
+      const prevOpen = !!prev.projectsDropdownOpen;
+      const open = typeof next === "function" ? !!(next as any)(prevOpen) : !!next;
+      return { projectsDropdownOpen: open } as any;
+    });
+  }, [editorStore]);
+
+  const archiveProjectModalOpen = useEditorSelector((s) => !!s.archiveProjectModalOpen);
+  const setArchiveProjectModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ archiveProjectModalOpen: next } as any);
+  }, [editorStore]);
+
+  const archiveProjectTarget = useEditorSelector((s) => (s.archiveProjectTarget ? (s.archiveProjectTarget as any) : null));
+  const setArchiveProjectTarget = useCallback((next: { id: string; title: string } | null) => {
+    editorStore.setState({ archiveProjectTarget: next } as any);
+  }, [editorStore]);
+
+  const archiveProjectBusy = useEditorSelector((s) => !!s.archiveProjectBusy);
+  const setArchiveProjectBusy = useCallback((next: boolean) => {
+    editorStore.setState({ archiveProjectBusy: next } as any);
+  }, [editorStore]);
   // Stage 4B: live layout queue is extracted; layout compute fns are provided via refs to avoid TDZ ordering issues.
   const computeDeterministicLayoutRef = useRef<((params: any) => any) | null>(null);
   const computeRegularBodyTextboxLayoutRef = useRef<((params: any) => any) | null>(null);
@@ -329,14 +428,6 @@ export default function EditorShell() {
     return `IDX:${fallbackIndex}`;
   };
 
-  // Template type settings (global defaults + per-user overrides)
-  const [templateTypePrompt, setTemplateTypePrompt] = useState<string>("");
-  const [templateTypeEmphasisPrompt, setTemplateTypeEmphasisPrompt] = useState<string>("");
-  const [templateTypeImageGenPrompt, setTemplateTypeImageGenPrompt] = useState<string>("");
-  const [templateTypeMappingSlide1, setTemplateTypeMappingSlide1] = useState<string | null>(null);
-  const [templateTypeMappingSlide2to5, setTemplateTypeMappingSlide2to5] = useState<string | null>(null);
-  const [templateTypeMappingSlide6, setTemplateTypeMappingSlide6] = useState<string | null>(null);
-
   // Current project snapshots (so projects don't morph unexpectedly)
   const [projectPromptSnapshot, setProjectPromptSnapshot] = useState<string>("");
   const [projectMappingSlide1, setProjectMappingSlide1] = useState<string | null>(null);
@@ -344,8 +435,6 @@ export default function EditorShell() {
   const [projectMappingSlide6, setProjectMappingSlide6] = useState<string | null>(null);
   const [templateSnapshots, setTemplateSnapshots] = useState<Record<string, any>>({});
 
-  const [promptModalOpen, setPromptModalOpen] = useState(false);
-  const [promptModalSection, setPromptModalSection] = useState<"prompt" | "emphasis" | "image">("prompt");
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
   const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -1076,6 +1165,7 @@ export default function EditorShell() {
   useEditorBootstrap({
     userId: user?.id || null,
     templateTypeId,
+    templateTypeIdRef,
     fetchJson,
     addLog,
     setTemplates,
@@ -2424,7 +2514,7 @@ export default function EditorShell() {
 
   // NOTE: slide snapshot persistence is handled via `useSlidePersistence` (project-scoped).
 
-  const savePromptSettings = async () => {
+  async function savePromptSettings() {
     // Per-user customization is stored in `carousel_template_type_overrides`.
     addLog(
       `💾 Saving per-user template-type settings: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
@@ -2442,7 +2532,7 @@ export default function EditorShell() {
       }),
     });
     addLog(`✅ Saved per-user template-type settings`);
-  };
+  }
 
   // Project-scoped AI image prompt save (debounced callers capture pid).
   const saveSlideAiImagePromptForProject = async (projectId: string, slideIndex: number, prompt: string) => {
