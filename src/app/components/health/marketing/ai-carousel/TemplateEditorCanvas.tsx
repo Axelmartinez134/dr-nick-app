@@ -6,6 +6,8 @@ import type {
   CarouselTemplateDefinitionV1,
   TemplateAsset,
   TemplateImageAsset,
+  TemplateShapeAsset,
+  TemplateShapeStyle,
   TemplateTextAsset,
   TemplateRect,
   TemplateTextStyle,
@@ -20,7 +22,7 @@ export interface TemplateEditorCanvasHandle {
   upsertTextAsset: (asset: TemplateTextAsset) => void;
   getLayers: () => Array<{
     id: string;
-    type: 'content-region' | 'text' | 'image';
+    type: 'content-region' | 'text' | 'image' | 'shape';
     name: string;
     zIndex: number;
     kind?: string;
@@ -28,12 +30,21 @@ export interface TemplateEditorCanvasHandle {
   selectLayer: (layerId: string) => void;
   reorderLayer: (layerId: string, direction: 'up' | 'down') => void;
   addTextLayer: () => void;
+  addRectLayer: () => void;
   renameLayer: (layerId: string, nextName: string) => void;
   deleteLayer: (layerId: string) => void;
   undo: () => void;
   getActiveLayerId: () => string | null;
-  getTextLayerStyle: (layerId: string) => null | { fontFamily: string; fontWeight?: any; fontSize: number; fontStyle?: string };
-  setTextLayerStyle: (layerId: string, patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string }>) => void;
+  getTextLayerStyle: (layerId: string) => null | { fontFamily: string; fontWeight?: any; fontSize: number; fontStyle?: string; fill?: string };
+  setTextLayerStyle: (
+    layerId: string,
+    patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string; fill: string }>
+  ) => void;
+  getShapeLayerStyle: (layerId: string) => null | { cornerRadius: number; fill: string; stroke: string; strokeWidth: number };
+  setShapeLayerStyle: (
+    layerId: string,
+    patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number }>
+  ) => void;
   startTextEditing: (layerId: string) => void;
 }
 
@@ -131,6 +142,17 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
           return { ...a, rect, text: obj.text || a.text, style };
         }
 
+        if (a.type === 'shape') {
+          const style: TemplateShapeStyle = {
+            fill: String(obj.fill || a.style?.fill || '#111827'),
+            stroke: String(obj.stroke || a.style?.stroke || '#111827'),
+            strokeWidth: Number.isFinite(Number(obj.strokeWidth)) ? Number(obj.strokeWidth) : Number(a.style?.strokeWidth || 0),
+          };
+          const rx = Number(obj.rx ?? obj.ry ?? a.cornerRadius ?? 0);
+          const cornerRadius = Number.isFinite(rx) ? Math.max(0, Math.round(rx)) : 0;
+          return { ...a, rect, style, cornerRadius };
+        }
+
         return { ...a, rect };
       });
 
@@ -162,9 +184,13 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
     const computeLayersFromDef = (def: CarouselTemplateDefinitionV1) => {
       const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
       const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
-      const sorted = [...assets].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      // UI ordering: show top-most layers first (higher zIndex first).
+      const sorted = [...assets].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
       const nameForAsset = (a: any, idx: number) => {
         if (typeof a?.name === 'string' && a.name.trim()) return a.name.trim();
+        if (a?.type === 'shape') {
+          return a?.shape === 'rect' ? 'Rectangle' : 'Shape';
+        }
         if (a?.type === 'image') {
           if (a?.kind === 'avatar') return 'Avatar';
           if (a?.kind === 'footer_icon') return 'Footer icon';
@@ -179,7 +205,7 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       };
       const layers = sorted.map((a: any, idx: number) => ({
         id: String(a.id),
-        type: a.type === 'image' ? ('image' as const) : ('text' as const),
+        type: a.type === 'image' ? ('image' as const) : a.type === 'shape' ? ('shape' as const) : ('text' as const),
         name: nameForAsset(a, idx),
         zIndex: typeof a.zIndex === 'number' ? a.zIndex : 0,
         kind: a.kind,
@@ -229,10 +255,12 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
       if (!def.slides || def.slides.length === 0) def.slides = [slide0];
       const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      // Normalize first so "up/down" moves are deterministic.
       const sorted = normalizeZIndex(assets);
       const idx = sorted.findIndex((a: any) => String(a.id) === String(layerId));
       if (idx === -1) return;
-      const swapWith = direction === 'up' ? idx - 1 : idx + 1;
+      // Semantics: "up" means bring forward (increase zIndex); "down" means send backward.
+      const swapWith = direction === 'up' ? idx + 1 : idx - 1;
       if (swapWith < 0 || swapWith >= sorted.length) return;
       const tmp = sorted[idx];
       sorted[idx] = sorted[swapWith];
@@ -268,6 +296,34 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         rotation: 0,
       };
       slide0.assets = [...assets, t as any];
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      renderFromDefinition(defRef.current);
+      selectLayerOnCanvas(id);
+    };
+
+    const addRectLayerToDef = () => {
+      pushHistory();
+      const def = exportFromCanvas();
+      const slide0 = def.slides?.find(s => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const nextZ = assets.reduce((m: number, a: any) => Math.max(m, typeof a?.zIndex === 'number' ? a.zIndex : -1), -1) + 1;
+      const id = crypto.randomUUID();
+      const s: TemplateShapeAsset = {
+        id,
+        type: 'shape',
+        shape: 'rect',
+        kind: 'shape_rect',
+        name: `Rectangle ${assets.filter((a: any) => a?.type === 'shape').length + 1}`,
+        rect: { x: 140, y: 320, width: 240, height: 240 },
+        cornerRadius: 0,
+        style: { fill: '#111827', stroke: '#111827', strokeWidth: 0 },
+        locked: false,
+        zIndex: nextZ,
+        rotation: 0,
+      };
+      slide0.assets = [...assets, s as any];
       def.slides = [slide0];
       defRef.current = clone(def);
       renderFromDefinition(defRef.current);
@@ -362,12 +418,13 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         fontWeight: obj.fontWeight,
         fontSize: Number(obj.fontSize || 24),
         fontStyle: String(obj.fontStyle || 'normal'),
+        fill: typeof obj.fill === 'string' ? obj.fill : undefined,
       };
     };
 
     const setTextStyleForLayer = (
       layerId: string,
-      patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string }>
+      patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string; fill: string }>
     ) => {
       if (!layerId || layerId === contentRegionLayerId) return;
       const obj = assetObjByIdRef.current.get(layerId);
@@ -382,6 +439,56 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         if (patch.fontWeight !== undefined) next.fontWeight = patch.fontWeight;
         if (typeof patch.fontSize === 'number' && Number.isFinite(patch.fontSize)) next.fontSize = Math.max(1, Math.round(patch.fontSize));
         if (patch.fontStyle) next.fontStyle = patch.fontStyle;
+        if (typeof patch.fill === 'string') next.fill = patch.fill;
+        obj.set?.(next);
+        obj.setCoords?.();
+        canvas.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+    };
+
+    const getShapeStyleForLayer = (layerId: string) => {
+      if (!layerId || layerId === contentRegionLayerId) return null;
+      const obj = assetObjByIdRef.current.get(layerId);
+      if (!obj) return null;
+      const isRect = obj.type === 'rect';
+      if (!isRect) return null;
+      return {
+        cornerRadius: Math.max(0, Math.round(Number(obj.rx ?? obj.ry ?? 0) || 0)),
+        fill: String(obj.fill || '#111827'),
+        stroke: String(obj.stroke || '#111827'),
+        strokeWidth: Math.max(0, Math.round(Number(obj.strokeWidth ?? 0) || 0)),
+      };
+    };
+
+    const setShapeStyleForLayer = (
+      layerId: string,
+      patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number }>
+    ) => {
+      if (!layerId || layerId === contentRegionLayerId) return;
+      const obj = assetObjByIdRef.current.get(layerId);
+      const canvas = fabricCanvasRef.current;
+      if (!obj || !canvas) return;
+      const isRect = obj.type === 'rect';
+      if (!isRect) return;
+      pushHistory();
+      try {
+        const next: any = {};
+        if (typeof patch.fill === 'string') next.fill = patch.fill;
+        if (typeof patch.stroke === 'string') next.stroke = patch.stroke;
+        if (patch.strokeWidth !== undefined && Number.isFinite(Number(patch.strokeWidth))) {
+          next.strokeWidth = Math.max(0, Number(patch.strokeWidth));
+        }
+        if (patch.cornerRadius !== undefined && Number.isFinite(Number(patch.cornerRadius))) {
+          const desired = Math.max(0, Math.round(Number(patch.cornerRadius)));
+          const w = typeof obj.getScaledWidth === 'function' ? obj.getScaledWidth() : (obj.width || 0) * (obj.scaleX || 1);
+          const h = typeof obj.getScaledHeight === 'function' ? obj.getScaledHeight() : (obj.height || 0) * (obj.scaleY || 1);
+          const maxR = Math.max(0, Math.floor(Math.min(w, h) / 2));
+          const r = Math.min(desired, maxR);
+          next.rx = r;
+          next.ry = r;
+        }
         obj.set?.(next);
         obj.setCoords?.();
         canvas.requestRenderAll?.();
@@ -565,6 +672,28 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
           };
 
           void setSrc();
+        } else if (a.type === 'shape') {
+          const s = a as TemplateShapeAsset;
+          const r = Number.isFinite(Number(s.cornerRadius)) ? Math.max(0, Math.round(Number(s.cornerRadius))) : 0;
+          const obj = new fabric.Rect({
+            left: s.rect.x,
+            top: s.rect.y,
+            width: Math.max(1, s.rect.width),
+            height: Math.max(1, s.rect.height),
+            originX: 'left',
+            originY: 'top',
+            fill: s.style?.fill || '#111827',
+            stroke: s.style?.stroke || '#111827',
+            strokeWidth: Number(s.style?.strokeWidth || 0),
+            rx: r,
+            ry: r,
+            selectable: true,
+            evented: true,
+          });
+          (obj as any).data = { role: 'template-asset', assetId: s.id, assetType: 'shape', assetKind: s.kind };
+          disableRotation(obj);
+          canvas.add(obj);
+          assetObjByIdRef.current.set(s.id, obj);
         }
       }
 
@@ -692,12 +821,15 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       selectLayer: (layerId: string) => selectLayerOnCanvas(layerId),
       reorderLayer: (layerId: string, direction: 'up' | 'down') => reorderLayerInDef(layerId, direction),
       addTextLayer: () => addTextLayerToDef(),
+      addRectLayer: () => addRectLayerToDef(),
       renameLayer: (layerId: string, nextName: string) => renameLayerInDef(layerId, nextName),
       deleteLayer: (layerId: string) => deleteLayerInDef(layerId),
       undo: () => undoFromHistory(),
       getActiveLayerId: () => getActiveLayerIdFromCanvas(),
       getTextLayerStyle: (layerId: string) => getTextStyleForLayer(layerId),
       setTextLayerStyle: (layerId: string, patch: any) => setTextStyleForLayer(layerId, patch),
+      getShapeLayerStyle: (layerId: string) => getShapeStyleForLayer(layerId),
+      setShapeLayerStyle: (layerId: string, patch: any) => setShapeStyleForLayer(layerId, patch),
       startTextEditing: (layerId: string) => startEditingTextLayer(layerId),
     }), [initialDefinition]);
 

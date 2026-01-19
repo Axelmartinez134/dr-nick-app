@@ -502,6 +502,7 @@ export default function EditorShell() {
       { label: "Inter", family: "Inter, sans-serif", weight: 400 },
       { label: "Poppins", family: "Poppins, sans-serif", weight: 400 },
       { label: "Montserrat (Regular)", family: "Montserrat, sans-serif", weight: 400 },
+      { label: "Montserrat (Medium)", family: "Montserrat, sans-serif", weight: 500 },
       { label: "Montserrat (Bold)", family: "Montserrat, sans-serif", weight: 700 },
       { label: "Playfair Display", family: "\"Playfair Display\", serif", weight: 400 },
       { label: "Open Sans (Light)", family: "\"Open Sans\", sans-serif", weight: 300 },

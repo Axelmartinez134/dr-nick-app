@@ -10,6 +10,39 @@ This is a practical map of the `/editor` code so changes can be made without sea
 - **Editor “engine” state**: `src/app/components/health/marketing/ai-carousel/useCarouselEditorEngine.ts`
 - **Server APIs (editor)**: `src/app/api/editor/**/route.ts`
 
+## How we edit `/editor` moving forward (preferred)
+This guidance is **ONLY for `/editor`**. It’s intentionally high-level so it stays durable.
+
+- **Prefer small, focused edits** that extend existing `src/features/editor/*` modules.
+- **Prefer UI changes** in `src/features/editor/components/*`.
+- **Prefer behavior/orchestration** in `src/features/editor/hooks/*`.
+- **Prefer API calls** in `src/features/editor/services/*` (components/hooks call these).
+- **Prefer types + pure state helpers** in `src/features/editor/store/*` and `src/features/editor/state/*`.
+- **Prefer pure utilities** in `src/features/editor/utils/*`.
+- **`src/app/editor/EditorShell.tsx`**: prefer keeping it as **composition/wiring** (calling hooks, publishing store slices), not a dumping ground.
+
+### Soft guardrails (strongly prefer not to)
+- **Do not reintroduce** giant mirrored blobs (legacy `workspace` / `bottomPanel` style).
+- **Do not add** new “bridge sync” hooks unless unavoidable.
+- **Do not add** new UI handler surfaces outside `state.actions` (prefer extending `state.actions`).
+
+### Per-change checklist (copy/paste)
+- [ ] Make the smallest change that fits the current `src/features/editor/*` structure
+- [ ] Update `docs/EDITOR_CODEBASE_MAP.md` (map + any new files/ownership)
+- [ ] Add a **Manual QA** section (6–10 bullets) specific to this change
+- [ ] Run `npm run build` and confirm it passes
+- [ ] Call out any new/changed editor state fields or actions
+- [ ] If architecture changed, add/update an entry in **Architecture Decisions**
+
+### Architecture Decisions (ADRs)
+
+#### ADR-001: Single actions surface + no bottom-panel bridge hook
+- **Title**: Single `state.actions` surface; bottom panel uses `bottomPanelUi` + `state.actions`
+- **Context**: Needed a consistent handler surface and to avoid maintaining behavior in multiple “bridge” layers.
+- **Decision**: Keep a stable `state.actions` contract (ref-dispatched) and publish bottom panel render-state as `bottomPanelUi`; remove the legacy `useEditorStoreWorkspaceSync` bridge.
+- **Consequences**: One place to add handlers; bottom panel doesn’t need its own action slice; less mirroring surface area.
+- **Date + commit hash**: 2026-01-19 — `9922a31`
+
 ## Auth + gating
 - **Auth state + editor allowlist**: `src/app/components/auth/AuthContext.tsx`
   - Checks `public.editor_users` to set `isEditorUser`
@@ -30,7 +63,10 @@ This is a practical map of the `/editor` code so changes can be made without sea
   - `utils/` (pure helpers)
 
 ## Current UI composition (after Stage 2 wiring)
-At this point, **UI components read from the editor store**, and `EditorShell.tsx` still owns the behavior and mirrors state/handlers into the store.
+At this point, **UI components read from the editor store**. `EditorShell.tsx` still owns the engine/orchestration, but store publishing is now split into:
+- **Stable top-level actions** via `state.actions` (ref-dispatched)
+- **Workspace slices** via `useEditorStoreWorkspaceRegistry` (refs + nav + UI + handlers for the slide strip/canvas)
+- **Bottom panel UI slice** via `state.bottomPanelUi` (render-only state), with bottom panel handlers living in `state.actions`
 
 - **Top bar**: `src/features/editor/components/EditorTopBar.tsx` (reads `state.*` + `state.actions`)
 - **Left sidebar + saved projects**:
@@ -39,8 +75,8 @@ At this point, **UI components read from the editor store**, and `EditorShell.ts
 - **Modals**:
   - `src/features/editor/components/TemplateSettingsModal.tsx` (reads store)
   - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
-- **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspace`)
-- **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanel`)
+- **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspaceNav`, `state.workspaceRefs`, `state.workspaceUi`, `state.workspaceActions`)
+- **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanelUi` + `state.actions`)
 
 ### Still route-adjacent
 - `src/app/editor/EditorShell.tsx`: composition + wiring (calls hooks, renders layout)
@@ -117,9 +153,22 @@ At this point, **UI components read from the editor store**, and `EditorShell.ts
 
 ## Template system (editor)
 - **Template editor modal**: `src/app/components/health/marketing/ai-carousel/TemplateEditorModal.tsx`
+- **Template editor canvas (Fabric.js) + assets**: `src/app/components/health/marketing/ai-carousel/TemplateEditorCanvas.tsx`
+  - Supports template assets of type `text`, `image`, and `shape` (rectangle w/ optional rounded corners)
 - **Template type settings (effective merged)**:
   - `src/app/api/editor/template-types/effective/route.ts`
   - `src/app/api/editor/template-types/overrides/upsert/route.ts`
+
+### Manual QA (Template Editor shapes)
+- Open `/editor` and open **Template Editor**
+- Create or open an existing template
+- Click **+ Shape** to add a rectangle layer
+- Drag + resize the rectangle (stretch into a non-square) and confirm it renders correctly
+- Right-click the shape and set **Corner radius** > 0 (verify rounded corners)
+- Change **Fill**, **Stroke**, and **Stroke width** (verify on-canvas updates)
+- Right-click a **text** layer and change **Color** (verify on-canvas updates)
+- Click **Save Template**, close modal, reopen the same template → shape persists with same styling
+- Open a project using that template → confirm the shape renders behind user content on the main canvas
 
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.
@@ -207,9 +256,21 @@ Stage 3 keeps the **store-driven UI** from Stage 2, but starts moving real behav
 ### Stage 4 (canvas + store ownership) summary
 Stage 4 continues shrinking `EditorShell.tsx` by extracting remaining “behavior islands” into editor-owned hooks.
 
-- **4A (store mirroring)**: `useEditorStoreActionsSync`, `useEditorStoreWorkspaceSync`
+- **4A (store mirroring → stable actions)**: `useEditorStoreActionsSync`
 - **4B (live layout queue)**: `useLiveLayoutQueue`
 - **4C/4D (canvas wiring)**: `useCanvasTextStyling`, `useActiveImageSelection`, `useCanvasExport`, `useSlidesViewport`, `useFabricCanvasBinding`, `useMultiCanvasRefs`
+
+### Stage 5 (mirroring elimination) summary
+Stage 5 removed the “giant mirrored blobs” and replaced them with smaller, store-owned slices and stable actions.
+
+- **Store-owned identity/navigation/modals/projects**: `EditorShell.tsx` sets store fields directly (no legacy “mirror everything” hook)
+- **Stable actions surface**: `src/features/editor/hooks/useEditorStoreActionsSync.ts`
+  - UI calls `state.actions.*` (ref-dispatched to avoid stale closures)
+- **Workspace slices (replace `state.workspace`)**: `src/features/editor/hooks/useEditorStoreWorkspaceRegistry.tsx`
+  - Publishes `workspaceNav`, `workspaceRefs`, `workspaceUi`, `workspaceActions`
+- **Bottom panel bridge removed**:
+  - `EditorBottomPanel` uses `state.bottomPanelUi` (render state) + `state.actions` (handlers)
+  - Legacy `useEditorStoreWorkspaceSync.tsx` was deleted
 
 ### Why `EditorShell.tsx` is still large (expected)
 Even after Stage 2, `EditorShell.tsx` still owns the **actual behavior** (effects, handlers, Fabric wiring, debounced saves, job orchestration). Stage 2’s goal so far is to remove **prop drilling** and make UI subscribe to state slices cleanly.
@@ -228,11 +289,10 @@ Stage 2 introduces a lightweight store (no new dependencies) so UI can subscribe
 - **Provider wrap**: `src/app/editor/page.tsx` wraps the editor in `EditorStoreProvider`.
 - **UI reads from store**:
   - Top/left/modals: `EditorTopBar`, `EditorSidebar`, `SavedProjectsCard`, `TemplateSettingsModal`, `PromptsModal`
-  - Workspace: `EditorSlidesRow` (reads `state.workspace`)
-  - Bottom panel: `EditorBottomPanel` (reads `state.bottomPanel`)
-- **EditorShell still owns behavior**:
-  - It mirrors state into the store via `useLayoutEffect(...)` and provides callbacks via:
-    - `state.actions` (top/left/modals)
-    - `state.workspace` (slides strip + canvas wiring)
-    - `state.bottomPanel` (RichText + jobs + controls + caption)
+  - Workspace: `EditorSlidesRow` (reads `state.workspaceNav`, `state.workspaceRefs`, `state.workspaceUi`, `state.workspaceActions`)
+  - Bottom panel: `EditorBottomPanel` (reads `state.bottomPanelUi` + `state.actions`)
+- **EditorShell owns orchestration + publishes slices**:
+  - **Actions**: `useEditorStoreActionsSync` installs a stable `state.actions` object (ref-dispatched)
+  - **Workspace**: `useEditorStoreWorkspaceRegistry` publishes the workspace slices (including refs that cannot be “store-owned” purely)
+  - **Bottom panel**: `EditorShell.tsx` sets `state.bottomPanelUi` directly (render-only state); bottom-panel handlers are in `state.actions`
 

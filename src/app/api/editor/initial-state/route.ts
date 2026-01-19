@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import type { CarouselTemplateDefinitionV1, TemplateTextAsset } from '@/lib/carousel-template-types';
+import type { CarouselTemplateDefinitionV1 } from '@/lib/carousel-template-types';
 import { getAuthedSupabase } from '../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../projects/_effective';
 
@@ -10,49 +10,13 @@ export const maxDuration = 10;
 type TemplateTypeId = 'regular' | 'enhanced';
 
 function starterTemplateDefinition(): CarouselTemplateDefinitionV1 {
-  const assets: TemplateTextAsset[] = [
-    {
-      id: 'display_name',
-      type: 'text',
-      kind: 'display_name',
-      rect: { x: 140, y: 70, width: 500, height: 45 },
-      text: 'Dr. Nick',
-      style: { fontFamily: 'Inter', fontSize: 36, fontWeight: 'bold', fill: '#111827', textAlign: 'left' },
-      locked: false,
-      zIndex: 10,
-      rotation: 0,
-    },
-    {
-      id: 'handle',
-      type: 'text',
-      kind: 'handle',
-      rect: { x: 140, y: 115, width: 500, height: 40 },
-      text: '@drnick',
-      style: { fontFamily: 'Inter', fontSize: 28, fontWeight: 'normal', fill: '#111827', textAlign: 'left' },
-      locked: false,
-      zIndex: 10,
-      rotation: 0,
-    },
-    {
-      id: 'cta_text',
-      type: 'text',
-      kind: 'cta_text',
-      rect: { x: 780, y: 1320, width: 240, height: 60 },
-      text: 'READ MORE',
-      style: { fontFamily: 'Inter', fontSize: 28, fontWeight: 'normal', fill: '#111827', textAlign: 'left' },
-      locked: false,
-      zIndex: 10,
-      rotation: 0,
-    },
-  ];
-
   return {
     template_version: 1,
     slides: [
       {
         slideIndex: 0,
         contentRegion: { x: 0, y: 0, width: 1080, height: 1440 },
-        assets,
+        assets: [],
       },
     ],
     allowedFonts: [

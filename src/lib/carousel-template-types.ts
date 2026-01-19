@@ -8,7 +8,8 @@ export type TemplateAssetKind =
   | 'display_name'
   | 'handle'
   | 'cta_text'
-  | 'other_text';
+  | 'other_text'
+  | 'shape_rect';
 
 export interface TemplateRect {
   x: number;
@@ -54,7 +55,21 @@ export interface TemplateTextAsset extends TemplateAssetBase {
   style: TemplateTextStyle;
 }
 
-export type TemplateAsset = TemplateImageAsset | TemplateTextAsset;
+export interface TemplateShapeStyle {
+  fill: string; // CSS color (prefer hex for UI color picker compatibility)
+  stroke?: string; // CSS color
+  strokeWidth?: number;
+}
+
+export interface TemplateShapeAsset extends TemplateAssetBase {
+  type: 'shape';
+  shape: 'rect';
+  // Rounded corner radius in template-canvas pixels (1080x1440 coordinate space).
+  cornerRadius?: number;
+  style: TemplateShapeStyle;
+}
+
+export type TemplateAsset = TemplateImageAsset | TemplateTextAsset | TemplateShapeAsset;
 
 export interface TemplateSlideDefinitionV1 {
   slideIndex: number; // slide 1 is 0

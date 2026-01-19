@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 'react';
 import { VisionLayoutDecision } from '@/lib/carousel-types';
-import type { CarouselTemplateDefinitionV1, TemplateAsset, TemplateImageAsset, TemplateTextAsset, TemplateRect } from '@/lib/carousel-template-types';
+import type {
+  CarouselTemplateDefinitionV1,
+  TemplateAsset,
+  TemplateImageAsset,
+  TemplateShapeAsset,
+  TemplateTextAsset,
+  TemplateRect,
+} from '@/lib/carousel-template-types';
 import { supabase } from '../../../auth/AuthContext';
 import { ensureTypographyFontsLoaded } from './fontMetrics';
 import {
@@ -1477,7 +1484,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           return String(a.id).localeCompare(String(b.id));
         });
 
-        for (const asset of sorted) {
+        for (let orderIndex = 0; orderIndex < sorted.length; orderIndex++) {
+          const asset = sorted[orderIndex];
           try {
             if (asset.type === 'text') {
               const t = asset as TemplateTextAsset;
@@ -1518,8 +1526,20 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                   (fimg as any).data = { role: 'template-asset', assetId: imgA.id, assetKind: imgA.kind, assetType: 'image' };
                   disableRotationControls(fimg);
                   canvas.add(fimg);
-                  // Keep template assets behind user content.
-                  if (typeof canvas.sendObjectToBack === 'function') canvas.sendObjectToBack(fimg);
+                  // Preserve template zIndex ordering even though images load async.
+                  // We insert the image into the canvas object stack at its intended template order index.
+                  // This keeps it:
+                  // - above/below other template assets according to zIndex
+                  // - still behind user content (which is added after template assets)
+                  try {
+                    if (typeof canvas.moveTo === 'function') {
+                      canvas.moveTo(fimg, orderIndex);
+                    } else if (typeof (fimg as any).moveTo === 'function') {
+                      (fimg as any).moveTo(orderIndex);
+                    }
+                  } catch {
+                    // ignore
+                  }
                   canvas.renderAll();
                 } catch (e) {
                   console.warn('[Preview Vision] ⚠️ Failed to add template image asset:', e);
@@ -1558,6 +1578,28 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 }
               };
               void setSrc();
+            } else if (asset.type === 'shape') {
+              const s = asset as TemplateShapeAsset;
+              if (s.shape !== 'rect') continue;
+              const r = Number.isFinite(Number(s.cornerRadius)) ? Math.max(0, Math.round(Number(s.cornerRadius))) : 0;
+              const rect = new fabric.Rect({
+                left: s.rect.x,
+                top: s.rect.y,
+                width: Math.max(1, s.rect.width),
+                height: Math.max(1, s.rect.height),
+                originX: 'left',
+                originY: 'top',
+                fill: s.style?.fill || '#111827',
+                stroke: s.style?.stroke || '#111827',
+                strokeWidth: Number(s.style?.strokeWidth || 0),
+                rx: r,
+                ry: r,
+                selectable: false,
+                evented: false,
+              });
+              (rect as any).data = { role: 'template-asset', assetId: s.id, assetKind: s.kind, assetType: 'shape' };
+              disableRotationControls(rect);
+              canvas.add(rect);
             }
           } catch (e) {
             console.warn('[Preview Vision] ⚠️ Failed to add template asset:', e);

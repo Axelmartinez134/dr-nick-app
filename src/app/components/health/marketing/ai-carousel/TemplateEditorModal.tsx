@@ -6,14 +6,13 @@ import TemplateEditorCanvas, { TemplateEditorCanvasHandle } from './TemplateEdit
 import type {
   CarouselTemplateDefinitionV1,
   TemplateImageAsset,
-  TemplateTextAsset,
-  TemplateTextStyle,
 } from '@/lib/carousel-template-types';
 
 const FONT_OPTIONS = [
   { label: 'Inter', family: 'Inter', weight: 400 },
   { label: 'Poppins', family: 'Poppins', weight: 400 },
   { label: 'Montserrat (Regular)', family: 'Montserrat', weight: 400 },
+  { label: 'Montserrat (Medium)', family: 'Montserrat', weight: 500 },
   { label: 'Montserrat (Bold)', family: 'Montserrat', weight: 700 },
   { label: 'Playfair Display', family: 'Playfair Display', weight: 400 },
   { label: 'Open Sans (Light)', family: 'Open Sans', weight: 300 },
@@ -36,42 +35,6 @@ function defaultDefinition(): CarouselTemplateDefinitionV1 {
     ],
     allowedFonts: FONT_OPTIONS.map((f) => f.family),
   };
-}
-
-function ensureTextAsset(def: CarouselTemplateDefinitionV1, kind: 'display_name' | 'handle' | 'cta_text'): TemplateTextAsset {
-  const slide0 = def.slides.find(s => s.slideIndex === 0) || def.slides[0];
-  const existing = (slide0.assets || []).find((a: any) => a.type === 'text' && a.kind === kind) as TemplateTextAsset | undefined;
-  if (existing) return existing;
-
-  const baseStyle: TemplateTextStyle = {
-    fontFamily: 'Inter',
-    fontSize: kind === 'display_name' ? 36 : 28,
-    fontWeight: kind === 'display_name' ? 'bold' : 'normal',
-    fill: '#111827',
-    textAlign: 'left',
-  };
-
-  const rect =
-    kind === 'cta_text'
-      ? { x: 780, y: 1320, width: 240, height: 60 }
-      : kind === 'handle'
-        ? { x: 140, y: 115, width: 500, height: 40 }
-        : { x: 140, y: 70, width: 500, height: 45 };
-
-  const created: TemplateTextAsset = {
-    id: kind,
-    type: 'text',
-    kind,
-    rect,
-    text: kind === 'display_name' ? 'Dr. Nick' : kind === 'handle' ? '@drnick' : 'READ MORE',
-    style: baseStyle,
-    locked: false,
-    zIndex: 10,
-    rotation: 0,
-  };
-
-  slide0.assets.push(created as any);
-  return created;
 }
 
 export default function TemplateEditorModal(props: {
@@ -101,6 +64,13 @@ export default function TemplateEditorModal(props: {
   const [ctxFont, setCtxFont] = useState<string>(fontKey('Inter', 400));
   const [ctxSize, setCtxSize] = useState<number>(36);
   const [ctxItalic, setCtxItalic] = useState(false);
+  const [ctxFill, setCtxFill] = useState<string>('#111827');
+
+  const [shapeMenu, setShapeMenu] = useState<null | { x: number; y: number; layerId: string }>(null);
+  const [shapeCornerRadius, setShapeCornerRadius] = useState<number>(0);
+  const [shapeFill, setShapeFill] = useState<string>('#111827');
+  const [shapeStroke, setShapeStroke] = useState<string>('#111827');
+  const [shapeStrokeWidth, setShapeStrokeWidth] = useState<number>(0);
 
   const [newTemplateName, setNewTemplateName] = useState('Dr Nick IG');
 
@@ -161,12 +131,10 @@ export default function TemplateEditorModal(props: {
 
   useEffect(() => {
     if (!open) return;
-    // When we have a template snapshot, hydrate canvas and text fields from it.
+    // Hydrate the canvas from the provided snapshot (or current in-memory definition).
+    // Important: do NOT auto-insert any seeded layers. Templates should be fully optional.
     const def = props.currentTemplateSnapshot || definition;
     const next = JSON.parse(JSON.stringify(def)) as CarouselTemplateDefinitionV1;
-    ensureTextAsset(next, 'display_name');
-    ensureTextAsset(next, 'handle');
-    ensureTextAsset(next, 'cta_text');
     setDefinition(next);
     canvasRef.current?.loadDefinition(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -198,6 +166,7 @@ export default function TemplateEditorModal(props: {
   };
 
   const closeCtxMenu = () => setCtxMenu(null);
+  const closeShapeMenu = () => setShapeMenu(null);
 
   const openTextContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
     if (!layerId || layerId === '__content_region__') return;
@@ -220,23 +189,45 @@ export default function TemplateEditorModal(props: {
     setCtxFont(fontKey(fam, weight));
     setCtxSize(Number(style.fontSize || 36));
     setCtxItalic(String(style.fontStyle || 'normal') === 'italic');
+    setCtxFill(String(style.fill || '#111827'));
     setCtxMenu({ x: clientX, y: clientY, layerId });
+  };
+
+  const openShapeContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
+    if (!layerId || layerId === '__content_region__') return;
+    const layer = layers.find((x) => x.id === layerId);
+    if (layer?.type !== 'shape') return;
+
+    const style = canvasRef.current?.getShapeLayerStyle?.(layerId);
+    if (!style) return;
+
+    setShapeCornerRadius(Number(style.cornerRadius || 0));
+    setShapeFill(String(style.fill || '#111827'));
+    setShapeStroke(String(style.stroke || '#111827'));
+    setShapeStrokeWidth(Number(style.strokeWidth || 0));
+    setShapeMenu({ x: clientX, y: clientY, layerId });
   };
 
   useEffect(() => {
     if (!open) return;
-    if (!ctxMenu) return;
+    if (!ctxMenu && !shapeMenu) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeCtxMenu();
+      if (e.key === 'Escape') {
+        closeCtxMenu();
+        closeShapeMenu();
+      }
     };
-    const onClick = () => closeCtxMenu();
+    const onClick = () => {
+      closeCtxMenu();
+      closeShapeMenu();
+    };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('mousedown', onClick);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('mousedown', onClick);
     };
-  }, [open, ctxMenu]);
+  }, [open, ctxMenu, shapeMenu]);
 
   const authHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -254,9 +245,6 @@ export default function TemplateEditorModal(props: {
       if (!json.success) throw new Error(json.error || 'Failed to load template');
       const def = json.template.definition as CarouselTemplateDefinitionV1;
       const next = JSON.parse(JSON.stringify(def || defaultDefinition())) as CarouselTemplateDefinitionV1;
-      ensureTextAsset(next, 'display_name');
-      ensureTextAsset(next, 'handle');
-      ensureTextAsset(next, 'cta_text');
       setActiveTemplateId(id);
       setTemplateName(json.template.name || '');
       setDefinition(next);
@@ -559,18 +547,32 @@ export default function TemplateEditorModal(props: {
               <div className="border-t pt-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-black">Layers</div>
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
-                    disabled={saving}
-                    onClick={() => {
-                      canvasRef.current?.addTextLayer?.();
-                      const next = canvasRef.current?.exportDefinition() || definition;
-                      setDefinition(next);
-                    }}
-                  >
-                    + Text
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
+                      disabled={saving}
+                      onClick={() => {
+                        canvasRef.current?.addRectLayer?.();
+                        const next = canvasRef.current?.exportDefinition() || definition;
+                        setDefinition(next);
+                      }}
+                    >
+                      + Shape
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
+                      disabled={saving}
+                      onClick={() => {
+                        canvasRef.current?.addTextLayer?.();
+                        const next = canvasRef.current?.exportDefinition() || definition;
+                        setDefinition(next);
+                      }}
+                    >
+                      + Text
+                    </button>
+                  </div>
                 </div>
                 <div className="border border-gray-200 rounded bg-white max-h-56 overflow-y-auto">
                   {layers.length === 0 ? (
@@ -585,14 +587,15 @@ export default function TemplateEditorModal(props: {
                             selectedLayerId === l.id ? "bg-gray-50" : "",
                           ].join(" ")}
                           onContextMenu={(e) => {
-                            // Right-click / two-finger click on a text layer row opens the Text Settings menu.
-                            if (l.type !== 'text') return;
+                            // Right-click / two-finger click on a layer row opens the settings menu (text/shape).
+                            if (l.type !== 'text' && l.type !== 'shape') return;
                             if (l.id === '__content_region__') return;
                             e.preventDefault();
                             e.stopPropagation();
                             setSelectedLayerId(l.id);
                             canvasRef.current?.selectLayer?.(l.id);
-                            openTextContextMenuForLayer(l.id, e.clientX, e.clientY);
+                            if (l.type === 'text') openTextContextMenuForLayer(l.id, e.clientX, e.clientY);
+                            if (l.type === 'shape') openShapeContextMenuForLayer(l.id, e.clientX, e.clientY);
                           }}
                           onDoubleClick={(e) => {
                             // Double-click a TEXT layer row to start editing the text on canvas.
@@ -756,14 +759,16 @@ export default function TemplateEditorModal(props: {
             <div
               className="relative"
               onContextMenu={(e) => {
-                // Context menu for text styling in Template Editor (right-click / two-finger click).
+                // Context menu for text/shape styling in Template Editor (right-click / two-finger click).
                 e.preventDefault();
                 e.stopPropagation();
 
                 // Prefer current Fabric selection if available; fallback to selected layer in the list.
                 const activeId = canvasRef.current?.getActiveLayerId?.() || selectedLayerId;
                 if (!activeId) return;
-                openTextContextMenuForLayer(activeId, e.clientX, e.clientY);
+                const layer = layers.find((x) => x.id === activeId);
+                if (layer?.type === 'text') openTextContextMenuForLayer(activeId, e.clientX, e.clientY);
+                if (layer?.type === 'shape') openShapeContextMenuForLayer(activeId, e.clientX, e.clientY);
               }}
             >
               <TemplateEditorCanvas ref={canvasRef} initialDefinition={definition} />
@@ -852,6 +857,22 @@ export default function TemplateEditorModal(props: {
                       </div>
                     </div>
 
+                    <div>
+                      <div className="text-[11px] font-semibold text-black/70 mb-1">Color</div>
+                      <input
+                        type="color"
+                        className="h-9 w-full border border-gray-200 rounded"
+                        value={String(ctxFill || '#111827')}
+                        onChange={(e) => {
+                          const v = e.target.value || '#111827';
+                          setCtxFill(v);
+                          canvasRef.current?.setTextLayerStyle?.(ctxMenu.layerId, { fill: v });
+                          const next = canvasRef.current?.exportDefinition() || definition;
+                          setDefinition(next);
+                        }}
+                      />
+                    </div>
+
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         type="button"
@@ -899,6 +920,110 @@ export default function TemplateEditorModal(props: {
                       >
                         Clear
                       </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {shapeMenu ? (
+                <div
+                  className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-[300px]"
+                  style={{ left: shapeMenu.x, top: shapeMenu.y }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="text-xs font-semibold text-black mb-2">Shape settings</div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[11px] font-semibold text-black/70 mb-1">Corner radius</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={120}
+                          value={String(shapeCornerRadius ?? 0)}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setShapeCornerRadius(v);
+                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { cornerRadius: v });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                          className="flex-1"
+                        />
+                        <input
+                          className="h-9 w-20 border border-gray-200 rounded px-2 text-sm text-black"
+                          value={String(shapeCornerRadius ?? 0)}
+                          onChange={(e) => {
+                            const n = Number(e.target.value);
+                            setShapeCornerRadius(n);
+                          }}
+                          onBlur={() => {
+                            const n = Number(shapeCornerRadius);
+                            if (!Number.isFinite(n)) return;
+                            const v = Math.max(0, Math.round(n));
+                            setShapeCornerRadius(v);
+                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { cornerRadius: v });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-[11px] font-semibold text-black/70 mb-1">Fill</div>
+                        <input
+                          type="color"
+                          className="h-9 w-full border border-gray-200 rounded"
+                          value={String(shapeFill || '#111827')}
+                          onChange={(e) => {
+                            const v = e.target.value || '#111827';
+                            setShapeFill(v);
+                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { fill: v });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="text-[11px] font-semibold text-black/70 mb-1">Stroke</div>
+                        <input
+                          type="color"
+                          className="h-9 w-full border border-gray-200 rounded"
+                          value={String(shapeStroke || '#111827')}
+                          onChange={(e) => {
+                            const v = e.target.value || '#111827';
+                            setShapeStroke(v);
+                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { stroke: v });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[11px] font-semibold text-black/70 mb-1">Stroke width</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          className="h-9 w-24 border border-gray-200 rounded px-2 text-sm text-black"
+                          value={String(shapeStrokeWidth ?? 0)}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setShapeStrokeWidth(v);
+                            if (!Number.isFinite(v)) return;
+                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { strokeWidth: Math.max(0, v) });
+                            const next = canvasRef.current?.exportDefinition() || definition;
+                            setDefinition(next);
+                          }}
+                        />
+                        <div className="text-xs text-black/60">px</div>
+                      </div>
                     </div>
                   </div>
                 </div>
