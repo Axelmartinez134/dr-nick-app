@@ -1,9 +1,12 @@
 /* eslint-disable react/no-unstable-nested-components */
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useEditorSelector } from "@/features/editor/store";
+import { supabase, useAuth } from "@/app/components/auth/AuthContext";
 
 export function EditorTopBar() {
+  const { user } = useAuth();
   const titleText = useEditorSelector((s) => s.titleText);
   const projectTitleValue = useEditorSelector((s) => s.projectTitle);
   const projectTitleDisabled = useEditorSelector((s) => s.projectTitleDisabled);
@@ -14,6 +17,47 @@ export function EditorTopBar() {
   const projectSaveStatus = useEditorSelector((s) => s.projectSaveStatus);
   const slideSaveStatus = useEditorSelector((s) => s.slideSaveStatus);
   const actions = useEditorSelector((s) => s.actions);
+
+  const [editorFirstName, setEditorFirstName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadName() {
+      const userId = user?.id;
+      if (!userId) {
+        setEditorFirstName(null);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from("editor_users")
+          .select("first_name")
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          setEditorFirstName(null);
+          return;
+        }
+        const raw = (data as any)?.first_name;
+        const cleaned = typeof raw === "string" ? raw.trim() : "";
+        setEditorFirstName(cleaned || null);
+      } catch {
+        if (cancelled) return;
+        setEditorFirstName(null);
+      }
+    }
+
+    void loadName();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const welcomeText = useMemo(() => {
+    return editorFirstName ? `Welcome, ${editorFirstName}` : "Welcome";
+  }, [editorFirstName]);
 
   const PromptStatusPill = () => {
     if (promptSaveStatus === "idle") return null;
@@ -50,7 +94,10 @@ export function EditorTopBar() {
         <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-white select-none">
           🎠
         </div>
-        <div className="text-sm font-semibold text-slate-900">{titleText}</div>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="text-sm font-semibold text-slate-900 truncate">{titleText}</div>
+          <div className="text-sm text-slate-600 whitespace-nowrap">{welcomeText}</div>
+        </div>
       </div>
       <div className="flex items-center gap-2 min-w-0">
         <input
