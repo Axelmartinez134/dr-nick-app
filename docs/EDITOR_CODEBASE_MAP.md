@@ -2,6 +2,37 @@
 
 This is a practical map of the `/editor` code so changes can be made without searching the entire repo.
 
+## Commit + push checklist (so it works the first time)
+From the repo root:
+
+- **Confirm branch + changes**
+
+```bash
+git status
+git branch --show-current
+```
+
+- **Stage + commit**
+
+```bash
+git add -A
+git commit -m "YOUR MESSAGE HERE"
+```
+
+- **Push to `main`**
+
+```bash
+git push origin main
+```
+
+If push fails with an HTTPS certificate error, switch the remote to SSH (more reliable in locked-down environments):
+
+```bash
+git remote -v
+git remote set-url origin git@github.com:Axelmartinez134/dr-nick-app.git
+git push origin main
+```
+
 ## Quick orientation
 - **Route**: `/editor`
 - **Entry UI**: `src/app/editor/page.tsx` → renders `src/app/editor/EditorShell.tsx`
