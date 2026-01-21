@@ -5,6 +5,8 @@ import { getAuthedSupabase } from '../../_utils';
 export const runtime = 'nodejs';
 export const maxDuration = 10;
 
+const PROJECT_SELECT = `id, title, caption, template_type_id, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, updated_at` as const;
+
 type Body = {
   projectId: string;
   title?: string;
@@ -85,25 +87,7 @@ export async function POST(request: NextRequest) {
     .update(patch)
     .eq('id', body.projectId)
     .eq('owner_user_id', user.id)
-    .select(
-      [
-        'id',
-        'title',
-        'caption',
-        'template_type_id',
-        'background_effect_enabled',
-        'background_effect_type',
-        'project_background_color',
-        'project_text_color',
-        'background_effect_settings',
-        'theme_id_last_applied',
-        'theme_is_customized',
-        'theme_defaults_snapshot',
-        'last_manual_background_color',
-        'last_manual_text_color',
-        'updated_at',
-      ].join(', ')
-    )
+    .select(PROJECT_SELECT)
     .single();
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });

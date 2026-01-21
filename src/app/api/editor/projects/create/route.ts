@@ -6,6 +6,8 @@ import { loadEffectiveTemplateTypeSettings } from '../_effective';
 export const runtime = 'nodejs';
 export const maxDuration = 10;
 
+const PROJECT_SELECT = `id, owner_user_id, title, template_type_id, caption, prompt_snapshot, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, created_at, updated_at` as const;
+
 type Body = {
   title?: string;
   templateTypeId: TemplateTypeId;
@@ -46,33 +48,7 @@ export async function POST(request: NextRequest) {
         slide2_5_template_id_snapshot: effective.slide2to5TemplateId,
         slide6_template_id_snapshot: effective.slide6TemplateId,
       })
-      .select(
-        [
-          'id',
-          'owner_user_id',
-          'title',
-          'template_type_id',
-          'caption',
-          'prompt_snapshot',
-          'slide1_template_id_snapshot',
-          'slide2_5_template_id_snapshot',
-          'slide6_template_id_snapshot',
-          // Project-wide background effect (existing)
-          'background_effect_enabled',
-          'background_effect_type',
-          // Theme foundation (Phase 1)
-          'project_background_color',
-          'project_text_color',
-          'background_effect_settings',
-          'theme_id_last_applied',
-          'theme_is_customized',
-          'theme_defaults_snapshot',
-          'last_manual_background_color',
-          'last_manual_text_color',
-          'created_at',
-          'updated_at',
-        ].join(', ')
-      )
+      .select(PROJECT_SELECT)
       .single();
 
     if (projectErr || !project) {
