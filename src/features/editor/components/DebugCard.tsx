@@ -1,3 +1,5 @@
+import { useMemo, useState } from "react";
+
 export type DebugCardProps = {
   debugScreenshot: string | null;
   showDebugPreview: boolean;
@@ -7,6 +9,46 @@ export type DebugCardProps = {
 
 export function DebugCard(props: DebugCardProps) {
   const { debugScreenshot, showDebugPreview, setShowDebugPreview, debugLogs } = props;
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+
+  const logsText = useMemo(() => {
+    const lines = Array.isArray(debugLogs) ? debugLogs : [];
+    return lines.join("\n");
+  }, [debugLogs]);
+
+  const onCopyLogs = async () => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(logsText || "");
+        setCopyStatus("copied");
+        window.setTimeout(() => setCopyStatus("idle"), 1200);
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = logsText || "";
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (!ok) throw new Error("copy command failed");
+      setCopyStatus("copied");
+      window.setTimeout(() => setCopyStatus("idle"), 1200);
+    } catch {
+      setCopyStatus("error");
+      window.setTimeout(() => setCopyStatus("idle"), 1600);
+    }
+  };
 
   return (
     <details className="mt-4 rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 shadow-sm group">
@@ -16,6 +58,22 @@ export function DebugCard(props: DebugCardProps) {
         <span className="ml-auto text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
       </summary>
       <div className="px-4 pb-4 space-y-3">
+        <div className="flex items-center justify-end gap-2">
+          {copyStatus === "copied" ? (
+            <span className="text-xs text-emerald-700 font-medium">Copied!</span>
+          ) : copyStatus === "error" ? (
+            <span className="text-xs text-red-600 font-medium">Copy failed</span>
+          ) : null}
+          <button
+            type="button"
+            className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+            onClick={onCopyLogs}
+            disabled={!logsText}
+            title="Copy all debug logs"
+          >
+            Copy logs
+          </button>
+        </div>
         {debugScreenshot && (
           <div>
             <button

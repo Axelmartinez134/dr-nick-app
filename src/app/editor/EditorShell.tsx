@@ -1170,16 +1170,83 @@ export default function EditorShell() {
 
   async function fetchJson(path: string, init?: RequestInit): Promise<any> {
     const token = await getAuthToken();
-    const res = await fetch(path, {
-      ...(init || {}),
-      headers: {
-        ...(init?.headers || {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'Content-Type': 'application/json',
-      },
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+    const method = String((init as any)?.method || "GET").toUpperCase();
+    const clientCtxLoggedRef = (fetchJson as any).__clientCtxLoggedRef || { current: false };
+    (fetchJson as any).__clientCtxLoggedRef = clientCtxLoggedRef;
+
+    const logClientCtxOnce = () => {
+      if (clientCtxLoggedRef.current) return;
+      clientCtxLoggedRef.current = true;
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown";
+        const lang = typeof navigator !== "undefined" ? navigator.language : "unknown";
+        const online = typeof navigator !== "undefined" ? String(navigator.onLine) : "unknown";
+        const ua = typeof navigator !== "undefined" ? String(navigator.userAgent || "") : "";
+        const origin = typeof window !== "undefined" ? String(window.location.origin || "") : "";
+        addLog(`🧭 client ctx: origin=${origin} tz=${tz} lang=${lang} online=${online}`);
+        if (ua) addLog(`🧭 client ua: ${ua}`);
+      } catch {
+        // ignore
+      }
+    };
+
+    let res: Response;
+    try {
+      res = await fetch(path, {
+        ...(init || {}),
+        headers: {
+          ...(init?.headers || {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "Content-Type": "application/json",
+        },
+      });
+    } catch (e: any) {
+      // Fetch throws for network errors / blocked requests (often proxy/VPN/captive portal issues).
+      logClientCtxOnce();
+      const msg = e instanceof Error ? e.message : String(e || "unknown error");
+      addLog(`❌ Request failed (network): ${method} ${path} — ${msg}`);
+      throw e;
+    }
+
+    const header = (k: string) => {
+      try {
+        return res.headers.get(k) || "";
+      } catch {
+        return "";
+      }
+    };
+
+    const bodyText = await res.text().catch(() => "");
+    let data: any = {};
+    if (bodyText) {
+      try {
+        data = JSON.parse(bodyText);
+      } catch {
+        data = {};
+      }
+    }
+
+    if (!res.ok) {
+      logClientCtxOnce();
+      // High-signal headers that help identify where the 5xx is coming from (CDN/proxy/origin).
+      const server = header("server");
+      const via = header("via");
+      const cfRay = header("cf-ray");
+      const cfCache = header("cf-cache-status");
+      const vercelId = header("x-vercel-id");
+      const requestId = header("x-request-id");
+      const date = header("date");
+      addLog(`❌ HTTP ${res.status} ${res.statusText || ""}: ${method} ${path}`);
+      addLog(
+        `🌐 hdr: server=${server || "-"} via=${via || "-"} cf-ray=${cfRay || "-"} cf-cache=${cfCache || "-"} x-vercel-id=${vercelId || "-"} x-request-id=${requestId || "-"} date=${date || "-"}`
+      );
+      if (bodyText && !data?.error) {
+        const preview = String(bodyText).replace(/\s+/g, " ").slice(0, 180);
+        if (preview) addLog(`🌐 body: "${preview}${bodyText.length > 180 ? "…" : ""}"`);
+      }
+      throw new Error(data?.error || `Request failed (${res.status})`);
+    }
+
     return data;
   }
 
