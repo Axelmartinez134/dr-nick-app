@@ -755,9 +755,42 @@ export default function EditorShell() {
   // Project-wide colors (shared across all slides; affects canvas + generation).
   const [projectBackgroundColor, setProjectBackgroundColor] = useState<string>("#ffffff");
   const [projectTextColor, setProjectTextColor] = useState<string>("#000000");
+  // Project-wide slide background effect (persisted on carousel_projects; applies to all 6 slides).
+  const [projectBackgroundEffectEnabled, setProjectBackgroundEffectEnabled] = useState<boolean>(false);
+  const [projectBackgroundEffectType, setProjectBackgroundEffectType] = useState<"none" | "dots_n8n">("none");
+  // Phase 4: project-wide effect settings + theme provenance (persisted on carousel_projects).
+  const [projectBackgroundEffectSettings, setProjectBackgroundEffectSettings] = useState<any>({});
+  const [themeIdLastApplied, setThemeIdLastApplied] = useState<string | null>(null);
+  const [themeIsCustomized, setThemeIsCustomized] = useState<boolean>(false);
+  const [themeDefaultsSnapshot, setThemeDefaultsSnapshot] = useState<any | null>(null);
+  const [lastManualBackgroundColor, setLastManualBackgroundColor] = useState<string | null>(null);
+  const [lastManualTextColor, setLastManualTextColor] = useState<string | null>(null);
   useEffect(() => {
-    editorStore.setState({ projectBackgroundColor, projectTextColor } as any);
-  }, [editorStore, projectBackgroundColor, projectTextColor]);
+    editorStore.setState({
+      projectBackgroundColor,
+      projectTextColor,
+      projectBackgroundEffectEnabled,
+      projectBackgroundEffectType,
+      projectBackgroundEffectSettings,
+      themeIdLastApplied,
+      themeIsCustomized,
+      themeDefaultsSnapshot,
+      lastManualBackgroundColor,
+      lastManualTextColor,
+    } as any);
+  }, [
+    editorStore,
+    projectBackgroundColor,
+    projectTextColor,
+    projectBackgroundEffectEnabled,
+    projectBackgroundEffectType,
+    projectBackgroundEffectSettings,
+    themeIdLastApplied,
+    themeIsCustomized,
+    themeDefaultsSnapshot,
+    lastManualBackgroundColor,
+    lastManualTextColor,
+  ]);
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [showLayoutOverlays, setShowLayoutOverlays] = useState(false);
@@ -802,13 +835,9 @@ export default function EditorShell() {
 
   // Prompt text is now per Template Type (Regular/Enhanced) with global defaults + per-user overrides.
 
-  // When a carousel is loaded/generated, sync project colors from it.
-  useEffect(() => {
-    const bg = inputData?.settings?.backgroundColor;
-    const tc = inputData?.settings?.textColor;
-    if (bg) setProjectBackgroundColor(bg);
-    if (tc) setProjectTextColor(tc);
-  }, [inputData]);
+  // Phase 3 (Option A): Project-wide colors are owned by `carousel_projects`.
+  // Do NOT sync them from per-slide `inputData.settings`, otherwise slide switching can "pull back"
+  // stale values from other slides and cause drift (the bug you hit).
 
   // Regular default: Montserrat Regular for Body (but never override a user-changed selection).
   useEffect(() => {
@@ -1086,7 +1115,12 @@ export default function EditorShell() {
   const updateProjectColors = (bg: string, text: string) => {
     setProjectBackgroundColor(bg);
     setProjectTextColor(text);
-    // Keep engine inputData in sync so autosave persists the colors.
+    // Any manual tweak while a theme is remembered means we are now in "Custom" mode.
+    if (themeIdLastApplied && !themeIsCustomized) {
+      setThemeIsCustomized(true);
+    }
+    // Keep engine inputData in sync for any downstream logic that still reads inputData.settings.
+    // (But persistence is handled at the PROJECT level, not per-slide.)
     if (inputData) {
       setInputData({
         ...inputData,
@@ -1096,6 +1130,32 @@ export default function EditorShell() {
           textColor: text,
         },
       });
+    }
+    // Persist to project meta (single row write; scalable; prevents cross-slide drift).
+    const pid = currentProjectIdRef.current;
+    if (pid) {
+      // Debounce with the same timer used for title/caption to keep implementation minimal.
+      try {
+        if (projectSaveTimeoutRef.current) window.clearTimeout(projectSaveTimeoutRef.current);
+      } catch {
+        // ignore
+      }
+      const bgAtSchedule = bg;
+      const textAtSchedule = text;
+      const markCustomized = !!themeIdLastApplied;
+      projectSaveTimeoutRef.current = window.setTimeout(() => {
+        void fetchJson('/api/editor/projects/update', {
+          method: 'POST',
+          body: JSON.stringify({
+            projectId: pid,
+            projectBackgroundColor: bgAtSchedule,
+            projectTextColor: textAtSchedule,
+            ...(markCustomized ? { themeIsCustomized: true } : {}),
+          }),
+        }).catch(() => {
+          // best-effort; UI will still reflect local state
+        });
+      }, 350);
     }
   };
 
@@ -1140,6 +1200,16 @@ export default function EditorShell() {
     setProjectMappingSlide2to5,
     setProjectMappingSlide6,
     setProjectsDropdownOpen,
+    setProjectBackgroundEffectEnabled,
+    setProjectBackgroundEffectType,
+    setProjectBackgroundColor,
+    setProjectTextColor,
+    setProjectBackgroundEffectSettings,
+    setThemeIdLastApplied,
+    setThemeIsCustomized,
+    setThemeDefaultsSnapshot,
+    setLastManualBackgroundColor,
+    setLastManualTextColor,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -1160,6 +1230,222 @@ export default function EditorShell() {
     setProjectSaveStatus,
     projectSaveTimeoutRef,
   });
+
+  const saveProjectBackgroundEffectForProject = async (args: {
+    projectId: string | null;
+    enabled: boolean;
+    type: "none" | "dots_n8n";
+  }) => {
+    const pid = String(args.projectId || "").trim();
+    if (!pid) return;
+    try {
+      addLog?.(
+        `💾 BGFX save start: enabled=${args.enabled ? "true" : "false"} type=${args.type} (project=${pid})`
+      );
+      await fetchJson("/api/editor/projects/update", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: pid,
+          backgroundEffectEnabled: args.enabled,
+          backgroundEffectType: args.type,
+        }),
+      });
+      addLog?.(`✅ BGFX save ok (project=${pid})`);
+    } catch {
+      // Keep Phase 2 minimal: no UI error surfacing yet. We'll wire feedback in a later phase if desired.
+      addLog?.(`❌ BGFX save failed (project=${pid})`);
+    }
+  };
+
+  // Phase 4: theme registry (code-backed for now; persisted via theme_defaults_snapshot for determinism).
+  const THEME_N8N_DOTS_DARK = {
+    id: "n8n_dots_dark" as const,
+    label: "n8n Dots (Dark)",
+    defaults: {
+      canvasBase: "#171717",
+      text: "#FFFFFF",
+      effectEnabled: true,
+      effectType: "dots_n8n" as const,
+      effectSettings: { gap: 28, dotDiameter: 1.73, dotColor: "#757575", scale: 1.8 },
+    },
+  };
+
+  const persistProjectThemePatch = async (patch: any) => {
+    const pid = String(currentProjectIdRef.current || "").trim();
+    if (!pid) return;
+    await fetchJson("/api/editor/projects/update", {
+      method: "POST",
+      body: JSON.stringify({ projectId: pid, ...patch }),
+    });
+  };
+
+  const stripFillFromRanges = (ranges: any[]) => {
+    if (!Array.isArray(ranges) || ranges.length === 0) return [];
+    return ranges.map((r: any) => {
+      if (!r || typeof r !== "object") return r;
+      // Remove only the fill override; preserve bold/italic/underline ranges.
+      // (Themes own text color; this makes the behavior intuitive.)
+      const { fill, ...rest } = r as any;
+      return rest;
+    });
+  };
+
+  const wipeAllSlideFillOverrides = async (opts: { bg: string; text: string }) => {
+    const pid = String(currentProjectIdRef.current || "").trim();
+    if (!pid) return;
+    const bg = opts.bg;
+    const text = opts.text;
+
+    // Update in-memory slide snapshots immediately so UI/canvases rerender without a refresh.
+    const nextSlides = slidesRef.current.map((s: any, i: number) => {
+      const input = s?.inputData && typeof s.inputData === "object" ? (s.inputData as any) : null;
+      const nextHeadlineRanges = stripFillFromRanges(s?.draftHeadlineRanges || []);
+      const nextBodyRanges = stripFillFromRanges(s?.draftBodyRanges || []);
+      const nextInput = input
+        ? {
+            ...input,
+            settings: { ...(input.settings || {}), backgroundColor: bg, textColor: text },
+            headlineStyleRanges: stripFillFromRanges(input.headlineStyleRanges || []),
+            bodyStyleRanges: stripFillFromRanges(input.bodyStyleRanges || []),
+          }
+        : input;
+      return {
+        ...s,
+        draftHeadlineRanges: nextHeadlineRanges,
+        draftBodyRanges: nextBodyRanges,
+        inputData: nextInput,
+      };
+    });
+    setSlides(nextSlides as any);
+    slidesRef.current = nextSlides as any;
+
+    // Keep active engine inputData in sync too.
+    try {
+      const active = activeSlideIndexRef.current;
+      const activeSnap = (nextSlides as any)[active]?.inputData;
+      if (activeSnap) setInputData(activeSnap);
+    } catch {
+      // ignore
+    }
+
+    // Persist each slide input_snapshot (6 writes; acceptable for a theme apply/reset).
+    for (let i = 0; i < slideCount; i++) {
+      try {
+        const inputSnap = (nextSlides as any)[i]?.inputData;
+        if (!inputSnap) continue;
+        await saveSlidePatchForProject(pid, i, { inputSnapshot: inputSnap });
+      } catch {
+        // best-effort: if one slide fails, continue
+      }
+    }
+  };
+
+  const applyThemeById = async (themeId: "n8n_dots_dark") => {
+    if (!currentProjectIdRef.current) return;
+    const t = THEME_N8N_DOTS_DARK;
+    if (themeId !== t.id) return;
+
+    const prevBg = projectBackgroundColor;
+    const prevText = projectTextColor;
+    setLastManualBackgroundColor(prevBg);
+    setLastManualTextColor(prevText);
+
+    setThemeIdLastApplied(t.id);
+    setThemeIsCustomized(false);
+    setThemeDefaultsSnapshot(t.defaults);
+
+    setProjectBackgroundColor(t.defaults.canvasBase);
+    setProjectTextColor(t.defaults.text);
+    setProjectBackgroundEffectEnabled(true);
+    setProjectBackgroundEffectType("dots_n8n");
+    setProjectBackgroundEffectSettings(t.defaults.effectSettings as any);
+
+    // Persist project meta first (single source of truth).
+    await persistProjectThemePatch({
+      projectBackgroundColor: t.defaults.canvasBase,
+      projectTextColor: t.defaults.text,
+      backgroundEffectEnabled: true,
+      backgroundEffectType: "dots_n8n",
+      backgroundEffectSettings: t.defaults.effectSettings,
+      themeIdLastApplied: t.id,
+      themeIsCustomized: false,
+      themeDefaultsSnapshot: t.defaults,
+      lastManualBackgroundColor: prevBg,
+      lastManualTextColor: prevText,
+    });
+
+    // Force theme text across existing rich text spans (wipe fill overrides).
+    await wipeAllSlideFillOverrides({ bg: t.defaults.canvasBase, text: t.defaults.text });
+  };
+
+  const resetThemeDefaults = async () => {
+    const tid = String(themeIdLastApplied || "").trim();
+    if (!tid) return;
+    const defaults =
+      themeDefaultsSnapshot ||
+      (tid === THEME_N8N_DOTS_DARK.id ? THEME_N8N_DOTS_DARK.defaults : null);
+    if (!defaults) return;
+
+    setThemeIsCustomized(false);
+    setProjectBackgroundColor(String(defaults.canvasBase || "#ffffff"));
+    setProjectTextColor(String(defaults.text || "#000000"));
+    setProjectBackgroundEffectEnabled(!!defaults.effectEnabled);
+    setProjectBackgroundEffectType(String(defaults.effectType || "none") === "dots_n8n" ? "dots_n8n" : "none");
+    setProjectBackgroundEffectSettings((defaults.effectSettings as any) ?? {});
+
+    await persistProjectThemePatch({
+      projectBackgroundColor: String(defaults.canvasBase || "#ffffff"),
+      projectTextColor: String(defaults.text || "#000000"),
+      backgroundEffectEnabled: !!defaults.effectEnabled,
+      backgroundEffectType: String(defaults.effectType || "none") === "dots_n8n" ? "dots_n8n" : "none",
+      backgroundEffectSettings: (defaults.effectSettings as any) ?? {},
+      themeIsCustomized: false,
+      themeDefaultsSnapshot: defaults,
+    });
+
+    await wipeAllSlideFillOverrides({ bg: String(defaults.canvasBase || "#ffffff"), text: String(defaults.text || "#000000") });
+  };
+
+  const onSelectTheme = async (next: "custom" | "n8n_dots_dark") => {
+    if (next === "custom") {
+      // Mark as customized but do not change current settings (user may want to tweak while staying on the same effect).
+      if (themeIdLastApplied && !themeIsCustomized) {
+        setThemeIsCustomized(true);
+        void persistProjectThemePatch({ themeIsCustomized: true }).catch(() => {});
+      }
+      return;
+    }
+    await applyThemeById(next);
+  };
+
+  const onChangeEffectTypeThemeAware = async (next: "none" | "dots_n8n") => {
+    const nextEnabled = next !== "none";
+
+    // Turning OFF the effect while we have a remembered theme -> restore last manual colors.
+    if (!nextEnabled && themeIdLastApplied && lastManualBackgroundColor && lastManualTextColor) {
+      setProjectBackgroundEffectEnabled(false);
+      setProjectBackgroundEffectType("none");
+      setThemeIsCustomized(true);
+      updateProjectColors(lastManualBackgroundColor, lastManualTextColor);
+      await persistProjectThemePatch({
+        backgroundEffectEnabled: false,
+        backgroundEffectType: "none",
+        themeIsCustomized: true,
+      }).catch(() => {});
+      return;
+    }
+
+    // Otherwise, just set effect (and mark customized if a theme is remembered).
+    setProjectBackgroundEffectEnabled(nextEnabled);
+    setProjectBackgroundEffectType(next);
+    if (themeIdLastApplied) setThemeIsCustomized(true);
+
+    await persistProjectThemePatch({
+      backgroundEffectEnabled: nextEnabled,
+      backgroundEffectType: next,
+      ...(themeIdLastApplied ? { themeIsCustomized: true } : {}),
+    }).catch(() => {});
+  };
 
   const { projects, projectsLoading, hydrateProjects, refreshProjectsList, archiveProjectById: archiveProjectByIdCore } =
     useProjects({
@@ -3076,7 +3362,20 @@ export default function EditorShell() {
       }
       if (next.layoutData || next.inputData) {
         setLayoutData(next.layoutData);
-        setInputData(next.inputData);
+        // Phase 3: ensure engine always sees the canonical project colors in `inputData.settings`,
+        // even if the per-slide snapshot contains stale settings.
+        const mergedInput =
+          next.inputData && typeof next.inputData === "object"
+            ? {
+                ...(next.inputData as any),
+                settings: {
+                  ...(((next.inputData as any).settings || {}) as any),
+                  backgroundColor: projectBackgroundColor,
+                  textColor: projectTextColor,
+                },
+              }
+            : next.inputData;
+        setInputData(mergedInput);
         setLayoutHistory(next.layoutHistory || []);
         try {
           addLog(`🧭 engine restored from slide snapshot: slide=${nextIndex + 1}`);
@@ -3790,6 +4089,7 @@ export default function EditorShell() {
 
   useEditorStoreActionsSync({
     editorStore,
+    addLog,
 
     // Keep dependency semantics identical to the original effect.
     archiveProjectBusy,
@@ -3806,9 +4106,17 @@ export default function EditorShell() {
     persistCurrentProjectTemplateMappings,
     projectBackgroundColor,
     projectTextColor,
+    projectBackgroundEffectEnabled,
+    projectBackgroundEffectType,
+    setProjectBackgroundEffectEnabled,
+    setProjectBackgroundEffectType,
+    onSelectTheme,
+    onResetThemeDefaults: resetThemeDefaults,
+    onChangeEffectTypeThemeAware,
     projectsDropdownOpen,
     saveProjectMetaForProject,
     updateProjectColors,
+    saveProjectBackgroundEffectForProject,
 
     // Captured values used in actions (intentionally not part of the dependency list).
     setProjectTitle,

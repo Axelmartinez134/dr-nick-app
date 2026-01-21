@@ -24,6 +24,16 @@ export function useProjectLifecycle(params: {
   setProjectMappingSlide2to5: (id: string | null) => void;
   setProjectMappingSlide6: (id: string | null) => void;
   setProjectsDropdownOpen: (open: boolean) => void;
+  setProjectBackgroundEffectEnabled: (next: boolean) => void;
+  setProjectBackgroundEffectType: (next: "none" | "dots_n8n") => void;
+  setProjectBackgroundColor: (next: string) => void;
+  setProjectTextColor: (next: string) => void;
+  setProjectBackgroundEffectSettings: (next: any) => void;
+  setThemeIdLastApplied: (next: string | null) => void;
+  setThemeIsCustomized: (next: boolean) => void;
+  setThemeDefaultsSnapshot: (next: any | null) => void;
+  setLastManualBackgroundColor: (next: string | null) => void;
+  setLastManualTextColor: (next: string | null) => void;
 
   // Engine state setters
   setLayoutData: (v: any) => void;
@@ -54,6 +64,16 @@ export function useProjectLifecycle(params: {
     setProjectMappingSlide2to5,
     setProjectMappingSlide6,
     setProjectsDropdownOpen,
+    setProjectBackgroundEffectEnabled,
+    setProjectBackgroundEffectType,
+    setProjectBackgroundColor,
+    setProjectTextColor,
+    setProjectBackgroundEffectSettings,
+    setThemeIdLastApplied,
+    setThemeIsCustomized,
+    setThemeDefaultsSnapshot,
+    setLastManualBackgroundColor,
+    setLastManualTextColor,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -78,6 +98,18 @@ export function useProjectLifecycle(params: {
       setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
       setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
       setProjectPromptSnapshot(project.prompt_snapshot || '');
+      setProjectBackgroundEffectEnabled(!!(project as any)?.background_effect_enabled);
+      setProjectBackgroundEffectType(String((project as any)?.background_effect_type || 'none') === 'dots_n8n' ? 'dots_n8n' : 'none');
+      // Phase 3: hydrate project-wide colors from carousel_projects (canonical).
+      setProjectBackgroundColor(String((project as any)?.project_background_color || '#ffffff'));
+      setProjectTextColor(String((project as any)?.project_text_color || '#000000'));
+      // Phase 4: hydrate theme/effect settings + provenance.
+      setProjectBackgroundEffectSettings(((project as any)?.background_effect_settings as any) ?? {});
+      setThemeIdLastApplied(((project as any)?.theme_id_last_applied as any) ?? null);
+      setThemeIsCustomized(!!(project as any)?.theme_is_customized);
+      setThemeDefaultsSnapshot(((project as any)?.theme_defaults_snapshot as any) ?? null);
+      setLastManualBackgroundColor(((project as any)?.last_manual_background_color as any) ?? null);
+      setLastManualTextColor(((project as any)?.last_manual_text_color as any) ?? null);
 
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
@@ -171,6 +203,18 @@ export function useProjectLifecycle(params: {
       setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
       setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);
       setProjectMappingSlide6(project.slide6_template_id_snapshot ?? null);
+      setProjectBackgroundEffectEnabled(!!(project as any)?.background_effect_enabled);
+      setProjectBackgroundEffectType(String((project as any)?.background_effect_type || 'none') === 'dots_n8n' ? 'dots_n8n' : 'none');
+      // Phase 3: hydrate project-wide colors from carousel_projects (canonical).
+      setProjectBackgroundColor(String((project as any)?.project_background_color || '#ffffff'));
+      setProjectTextColor(String((project as any)?.project_text_color || '#000000'));
+      // Phase 4: hydrate theme/effect settings + provenance.
+      setProjectBackgroundEffectSettings(((project as any)?.background_effect_settings as any) ?? {});
+      setThemeIdLastApplied(((project as any)?.theme_id_last_applied as any) ?? null);
+      setThemeIsCustomized(!!(project as any)?.theme_is_customized);
+      setThemeDefaultsSnapshot(((project as any)?.theme_defaults_snapshot as any) ?? null);
+      setLastManualBackgroundColor(((project as any)?.last_manual_background_color as any) ?? null);
+      setLastManualTextColor(((project as any)?.last_manual_text_color as any) ?? null);
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
         const row = slidesRows.find((r: any) => r.slide_index === i);
@@ -226,6 +270,14 @@ export function useProjectLifecycle(params: {
       setTemplateTypeId,
       slideCount,
       slidesRef,
+      setProjectBackgroundColor,
+      setProjectTextColor,
+      setProjectBackgroundEffectSettings,
+      setThemeIdLastApplied,
+      setThemeIsCustomized,
+      setThemeDefaultsSnapshot,
+      setLastManualBackgroundColor,
+      setLastManualTextColor,
     ]
   );
 

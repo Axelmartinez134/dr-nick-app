@@ -20,6 +20,10 @@ export function EditorSidebar() {
 
   const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
   const projectTextColor = useEditorSelector((s) => s.projectTextColor);
+  const projectBackgroundEffectEnabled = useEditorSelector((s: any) => (s as any).projectBackgroundEffectEnabled);
+  const projectBackgroundEffectType = useEditorSelector((s: any) => (s as any).projectBackgroundEffectType);
+  const themeIdLastApplied = useEditorSelector((s: any) => (s as any).themeIdLastApplied);
+  const themeIsCustomized = useEditorSelector((s: any) => (s as any).themeIsCustomized);
 
   const actions = useEditorSelector((s) => s.actions);
 
@@ -158,33 +162,93 @@ export function EditorSidebar() {
           <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 text-white text-sm flex items-center justify-center">🖌️</span>
           <span className="text-sm font-semibold text-slate-900">Colors</span>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Background</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Theme</div>
             <div className="flex items-center gap-2">
-              <input
-                type="color"
-                className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
-                value={projectBackgroundColor || "#ffffff"}
-                onChange={(e) => actions.onChangeBackgroundColor(e.target.value)}
+              <select
+                className="flex-1 h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm disabled:opacity-50"
+                value={(() => {
+                  const tid = String((themeIdLastApplied as any) || "").trim();
+                  const isCustom = !tid || !!themeIsCustomized || !projectBackgroundEffectEnabled;
+                  return isCustom ? "custom" : tid;
+                })()}
+                onChange={(e) => {
+                  const v = e.target.value === "n8n_dots_dark" ? "n8n_dots_dark" : "custom";
+                  actions.onSelectTheme(v as any);
+                }}
                 disabled={loading || switchingSlides}
-                aria-label="Background color"
-              />
-              <div className="text-xs text-slate-600 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
+                aria-label="Theme"
+                title="Apply a theme preset (then tweak with Custom)"
+              >
+                <option value="custom">Custom</option>
+                <option value="n8n_dots_dark">n8n Dots (Dark)</option>
+              </select>
+              {themeIdLastApplied ? (
+                <button
+                  type="button"
+                  className="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                  onClick={() => actions.onResetThemeDefaults()}
+                  disabled={loading || switchingSlides}
+                  title="Reset to the selected theme’s default settings"
+                >
+                  Reset
+                </button>
+              ) : null}
             </div>
+            {themeIdLastApplied && themeIsCustomized ? (
+              <div className="mt-1 text-[11px] text-slate-500">
+                Custom (from {String(themeIdLastApplied) === "n8n_dots_dark" ? "n8n Dots (Dark)" : String(themeIdLastApplied)})
+              </div>
+            ) : null}
           </div>
+
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
-                value={projectTextColor || "#000000"}
-                onChange={(e) => actions.onChangeTextColor(e.target.value)}
-                disabled={loading || switchingSlides}
-                aria-label="Text color"
-              />
-              <div className="text-xs text-slate-600 tabular-nums">{projectTextColor || "#000000"}</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Effect</div>
+            <select
+              className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm disabled:opacity-50"
+              value={String(projectBackgroundEffectType || "none") === "dots_n8n" ? "dots_n8n" : "none"}
+              onChange={(e) => {
+                const v = e.target.value === "dots_n8n" ? "dots_n8n" : "none";
+                actions.onChangeBackgroundEffectType(v as any);
+              }}
+              disabled={loading || switchingSlides}
+              aria-label="Effect"
+              title="Controls the slide canvas background effect (project-wide)"
+            >
+              <option value="none">None</option>
+              <option value="dots_n8n">Dots (n8n)</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Canvas base</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                  value={projectBackgroundColor || "#ffffff"}
+                  onChange={(e) => actions.onChangeBackgroundColor(e.target.value)}
+                  disabled={loading || switchingSlides}
+                  aria-label="Canvas base color"
+                />
+                <div className="text-xs text-slate-600 tabular-nums">{projectBackgroundColor || "#ffffff"}</div>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Text</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                  value={projectTextColor || "#000000"}
+                  onChange={(e) => actions.onChangeTextColor(e.target.value)}
+                  disabled={loading || switchingSlides}
+                  aria-label="Text color"
+                />
+                <div className="text-xs text-slate-600 tabular-nums">{projectTextColor || "#000000"}</div>
+              </div>
             </div>
           </div>
         </div>

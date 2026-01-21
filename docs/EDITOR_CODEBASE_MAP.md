@@ -244,6 +244,84 @@ All editor project data is owner-scoped and accessed via `/api/editor/...`.
 - `POST /api/editor/projects/update-mappings`
 - `POST /api/editor/projects/archive` → soft archive (sets `archived_at`)
 
+## Theme / Style Presets (project-wide) — n8n Dots (Dark) (2026-01-21)
+This rollout introduced a **project-wide Theme system** that bundles:
+- Canvas base background
+- Text color
+- Background effect (e.g. Dots)
+- Effect settings
+
+### Why this exists (high-level)
+- **Scales cleanly**: a theme change is **one project update**, not 6 per-slide updates.
+- **Prevents drift**: slide switching must not “pull back” stale colors from per-slide snapshots.
+- **Deterministic reset**: “Reset” uses a persisted `theme_defaults_snapshot`, so later theme catalog changes don’t break older projects.
+
+### Canonical ownership rules (critical)
+- **Project-wide theme/colors/effects live on** `public.carousel_projects`.
+- **Per-slide snapshots** (`public.carousel_project_slides.input_snapshot`) are still used for:
+  - text content
+  - style ranges (bold/italic/underline)
+  - editor flags under `input_snapshot.editor.*`
+- Under the Theme model, **we strip `fill` overrides** from rich-text style ranges on theme apply/reset so the Theme truly controls text color.
+
+### Database fields (project-wide)
+All fields below live on `public.carousel_projects`:
+- **Render settings**
+  - `project_background_color` (Canvas base)
+  - `project_text_color`
+  - `background_effect_enabled`
+  - `background_effect_type` (`none` | `dots_n8n`)
+  - `background_effect_settings` (JSON)
+- **Theme provenance**
+  - `theme_id_last_applied` (kept even if effect is turned off)
+  - `theme_is_customized` (true when user tweaks after applying a theme)
+  - `theme_defaults_snapshot` (JSON; used for Reset)
+  - `last_manual_background_color`, `last_manual_text_color` (used to restore when turning effect off)
+
+### Current Theme behavior (user-facing)
+- **Theme dropdown**: `Custom` or `n8n Dots (Dark)`
+- **Selecting `n8n Dots (Dark)`**:
+  - sets `Canvas base = #171717`
+  - sets `Text = #FFFFFF`
+  - sets `Effect = Dots (n8n)`
+  - persists `theme_defaults_snapshot` + `theme_id_last_applied`
+  - saves `last_manual_*` so we can restore later
+  - **wipes all rich-text fill overrides** across all slides (Theme controls color)
+- **Custom edits after selecting a Theme**:
+  - any manual Base/Text tweak marks the project as `theme_is_customized=true`
+  - UI flips the dropdown to `Custom`
+  - effect remains enabled unless the user changes it
+- **Reset**:
+  - restores all theme-controlled fields to the persisted `theme_defaults_snapshot`
+  - wipes rich-text fill overrides again
+- **Turning Effect → None** (while a Theme is remembered):
+  - restores `last_manual_background_color` + `last_manual_text_color`
+  - keeps `theme_id_last_applied` for history
+
+### Key code ownership (where changes live)
+- **UI (Theme dropdown, Reset, Canvas base/Text pickers, Effect dropdown)**:
+  - `src/features/editor/components/EditorSidebar.tsx`
+- **Project hydration (loads project theme fields into EditorShell state + store)**:
+  - `src/features/editor/hooks/useProjectLifecycle.ts`
+- **APIs (read/write theme fields)**
+  - `GET /api/editor/projects/load` → `src/app/api/editor/projects/load/route.ts`
+  - `POST /api/editor/projects/update` → `src/app/api/editor/projects/update/route.ts`
+  - `POST /api/editor/projects/create` → `src/app/api/editor/projects/create/route.ts`
+- **Theme apply/reset + “wipe rich-text fill overrides”**:
+  - `src/app/editor/EditorShell.tsx`
+- **Stable actions surface (`state.actions`)**
+  - `src/features/editor/hooks/useEditorStoreActionsSync.ts`
+- **Canvas background effect renderer**
+  - `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx`
+
+### Manual QA (Theme)
+- Apply `n8n Dots (Dark)` → all 6 slides show dots + white text
+- Change Canvas base or Text → dropdown flips to `Custom`, effect remains
+- Reset → returns to theme defaults (base/text/effect) and rich-text fill overrides are removed
+- Effect → None → restores last manual base/text (if a theme had been applied)
+- Hard refresh + switch projects → each project restores its own saved settings
+- Download All → exported PNGs match editor view
+
 ### Slide persistence
 - `POST /api/editor/projects/slides/update`
   - Updates `headline`, `body`, `layout_snapshot`, `input_snapshot`, `ai_image_prompt`
@@ -281,6 +359,15 @@ Key tables used by `/editor`:
   - `template_type_id`
   - `slide*_template_id_snapshot` fields
   - `archived_at` (soft archive)
+  - **Theme / style preset (project-wide)**:
+    - `project_background_color` (Canvas base)
+    - `project_text_color`
+    - `background_effect_enabled`, `background_effect_type`
+    - `background_effect_settings` (JSON)
+    - `theme_id_last_applied` (kept even if effect is turned off)
+    - `theme_is_customized` (when user tweaks after applying a theme)
+    - `theme_defaults_snapshot` (JSON; used for Reset)
+    - `last_manual_background_color`, `last_manual_text_color` (used to restore when turning effect off)
 - `public.carousel_project_slides`
   - `headline`, `body`
   - `layout_snapshot` (what the canvas renders)
@@ -303,6 +390,11 @@ Key tables used by `/editor`:
 - **Canvas selection/overlay issues**: `CarouselPreviewVision.tsx` (especially `contextTop` drawing and transforms)
 - **Smart Guides behavior**: `smartGuides.ts` + wiring in `CarouselPreviewVision.tsx`
 - **Template Settings mappings**: `EditorShell.tsx` + `POST /api/editor/projects/update-mappings`
+- **Theme / Colors / Effects**:
+  - UI: `src/features/editor/components/EditorSidebar.tsx` (🖌️ Colors card)
+  - Project hydration: `src/features/editor/hooks/useProjectLifecycle.ts`
+  - Project persistence: `POST /api/editor/projects/update`
+  - Theme apply/reset logic + “wipe rich-text fill overrides”: `src/app/editor/EditorShell.tsx`
 
 ## Refactor note
 This refactor followed the phased plan at `~/.cursor/plans/editorshell_phased_refactor_4b6598db.plan.md`.

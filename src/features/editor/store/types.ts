@@ -1,5 +1,9 @@
 export type TemplateTypeId = "regular" | "enhanced";
 export type PromptSection = "prompt" | "emphasis" | "image";
+export type ProjectBackgroundEffectType = "none" | "dots_n8n";
+
+// Phase 4: Theme ids are lightweight strings (registry-backed for now).
+export type ProjectThemeId = "n8n_dots_dark";
 
 export type EngineSaveStatus = "idle" | "editing" | "saving" | "saved" | "error";
 export type SimpleSaveStatus = "idle" | "saving" | "saved" | "error";
@@ -41,6 +45,10 @@ export type EditorActions = {
   onChangeBodyFontKey: (nextKey: string) => void;
   onChangeBackgroundColor: (next: string) => void;
   onChangeTextColor: (next: string) => void;
+  onChangeBackgroundEffectEnabled: (next: boolean) => void;
+  onChangeBackgroundEffectType: (next: ProjectBackgroundEffectType) => void;
+  onSelectTheme: (next: "custom" | ProjectThemeId) => void;
+  onResetThemeDefaults: () => void;
 
   // Saved projects
   onToggleProjectsDropdown: () => void;
@@ -358,6 +366,16 @@ export type EditorState = {
   // Colors
   projectBackgroundColor: string;
   projectTextColor: string;
+  projectBackgroundEffectEnabled: boolean;
+  projectBackgroundEffectType: ProjectBackgroundEffectType;
+  projectBackgroundEffectSettings: any;
+
+  // Theme provenance (project-wide; persisted on carousel_projects)
+  themeIdLastApplied: string | null;
+  themeIsCustomized: boolean;
+  themeDefaultsSnapshot: any | null;
+  lastManualBackgroundColor: string | null;
+  lastManualTextColor: string | null;
 
   // Saved projects
   projects: SavedProjectListItem[];

@@ -19,7 +19,31 @@ export async function GET(request: NextRequest) {
   const { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select(
-      'id, owner_user_id, title, template_type_id, caption, prompt_snapshot, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot, created_at, updated_at'
+      [
+        'id',
+        'owner_user_id',
+        'title',
+        'template_type_id',
+        'caption',
+        'prompt_snapshot',
+        'slide1_template_id_snapshot',
+        'slide2_5_template_id_snapshot',
+        'slide6_template_id_snapshot',
+        // Project-wide background effect (Phase 0/previous)
+        'background_effect_enabled',
+        'background_effect_type',
+        // Theme foundation (Phase 1)
+        'project_background_color',
+        'project_text_color',
+        'background_effect_settings',
+        'theme_id_last_applied',
+        'theme_is_customized',
+        'theme_defaults_snapshot',
+        'last_manual_background_color',
+        'last_manual_text_color',
+        'created_at',
+        'updated_at',
+      ].join(', ')
     )
     .eq('id', id)
     .eq('owner_user_id', user.id)

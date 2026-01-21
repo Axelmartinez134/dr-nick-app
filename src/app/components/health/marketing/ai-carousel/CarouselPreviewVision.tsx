@@ -24,6 +24,9 @@ interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
   backgroundColor: string;
   textColor: string;
+  // Optional slide background effect (used by /editor)
+  backgroundEffectEnabled?: boolean;
+  backgroundEffectType?: 'none' | 'dots_n8n';
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
   // Optional: template ID (for debug overlays/logging).
   templateId?: string | null;
@@ -80,6 +83,14 @@ interface CarouselPreviewProps {
 
 const INTERNAL_W = 1080;
 const INTERNAL_H = 1440;
+// n8n-style dark canvas (matched from n8n DOM inspection):
+// - background: #171717
+// - dot: #757575
+// - gap: ~27.75px (use 28)
+// - dot diameter: ~1.73px (radius ~0.865)
+// NOTE: Values are in INTERNAL canvas pixels (1080×1440).
+const DOTS_N8N = { gap: 28, dotDiameter: 1.73, color: '#757575' } as const;
+const DOTS_N8N_SCALE = 1.8; // "zoom in" the dot grid by 40%
 
 const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
   (
@@ -87,6 +98,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       layout,
       backgroundColor,
       textColor,
+      backgroundEffectEnabled,
+      backgroundEffectType,
       templateSnapshot,
       templateId,
       slideIndex,
@@ -154,6 +167,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       maskH: number;
     }>({ enabled: false, contentRect: null, allowedRect: null, imageRect: null, maskCanvas: null, maskU8: null, maskW: 0, maskH: 0 });
     const invalidCheckRef = useRef<{ raf: number | null; obj: any | null }>({ raf: null, obj: null });
+    const bgPatternRef = useRef<{ key: string; pattern: any } | null>(null);
 
     const PAD = Number.isFinite(contentPaddingPx as any) ? Math.max(0, Math.round(contentPaddingPx as any)) : 40;
     const clampText = clampUserTextToContentRect !== false;
@@ -207,6 +221,37 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     useEffect(() => {
       showLayoutOverlaysRef.current = !!showLayoutOverlays;
     }, [showLayoutOverlays]);
+
+    const getDotsN8nPattern = (fabric: any) => {
+      try {
+        const key = `${DOTS_N8N.gap}|${DOTS_N8N.dotDiameter}|${DOTS_N8N_SCALE}|${DOTS_N8N.color}|${backgroundColor}`;
+        if (bgPatternRef.current?.key === key && bgPatternRef.current?.pattern) return bgPatternRef.current.pattern;
+        const gap = Math.max(2, Math.round(DOTS_N8N.gap * DOTS_N8N_SCALE));
+        const dotDiameter = Math.max(0.1, DOTS_N8N.dotDiameter * DOTS_N8N_SCALE);
+        const tile = document.createElement('canvas');
+        tile.width = gap;
+        tile.height = gap;
+        const ctx = tile.getContext('2d');
+        if (!ctx) return null;
+        ctx.clearRect(0, 0, tile.width, tile.height);
+        // Theme model: the effect renders on top of the project-selected "canvas base" color.
+        ctx.fillStyle = backgroundColor || "#171717";
+        ctx.fillRect(0, 0, tile.width, tile.height);
+        // Dot at (1,1) like the CSS radial-gradient "circle at 1px 1px"
+        ctx.fillStyle = DOTS_N8N.color;
+        const r = Math.max(0.1, dotDiameter / 2);
+        ctx.beginPath();
+        ctx.arc(1, 1, r, 0, Math.PI * 2);
+        ctx.fill();
+        const PatternCtor = (fabric as any).Pattern;
+        if (typeof PatternCtor !== 'function') return null;
+        const pattern = new PatternCtor({ source: tile, repeat: 'repeat' });
+        bgPatternRef.current = { key, pattern };
+        return pattern;
+      } catch {
+        return null;
+      }
+    };
 
     const computeContentRectRaw = (tpl: CarouselTemplateDefinitionV1 | null | undefined) => {
       if (!tpl?.slides?.length) return null;
@@ -1462,8 +1507,23 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         canvas.viewportTransform[4] = 0;
         canvas.viewportTransform[5] = 0;
       }
-      canvas.backgroundColor = backgroundColor;
-      console.log('[Preview Vision] 🧹 Canvas cleared, background set to', backgroundColor);
+      const wantDots = !!backgroundEffectEnabled && String(backgroundEffectType || '') === 'dots_n8n';
+      if (wantDots) {
+        const pattern = getDotsN8nPattern(fabric);
+        if (typeof canvas.setBackgroundColor === 'function') {
+          canvas.setBackgroundColor(pattern || backgroundColor || "#171717", () => canvas.renderAll());
+        } else {
+          canvas.backgroundColor = pattern || backgroundColor || "#171717";
+        }
+        console.log('[Preview Vision] 🧹 Canvas cleared, background set to DOTS (n8n)');
+      } else {
+        if (typeof canvas.setBackgroundColor === 'function') {
+          canvas.setBackgroundColor(backgroundColor, () => canvas.renderAll());
+        } else {
+          canvas.backgroundColor = backgroundColor;
+        }
+        console.log('[Preview Vision] 🧹 Canvas cleared, background set to', backgroundColor);
+      }
 
       // Update clamp constraints based on template snapshot (contentRegion inset by 40px).
       constraintsRef.current.contentRectRaw = computeContentRectRaw(templateSnapshot || null);
@@ -2136,7 +2196,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     return (
       <div className="flex flex-col items-center space-y-4">

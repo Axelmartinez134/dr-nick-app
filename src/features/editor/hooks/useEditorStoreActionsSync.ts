@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 
 type Args = {
   editorStore: any;
+  addLog?: (msg: string) => void;
 
   // Current dependency list (kept intentionally identical to EditorShell’s original effect).
   archiveProjectBusy: boolean;
@@ -22,10 +23,22 @@ type Args = {
   }) => Promise<void> | void;
   projectBackgroundColor: string;
   projectTextColor: string;
+  projectBackgroundEffectEnabled: boolean;
+  projectBackgroundEffectType: "none" | "dots_n8n";
+  setProjectBackgroundEffectEnabled: (next: boolean) => void;
+  setProjectBackgroundEffectType: (next: "none" | "dots_n8n") => void;
+  onSelectTheme: (next: "custom" | "n8n_dots_dark") => Promise<void> | void;
+  onResetThemeDefaults: () => Promise<void> | void;
+  onChangeEffectTypeThemeAware: (next: "none" | "dots_n8n") => Promise<void> | void;
   projectsDropdownOpen: boolean;
   // Included only to preserve dependency semantics (even if unused in the body).
   saveProjectMetaForProject: any;
   updateProjectColors: (bg: string, text: string) => void;
+  saveProjectBackgroundEffectForProject: (args: {
+    projectId: string | null;
+    enabled: boolean;
+    type: "none" | "dots_n8n";
+  }) => Promise<void> | void;
 
   // Captured values used inside actions (kept as-is; not added to deps to avoid behavior changes).
   setProjectTitle: (next: string) => void;
@@ -83,6 +96,7 @@ type Args = {
 export function useEditorStoreActionsSync(args: Args) {
   const {
     editorStore,
+    addLog,
     archiveProjectBusy,
     archiveProjectById,
     createNewProject,
@@ -97,9 +111,17 @@ export function useEditorStoreActionsSync(args: Args) {
     persistCurrentProjectTemplateMappings,
     projectBackgroundColor,
     projectTextColor,
+    projectBackgroundEffectEnabled,
+    projectBackgroundEffectType,
+    setProjectBackgroundEffectEnabled,
+    setProjectBackgroundEffectType,
+    onSelectTheme: handleSelectTheme,
+    onResetThemeDefaults: handleResetThemeDefaults,
+    onChangeEffectTypeThemeAware: handleChangeEffectTypeThemeAware,
     projectsDropdownOpen,
     saveProjectMetaForProject,
     updateProjectColors,
+    saveProjectBackgroundEffectForProject,
 
     setProjectTitle,
     scheduleDebouncedProjectTitleSave,
@@ -245,6 +267,29 @@ export function useEditorStoreActionsSync(args: Args) {
     },
     onChangeBackgroundColor: (next: string) => updateProjectColors(next, projectTextColorForUpdate),
     onChangeTextColor: (next: string) => updateProjectColors(projectBackgroundColorForUpdate, next),
+    onChangeBackgroundEffectEnabled: (next: boolean) => {
+      try {
+        console.log("[Editor][BGFX] toggle enabled ->", next, { projectId: currentProjectIdRef.current });
+      } catch {
+        // ignore
+      }
+      try {
+        addLog?.(`🎛️ BGFX enabled=${next ? "true" : "false"} (project=${String(currentProjectIdRef.current || "")})`);
+      } catch {
+        // ignore
+      }
+      // Phase 4: route through the theme-aware effect handler.
+      void handleChangeEffectTypeThemeAware(next ? projectBackgroundEffectType : "none");
+    },
+    onChangeBackgroundEffectType: (next: "none" | "dots_n8n") => {
+      void handleChangeEffectTypeThemeAware(next);
+    },
+    onSelectTheme: (next: "custom" | "n8n_dots_dark") => {
+      void handleSelectTheme(next);
+    },
+    onResetThemeDefaults: () => {
+      void handleResetThemeDefaults();
+    },
 
     onToggleProjectsDropdown: () => setProjectsDropdownOpen((v) => !v),
     onLoadProject: (projectId: string) => {
@@ -339,6 +384,10 @@ export function useEditorStoreActionsSync(args: Args) {
       onChangeBodyFontKey: (raw: string) => implRef.current?.onChangeBodyFontKey?.(raw),
       onChangeBackgroundColor: (next: string) => implRef.current?.onChangeBackgroundColor?.(next),
       onChangeTextColor: (next: string) => implRef.current?.onChangeTextColor?.(next),
+      onChangeBackgroundEffectEnabled: (next: boolean) => implRef.current?.onChangeBackgroundEffectEnabled?.(next),
+      onChangeBackgroundEffectType: (next: "none" | "dots_n8n") => implRef.current?.onChangeBackgroundEffectType?.(next),
+      onSelectTheme: (next: "custom" | "n8n_dots_dark") => implRef.current?.onSelectTheme?.(next),
+      onResetThemeDefaults: () => implRef.current?.onResetThemeDefaults?.(),
 
       onToggleProjectsDropdown: () => implRef.current?.onToggleProjectsDropdown?.(),
       onLoadProject: (projectId: string) => implRef.current?.onLoadProject?.(projectId),

@@ -21,6 +21,8 @@ export function EditorSlidesRow() {
 
   const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
   const projectTextColor = useEditorSelector((s) => s.projectTextColor);
+  const projectBackgroundEffectEnabled = useEditorSelector((s) => (s as any).projectBackgroundEffectEnabled);
+  const projectBackgroundEffectType = useEditorSelector((s) => (s as any).projectBackgroundEffectType);
   const headlineFontKey = useEditorSelector((s) => s.headlineFontKey);
   const bodyFontKey = useEditorSelector((s) => s.bodyFontKey);
   const [headlineFontFamily, headlineFontWeight] = (() => {
@@ -221,6 +223,8 @@ export function EditorSlidesRow() {
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
                         textColor={projectTextColor}
+                        backgroundEffectEnabled={projectBackgroundEffectEnabled}
+                        backgroundEffectType={projectBackgroundEffectType}
                         templateSnapshot={snap}
                         hasHeadline={templateTypeId !== "regular"}
                         tightUserTextWidth={templateTypeId !== "regular"}
@@ -264,6 +268,8 @@ export function EditorSlidesRow() {
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
                     textColor={projectTextColor}
+                    backgroundEffectEnabled={projectBackgroundEffectEnabled}
+                    backgroundEffectType={projectBackgroundEffectType}
                     templateSnapshot={snap}
                     hasHeadline={templateTypeId !== "regular"}
                     tightUserTextWidth={templateTypeId !== "regular"}
@@ -375,6 +381,8 @@ export function EditorSlidesRow() {
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}
+                                backgroundEffectEnabled={projectBackgroundEffectEnabled}
+                                backgroundEffectType={projectBackgroundEffectType}
                                 templateSnapshot={snap}
                                 hasHeadline={templateTypeId !== "regular"}
                                 tightUserTextWidth={templateTypeId !== "regular"}
