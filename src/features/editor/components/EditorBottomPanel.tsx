@@ -18,6 +18,7 @@ export function EditorBottomPanel() {
     loading,
     switchingSlides,
     copyGenerating,
+    copyProgressLabel,
     enhancedLockOn,
     slides,
     layoutData,
@@ -302,7 +303,12 @@ export function EditorBottomPanel() {
             <div className="flex items-center gap-2 mb-4">
               <span className="w-7 h-7 rounded-lg bg-slate-600 text-white text-sm flex items-center justify-center">⚙️</span>
               <span className="text-sm font-semibold text-slate-900">Controls</span>
-              {ui.copyProgressIcon}
+              {copyGenerating ? (
+                <span className="ml-1 inline-flex items-center gap-2 text-xs text-slate-600">
+                  <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+                  <span className="font-medium">{String(copyProgressLabel || "Working…")}</span>
+                </span>
+              ) : null}
             </div>
             <div className="space-y-3">
               <button
@@ -312,6 +318,11 @@ export function EditorBottomPanel() {
               >
                 {copyGenerating ? "Generating Copy..." : "Generate Copy"}
               </button>
+              {!currentProjectId ? (
+                <div className="text-xs text-slate-500">
+                  Create or select a project to enable Generate Copy.
+                </div>
+              ) : null}
 
               {ui.activeImageSelected ? (
                 <>

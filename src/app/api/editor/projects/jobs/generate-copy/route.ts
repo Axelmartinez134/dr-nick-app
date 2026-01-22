@@ -117,11 +117,10 @@ function sanitizeInlineStyleRanges(text: string, ranges: any): InlineStyleRange[
   return out;
 }
 
-async function callPoppy(prompt: string) {
-  const baseUrl = (process.env.POPPY_CONVERSATION_URL || '').trim();
+async function callPoppy(prompt: string, args: { poppyConversationUrl: string }) {
+  const baseUrl = String(args?.poppyConversationUrl || '').trim();
   const apiKey = process.env.POPPY_API_KEY;
-  const model = process.env.POPPY_MODEL || 'claude-3-7-sonnet-20250219';
-  if (!baseUrl) throw new Error('Missing env var: POPPY_CONVERSATION_URL');
+  if (!baseUrl) throw new Error('Missing poppy_conversation_url for this user');
   if (!apiKey) throw new Error('Missing env var: POPPY_API_KEY');
 
   let url: URL;
@@ -129,12 +128,15 @@ async function callPoppy(prompt: string) {
     url = new URL(baseUrl);
   } catch {
     throw new Error(
-      'Invalid URL in env var POPPY_CONVERSATION_URL. It must be a full https URL like ' +
-        '"https://api.getpoppy.ai/api/conversation?board_id=...&chat_id=...".'
+      'Invalid poppy_conversation_url for this user. It must be a full https URL like ' +
+        '"https://api.getpoppy.ai/api/conversation?board_id=...&chat_id=...&model=...".'
     );
   }
-  // Ensure api_key is present (we keep it server-side only).
-  if (!url.searchParams.get('api_key')) url.searchParams.set('api_key', apiKey);
+  // Always enforce api_key from server env (never rely on stored URL).
+  url.searchParams.set('api_key', apiKey);
+
+  // Per spec: model comes from the stored URL (do NOT use env POPPY_MODEL for Generate Copy).
+  const modelFromUrl = String(url.searchParams.get('model') || '').trim();
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), 45_000);
@@ -142,14 +144,14 @@ async function callPoppy(prompt: string) {
     const res = await fetch(url.toString(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, model }),
+      body: JSON.stringify(modelFromUrl ? { prompt, model: modelFromUrl } : { prompt }),
       signal: ac.signal,
     });
     const text = await res.text();
     if (!res.ok) {
       throw new Error(`Poppy error (${res.status}): ${text.slice(0, 500)}`);
     }
-    return { rawText: text, model };
+    return { rawText: text, model: modelFromUrl || null };
   } finally {
     clearTimeout(t);
   }
@@ -345,6 +347,41 @@ export async function POST(request: NextRequest) {
   const prompt = sanitizePrompt(project.prompt_snapshot || '');
   if (!prompt) return NextResponse.json({ success: false, error: 'Project prompt is empty' }, { status: 400 });
 
+  // Per-user Poppy routing (board/chat/model) stored on editor_users.
+  const { data: editorRow, error: editorErr } = await supabase
+    .from('editor_users')
+    .select('poppy_conversation_url')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (editorErr) {
+    return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
+  }
+  const poppyConversationUrl = String((editorRow as any)?.poppy_conversation_url || '').trim();
+  if (!poppyConversationUrl) {
+    return NextResponse.json(
+      { success: false, error: 'Missing poppy_conversation_url for this user' },
+      { status: 400 }
+    );
+  }
+
+  // Non-secret debug metadata (for the /editor Debug panel)
+  // Helps confirm which board/chat/model were used without exposing api_key.
+  let poppyRoutingMeta: { boardId: string | null; chatId: string | null; model: string | null } = {
+    boardId: null,
+    chatId: null,
+    model: null,
+  };
+  try {
+    const u = new URL(poppyConversationUrl);
+    poppyRoutingMeta = {
+      boardId: String(u.searchParams.get('board_id') || '').trim() || null,
+      chatId: String(u.searchParams.get('chat_id') || '').trim() || null,
+      model: String(u.searchParams.get('model') || '').trim() || null,
+    };
+  } catch {
+    // leave nulls; callPoppy will throw a clearer error
+  }
+
   // Create + lock a job (unique partial index blocks concurrent jobs).
   const { data: job, error: jobErr } = await supabase
     .from('carousel_generation_jobs')
@@ -372,7 +409,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:poppy' });
-    const poppy = await callPoppy(prompt);
+    const poppy = await callPoppy(prompt, { poppyConversationUrl });
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
     const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
     const payload = extractJsonObject(parsed.rawText);
@@ -440,6 +477,7 @@ export async function POST(request: NextRequest) {
       success: true,
       jobId,
       templateTypeId,
+      poppyRoutingMeta,
       caption,
       slides: slides.map((s, idx) => ({
         headline: templateTypeId === 'enhanced' ? (s.headline || '') : null,

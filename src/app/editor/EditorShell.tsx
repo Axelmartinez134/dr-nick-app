@@ -4090,6 +4090,7 @@ export default function EditorShell() {
         loading,
         switchingSlides,
         copyGenerating,
+        copyProgressLabel,
         enhancedLockOn,
         slides,
         layoutData,

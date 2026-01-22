@@ -138,6 +138,12 @@ export function useGenerateCopy(params: {
           Array.isArray(data?.slides) ? data.slides.length : 0
         } captionLen=${String(data?.caption || '').length}`
       );
+      if (data?.poppyRoutingMeta && typeof data.poppyRoutingMeta === 'object') {
+        const b = String((data.poppyRoutingMeta as any)?.boardId || '');
+        const c = String((data.poppyRoutingMeta as any)?.chatId || '');
+        const m = String((data.poppyRoutingMeta as any)?.model || '');
+        addLog(`🤖 Poppy routing used: board_id=${b || '-'} chat_id=${c || '-'} model=${m || '-'}`);
+      }
       const slidesOut = data.slides || [];
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
