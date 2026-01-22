@@ -169,6 +169,16 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
 - **Wiring wrapper (Stage 3D)**: `src/features/editor/hooks/useEditorJobs.ts` (centralizes how the three job hooks are wired together)
 
+#### Generate Copy → Poppy routing (per editor user)
+- **Server route**: `POST /api/editor/projects/jobs/generate-copy`
+  - Implementation: `src/app/api/editor/projects/jobs/generate-copy/route.ts`
+  - Looks up **per-user** `public.editor_users.poppy_conversation_url` and uses it to call Poppy
+  - **Hard fails** if missing: `Missing poppy_conversation_url for this user`
+  - Uses `model` from the stored URL’s query params (does **not** use env `POPPY_MODEL` for Generate Copy)
+- **Client UX**:
+  - `src/features/editor/hooks/useGenerateCopy.ts` logs the Poppy routing used (`board_id/chat_id/model`) into the Debug panel after the API responds
+  - `src/features/editor/components/EditorBottomPanel.tsx` shows a spinner + status text while copy is running (and a hint if no project is selected)
+
 ### Live layout queue + realign orchestration (Stage 4B)
 - **Hook**: `src/features/editor/hooks/useLiveLayoutQueue.ts`
 
@@ -354,6 +364,7 @@ All fields below live on `public.carousel_projects`:
 ## Database (high level)
 Key tables used by `/editor`:
 - `public.editor_users` (allowlist gate for `/editor`)
+  - `poppy_conversation_url` (per-user Poppy board/chat/model for Generate Copy)
 - `public.carousel_projects`
   - `owner_user_id`
   - `template_type_id`
@@ -384,6 +395,8 @@ Key tables used by `/editor`:
 - **Lock layout flag helpers**: `src/features/editor/state/editorFlags.ts`
 - **Auto realign on image release**: `src/features/editor/hooks/useImageOps.ts` + `src/features/editor/hooks/useAutoRealignOnImageRelease.ts`
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
+  - Per-user Poppy routing URL: `public.editor_users.poppy_conversation_url`
+  - Migration: `supabase/migrations/20260121_000002_add_poppy_conversation_url_to_editor_users.sql`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
 - **Realign button behavior**: `src/app/editor/EditorShell.tsx` (calls the existing live-layout pipeline)
