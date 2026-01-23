@@ -5,7 +5,7 @@ import { getAuthedSupabase } from '../../_utils';
 export const runtime = 'nodejs';
 export const maxDuration = 10;
 
-const PROJECT_SELECT = `id, title, caption, template_type_id, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, updated_at` as const;
+const PROJECT_SELECT = `id, title, caption, template_type_id, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, ai_image_autoremovebg_enabled, updated_at` as const;
 
 type Body = {
   projectId: string;
@@ -21,6 +21,7 @@ type Body = {
   themeDefaultsSnapshot?: any | null;
   lastManualBackgroundColor?: string | null;
   lastManualTextColor?: string | null;
+  aiImageAutoRemoveBgEnabled?: boolean;
 };
 
 export async function POST(request: NextRequest) {
@@ -77,6 +78,9 @@ export async function POST(request: NextRequest) {
   }
   if (body.lastManualTextColor !== undefined) {
     patch.last_manual_text_color = body.lastManualTextColor === null ? null : String(body.lastManualTextColor || '').trim() || null;
+  }
+  if (typeof body.aiImageAutoRemoveBgEnabled === 'boolean') {
+    patch.ai_image_autoremovebg_enabled = body.aiImageAutoRemoveBgEnabled;
   }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ success: false, error: 'No fields to update' }, { status: 400 });

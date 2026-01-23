@@ -34,6 +34,7 @@ export function useProjectLifecycle(params: {
   setThemeDefaultsSnapshot: (next: any | null) => void;
   setLastManualBackgroundColor: (next: string | null) => void;
   setLastManualTextColor: (next: string | null) => void;
+  setAiImageAutoRemoveBgEnabled: (next: boolean) => void;
 
   // Engine state setters
   setLayoutData: (v: any) => void;
@@ -74,6 +75,7 @@ export function useProjectLifecycle(params: {
     setThemeDefaultsSnapshot,
     setLastManualBackgroundColor,
     setLastManualTextColor,
+    setAiImageAutoRemoveBgEnabled,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -110,6 +112,7 @@ export function useProjectLifecycle(params: {
       setThemeDefaultsSnapshot(((project as any)?.theme_defaults_snapshot as any) ?? null);
       setLastManualBackgroundColor(((project as any)?.last_manual_background_color as any) ?? null);
       setLastManualTextColor(((project as any)?.last_manual_text_color as any) ?? null);
+      setAiImageAutoRemoveBgEnabled(((project as any)?.ai_image_autoremovebg_enabled as any) !== false);
 
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
@@ -215,6 +218,7 @@ export function useProjectLifecycle(params: {
       setThemeDefaultsSnapshot(((project as any)?.theme_defaults_snapshot as any) ?? null);
       setLastManualBackgroundColor(((project as any)?.last_manual_background_color as any) ?? null);
       setLastManualTextColor(((project as any)?.last_manual_text_color as any) ?? null);
+      setAiImageAutoRemoveBgEnabled(((project as any)?.ai_image_autoremovebg_enabled as any) !== false);
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
         const row = slidesRows.find((r: any) => r.slide_index === i);

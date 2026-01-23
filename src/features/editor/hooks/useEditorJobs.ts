@@ -32,6 +32,9 @@ export function useEditorJobs(params: {
   // AI image generation (Enhanced only)
   aiKey: (projectId: string, slideIndex: number) => string;
   getDraftAiImagePromptForSlide: (slideIndex: number) => string;
+  // Session-only image settings (not persisted yet)
+  aiImageAspectRatio: string;
+  aiImageSize: string;
   computeTemplateIdForSlide: (slideIndex: number) => string | null;
   templateSnapshots: Record<string, any>;
   computeDefaultUploadedImagePlacement: (
@@ -89,6 +92,8 @@ export function useEditorJobs(params: {
       getAuthToken: params.getAuthToken,
       addLog: params.addLog,
       getDraftAiImagePromptForSlide: params.getDraftAiImagePromptForSlide,
+      aiImageAspectRatio: params.aiImageAspectRatio,
+      aiImageSize: params.aiImageSize,
       computeTemplateIdForSlide: params.computeTemplateIdForSlide,
       templateSnapshots: params.templateSnapshots,
       computeDefaultUploadedImagePlacement: params.computeDefaultUploadedImagePlacement,

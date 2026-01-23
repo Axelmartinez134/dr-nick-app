@@ -42,10 +42,13 @@ export async function POST(req: NextRequest) {
   // Must be an editor user.
   const { data: editorRow, error: editorErr } = await supabase
     .from('editor_users')
-    .select('user_id')
+    .select('user_id, ai_image_gen_model')
     .eq('user_id', user.id)
     .maybeSingle();
-  if (editorErr || !editorRow?.user_id) {
+  if (editorErr) {
+    return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
+  }
+  if (!editorRow?.user_id) {
     return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
   }
 
@@ -148,6 +151,9 @@ export async function POST(req: NextRequest) {
     success: true,
     bootstrap: { created: bootstrapCreated, starterTemplateId },
     templateTypeId,
+    editorUser: {
+      aiImageGenModel: (editorRow as any)?.ai_image_gen_model || 'gpt-image-1.5',
+    },
     templates: (templatesOut || []).map((t: any) => ({ id: t.id, name: t.name, updatedAt: t.updated_at })),
     projects: projects || [],
     templateType: { defaults, override, effective },

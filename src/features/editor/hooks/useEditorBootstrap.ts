@@ -15,6 +15,9 @@ export function useEditorBootstrap(params: {
   fetchJson: (path: string, init?: RequestInit) => Promise<any>;
   addLog: (msg: string) => void;
 
+  // Per-user settings (hydrated from /api/editor/initial-state)
+  setAiImageGenModel: (next: 'gpt-image-1.5' | 'gemini-3-pro-image-preview') => void;
+
   // Hydration targets
   setTemplates: (templates: any[]) => void;
   setTemplateSnapshots: (updater: (prev: Record<string, any>) => Record<string, any>) => void;
@@ -51,6 +54,7 @@ export function useEditorBootstrap(params: {
     templateTypeIdRef,
     fetchJson,
     addLog,
+    setAiImageGenModel,
     setTemplates,
     setTemplateSnapshots,
     hydrateProjects,
@@ -89,6 +93,16 @@ export function useEditorBootstrap(params: {
           body: JSON.stringify({ templateTypeId: templateTypeIdAtRequest }),
         });
         if (!data?.success) throw new Error(data?.error || 'Failed to load editor state');
+
+        // Hydrate per-user settings (best-effort; defaults remain if missing).
+        try {
+          const raw = String(data?.editorUser?.aiImageGenModel || '').trim();
+          if (raw === 'gpt-image-1.5' || raw === 'gemini-3-pro-image-preview') {
+            setAiImageGenModel(raw);
+          }
+        } catch {
+          // ignore
+        }
 
         // Mark template-type as loaded early so downstream effects can react during auto-load.
         initialTemplateTypeLoadDoneRef.current = true;

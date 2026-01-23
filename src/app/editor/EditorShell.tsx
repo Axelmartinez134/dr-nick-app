@@ -455,6 +455,15 @@ export default function EditorShell() {
   }, [editorStore]);
   // Long-running generation jobs are extracted into dedicated hooks (Section 7).
   const [aiImagePromptSaveStatus, setAiImagePromptSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  // Enhanced: per-user default image generation model (stored in public.editor_users.ai_image_gen_model).
+  // Default is OpenAI GPT Image so existing users see no behavior change until they switch.
+  const [aiImageGenModel, setAiImageGenModel] = useState<'gpt-image-1.5' | 'gemini-3-pro-image-preview'>('gpt-image-1.5');
+  // Enhanced: session-only image settings (do not persist yet).
+  const [aiImageSettingsOpen, setAiImageSettingsOpen] = useState(false);
+  const [aiImageAspectRatio, setAiImageAspectRatio] = useState<
+    '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
+  >('3:4');
+  const [aiImageSize, setAiImageSize] = useState<'1K' | '2K' | '4K'>('1K');
 
   // Shared key helper (also used by image operations / BG removal state).
   const aiKey = (projectId: string, slideIndex: number) => `${projectId}:${slideIndex}`;
@@ -765,6 +774,8 @@ export default function EditorShell() {
   const [themeDefaultsSnapshot, setThemeDefaultsSnapshot] = useState<any | null>(null);
   const [lastManualBackgroundColor, setLastManualBackgroundColor] = useState<string | null>(null);
   const [lastManualTextColor, setLastManualTextColor] = useState<string | null>(null);
+  // Per-project: whether AI-generated images should auto-run background removal (default ON).
+  const [aiImageAutoRemoveBgEnabled, setAiImageAutoRemoveBgEnabled] = useState<boolean>(true);
   useEffect(() => {
     editorStore.setState({
       projectBackgroundColor,
@@ -777,6 +788,7 @@ export default function EditorShell() {
       themeDefaultsSnapshot,
       lastManualBackgroundColor,
       lastManualTextColor,
+      aiImageAutoRemoveBgEnabled,
     } as any);
   }, [
     editorStore,
@@ -790,6 +802,7 @@ export default function EditorShell() {
     themeDefaultsSnapshot,
     lastManualBackgroundColor,
     lastManualTextColor,
+    aiImageAutoRemoveBgEnabled,
   ]);
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -1277,6 +1290,7 @@ export default function EditorShell() {
     setThemeDefaultsSnapshot,
     setLastManualBackgroundColor,
     setLastManualTextColor,
+    setAiImageAutoRemoveBgEnabled,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -1563,6 +1577,7 @@ export default function EditorShell() {
     templateTypeIdRef,
     fetchJson,
     addLog,
+    setAiImageGenModel,
     setTemplates,
     setTemplateSnapshots,
     hydrateProjects,
@@ -2453,6 +2468,8 @@ export default function EditorShell() {
     aiKey,
     getDraftAiImagePromptForSlide: (slideIndex: number) =>
       String((slidesRef.current?.[slideIndex] as any)?.draftAiImagePrompt || ''),
+    aiImageAspectRatio,
+    aiImageSize,
     computeTemplateIdForSlide,
     templateSnapshots,
     computeDefaultUploadedImagePlacement,
@@ -4048,6 +4065,69 @@ export default function EditorShell() {
   const onClickRegenerateImagePrompt = () => void runGenerateImagePrompts(activeSlideIndex);
   const onChangeAiImagePrompt = (newValue: string) => {
     setSlides((prev: any) => prev.map((s: any, i: number) => (i === activeSlideIndex ? { ...s, draftAiImagePrompt: newValue } : s)));
+    // Keep store in sync immediately so the textarea caret doesn't jump (same pattern as Caption).
+    try {
+      editorStore.setState((prev: any) => ({
+        bottomPanelUi: prev?.bottomPanelUi ? { ...prev.bottomPanelUi, aiImagePromptDraft: newValue } : prev?.bottomPanelUi,
+      }));
+    } catch {
+      // ignore
+    }
+  };
+  const onChangeAiImageGenModel = async (next: 'gpt-image-1.5' | 'gemini-3-pro-image-preview') => {
+    try {
+      const v = String(next || '').trim();
+      if (v !== 'gpt-image-1.5' && v !== 'gemini-3-pro-image-preview') return;
+      setAiImageGenModel(v as any);
+      // Persist per-user default (server enforces DB on generation).
+      await fetchJson('/api/editor/user-settings/image-gen-model', {
+        method: 'POST',
+        body: JSON.stringify({ aiImageGenModel: v }),
+      });
+      addLog(`🖼️ Image model saved: ${v}`);
+    } catch (e: any) {
+      addLog(`❌ Failed to save image model: ${String(e?.message || e || 'unknown error')}`);
+    }
+  };
+  const onClickToggleAiImageSettings = () => setAiImageSettingsOpen((prev) => !prev);
+  const onChangeAiImageAspectRatio = (next: any) => {
+    const v = String(next || '').trim();
+    const ok =
+      v === '1:1' ||
+      v === '2:3' ||
+      v === '3:2' ||
+      v === '3:4' ||
+      v === '4:3' ||
+      v === '4:5' ||
+      v === '5:4' ||
+      v === '9:16' ||
+      v === '16:9' ||
+      v === '21:9';
+    if (!ok) return;
+    setAiImageAspectRatio(v as any);
+  };
+  const onChangeAiImageSize = (next: any) => {
+    const v = String(next || '').trim();
+    if (v !== '1K' && v !== '2K' && v !== '4K') return;
+    setAiImageSize(v as any);
+  };
+  const onToggleAiImageAutoRemoveBg = async () => {
+    const pid = String(currentProjectId || "").trim();
+    if (!pid) return;
+    const prev = !!aiImageAutoRemoveBgEnabled;
+    const next = !prev;
+    setAiImageAutoRemoveBgEnabled(next);
+    try {
+      addLog?.(`💾 AI BG auto-remove: ${next ? "ON" : "OFF"} (project=${pid})`);
+      await fetchJson("/api/editor/projects/update", {
+        method: "POST",
+        body: JSON.stringify({ projectId: pid, aiImageAutoRemoveBgEnabled: next }),
+      });
+      addLog?.(`✅ AI BG auto-remove saved (project=${pid})`);
+    } catch {
+      setAiImageAutoRemoveBgEnabled(prev);
+      addLog?.(`❌ AI BG auto-remove save failed (project=${pid})`);
+    }
   };
   const onClickGenerateAiImage = () => void runGenerateAiImage();
   const onClickGenerateCopy = () => void runGenerateCopy();
@@ -4099,6 +4179,12 @@ export default function EditorShell() {
         showLayoutOverlays,
         addLog,
         aiImagePromptSaveStatus,
+        aiImagePromptDraft: activeDraftAiImagePrompt,
+        aiImageGenModel,
+        aiImageAutoRemoveBgEnabled,
+        aiImageSettingsOpen,
+        aiImageAspectRatio,
+        aiImageSize,
         imagePromptGenerating,
         imagePromptError,
         aiImageGeneratingThis,
@@ -4127,6 +4213,8 @@ export default function EditorShell() {
     aiImageGeneratingThis,
     aiImageProgressThis,
     aiImagePromptSaveStatus,
+    activeDraftAiImagePrompt,
+    aiImageAutoRemoveBgEnabled,
     aiImageStatusThis,
     aiKey,
     bgRemovalBusyKeys,
@@ -4225,6 +4313,11 @@ export default function EditorShell() {
     onChangeBodyRichText,
     onClickRegenerateImagePrompt,
     onChangeAiImagePrompt,
+    onChangeAiImageGenModel,
+    onClickToggleAiImageSettings,
+    onChangeAiImageAspectRatio,
+    onChangeAiImageSize,
+    onToggleAiImageAutoRemoveBg,
     onClickGenerateAiImage,
     onClickGenerateCopy,
     onClickRetry,

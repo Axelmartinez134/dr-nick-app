@@ -80,6 +80,11 @@ type Args = {
   onChangeBodyRichText: (next: any) => void;
   onClickRegenerateImagePrompt: () => void;
   onChangeAiImagePrompt: (next: string) => void;
+  onChangeAiImageGenModel: (next: 'gpt-image-1.5' | 'gemini-3-pro-image-preview') => void;
+  onClickToggleAiImageSettings: () => void;
+  onChangeAiImageAspectRatio: (next: string) => void;
+  onChangeAiImageSize: (next: string) => void;
+  onToggleAiImageAutoRemoveBg: () => void;
   onClickGenerateAiImage: () => void;
   onClickGenerateCopy: () => void;
   onClickRetry: () => void;
@@ -161,6 +166,11 @@ export function useEditorStoreActionsSync(args: Args) {
     onChangeBodyRichText,
     onClickRegenerateImagePrompt,
     onChangeAiImagePrompt,
+    onChangeAiImageGenModel,
+    onClickToggleAiImageSettings,
+    onChangeAiImageAspectRatio,
+    onChangeAiImageSize,
+    onToggleAiImageAutoRemoveBg,
     onClickGenerateAiImage,
     onClickGenerateCopy,
     onClickRetry,
@@ -346,6 +356,11 @@ export function useEditorStoreActionsSync(args: Args) {
     onChangeBodyRichText: (next: any) => onChangeBodyRichText(next),
     onClickRegenerateImagePrompt: () => onClickRegenerateImagePrompt(),
     onChangeAiImagePrompt: (next: string) => onChangeAiImagePrompt(next),
+    onChangeAiImageGenModel: (next: 'gpt-image-1.5' | 'gemini-3-pro-image-preview') => onChangeAiImageGenModel(next),
+    onClickToggleAiImageSettings: () => onClickToggleAiImageSettings(),
+    onChangeAiImageAspectRatio: (next: string) => onChangeAiImageAspectRatio(next),
+    onChangeAiImageSize: (next: string) => onChangeAiImageSize(next),
+    onToggleAiImageAutoRemoveBg: () => onToggleAiImageAutoRemoveBg(),
     onClickGenerateAiImage: () => onClickGenerateAiImage(),
     onClickGenerateCopy: () => onClickGenerateCopy(),
     onClickRetry: () => onClickRetry(),
@@ -408,6 +423,12 @@ export function useEditorStoreActionsSync(args: Args) {
       onChangeBodyRichText: (next: any) => implRef.current?.onChangeBodyRichText?.(next),
       onClickRegenerateImagePrompt: () => implRef.current?.onClickRegenerateImagePrompt?.(),
       onChangeAiImagePrompt: (next: string) => implRef.current?.onChangeAiImagePrompt?.(next),
+      onChangeAiImageGenModel: (next: 'gpt-image-1.5' | 'gemini-3-pro-image-preview') =>
+        implRef.current?.onChangeAiImageGenModel?.(next),
+      onClickToggleAiImageSettings: () => implRef.current?.onClickToggleAiImageSettings?.(),
+      onChangeAiImageAspectRatio: (next: string) => implRef.current?.onChangeAiImageAspectRatio?.(next),
+      onChangeAiImageSize: (next: string) => implRef.current?.onChangeAiImageSize?.(next),
+      onToggleAiImageAutoRemoveBg: () => implRef.current?.onToggleAiImageAutoRemoveBg?.(),
       onClickGenerateAiImage: () => implRef.current?.onClickGenerateAiImage?.(),
       onClickGenerateCopy: () => implRef.current?.onClickGenerateCopy?.(),
       onClickRetry: () => implRef.current?.onClickRetry?.(),

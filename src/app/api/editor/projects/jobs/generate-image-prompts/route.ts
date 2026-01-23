@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
   }));
 
   const userMessage = `Here are the 6 slides:\n\n${JSON.stringify(slidesInput, null, 2)}`;
+  const fullPromptSentToClaude = `${systemPrompt}\n\n${userMessage}`;
 
   // Call Anthropic
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -137,6 +138,12 @@ export async function POST(request: NextRequest) {
         success: true,
         prompts: prompts,
         updatedSlideIndex: body.slideIndex,
+        debug: {
+          // Debug only: show EXACT prompt sent to Claude (no API keys).
+          // Returned so /editor Debug panel can copy/paste it.
+          promptSentToClaude: fullPromptSentToClaude,
+          systemPrompt,
+        },
       });
     }
 
@@ -154,6 +161,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       prompts,
+      debug: {
+        promptSentToClaude: fullPromptSentToClaude,
+        systemPrompt,
+      },
     });
   } catch (e: any) {
     console.error('[Generate Image Prompts] ❌ Failed:', e);

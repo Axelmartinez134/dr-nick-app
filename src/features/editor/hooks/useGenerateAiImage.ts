@@ -23,6 +23,10 @@ export function useGenerateAiImage(params: {
 
   getDraftAiImagePromptForSlide: (slideIndex: number) => string;
 
+  // Session-only settings (used only when the server-enforced model supports them)
+  aiImageAspectRatio: string;
+  aiImageSize: string;
+
   computeTemplateIdForSlide: (slideIndex: number) => string | null;
   templateSnapshots: Record<string, any>;
   computeDefaultUploadedImagePlacement: (templateSnapshot: any | null, w: number, h: number) => {
@@ -49,6 +53,8 @@ export function useGenerateAiImage(params: {
     getAuthToken,
     addLog,
     getDraftAiImagePromptForSlide,
+    aiImageAspectRatio,
+    aiImageSize,
     computeTemplateIdForSlide,
     templateSnapshots,
     computeDefaultUploadedImagePlacement,
@@ -292,11 +298,29 @@ export function useGenerateAiImage(params: {
         const res = await fetch('/api/editor/projects/jobs/generate-ai-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ projectId: projectIdAtStart, slideIndex: targetSlide, prompt: prompt.trim() }),
+          body: JSON.stringify({
+            projectId: projectIdAtStart,
+            slideIndex: targetSlide,
+            prompt: prompt.trim(),
+            // Server enforces the model from DB; these settings are best-effort and only apply when supported.
+            imageConfig: {
+              aspectRatio: String(aiImageAspectRatio || '3:4'),
+              imageSize: String(aiImageSize || '1K'),
+            },
+          }),
         });
         const j = await res.json().catch(() => ({}));
         if (!res.ok || !j?.success) throw new Error(j?.error || `Image generation failed (${res.status})`);
         if (aiImageRunIdByKeyRef.current[key] !== runId) return;
+
+        if (j?.debug?.promptSentToImageModel) {
+          try {
+            addLog(`🧪 ImageGen full prompt sent to image model (JSON):`);
+            addLog(JSON.stringify(String(j.debug.promptSentToImageModel || '')));
+          } catch {
+            // ignore
+          }
+        }
 
         const url = String(j?.url || '');
         const path = String(j?.path || '');

@@ -179,6 +179,23 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - `src/features/editor/hooks/useGenerateCopy.ts` logs the Poppy routing used (`board_id/chat_id/model`) into the Debug panel after the API responds
   - `src/features/editor/components/EditorBottomPanel.tsx` shows a spinner + status text while copy is running (and a hint if no project is selected)
 
+#### Generate AI Image (model dropdown + per-project BG Removal)
+- **Client UX**: `src/features/editor/components/EditorBottomPanel.tsx`
+  - **Model dropdown** (per-user default): `GPT Image (gpt-image-1.5)` and `Gemini 3 Pro (gemini-3-pro-image-preview)`
+  - **Gemini settings popover** (session-only): Aspect ratio + Size
+    - Has explicit close button and dismisses on outside click
+  - **BG Removal? toggle** (per-project): controls whether AI-generated images auto-run background removal
+  - **AI Image Prompt textarea**: uses immediate store sync to avoid caret-jump while typing (same pattern as Caption)
+- **Client orchestration**:
+  - `src/features/editor/hooks/useGenerateAiImage.ts` sends prompt + imageConfig; server enforces per-user model from DB
+  - `src/app/editor/EditorShell.tsx` owns the UI state + actions, and persists the per-project BG Removal toggle via `POST /api/editor/projects/update`
+- **Server route**: `POST /api/editor/projects/jobs/generate-ai-image`
+  - Implementation: `src/app/api/editor/projects/jobs/generate-ai-image/route.ts`
+  - Enforces **per-user** `editor_users.ai_image_gen_model` (client cannot override)
+  - Reads **per-project** `carousel_projects.ai_image_autoremovebg_enabled` (default ON)
+  - Always stores a **PNG** in Supabase Storage (converts upstream JPEG → PNG via `sharp`)
+  - Always computes/stores an alpha mask for wrapping (when BG Removal is OFF the mask is naturally “solid rectangle”)
+
 ### Live layout queue + realign orchestration (Stage 4B)
 - **Hook**: `src/features/editor/hooks/useLiveLayoutQueue.ts`
 
@@ -242,6 +259,20 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
   - Expected: an intentional blank line (visible empty line between paragraphs)
 - Click away (blur) after Enter/Shift+Enter edits
   - Expected: no “snap” to a different spacing/layout after blur; what you saw while typing matches the final layout
+
+### Manual QA (AI image model + BG Removal)
+- In `/editor` (Enhanced), open **AI Image Prompt**
+- Ensure the **Model dropdown** is visible next to **Generate Image**
+- Select **Gemini 3 Pro** and click **⚙️**
+  - Change Aspect ratio and Size
+  - Click **outside** the popover → it should dismiss
+  - Click **✕** → it should dismiss
+- Toggle **BG Removal?** OFF
+  - Click **Generate Image**
+  - Expected: generated image still works, still wraps deterministically (mask exists), and `bgRemovalEnabled` is false for the AI image
+- Toggle **BG Removal?** ON
+  - Generate again
+  - Expected: background removal runs (if RemoveBG is configured) and the image + mask reflect the cutout
 
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.
@@ -365,11 +396,13 @@ All fields below live on `public.carousel_projects`:
 Key tables used by `/editor`:
 - `public.editor_users` (allowlist gate for `/editor`)
   - `poppy_conversation_url` (per-user Poppy board/chat/model for Generate Copy)
+  - `ai_image_gen_model` (per-user default image model used by Generate Image; server enforced)
 - `public.carousel_projects`
   - `owner_user_id`
   - `template_type_id`
   - `slide*_template_id_snapshot` fields
   - `archived_at` (soft archive)
+  - `ai_image_autoremovebg_enabled` (per-project default for AI-generated BG removal toggle)
   - **Theme / style preset (project-wide)**:
     - `project_background_color` (Canvas base)
     - `project_text_color`
@@ -399,6 +432,9 @@ Key tables used by `/editor`:
   - Migration: `supabase/migrations/20260121_000002_add_poppy_conversation_url_to_editor_users.sql`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
+  - Per-user image model: `public.editor_users.ai_image_gen_model` (migration: `supabase/migrations/20260122_000001_add_ai_image_gen_model_to_editor_users.sql`)
+  - Per-project BG Removal default: `public.carousel_projects.ai_image_autoremovebg_enabled` (migration: `supabase/migrations/20260123_000001_add_ai_image_autoremovebg_enabled_to_carousel_projects.sql`)
+  - Server route: `src/app/api/editor/projects/jobs/generate-ai-image/route.ts` (always stores PNG; mask always present)
 - **Realign button behavior**: `src/app/editor/EditorShell.tsx` (calls the existing live-layout pipeline)
 - **Canvas selection/overlay issues**: `CarouselPreviewVision.tsx` (especially `contextTop` drawing and transforms)
 - **Smart Guides behavior**: `smartGuides.ts` + wiring in `CarouselPreviewVision.tsx`

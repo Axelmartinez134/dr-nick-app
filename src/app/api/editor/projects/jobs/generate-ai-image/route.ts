@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthedSupabase } from '../../../_utils';
 import { generateMedicalImage } from '@/lib/gpt-image-generator';
+import { generateGeminiImagePng } from '@/lib/gemini-image-generator';
 import { computeAlphaMask128FromPngBytes } from '../../slides/image/_mask';
 import { computeDefaultUploadedImagePlacement } from '@/lib/templatePlacement';
+import sharp from 'sharp';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180; // 3 minutes for image generation + RemoveBG
@@ -92,6 +94,7 @@ type Body = {
   projectId: string;
   slideIndex: number;
   prompt: string;
+  imageConfig?: { aspectRatio?: string; imageSize?: string };
 };
 
 type GenerateResponse = {
@@ -106,6 +109,7 @@ type GenerateResponse = {
   bgRemovalStatus?: 'disabled' | 'processing' | 'succeeded' | 'failed';
   original?: { bucket: typeof BUCKET; path: string; url: string; contentType: string };
   processed?: { bucket: typeof BUCKET; path: string; url: string; contentType: string };
+  debug?: any;
   error?: string;
 };
 
@@ -145,7 +149,7 @@ export async function POST(req: NextRequest) {
   const { data: project, error: projErr } = await supabase
     .from('carousel_projects')
     .select(
-      'id, owner_user_id, template_type_id, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot'
+      'id, owner_user_id, template_type_id, ai_image_autoremovebg_enabled, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot'
     )
     .eq('id', projectId)
     .eq('owner_user_id', user.id)
@@ -162,6 +166,30 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Per-project setting: default ON.
+  const aiImageAutoRemoveBgEnabled = (project as any)?.ai_image_autoremovebg_enabled !== false;
+
+  // Enforce per-user model selection from DB (client cannot override).
+  const { data: editorUserRow, error: editorUserErr } = await supabase
+    .from('editor_users')
+    .select('user_id, ai_image_gen_model')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (editorUserErr) {
+    // Distinguish true auth/permission issues from schema/runtime problems (e.g. migration not applied).
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Editor user lookup failed: ${editorUserErr.message}`,
+      } as GenerateResponse,
+      { status: 500 }
+    );
+  }
+  if (!editorUserRow?.user_id) {
+    return NextResponse.json({ success: false, error: 'Forbidden' } as GenerateResponse, { status: 403 });
+  }
+  const aiImageGenModel = String((editorUserRow as any)?.ai_image_gen_model || 'gpt-image-1.5').trim();
 
   const svc = serviceClient();
   if (!svc) {
@@ -217,6 +245,7 @@ export async function POST(req: NextRequest) {
   console.log('[generate-ai-image] 📋 Created job:', jobId);
 
   const baseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
+  // NOTE: we ALWAYS store PNG in Supabase (even if the upstream model returned JPEG).
   const originalPath = `${baseDir}/ai-original.png`;
   const processedPath = `${baseDir}/ai-image.png`;
   const v = String(Date.now());
@@ -225,19 +254,58 @@ export async function POST(req: NextRequest) {
   let original: GenerateResponse['original'] = undefined;
 
   try {
-    // Step 1: Generate image using GPT-Image-1.5
+    // Step 1: Generate image using the per-user selected provider
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:generating' });
-    console.log('[generate-ai-image] 🎨 Calling GPT-Image-1.5...');
-    const dataUrl = await generateMedicalImage(prompt);
-    
-    // Extract base64 from data URL
-    const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
-    if (!base64Match) {
-      throw new Error('Invalid image data returned from GPT-Image');
+    // IMPORTANT: Send ONLY the user-provided prompt text (no hidden suffix).
+    // Any constraints should live in the prompt generator / UI, not injected server-side.
+    const noTextPrompt = String(prompt || '').trim();
+
+    let sourceMimeType: 'image/png' | 'image/jpeg' = 'image/png';
+
+    if (aiImageGenModel === 'gemini-3-pro-image-preview') {
+      console.log('[generate-ai-image] 🎨 Calling Gemini image gen:', aiImageGenModel);
+      const apiKey = String(process.env.GOOGLE_AI_API_KEY || '').trim();
+      const aspectRatio = String((body as any)?.imageConfig?.aspectRatio || '3:4').trim();
+      const imageSize = String((body as any)?.imageConfig?.imageSize || '1K').trim();
+      const out = await generateGeminiImagePng({
+        prompt: noTextPrompt,
+        model: 'gemini-3-pro-image-preview',
+        apiKey,
+        imageConfig: { aspectRatio, imageSize },
+      });
+      const mime = String(out.mimeType || '').trim().toLowerCase();
+      if (mime === 'image/jpeg' || mime === 'image/jpg') {
+        sourceMimeType = 'image/jpeg';
+      } else {
+        sourceMimeType = 'image/png';
+      }
+      originalBuffer = out.bytes;
+      console.log('[generate-ai-image] ✅ Gemini image generated:', {
+        mimeType: out.mimeType,
+        bytes: originalBuffer.length,
+      });
+    } else {
+      // Default/fallback: OpenAI GPT Image
+      console.log('[generate-ai-image] 🎨 Calling GPT-Image-1.5...');
+      const dataUrl = await generateMedicalImage(noTextPrompt);
+
+      // Extract base64 from data URL
+      const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+      if (!base64Match) {
+        throw new Error('Invalid image data returned from GPT-Image');
+      }
+      const imageBase64 = base64Match[1];
+      sourceMimeType = 'image/png';
+      originalBuffer = Buffer.from(imageBase64, 'base64');
+      console.log('[generate-ai-image] ✅ GPT-Image generated, size:', originalBuffer.length, 'bytes');
     }
-    const imageBase64 = base64Match[1];
-    originalBuffer = Buffer.from(imageBase64, 'base64');
-    console.log('[generate-ai-image] ✅ GPT-Image generated, size:', originalBuffer.length, 'bytes');
+
+    // Normalize to PNG for all downstream handling + storage.
+    // (This ensures "always store PNG" even when Gemini returns JPEG.)
+    if (sourceMimeType !== 'image/png') {
+      originalBuffer = await sharp(originalBuffer).png().toBuffer();
+      sourceMimeType = 'image/png';
+    }
 
     // Step 2: Upload original (for retries and fallback)
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:uploading-original' });
@@ -249,26 +317,35 @@ export async function POST(req: NextRequest) {
       throw new Error(`Failed to upload original: ${upOrigErr.message}`);
     }
     const { data: origUrl } = svc.storage.from(BUCKET).getPublicUrl(originalPath);
-    original = { bucket: BUCKET, path: originalPath, url: withVersion(origUrl.publicUrl, v), contentType: 'image/png' };
+    original = {
+      bucket: BUCKET,
+      path: originalPath,
+      url: withVersion(origUrl.publicUrl, v),
+      contentType: 'image/png',
+    };
     console.log('[generate-ai-image] ✅ Original uploaded to storage');
 
-    // Step 3: Run RemoveBG (with fallback)
-    await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:removebg' });
+    // Step 3: Run RemoveBG (optional per-project)
     const apiKey = String(process.env.REMOVEBG_API_KEY || '').trim();
     
     let processedBuffer: Buffer | null = null;
     let outMask: GenerateResponse['mask'] = undefined;
-    let bgRemovalStatus: 'succeeded' | 'failed' = 'failed';
+    let bgRemovalStatus: 'disabled' | 'succeeded' | 'failed' = aiImageAutoRemoveBgEnabled ? 'failed' : 'disabled';
     let processed: GenerateResponse['processed'] = undefined;
     let finalUrl = original.url;
     let finalPath = originalPath;
     let finalBufferForDims: Buffer | null = originalBuffer;
 
-    if (apiKey) {
+    if (aiImageAutoRemoveBgEnabled && apiKey) {
       try {
+        await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:removebg' });
         console.log('[generate-ai-image] 🔄 Running RemoveBG...');
         const upstream = new FormData();
-        upstream.append('image_file', new Blob([originalBuffer], { type: 'image/png' }), 'image.png');
+        upstream.append(
+          'image_file',
+          new Blob([originalBuffer], { type: 'image/png' }),
+          'image.png'
+        );
         upstream.append('format', 'png');
 
         const removeBgRes = await fetch('https://removebgapi.com/api/v1/remove', {
@@ -280,14 +357,10 @@ export async function POST(req: NextRequest) {
         if (!removeBgRes.ok) {
           const errText = await removeBgRes.text().catch(() => '');
           console.warn('[generate-ai-image] ⚠️ RemoveBG failed:', removeBgRes.status, errText);
-          // Don't throw - fall back to original image
+          // Fall back to the original PNG bytes.
         } else {
           processedBuffer = Buffer.from(await removeBgRes.arrayBuffer());
           console.log('[generate-ai-image] ✅ RemoveBG succeeded, size:', processedBuffer.length, 'bytes');
-
-          // Compute alpha mask for text wrapping
-          outMask = computeAlphaMask128FromPngBytes(new Uint8Array(processedBuffer), 32, 128, 128);
-          console.log('[generate-ai-image] ✅ Alpha mask computed');
 
           // Upload processed image
           await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:uploading' });
@@ -312,9 +385,14 @@ export async function POST(req: NextRequest) {
         console.warn('[generate-ai-image] ⚠️ RemoveBG error (falling back to original):', bgErr?.message);
         // Continue with original image as fallback
       }
-    } else {
+    } else if (aiImageAutoRemoveBgEnabled && !apiKey) {
       console.warn('[generate-ai-image] ⚠️ No REMOVEBG_API_KEY, skipping background removal');
     }
+
+    // Always compute alpha mask for text wrapping from the final PNG bytes.
+    // - If BG removal is OFF, this will naturally be a full-opaque rectangular mask.
+    // - If BG removal is ON but fails, we still provide a mask so text wrapping logic stays deterministic.
+    outMask = computeAlphaMask128FromPngBytes(new Uint8Array(finalBufferForDims || originalBuffer), 32, 128, 128);
 
     // Persist the image to this slide's layout_snapshot server-side so reloads can't "lose" it.
     const templateIdForSlide =
@@ -366,13 +444,13 @@ export async function POST(req: NextRequest) {
         height: placement.height,
         url: finalUrl,
         storage: { bucket: BUCKET, path: finalPath },
-        bgRemovalEnabled: true,
+        bgRemovalEnabled: !!aiImageAutoRemoveBgEnabled,
         bgRemovalStatus,
         ...(original ? { original: { url: original.url, storage: { bucket: original.bucket, path: original.path } } } : {}),
         ...(processed
           ? { processed: { url: processed.url, storage: { bucket: processed.bucket, path: processed.path } } }
           : {}),
-        ...(outMask ? { mask: outMask } : {}),
+        mask: outMask,
         isAiGenerated: true,
       },
     };
@@ -395,11 +473,18 @@ export async function POST(req: NextRequest) {
       path: finalPath,
       url: finalUrl,
       contentType: 'image/png',
-      bgRemovalEnabled: true,
+      bgRemovalEnabled: !!aiImageAutoRemoveBgEnabled,
       bgRemovalStatus,
-      ...(outMask ? { mask: outMask } : {}),
+      mask: outMask,
       original,
       ...(processed ? { processed } : {}),
+      debug: {
+        // Debug only: show EXACT prompt sent to the upstream image model (no API keys).
+        aiImageGenModel,
+        aiImageAutoRemoveBgEnabled,
+        promptSentToImageModel: noTextPrompt,
+        imageConfigUsed: (body as any)?.imageConfig || null,
+      },
     } as GenerateResponse);
   } catch (e: any) {
     console.error('[generate-ai-image] ❌ Error:', e?.message || e);

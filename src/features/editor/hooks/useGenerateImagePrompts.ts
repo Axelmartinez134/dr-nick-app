@@ -97,6 +97,14 @@ export function useGenerateImagePrompts(params: {
         }
         const prompts = data.prompts || [];
         addLog(`🎨 Received ${prompts.length} AI image prompts`);
+        if (data?.debug?.promptSentToClaude) {
+          try {
+            addLog(`🧪 ImagePrompt full prompt sent to Claude (JSON):`);
+            addLog(JSON.stringify(String(data.debug.promptSentToClaude || '')));
+          } catch {
+            // ignore
+          }
+        }
         // Apply UI updates ONLY if the user is still viewing this same project.
         if (currentProjectIdRef.current === projectIdAtStart) {
           setSlides((prev: any[]) =>

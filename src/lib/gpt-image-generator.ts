@@ -5,24 +5,17 @@ export async function generateMedicalImage(prompt: string): Promise<string> {
   console.log('[GPT-Image-1.5] 🎨 Starting image generation with GPT-Image-1.5...');
   console.log('[GPT-Image-1.5] ⏰ Start time:', new Date().toLocaleTimeString());
   
-  // CRITICAL: Ensure no text is generated in the image
-  const noTextPrompt = `${prompt}
+  // IMPORTANT: Use the prompt exactly as provided by the caller (no hidden suffix injection).
+  const exactPrompt = String(prompt || '').trim();
 
-CRITICAL REQUIREMENTS:
-- NO TEXT, NO LABELS, NO LETTERS, NO WORDS in the image
-- Pure visual illustration only
-- Text will be added separately by the design system
-- Focus on visual medical illustration without any typography
-- High quality, professional medical aesthetic`;
-
-  console.log('[GPT-Image-1.5] 📝 Full prompt:', noTextPrompt);
-  console.log('[GPT-Image-1.5] 📏 Prompt length:', noTextPrompt.length, 'characters (max 32000)');
+  console.log('[GPT-Image-1.5] 📝 Full prompt:', exactPrompt);
+  console.log('[GPT-Image-1.5] 📏 Prompt length:', exactPrompt.length, 'characters (max 32000)');
   console.log('[GPT-Image-1.5] 🔑 API key configured:', !!process.env.OPENAI_API_KEY);
   console.log('[GPT-Image-1.5] 🔑 API key prefix:', process.env.OPENAI_API_KEY?.substring(0, 20) + '...');
 
   const requestBody = {
     model: 'gpt-image-1.5',
-    prompt: noTextPrompt,
+    prompt: exactPrompt,
     n: 1,
     size: '1024x1536', // Portrait format (1080x1440 will be scaled from this)
     quality: 'high', // High quality for best fidelity

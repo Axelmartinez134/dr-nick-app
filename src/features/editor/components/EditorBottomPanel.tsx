@@ -1,6 +1,7 @@
 /* eslint-disable react/no-unstable-nested-components */
 "use client";
 
+import { useEffect, useRef } from "react";
 import { RichTextInput } from "@/app/editor/RichTextInput";
 import { DebugCard } from "./DebugCard";
 import { useEditorSelector } from "@/features/editor/store";
@@ -9,6 +10,25 @@ export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
   const actions = useEditorSelector((s: any) => (s as any).actions);
+  const aiSettingsPopoverRef = useRef<HTMLDivElement | null>(null);
+
+  // Dismiss Gemini settings popover on outside click (and not on the ⚙️ toggle button).
+  // NOTE: must be unconditionally declared (hooks cannot be after an early return).
+  const aiImageSettingsOpenForDismiss = !!ui?.aiImageSettingsOpen;
+  useEffect(() => {
+    if (!aiImageSettingsOpenForDismiss) return;
+    if (!actions) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (aiSettingsPopoverRef.current?.contains(target)) return;
+      if (target.closest?.('[data-ai-settings-toggle="1"]')) return;
+      actions.onClickToggleAiImageSettings?.();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [aiImageSettingsOpenForDismiss, actions]);
+
   if (!ui || !actions) return null;
 
   const {
@@ -26,6 +46,12 @@ export function EditorBottomPanel() {
     layoutHistoryLength,
     showLayoutOverlays,
     addLog,
+    aiImagePromptDraft,
+    aiImageGenModel,
+    aiImageAutoRemoveBgEnabled,
+    aiImageSettingsOpen,
+    aiImageAspectRatio,
+    aiImageSize,
   } = ui;
 
   return (
@@ -247,7 +273,7 @@ export function EditorBottomPanel() {
                 <textarea
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 text-sm shadow-sm"
                   rows={4}
-                  value={slides[activeSlideIndex]?.draftAiImagePrompt || ""}
+                  value={String(aiImagePromptDraft ?? slides[activeSlideIndex]?.draftAiImagePrompt ?? "")}
                   onChange={(e) => actions.onChangeAiImagePrompt(e.target.value)}
                   disabled={loading || switchingSlides || copyGenerating || ui.imagePromptGenerating}
                   placeholder="AI-generated image prompt will appear here after Generate Copy..."
@@ -258,35 +284,133 @@ export function EditorBottomPanel() {
 
                 {/* Generate Image Button with Progress Bar */}
                 <div className="mt-4">
-                  <button
-                    className="w-full h-12 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
-                    disabled={
-                      !currentProjectId ||
-                      ui.aiImageGeneratingThis ||
-                      copyGenerating ||
-                      switchingSlides ||
-                      ui.imagePromptGenerating ||
-                      !(slides[activeSlideIndex]?.draftAiImagePrompt || "").trim()
-                    }
-                    onClick={actions.onClickGenerateAiImage}
-                  >
-                    {ui.aiImageGeneratingThis ? (
-                      <>
-                        <div
-                          className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
-                          style={{ width: `${ui.aiImageProgressThis || 0}%` }}
-                        />
-                        <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
-                          <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
-                          <span className="text-sm font-bold">
-                            {Math.round(ui.aiImageProgressThis || 0)}%
-                          </span>
-                        </span>
-                      </>
-                    ) : (
-                      "🎨 Generate Image"
-                    )}
-                  </button>
+                  <div className="relative">
+                    <div className="flex flex-nowrap items-stretch gap-2">
+                      <select
+                        className="h-12 w-[280px] max-w-[280px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm"
+                        value={String(aiImageGenModel || "gpt-image-1.5")}
+                        disabled={ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
+                        onChange={(e) => actions.onChangeAiImageGenModel(e.target.value as any)}
+                        title="AI image generation model (per-user default)"
+                      >
+                        <option value="gpt-image-1.5">GPT Image (gpt-image-1.5)</option>
+                        <option value="gemini-3-pro-image-preview">Gemini 3 Pro (gemini-3-pro-image-preview)</option>
+                      </select>
+
+                      <div
+                        className="h-12 shrink-0 rounded-lg border border-slate-200 bg-white px-3 shadow-sm flex items-center gap-2"
+                        title="If ON, AI-generated images will auto-run background removal (per project)."
+                      >
+                        <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">BG Removal?</span>
+                        <button
+                          type="button"
+                          className={[
+                            "h-8 w-14 rounded-full transition-colors",
+                            (aiImageAutoRemoveBgEnabled ?? true) ? "bg-black" : "bg-slate-300",
+                          ].join(" ")}
+                          onClick={() => actions.onToggleAiImageAutoRemoveBg?.()}
+                          disabled={!currentProjectId || ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
+                        >
+                          <span
+                            className={[
+                              "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                              (aiImageAutoRemoveBgEnabled ?? true) ? "translate-x-6" : "translate-x-1",
+                            ].join(" ")}
+                          />
+                        </button>
+                      </div>
+
+                      {String(aiImageGenModel) === "gemini-3-pro-image-preview" ? (
+                        <button
+                          type="button"
+                          data-ai-settings-toggle="1"
+                          className="h-12 w-12 shrink-0 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                          onClick={actions.onClickToggleAiImageSettings}
+                          disabled={ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
+                          title="Image settings (session only)"
+                        >
+                          ⚙️
+                        </button>
+                      ) : null}
+
+                      <button
+                        className="h-12 flex-1 min-w-0 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
+                        disabled={
+                          !currentProjectId ||
+                          ui.aiImageGeneratingThis ||
+                          copyGenerating ||
+                          switchingSlides ||
+                          ui.imagePromptGenerating ||
+                          !String(aiImagePromptDraft ?? slides[activeSlideIndex]?.draftAiImagePrompt ?? "").trim()
+                        }
+                        onClick={actions.onClickGenerateAiImage}
+                      >
+                        {ui.aiImageGeneratingThis ? (
+                          <>
+                            <div
+                              className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
+                              style={{ width: `${ui.aiImageProgressThis || 0}%` }}
+                            />
+                            <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
+                              <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
+                              <span className="text-sm font-bold">{Math.round(ui.aiImageProgressThis || 0)}%</span>
+                            </span>
+                          </>
+                        ) : (
+                          "🎨 Generate Image"
+                        )}
+                      </button>
+                    </div>
+
+                    {String(aiImageGenModel) === "gemini-3-pro-image-preview" && aiImageSettingsOpen ? (
+                      <div
+                        ref={aiSettingsPopoverRef}
+                        className="absolute right-0 mt-2 w-[320px] rounded-xl border border-slate-200 bg-white shadow-lg p-3 z-20"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="text-xs font-semibold text-slate-700">Gemini image settings (session only)</div>
+                          <button
+                            type="button"
+                            className="h-7 w-7 rounded-md border border-slate-200 bg-white text-slate-600 text-sm font-semibold hover:bg-slate-50"
+                            onClick={actions.onClickToggleAiImageSettings}
+                            title="Close"
+                            aria-label="Close"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-xs text-slate-600">
+                            Aspect ratio
+                            <select
+                              className="mt-1 w-full h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900"
+                              value={String(aiImageAspectRatio || "3:4")}
+                              onChange={(e) => actions.onChangeAiImageAspectRatio(e.target.value)}
+                            >
+                              {["1:1","2:3","3:2","3:4","4:3","4:5","5:4","9:16","16:9","21:9"].map((r) => (
+                                <option key={r} value={r}>{r}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="text-xs text-slate-600">
+                            Size
+                            <select
+                              className="mt-1 w-full h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-900"
+                              value={String(aiImageSize || "1K")}
+                              onChange={(e) => actions.onChangeAiImageSize(e.target.value)}
+                            >
+                              {["1K","2K","4K"].map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          These settings apply to the next Gemini image generation only (not saved yet).
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                   {ui.aiImageErrorThis && (
                     <div className="mt-2 text-xs text-red-600">{ui.aiImageErrorThis}</div>
                   )}
