@@ -54,6 +54,11 @@ const noopActions: EditorActions = {
   setShowDebugPreview: () => {},
   setActiveSlideImageBgRemoval: () => {},
   deleteImageForActiveSlide: () => {},
+  onOpenImageLibraryModal: () => {},
+  onCloseImageLibraryModal: () => {},
+  onToggleImageLibraryBgRemovalAtInsert: () => {},
+  fetchRecentAssets: async () => [],
+  onInsertRecentImage: () => {},
 };
 
 const defaultState: EditorState = {
@@ -78,6 +83,8 @@ const defaultState: EditorState = {
   templateSettingsOpen: false,
   promptModalOpen: false,
   promptModalSection: "prompt",
+  imageLibraryModalOpen: false,
+  imageLibraryBgRemovalEnabledAtInsert: false,
   templateTypePrompt: "",
   templateTypeEmphasisPrompt: "",
   templateTypeImageGenPrompt: "",

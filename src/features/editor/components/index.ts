@@ -11,6 +11,8 @@ export { TemplateSettingsModal } from './TemplateSettingsModal';
 export { PromptsModal } from './PromptsModal';
 export type { PromptsModalProps } from './PromptsModal';
 
+export { ImageLibraryModal } from './ImageLibraryModal';
+
 export { DebugCard } from './DebugCard';
 export type { DebugCardProps } from './DebugCard';
 

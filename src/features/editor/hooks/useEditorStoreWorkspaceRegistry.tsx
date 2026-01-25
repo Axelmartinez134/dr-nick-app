@@ -88,7 +88,8 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
         computeTemplateIdForSlide: (i: number) => workspaceImplRef.current?.computeTemplateIdForSlide?.(i),
         hasImageForActiveSlide: () => workspaceImplRef.current?.hasImageForActiveSlide?.(),
         deleteImageForActiveSlide: (source: "menu" | "button") => workspaceImplRef.current?.deleteImageForActiveSlide?.(source),
-        uploadImageForActiveSlide: (file: File) => workspaceImplRef.current?.uploadImageForActiveSlide?.(file),
+        uploadImageForActiveSlide: (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) =>
+          workspaceImplRef.current?.uploadImageForActiveSlide?.(file, opts),
         handleUserImageChange: (payload: any) => workspaceImplRef.current?.handleUserImageChange?.(payload),
         onUserTextChangeRegular: (change: any) => workspaceImplRef.current?.onUserTextChangeRegular?.(change),
         onUserTextChangeEnhanced: (change: any) => workspaceImplRef.current?.onUserTextChangeEnhanced?.(change),
@@ -153,7 +154,12 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            imageFileInputRef.current?.click();
+            try {
+              // Phase 1: left click opens the Image Library modal (upload/recents/logos).
+              editorStore.getState?.().actions?.onOpenImageLibraryModal?.();
+            } catch {
+              // ignore
+            }
           }}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -435,7 +441,8 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
       computeTemplateIdForSlide,
       hasImageForActiveSlide,
       deleteImageForActiveSlide: (source: "menu" | "button") => void deleteImageForActiveSlide(source),
-      uploadImageForActiveSlide: (file: File) => void uploadImageForActiveSlide(file),
+      uploadImageForActiveSlide: (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) =>
+        void uploadImageForActiveSlide(file, opts),
       handleUserImageChange,
       onUserTextChangeRegular: handleRegularCanvasTextChange,
       onUserTextChangeEnhanced: handleEnhancedCanvasTextChange,

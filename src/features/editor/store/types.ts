@@ -88,6 +88,31 @@ export type EditorActions = {
 
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
+
+  // Image Library modal (Phase 1)
+  onOpenImageLibraryModal: () => void;
+  onCloseImageLibraryModal: () => void;
+  onToggleImageLibraryBgRemovalAtInsert: () => void;
+
+  // Image Library recents (Phase 2)
+  fetchRecentAssets: (limit?: number) => Promise<
+    Array<{
+      id: string;
+      url: string;
+      storage_bucket: string | null;
+      storage_path: string | null;
+      kind: string;
+      last_used_at: string;
+      use_count: number;
+    }>
+  >;
+  onInsertRecentImage: (asset: {
+    id: string;
+    url: string;
+    storage_bucket?: string | null;
+    storage_path?: string | null;
+    kind?: string | null;
+  }) => Promise<void> | void;
 };
 
 export type EditorWorkspaceState = {
@@ -108,7 +133,7 @@ export type EditorWorkspaceState = {
   imageBusy: boolean;
   hasImageForActiveSlide: () => boolean;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
-  uploadImageForActiveSlide: (file: File) => void;
+  uploadImageForActiveSlide: (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) => void;
   handleUserImageChange: (payload: any) => void;
 
   onUserTextChangeRegular: (change: any) => void;
@@ -343,6 +368,8 @@ export type EditorState = {
   templateSettingsOpen: boolean;
   promptModalOpen: boolean;
   promptModalSection: PromptSection;
+  imageLibraryModalOpen: boolean;
+  imageLibraryBgRemovalEnabledAtInsert: boolean;
 
   // Prompt values (template-type overrides)
   templateTypePrompt: string;

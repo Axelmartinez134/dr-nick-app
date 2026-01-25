@@ -96,6 +96,13 @@ type Args = {
   setShowDebugPreview: (next: boolean) => void;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
+
+  // Image Library modal (Phase 1)
+  onOpenImageLibraryModal: () => void;
+  onCloseImageLibraryModal: () => void;
+  onToggleImageLibraryBgRemovalAtInsert: () => void;
+  fetchRecentAssets: (limit?: number) => Promise<any[]>;
+  onInsertRecentImage: (asset: { id: string; url: string; storage_bucket?: string | null; storage_path?: string | null; kind?: string | null }) => Promise<void> | void;
 };
 
 export function useEditorStoreActionsSync(args: Args) {
@@ -182,6 +189,12 @@ export function useEditorStoreActionsSync(args: Args) {
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
+
+    onOpenImageLibraryModal,
+    onCloseImageLibraryModal,
+    onToggleImageLibraryBgRemovalAtInsert,
+    fetchRecentAssets,
+    onInsertRecentImage,
   } = args;
 
   // Phase 5E: stop mirroring `actions` into the store on every render.
@@ -372,6 +385,12 @@ export function useEditorStoreActionsSync(args: Args) {
     setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
     setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
     deleteImageForActiveSlide: (source: "menu" | "button") => deleteImageForActiveSlide(source),
+
+    onOpenImageLibraryModal: () => onOpenImageLibraryModal(),
+    onCloseImageLibraryModal: () => onCloseImageLibraryModal(),
+    onToggleImageLibraryBgRemovalAtInsert: () => onToggleImageLibraryBgRemovalAtInsert(),
+    fetchRecentAssets: (limit?: number) => fetchRecentAssets(limit),
+    onInsertRecentImage: (asset: any) => onInsertRecentImage(asset),
   };
 
   const stableActions = useMemo(
@@ -440,6 +459,12 @@ export function useEditorStoreActionsSync(args: Args) {
       setShowDebugPreview: (next: boolean) => implRef.current?.setShowDebugPreview?.(next),
       setActiveSlideImageBgRemoval: (nextEnabled: boolean) => implRef.current?.setActiveSlideImageBgRemoval?.(nextEnabled),
       deleteImageForActiveSlide: (source: "menu" | "button") => implRef.current?.deleteImageForActiveSlide?.(source),
+
+      onOpenImageLibraryModal: () => implRef.current?.onOpenImageLibraryModal?.(),
+      onCloseImageLibraryModal: () => implRef.current?.onCloseImageLibraryModal?.(),
+      onToggleImageLibraryBgRemovalAtInsert: () => implRef.current?.onToggleImageLibraryBgRemovalAtInsert?.(),
+      fetchRecentAssets: (limit?: number) => implRef.current?.fetchRecentAssets?.(limit) ?? Promise.resolve([]),
+      onInsertRecentImage: (asset: any) => implRef.current?.onInsertRecentImage?.(asset),
     }),
     []
   );

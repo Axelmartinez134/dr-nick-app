@@ -20,6 +20,7 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
+import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
 import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSlidesPanel";
 import { EditorSlidesRow } from "@/features/editor/components/EditorSlidesRow";
@@ -167,6 +168,33 @@ export default function EditorShell() {
   const setPromptModalSection = useCallback((next: "prompt" | "emphasis" | "image") => {
     editorStore.setState({ promptModalSection: next } as any);
   }, [editorStore]);
+
+  // Phase 6A (Image Library): store-owned modal state (Phase 1)
+  const imageLibraryModalOpen = useEditorSelector((s: any) => !!(s as any).imageLibraryModalOpen);
+  const setImageLibraryModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ imageLibraryModalOpen: !!next } as any);
+  }, [editorStore]);
+  const imageLibraryBgRemovalEnabledAtInsert = useEditorSelector((s: any) => !!(s as any).imageLibraryBgRemovalEnabledAtInsert);
+  const setImageLibraryBgRemovalEnabledAtInsert = useCallback((next: boolean) => {
+    editorStore.setState({ imageLibraryBgRemovalEnabledAtInsert: !!next } as any);
+  }, [editorStore]);
+
+  const onOpenImageLibraryModal = useCallback(() => {
+    // Always reset to OFF on each open (per spec).
+    setImageLibraryBgRemovalEnabledAtInsert(false);
+    setImageLibraryModalOpen(true);
+  }, [setImageLibraryBgRemovalEnabledAtInsert, setImageLibraryModalOpen]);
+
+  const onCloseImageLibraryModal = useCallback(() => {
+    setImageLibraryModalOpen(false);
+    // Always reset to OFF when closing as well (so reopening is predictable).
+    setImageLibraryBgRemovalEnabledAtInsert(false);
+  }, [setImageLibraryBgRemovalEnabledAtInsert, setImageLibraryModalOpen]);
+
+  const onToggleImageLibraryBgRemovalAtInsert = useCallback(() => {
+    if (!imageLibraryModalOpen) return;
+    setImageLibraryBgRemovalEnabledAtInsert(!imageLibraryBgRemovalEnabledAtInsert);
+  }, [imageLibraryBgRemovalEnabledAtInsert, imageLibraryModalOpen, setImageLibraryBgRemovalEnabledAtInsert]);
 
   const templateTypePrompt = useEditorSelector((s) => String(s.templateTypePrompt || ""));
   const setTemplateTypePrompt = useCallback((next: string) => {
@@ -3254,6 +3282,7 @@ export default function EditorShell() {
 
   const {
     uploadImageForActiveSlide,
+    insertRecentImageForActiveSlide,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
     handleUserImageChange,
@@ -3289,6 +3318,37 @@ export default function EditorShell() {
     runRealignTextForActiveSlide,
     scheduleAutoRealignAfterRelease,
   });
+
+  const onInsertRecentImage = useCallback(
+    async (asset: { id: string; url: string; storage_bucket?: string | null; storage_path?: string | null; kind?: string | null }) => {
+      const url = String(asset?.url || "").trim();
+      if (!url) return;
+      // "Fresh insert": use the current modal toggle (default OFF) for bg removal at insert.
+      const bgRemovalEnabledAtInsert = !!imageLibraryBgRemovalEnabledAtInsert;
+      await insertRecentImageForActiveSlide(
+        {
+          url,
+          storage: {
+            bucket: String(asset?.storage_bucket || "").trim() || null,
+            path: String(asset?.storage_path || "").trim() || null,
+          },
+          kind: String(asset?.kind || "upload"),
+        },
+        { bgRemovalEnabledAtInsert }
+      );
+    },
+    [imageLibraryBgRemovalEnabledAtInsert, insertRecentImageForActiveSlide]
+  );
+
+  const fetchRecentAssets = useCallback(
+    async (limit?: number) => {
+      const n = Number.isFinite(Number(limit)) ? Math.max(1, Math.min(100, Math.floor(Number(limit)))) : 30;
+      const j = await fetchJson(`/api/editor/assets/recents?limit=${encodeURIComponent(String(n))}`, { method: "GET" });
+      if (!j?.success) throw new Error(j?.error || "Failed to load recents");
+      return Array.isArray(j?.recents) ? j.recents : [];
+    },
+    [fetchJson]
+  );
 
   const hasImageForActiveSlide = () => {
     const curLayout = (layoutData as any)?.layout || null;
@@ -4329,6 +4389,13 @@ export default function EditorShell() {
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
+
+    // Image Library modal (Phase 1)
+    onOpenImageLibraryModal,
+    onCloseImageLibraryModal,
+    onToggleImageLibraryBgRemovalAtInsert,
+    fetchRecentAssets,
+    onInsertRecentImage,
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).
@@ -4554,6 +4621,8 @@ export default function EditorShell() {
       <TemplateSettingsModal />
 
       <PromptsModal promptTextareaRef={promptTextareaRef} emphasisTextareaRef={emphasisTextareaRef} />
+
+      <ImageLibraryModal />
     </div>
   );
 }

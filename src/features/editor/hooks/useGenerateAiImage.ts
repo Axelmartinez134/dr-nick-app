@@ -393,6 +393,22 @@ export function useGenerateAiImage(params: {
 
         await saveSlidePatchForProject(projectIdAtStart, targetSlide, { layoutSnapshot: nextLayout });
         addLog(`🖼️ AI image placed on slide ${targetSlide + 1}`);
+
+        // Phase 2 (Recents): track AI images as recent assets (best-effort).
+        try {
+          await fetch('/api/editor/assets/recents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              url,
+              storage: { bucket: 'carousel-project-images', path },
+              kind: 'ai',
+            }),
+          });
+        } catch {
+          // ignore
+        }
+
         setAiImageProgressByKey((prev) => ({ ...prev, [key]: 100 }));
       } catch (e: any) {
         addLog(`❌ AI image generation failed: ${e?.message || 'unknown error'}`);

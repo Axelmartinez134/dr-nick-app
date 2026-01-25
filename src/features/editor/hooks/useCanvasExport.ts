@@ -62,8 +62,8 @@ export function useCanvasExport(params: {
       await new Promise((r) => setTimeout(r, 80));
       const dataURL = fabricCanvas.toDataURL({
         format: "png",
-        quality: 1.0,
-        multiplier: 1,
+        quality: 3.0,
+        multiplier: 3,
       });
       const res = await fetch(dataURL);
       return await res.blob();

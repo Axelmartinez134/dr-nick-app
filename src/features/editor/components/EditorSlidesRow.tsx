@@ -18,6 +18,10 @@ export function EditorSlidesRow() {
     return false;
   });
   const isMobile = useEditorSelector((s) => s.isMobile);
+  const actions = useEditorSelector((s: any) => (s as any).actions);
+  const imageLibraryBgRemovalEnabledAtInsert = useEditorSelector(
+    (s: any) => !!(s as any).imageLibraryBgRemovalEnabledAtInsert
+  );
 
   const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
   const projectTextColor = useEditorSelector((s) => s.projectTextColor);
@@ -135,7 +139,9 @@ export function EditorSlidesRow() {
             if (!f) return;
             // Reset input so selecting the same file again triggers onChange.
             e.currentTarget.value = "";
-            uploadImageForActiveSlide(f);
+            // Close the modal immediately after file selection (upload continues async).
+            actions?.onCloseImageLibraryModal?.();
+            uploadImageForActiveSlide(f, { bgRemovalEnabledAtInsert: imageLibraryBgRemovalEnabledAtInsert });
           }}
         />
 

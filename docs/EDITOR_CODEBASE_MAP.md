@@ -162,12 +162,40 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 ### Image ops + auto realign on release
 - **Auto realign scheduler**: `src/features/editor/hooks/useAutoRealignOnImageRelease.ts`
 - **Image ops**: `src/features/editor/hooks/useImageOps.ts`
+  - Upload pipeline: `uploadImageForActiveSlide(...)`
+  - Phase 2: Recents insert pipeline: `insertRecentImageForActiveSlide(...)`
 
 ### Generation jobs
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
 - **Wiring wrapper (Stage 3D)**: `src/features/editor/hooks/useEditorJobs.ts` (centralizes how the three job hooks are wired together)
+  - Phase 2: AI image success also “touches” Recents so generated PNGs show up in the Image Library modal
+
+### Image Library modal (Phase 1/2: Upload + Recents)
+- **Modal UI**: `src/features/editor/components/ImageLibraryModal.tsx`
+  - Sections:
+    - Upload (file picker)
+    - Recents (grid of tiles, user-scoped)
+    - Logos (placeholder; Phase 3)
+  - Close behaviors: outside click, Escape key, close button
+  - Modal BG toggle:
+    - default OFF (resets on open/close)
+    - controls **BG removal at insert-time** for both Upload and Recents insert
+  - UX nuance:
+    - if modal BG toggle is ON when clicking a recent: modal stays open and shows a spinner until BG removal finishes
+
+#### Recents: stored table + API
+- **DB migration**: `supabase/migrations/20260125_000001_add_editor_recent_assets.sql`
+  - Table: `public.editor_recent_assets`
+  - Dedupe: by `(owner_user_id, storage_bucket, storage_path)` when storage is present; otherwise by `(owner_user_id, url)`
+- **Server route**: `GET/POST /api/editor/assets/recents`
+  - Implementation: `src/app/api/editor/assets/recents/route.ts`
+  - Canonicalizes URLs by stripping `?v=` so storage cache-busters don’t break dedupe
+
+#### Auth nuance (important)
+- `src/app/api/editor/_utils.ts` uses `getAuthedSupabase()` which **requires** `Authorization: Bearer <token>`.
+- Therefore the Image Library modal must load Recents via the editor’s authed `fetchJson` (wired through `state.actions.fetchRecentAssets`), not via unauthenticated `fetch()`.
 
 #### Generate Copy → Poppy routing (per editor user)
 - **Server route**: `POST /api/editor/projects/jobs/generate-copy`
@@ -274,6 +302,22 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
   - Generate again
   - Expected: background removal runs (if RemoveBG is configured) and the image + mask reflect the cutout
 
+### Manual QA (Image Library modal + Recents)
+- In `/editor`, click the **Photo/Image** icon on the active slide
+  - Expected: center Image Library modal opens
+  - Expected: BG toggle defaults to OFF each open
+- Upload a PNG/JPG/WebP
+  - Expected: upload inserts image and modal closes after file selection
+  - Expected: newly used image appears in Recents on next modal open
+- In Enhanced, generate an AI image
+  - Expected: generated image appears in Recents on next modal open
+- Click a recent tile with BG toggle OFF
+  - Expected: modal closes immediately and image inserts
+  - Expected: image `bgRemovalEnabled` is false (no cutout mask; rectangle behavior)
+- Click a recent tile with BG toggle ON
+  - Expected: modal stays open and shows spinner while BG removal runs
+  - Expected: after BG removal finishes, modal closes and the inserted image is the processed PNG + mask
+
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.
 
@@ -373,6 +417,7 @@ All fields below live on `public.carousel_projects`:
 - `POST /api/editor/projects/slides/image/delete`
 - `POST /api/editor/projects/slides/image/removebg`
 - `POST /api/editor/projects/slides/image/reprocess`
+- `GET/POST /api/editor/assets/recents` (Phase 2: Image Library → Recents)
 
 ### Jobs
 - `POST /api/editor/projects/jobs/start`
@@ -397,6 +442,8 @@ Key tables used by `/editor`:
 - `public.editor_users` (allowlist gate for `/editor`)
   - `poppy_conversation_url` (per-user Poppy board/chat/model for Generate Copy)
   - `ai_image_gen_model` (per-user default image model used by Generate Image; server enforced)
+- `public.editor_recent_assets` (Phase 2: Image Library Recents)
+  - user-scoped and deduped by storage path when available, else by URL
 - `public.carousel_projects`
   - `owner_user_id`
   - `template_type_id`
@@ -427,6 +474,11 @@ Key tables used by `/editor`:
 - **Slide autosave debouncing**: `src/features/editor/hooks/useSlidePersistence.ts`
 - **Lock layout flag helpers**: `src/features/editor/state/editorFlags.ts`
 - **Auto realign on image release**: `src/features/editor/hooks/useImageOps.ts` + `src/features/editor/hooks/useAutoRealignOnImageRelease.ts`
+- **Image Library modal (open/close / BG toggle / Recents insert)**:
+  - UI: `src/features/editor/components/ImageLibraryModal.tsx`
+  - Actions surface: `src/features/editor/hooks/useEditorStoreActionsSync.ts` (notably `fetchRecentAssets` + `onInsertRecentImage`)
+  - Wiring/orchestration: `src/app/editor/EditorShell.tsx`
+  - Recents API: `src/app/api/editor/assets/recents/route.ts`
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
   - Per-user Poppy routing URL: `public.editor_users.poppy_conversation_url`
   - Migration: `supabase/migrations/20260121_000002_add_poppy_conversation_url_to_editor_users.sql`

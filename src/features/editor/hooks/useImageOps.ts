@@ -3,7 +3,12 @@
 import { useCallback, useRef } from 'react';
 
 export type ImageOps = {
-  uploadImageForActiveSlide: (file: File) => Promise<void>;
+  uploadImageForActiveSlide: (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) => Promise<void>;
+  insertRecentImageForActiveSlide: (asset: {
+    url: string;
+    storage?: { bucket?: string | null; path?: string | null } | null;
+    kind?: string | null;
+  }, opts?: { bgRemovalEnabledAtInsert?: boolean }) => Promise<void>;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => Promise<void>;
   deleteImageForActiveSlide: (reason: 'menu' | 'button') => Promise<void>;
   handleUserImageChange: (change: {
@@ -114,7 +119,7 @@ export function useImageOps(params: {
   const imageMoveSaveTimeoutRef = useRef<number | null>(null);
 
   const uploadImageForActiveSlide = useCallback(
-    async (file: File) => {
+    async (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) => {
       if (!currentProjectId) throw new Error('Create or load a project first.');
       if (!file) return;
       if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
@@ -143,12 +148,14 @@ export function useImageOps(params: {
         if (!token) throw new Error('Not authenticated. Please sign in again.');
         if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
 
+        const bgRemovalEnabledAtInsert = opts?.bgRemovalEnabledAtInsert !== undefined ? !!opts.bgRemovalEnabledAtInsert : true;
+
         const fd = new FormData();
         fd.append('file', file);
         fd.append('projectId', projectIdAtStart);
         fd.append('slideIndex', String(slideIndexAtStart));
-        // Background removal is ON by default for new uploads (toggle lives on selected image).
-        fd.append('bgRemovalEnabled', '1');
+        // Phase 1: allow caller to decide whether BG removal runs at insert time.
+        fd.append('bgRemovalEnabled', bgRemovalEnabledAtInsert ? '1' : '0');
 
         const res = await fetch('/api/editor/projects/slides/image/upload', {
           method: 'POST',
@@ -175,6 +182,7 @@ export function useImageOps(params: {
         const placement = computeDefaultUploadedImagePlacement(snapAtStart, dims.w, dims.h);
         const mask = (j?.mask as any) || null;
         const bgRemovalStatus = String(j?.bgRemovalStatus || 'idle');
+        const bgRemovalEnabledFromServer = (j as any)?.bgRemovalEnabled === false ? false : true;
         const original = j?.original || null;
         const processed = j?.processed || null;
 
@@ -195,7 +203,7 @@ export function useImageOps(params: {
             height: placement.height,
             url,
             storage: { bucket: 'carousel-project-images', path },
-            bgRemovalEnabled: true,
+            bgRemovalEnabled: bgRemovalEnabledFromServer,
             bgRemovalStatus,
             ...(original
               ? {
@@ -235,6 +243,20 @@ export function useImageOps(params: {
         // Persist to Supabase (per-slide snapshot).
         await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
         addLog(`🖼️ Uploaded image → slide ${slideIndexAtStart + 1}`);
+
+        // Phase 2: track in Recents (best-effort, never blocks upload).
+        try {
+          await fetchJson('/api/editor/assets/recents', {
+            method: 'POST',
+            body: JSON.stringify({
+              url,
+              storage: { bucket: 'carousel-project-images', path },
+              kind: 'upload',
+            }),
+          });
+        } catch {
+          // ignore
+        }
       } finally {
         setImageBusy(false);
       }
@@ -443,6 +465,139 @@ export function useImageOps(params: {
     ]
   );
 
+  const insertRecentImageForActiveSlide = useCallback(
+    async (
+      asset: { url: string; storage?: { bucket?: string | null; path?: string | null } | null; kind?: string | null },
+      opts?: { bgRemovalEnabledAtInsert?: boolean }
+    ) => {
+      if (!currentProjectId) throw new Error('Create or load a project first.');
+      const url = String(asset?.url || '').trim();
+      if (!url) return;
+      if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
+
+      const projectIdAtStart = currentProjectId;
+      const slideIndexAtStart = activeSlideIndex;
+      const opKey = aiKey(projectIdAtStart, slideIndexAtStart);
+      const runId = (imageOpRunIdByKeyRef.current[opKey] || 0) + 1;
+      imageOpRunIdByKeyRef.current[opKey] = runId;
+
+      const tidAtStart = computeTemplateIdForSlide(slideIndexAtStart);
+      const snapAtStart = (tidAtStart ? templateSnapshots[tidAtStart] : null) || null;
+      const baseLayoutAtStart = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : { ...EMPTY_LAYOUT };
+
+      const bgRemovalEnabledAtInsert = opts?.bgRemovalEnabledAtInsert !== undefined ? !!opts.bgRemovalEnabledAtInsert : false;
+
+      setImageBusy(true);
+      closeImageMenu();
+      try {
+        if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
+
+        // Load dimensions for initial placement.
+        const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth || img.width || 1, h: img.naturalHeight || img.height || 1 });
+          img.onerror = () => resolve({ w: 1, h: 1 });
+          img.src = url;
+        });
+        if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
+
+        const placement = computeDefaultUploadedImagePlacement(snapAtStart, dims.w, dims.h);
+
+        const storageBucket = String(asset?.storage?.bucket || '').trim() || null;
+        const storagePath = String(asset?.storage?.path || '').trim() || null;
+
+        const latestBaseLayout =
+          currentProjectIdRef.current === projectIdAtStart
+            ? ((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout
+                ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
+                : baseLayoutAtStart)
+            : baseLayoutAtStart;
+
+        const nextImg: any = {
+          x: placement.x,
+          y: placement.y,
+          width: placement.width,
+          height: placement.height,
+          url,
+          storage: storageBucket && storagePath ? { bucket: storageBucket, path: storagePath } : null,
+          // Always keep an "original" pointer so BG removal can be enabled later.
+          original: { url, storage: storageBucket && storagePath ? { bucket: storageBucket, path: storagePath } : null },
+          bgRemovalEnabled: !!bgRemovalEnabledAtInsert,
+          bgRemovalStatus: bgRemovalEnabledAtInsert ? 'processing' : 'disabled',
+          isAiGenerated: String(asset?.kind || '') === 'ai',
+        };
+
+        if (!bgRemovalEnabledAtInsert) {
+          if ((nextImg as any).mask) delete (nextImg as any).mask;
+          if ((nextImg as any).processed) delete (nextImg as any).processed;
+        }
+
+        const nextLayout = { ...latestBaseLayout, image: nextImg };
+
+        if (currentProjectIdRef.current === projectIdAtStart) {
+          setSlides((prev: any[]) =>
+            prev.map((s, i) => (i !== slideIndexAtStart ? s : { ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any }))
+          );
+          slidesRef.current = slidesRef.current.map((s, i) =>
+            i !== slideIndexAtStart ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
+          );
+          if (activeSlideIndexRef.current === slideIndexAtStart) {
+            setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+          }
+          setActiveImageSelected(true);
+        }
+
+        await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
+        if (imageOpRunIdByKeyRef.current[opKey] !== runId) return;
+
+        // Track usage in recents (best-effort).
+        try {
+          await fetchJson('/api/editor/assets/recents', {
+            method: 'POST',
+            body: JSON.stringify({
+              url,
+              ...(storageBucket && storagePath ? { storage: { bucket: storageBucket, path: storagePath } } : {}),
+              kind: String(asset?.kind || 'upload'),
+            }),
+          });
+        } catch {
+          // ignore
+        }
+
+        if (bgRemovalEnabledAtInsert) {
+          if (!(storageBucket && storagePath)) {
+            throw new Error('Cannot run background removal for this recent image (missing stored source path).');
+          }
+          await setActiveSlideImageBgRemoval(true);
+        }
+      } finally {
+        setImageBusy(false);
+      }
+    },
+    [
+      EMPTY_LAYOUT,
+      activeSlideIndex,
+      activeSlideIndexRef,
+      aiKey,
+      closeImageMenu,
+      computeDefaultUploadedImagePlacement,
+      computeTemplateIdForSlide,
+      currentProjectId,
+      currentProjectIdRef,
+      fetchJson,
+      imageOpRunIdByKeyRef,
+      layoutData,
+      saveSlidePatchForProject,
+      setActiveImageSelected,
+      setImageBusy,
+      setLayoutData,
+      setSlides,
+      setActiveSlideImageBgRemoval,
+      slidesRef,
+      templateSnapshots,
+    ]
+  );
+
   const deleteImageForActiveSlide = useCallback(
     async (reason: 'menu' | 'button') => {
       if (!currentProjectId) return;
@@ -617,6 +772,7 @@ export function useImageOps(params: {
 
   return {
     uploadImageForActiveSlide,
+    insertRecentImageForActiveSlide,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
     handleUserImageChange,
