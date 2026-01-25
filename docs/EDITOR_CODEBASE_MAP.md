@@ -177,13 +177,26 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - Sections:
     - Upload (file picker)
     - Recents (grid of tiles, user-scoped)
-    - Logos (placeholder; Phase 3)
+    - Logos (VectorLogoZone; Phase 3C/3D/3E)
   - Close behaviors: outside click, Escape key, close button
   - Modal BG toggle:
     - default OFF (resets on open/close)
     - controls **BG removal at insert-time** for both Upload and Recents insert
   - UX nuance:
     - if modal BG toggle is ON when clicking a recent: modal stays open and shows a spinner until BG removal finishes
+
+#### Logos (Phase 3: VectorLogoZone)
+- **Catalog ingestion (manual)**:
+  - Script: `scripts/logo_catalog/ingest_vectorlogozone.mjs`
+  - Ingests VLZ `www/logos/<slug>/index.md` into `public.editor_logo_catalog`
+  - Fallback: if a logo’s `index.md` omits `images:`, the script scans the folder for `.svg` files and treats them as variants
+- **Read-only browse APIs**
+  - `GET /api/editor/assets/logos/tags` → tag stats for chips + “More tags…”
+  - `GET /api/editor/assets/logos/search` → variant tiles (requires a search term or selected tag)
+- **Import/cache API (SVG → PNG)**
+  - `POST /api/editor/assets/logos/import`
+  - Downloads the selected SVG, converts to PNG server-side, stores it into the shared bucket `editor-shared-assets`,
+    and upserts `public.editor_logo_assets` so all editor users reuse the cached PNG.
 
 #### Recents: stored table + API
 - **DB migration**: `supabase/migrations/20260125_000001_add_editor_recent_assets.sql`
@@ -444,6 +457,10 @@ Key tables used by `/editor`:
   - `ai_image_gen_model` (per-user default image model used by Generate Image; server enforced)
 - `public.editor_recent_assets` (Phase 2: Image Library Recents)
   - user-scoped and deduped by storage path when available, else by URL
+- `public.editor_logo_catalog` (Phase 3: Logos catalog; shared)
+  - provider-agnostic logo metadata and variants used for fast search + tag filtering
+- `public.editor_logo_assets` (Phase 3: Logos raster cache; shared)
+  - provider-agnostic cached PNGs for logo variants, stored in `editor-shared-assets`
 - `public.carousel_projects`
   - `owner_user_id`
   - `template_type_id`

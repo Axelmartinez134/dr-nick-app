@@ -13,6 +13,19 @@ type RecentAsset = {
   use_count: number;
 };
 
+type LogoProvider = "vectorlogozone";
+
+type LogoVariantTile = {
+  source: LogoProvider;
+  sourceKey: string;
+  title: string;
+  websiteDomain: string | null;
+  tags: string[];
+  variantKey: string;
+  remoteUrl: string;
+  format: "svg" | "other";
+};
+
 export function ImageLibraryModal() {
   const open = useEditorSelector((s: any) => !!(s as any).imageLibraryModalOpen);
   const bgRemovalEnabledAtInsert = useEditorSelector((s: any) => !!(s as any).imageLibraryBgRemovalEnabledAtInsert);
@@ -25,9 +38,24 @@ export function ImageLibraryModal() {
   const [recentsLoading, setRecentsLoading] = useState(false);
   const [recentsError, setRecentsError] = useState<string | null>(null);
   const [insertingRecentId, setInsertingRecentId] = useState<string | null>(null);
-  const showSpinner = !!insertingRecentId && !!bgRemovalEnabledAtInsert;
+  const [insertingLogoKey, setInsertingLogoKey] = useState<string | null>(null);
+  const showSpinner = (!!insertingRecentId || !!insertingLogoKey) && !!bgRemovalEnabledAtInsert;
+
+  // Phase 3C: Logos (read-only view mode)
+  const [logoProvider, setLogoProvider] = useState<LogoProvider>("vectorlogozone");
+  const [logoQuery, setLogoQuery] = useState("");
+  const [logoSelectedTag, setLogoSelectedTag] = useState<string | null>(null);
+  const [logoTags, setLogoTags] = useState<Array<{ tag: string; count: number }>>([]);
+  const [logoTagsLoading, setLogoTagsLoading] = useState(false);
+  const [logoTiles, setLogoTiles] = useState<LogoVariantTile[]>([]);
+  const [logoLoading, setLogoLoading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [cachingLogoKey, setCachingLogoKey] = useState<string | null>(null);
+  const [cachedLogoKeys, setCachedLogoKeys] = useState<Set<string>>(() => new Set());
 
   const canInteract = useMemo(() => !showSpinner, [showSpinner]);
+  const topLogoTags = useMemo(() => logoTags.slice(0, 12), [logoTags]);
+  const moreLogoTags = useMemo(() => logoTags.slice(12, 200), [logoTags]);
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +77,70 @@ export function ImageLibraryModal() {
       cancelled = true;
     };
   }, [actions, open]);
+
+  // Load logo tags when modal opens (for tag chips + “More tags…” dropdown)
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const run = async () => {
+      setLogoTagsLoading(true);
+      setLogoError(null);
+      try {
+        const tags = (await actions?.fetchLogoTags?.({ source: logoProvider, limit: 200 })) as Array<{ tag: string; count: number }>;
+        if (!cancelled) setLogoTags(Array.isArray(tags) ? tags : []);
+      } catch (e: any) {
+        if (!cancelled) setLogoError(String(e?.message || e || "Failed to load logo tags"));
+      } finally {
+        if (!cancelled) setLogoTagsLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, logoProvider, open]);
+
+  // Debounced search for logo tiles (read-only)
+  useEffect(() => {
+    if (!open) return;
+    if (!actions?.searchLogoVariants) return;
+
+    const q = String(logoQuery || "").trim();
+    const tag = logoSelectedTag;
+    // conservative: don’t query the whole catalog without a filter
+    if (!q && !tag) {
+      setLogoTiles([]);
+      setLogoError(null);
+      setLogoLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLogoLoading(true);
+    setLogoError(null);
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const tiles = (await actions.searchLogoVariants({
+            source: logoProvider,
+            q,
+            tag,
+            limit: 40,
+          })) as LogoVariantTile[];
+          if (!cancelled) setLogoTiles(Array.isArray(tiles) ? tiles : []);
+        } catch (e: any) {
+          if (!cancelled) setLogoError(String(e?.message || e || "Failed to search logos"));
+        } finally {
+          if (!cancelled) setLogoLoading(false);
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [actions, logoProvider, logoQuery, logoSelectedTag, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -225,9 +317,162 @@ export function ImageLibraryModal() {
                   </div>
                 ) : null}
               </div>
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-4">
-                <div className="text-sm font-semibold text-slate-700">Logos</div>
-                <div className="mt-1 text-xs text-slate-500">Coming soon (Logo.dev first).</div>
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">Logos</div>
+                  {logoTagsLoading ? <div className="text-xs text-slate-500">Loading tags…</div> : null}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <select
+                    className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+                    value={logoProvider}
+                    onChange={(e) => {
+                      setLogoProvider((e.target.value as any) || "vectorlogozone");
+                      setLogoSelectedTag(null);
+                      setLogoQuery("");
+                      setLogoTiles([]);
+                    }}
+                    disabled={!canInteract}
+                    title="Logo source"
+                  >
+                    <option value="vectorlogozone">VectorLogoZone</option>
+                  </select>
+                  <input
+                    className="h-9 flex-1 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-700"
+                    value={logoQuery}
+                    onChange={(e) => setLogoQuery(e.target.value)}
+                    placeholder="Search logos (name, slug, tag, domain)…"
+                    disabled={!canInteract}
+                  />
+                </div>
+
+                {logoError ? <div className="mt-2 text-xs text-red-600">{logoError}</div> : null}
+
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold text-slate-600">Top tags</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {topLogoTags.map((t) => {
+                      const active = logoSelectedTag === t.tag;
+                      return (
+                        <button
+                          key={t.tag}
+                          type="button"
+                          className={[
+                            "h-7 px-2 rounded-full border text-[11px] transition-colors",
+                            active ? "bg-black text-white border-black" : "bg-white text-slate-700 border-slate-200 hover:border-slate-300",
+                          ].join(" ")}
+                          disabled={!canInteract}
+                          onClick={() => setLogoSelectedTag(active ? null : t.tag)}
+                          title={`Filter by ${t.tag} (${t.count})`}
+                        >
+                          {t.tag}
+                        </button>
+                      );
+                    })}
+                    <select
+                      className="h-7 rounded-full border border-slate-200 bg-white px-2 text-[11px] text-slate-700"
+                      value={logoSelectedTag && !topLogoTags.some((x) => x.tag === logoSelectedTag) ? logoSelectedTag : ""}
+                      onChange={(e) => setLogoSelectedTag(e.target.value ? e.target.value : null)}
+                      disabled={!canInteract}
+                      title="More tags…"
+                    >
+                      <option value="">More tags…</option>
+                      {moreLogoTags.map((t) => (
+                        <option key={t.tag} value={t.tag}>
+                          {t.tag} ({t.count})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Phase 3E: click a tile to cache + insert into the active slide.
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  {logoLoading ? <div className="text-xs text-slate-500">Searching…</div> : null}
+                  {!logoLoading && logoTiles.length === 0 ? (
+                    <div className="text-xs text-slate-500">
+                      Type a search or select a tag to see logo variants.
+                    </div>
+                  ) : null}
+                  {logoTiles.length > 0 ? (
+                    <div className="mt-2 grid grid-cols-4 gap-2">
+                      {logoTiles.map((t) => (
+                        (() => {
+                          const key = `${t.source}:${t.sourceKey}:${t.variantKey}`;
+                          const caching = cachingLogoKey === key;
+                          const cached = cachedLogoKeys.has(key);
+                          return (
+                        <button
+                          key={key}
+                          type="button"
+                          className="relative aspect-square rounded-md border border-slate-200 bg-slate-50 overflow-hidden hover:border-slate-300 disabled:opacity-50"
+                          disabled={!canInteract || caching}
+                          onClick={async () => {
+                            if (!actions?.importLogoVariant) return;
+                            if (!actions?.insertCachedLogoToActiveSlide) return;
+                            if (!canInteract) return;
+                            setLogoError(null);
+                            setCachingLogoKey(key);
+                            try {
+                              const res = await actions.importLogoVariant({
+                                source: t.source,
+                                sourceKey: t.sourceKey,
+                                variantKey: t.variantKey,
+                                remoteUrl: t.remoteUrl,
+                              });
+                              // Mark cached in UI.
+                              setCachedLogoKeys((prev) => {
+                                const next = new Set(prev);
+                                next.add(key);
+                                return next;
+                              });
+
+                              const url = String(res?.assetUrl || "").trim();
+                              const bucket = String(res?.storage?.bucket || "").trim();
+                              const path = String(res?.storage?.path || "").trim();
+                              if (!url || !bucket || !path) throw new Error("Cached but missing url/storage info");
+
+                              if (bgRemovalEnabledAtInsert) setInsertingLogoKey(key);
+                              await actions.insertCachedLogoToActiveSlide({
+                                url,
+                                storage: { bucket, path },
+                                source: t.source,
+                                sourceKey: t.sourceKey,
+                                variantKey: t.variantKey,
+                              });
+
+                              // Close when done (if BG removal is ON, this only happens after reprocess finishes).
+                              actions.onCloseImageLibraryModal?.();
+                            } catch (e: any) {
+                              setLogoError(String(e?.message || e || "Logo import failed"));
+                            } finally {
+                              setCachingLogoKey(null);
+                              setInsertingLogoKey(null);
+                            }
+                          }}
+                          title={`${t.title} — ${t.variantKey}`}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={t.remoteUrl} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                          {cached ? (
+                            <div className="absolute left-1 top-1 px-2 py-0.5 rounded-full bg-black text-white text-[10px]">
+                              Cached
+                            </div>
+                          ) : null}
+                          {caching ? (
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                              <span className="inline-block h-5 w-5 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+                            </div>
+                          ) : null}
+                        </button>
+                          );
+                        })()
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 

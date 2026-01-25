@@ -155,19 +155,55 @@ User explicitly stated usage is “purely educational” and brands want usage i
   - modal stays open and shows spinner
   - after completion, modal closes and the inserted image uses processed PNG + mask
 
-### Phase 3: Logos — source #1 = Logo.dev
-**Goal**: Import logos on-demand from Logo.dev, preview, cache to Supabase, and insert as normal images.
+### Phase 3: Logos — source #1 = VectorLogoZone (conservative rollout)
+**Goal**: Turn the “Logos” placeholder into a real browser + importer for a first source, starting with **VectorLogoZone**:
+- Search by **name** (title), **source_key** (slug/logohandle), **tags**, and **website/domain**
+- Filter by **tags/categories**
+- Show **variants as separate tiles** (only what the source provides)
+- On selection: **cache globally** into Supabase (shared across all editor users), convert **SVG → PNG on the server**, then insert as a normal image
 
-Requirements:
-- Domain-based fetch first (and name search only if Logo.dev supports it)
-- Preview tiles (variants as separate tiles if provided)
-- Cache into Supabase Storage and show in Recents
+**Key UI decisions (approved)**
+- Logos section includes a **Provider dropdown** (starts with VectorLogoZone; later add Lobe Icons, gilbarbara/logos, developer-icons).
+- Tag UI uses **Top tags as chips** (e.g., 12 chips) plus a **“More tags…” dropdown** for the full list.
+- Background removal toggle in the modal remains **default OFF** and controls BG removal **at insert-time**.
+
+**Data reality (VectorLogoZone)**
+- Per-logo metadata exists at `www/logos/<slug>/index.md` in the VLZ repo, including:
+  - `title`, `tags[]`, `website`, `images[]` (variants)
+
+#### Phase 3 conservative rollout (stop after each phase until user says “proceed”)
+
+##### Phase 3A — DB only (no UI changes)
+**Goal**: Add new tables for logo catalog + global raster cache (no runtime behavior changes).
+- Add `public.editor_logo_catalog` (provider-agnostic)
+- Add `public.editor_logo_assets` (provider-agnostic; shared cache of PNGs by `(source, source_key, variant_key)`)
+**Manual QA**: apply migrations; confirm tables exist.
+
+##### Phase 3B — Manual ingestion script (populate catalog once)
+**Goal**: Add a manual script that ingests VectorLogoZone metadata into `editor_logo_catalog` for fast search.
+- Script outputs a small report (logo count, variant count, top tags).
+**Manual QA**: run script; validate counts/tags.
+
+##### Phase 3C — Read-only Logos UI (“view mode”)
+**Goal**: Implement Logos browser UI with provider dropdown + search + tags + variants grid, but **no import/insert** yet.
+**Manual QA**: open modal → Logos shows results; search and tag filtering works; no editor regressions.
+
+##### Phase 3D — Import + global cache (SVG→PNG) (no insertion yet)
+**Goal**: Clicking a tile imports + converts + stores PNG in Supabase and records `editor_logo_assets`, but does **not** insert into canvas yet.
+**Manual QA**: click tile → cache created; second click reuses cache; no insertion.
+
+##### Phase 3E — Insert + Recents integration
+**Goal**: Final wiring: insert cached PNG into canvas as a normal image and touch Recents.
+- Respect modal BG toggle:
+  - OFF: insert immediately and close modal
+  - ON: keep modal open with spinner until BG removal finishes, then close
+**Manual QA**: end-to-end: search → import/cached → insert → appears in Recents.
 
 ### Phase 4+: Additional sources (optional)
 Consider adding:
 - Lobe Icons
-- Simple Icons
 - gilbarbara/logos
+- (Optional) developer-icons
 
 Only after we validate their metadata formats and categories/tags.
 

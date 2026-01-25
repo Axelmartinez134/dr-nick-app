@@ -103,6 +103,31 @@ type Args = {
   onToggleImageLibraryBgRemovalAtInsert: () => void;
   fetchRecentAssets: (limit?: number) => Promise<any[]>;
   onInsertRecentImage: (asset: { id: string; url: string; storage_bucket?: string | null; storage_path?: string | null; kind?: string | null }) => Promise<void> | void;
+
+  // Logos (Phase 3C: read-only)
+  fetchLogoTags: (args: { source: 'vectorlogozone'; limit?: number }) => Promise<Array<{ tag: string; count: number }>>;
+  searchLogoVariants: (args: {
+    source: 'vectorlogozone';
+    q?: string;
+    tag?: string | null;
+    limit?: number;
+  }) => Promise<any[]>;
+
+  // Logos (Phase 3D)
+  importLogoVariant: (args: { source: 'vectorlogozone'; sourceKey: string; variantKey: string; remoteUrl: string }) => Promise<{
+    cached: boolean;
+    assetUrl: string;
+    storage: { bucket: string; path: string };
+  }>;
+
+  // Logos (Phase 3E)
+  insertCachedLogoToActiveSlide: (args: {
+    url: string;
+    storage: { bucket: string; path: string };
+    source: 'vectorlogozone';
+    sourceKey: string;
+    variantKey: string;
+  }) => Promise<void>;
 };
 
 export function useEditorStoreActionsSync(args: Args) {
@@ -195,6 +220,10 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleImageLibraryBgRemovalAtInsert,
     fetchRecentAssets,
     onInsertRecentImage,
+    fetchLogoTags,
+    searchLogoVariants,
+    importLogoVariant,
+    insertCachedLogoToActiveSlide,
   } = args;
 
   // Phase 5E: stop mirroring `actions` into the store on every render.
@@ -391,6 +420,10 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleImageLibraryBgRemovalAtInsert: () => onToggleImageLibraryBgRemovalAtInsert(),
     fetchRecentAssets: (limit?: number) => fetchRecentAssets(limit),
     onInsertRecentImage: (asset: any) => onInsertRecentImage(asset),
+    fetchLogoTags: (a: any) => fetchLogoTags(a),
+    searchLogoVariants: (a: any) => searchLogoVariants(a),
+    importLogoVariant: (a: any) => importLogoVariant(a),
+    insertCachedLogoToActiveSlide: (a: any) => insertCachedLogoToActiveSlide(a),
   };
 
   const stableActions = useMemo(
@@ -465,6 +498,11 @@ export function useEditorStoreActionsSync(args: Args) {
       onToggleImageLibraryBgRemovalAtInsert: () => implRef.current?.onToggleImageLibraryBgRemovalAtInsert?.(),
       fetchRecentAssets: (limit?: number) => implRef.current?.fetchRecentAssets?.(limit) ?? Promise.resolve([]),
       onInsertRecentImage: (asset: any) => implRef.current?.onInsertRecentImage?.(asset),
+      fetchLogoTags: (a: any) => implRef.current?.fetchLogoTags?.(a) ?? Promise.resolve([]),
+      searchLogoVariants: (a: any) => implRef.current?.searchLogoVariants?.(a) ?? Promise.resolve([]),
+      importLogoVariant: (a: any) =>
+        implRef.current?.importLogoVariant?.(a) ?? Promise.resolve({ cached: true, assetUrl: "", storage: { bucket: "", path: "" } }),
+      insertCachedLogoToActiveSlide: (a: any) => implRef.current?.insertCachedLogoToActiveSlide?.(a) ?? Promise.resolve(),
     }),
     []
   );

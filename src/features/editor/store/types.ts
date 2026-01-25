@@ -113,6 +113,43 @@ export type EditorActions = {
     storage_path?: string | null;
     kind?: string | null;
   }) => Promise<void> | void;
+
+  // Logos (Phase 3C: read-only)
+  fetchLogoTags: (args: { source: 'vectorlogozone'; limit?: number }) => Promise<Array<{ tag: string; count: number }>>;
+  searchLogoVariants: (args: {
+    source: 'vectorlogozone';
+    q?: string;
+    tag?: string | null;
+    limit?: number;
+  }) => Promise<
+    Array<{
+      source: 'vectorlogozone';
+      sourceKey: string;
+      title: string;
+      websiteDomain: string | null;
+      tags: string[];
+      variantKey: string;
+      remoteUrl: string;
+      format: 'svg' | 'other';
+    }>
+  >;
+
+  // Logos (Phase 3D: import + global cache; still no insertion)
+  importLogoVariant: (args: {
+    source: 'vectorlogozone';
+    sourceKey: string;
+    variantKey: string;
+    remoteUrl: string;
+  }) => Promise<{ cached: boolean; assetUrl: string; storage: { bucket: string; path: string } }>;
+
+  // Logos (Phase 3E: insert into canvas + recents)
+  insertCachedLogoToActiveSlide: (args: {
+    url: string;
+    storage: { bucket: string; path: string };
+    source: 'vectorlogozone';
+    sourceKey: string;
+    variantKey: string;
+  }) => Promise<void>;
 };
 
 export type EditorWorkspaceState = {

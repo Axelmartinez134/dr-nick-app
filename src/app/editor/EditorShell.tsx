@@ -21,6 +21,7 @@ import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
+import { fetchLogoTags, importLogoVariant, searchLogoVariants } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
 import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSlidesPanel";
 import { EditorSlidesRow } from "@/features/editor/components/EditorSlidesRow";
@@ -1234,13 +1235,13 @@ export default function EditorShell() {
     let res: Response;
     try {
       res = await fetch(path, {
-        ...(init || {}),
-        headers: {
-          ...(init?.headers || {}),
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init || {}),
+      headers: {
+        ...(init?.headers || {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
           "Content-Type": "application/json",
-        },
-      });
+      },
+    });
     } catch (e: any) {
       // Fetch throws for network errors / blocked requests (often proxy/VPN/captive portal issues).
       logClientCtxOnce();
@@ -3350,6 +3351,48 @@ export default function EditorShell() {
     [fetchJson]
   );
 
+  const fetchLogoTagsAction = useCallback(
+    async (args: { source: 'vectorlogozone'; limit?: number }) => {
+      const out = await fetchLogoTags(fetchJson, args);
+      return out.tags;
+    },
+    [fetchJson]
+  );
+
+  const searchLogoVariantsAction = useCallback(
+    async (args: { source: 'vectorlogozone'; q?: string; tag?: string | null; limit?: number }) => {
+      const out = await searchLogoVariants(fetchJson, args);
+      return out.tiles;
+    },
+    [fetchJson]
+  );
+
+  const importLogoVariantAction = useCallback(
+    async (args: { source: 'vectorlogozone'; sourceKey: string; variantKey: string; remoteUrl: string }) => {
+      const out = await importLogoVariant(fetchJson, args);
+      return { cached: out.cached, assetUrl: out.asset.url, storage: out.asset.storage };
+    },
+    [fetchJson]
+  );
+
+  const insertCachedLogoToActiveSlide = useCallback(
+    async (args: { url: string; storage: { bucket: string; path: string }; source: 'vectorlogozone'; sourceKey: string; variantKey: string }) => {
+      const url = String(args?.url || '').trim();
+      const bucket = String(args?.storage?.bucket || '').trim();
+      const path = String(args?.storage?.path || '').trim();
+      if (!url) return;
+      await insertRecentImageForActiveSlide(
+        {
+          url,
+          storage: { bucket: bucket || null, path: path || null },
+          kind: 'logo',
+        },
+        { bgRemovalEnabledAtInsert: !!imageLibraryBgRemovalEnabledAtInsert }
+      );
+    },
+    [imageLibraryBgRemovalEnabledAtInsert, insertRecentImageForActiveSlide]
+  );
+
   const hasImageForActiveSlide = () => {
     const curLayout = (layoutData as any)?.layout || null;
     const url = curLayout?.image?.url || null;
@@ -4396,6 +4439,16 @@ export default function EditorShell() {
     onToggleImageLibraryBgRemovalAtInsert,
     fetchRecentAssets,
     onInsertRecentImage,
+
+    // Logos (Phase 3C: read-only)
+    fetchLogoTags: fetchLogoTagsAction,
+    searchLogoVariants: searchLogoVariantsAction,
+
+    // Logos (Phase 3D: import + cache)
+    importLogoVariant: importLogoVariantAction,
+
+    // Logos (Phase 3E: insert cached logo)
+    insertCachedLogoToActiveSlide,
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).

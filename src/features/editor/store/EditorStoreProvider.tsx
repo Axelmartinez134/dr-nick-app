@@ -59,6 +59,12 @@ const noopActions: EditorActions = {
   onToggleImageLibraryBgRemovalAtInsert: () => {},
   fetchRecentAssets: async () => [],
   onInsertRecentImage: () => {},
+
+  // Logos (Phase 3C: read-only)
+  fetchLogoTags: async () => [],
+  searchLogoVariants: async () => [],
+  importLogoVariant: async () => ({ cached: true, assetUrl: "", storage: { bucket: "", path: "" } }),
+  insertCachedLogoToActiveSlide: async () => {},
 };
 
 const defaultState: EditorState = {
