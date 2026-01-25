@@ -63,6 +63,7 @@ const noopActions: EditorActions = {
   // Logos (Phase 3C: read-only)
   fetchLogoTags: async () => [],
   searchLogoVariants: async () => [],
+  searchLogoVariantsGlobal: async () => [],
   importLogoVariant: async () => ({ cached: true, assetUrl: "", storage: { bucket: "", path: "" } }),
   insertCachedLogoToActiveSlide: async () => {},
 };
