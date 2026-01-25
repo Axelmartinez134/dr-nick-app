@@ -13,6 +13,12 @@ export type LogoVariantTile = {
   format: 'svg' | 'other';
 };
 
+export type GlobalLogoProviderGroup = {
+  source: LogoProvider;
+  rowsMatched: number;
+  tiles: LogoVariantTile[];
+};
+
 export async function fetchLogoTags(
   fetchJson: (path: string, init?: RequestInit) => Promise<any>,
   params: { source: LogoProvider; limit?: number }
@@ -48,6 +54,21 @@ export async function searchLogoVariants(
     tiles: Array.isArray(j?.tiles) ? (j.tiles as LogoVariantTile[]) : [],
     rowsMatched: Number(j?.rowsMatched || 0),
   };
+}
+
+export async function searchLogoVariantsGlobal(
+  fetchJson: (path: string, init?: RequestInit) => Promise<any>,
+  params: { q: string; limit?: number }
+): Promise<{ providers: GlobalLogoProviderGroup[] }> {
+  const q = String(params.q || '').trim();
+  const limit = typeof params.limit === 'number' ? params.limit : 20;
+  const qs = new URLSearchParams();
+  if (q) qs.set('q', q);
+  qs.set('limit', String(limit));
+
+  const j = await fetchJson(`/api/editor/assets/logos/search-global?${qs.toString()}`, { method: 'GET' });
+  if (!j?.success) throw new Error(j?.error || 'Failed to search logos globally');
+  return { providers: Array.isArray(j?.providers) ? (j.providers as GlobalLogoProviderGroup[]) : [] };
 }
 
 export async function importLogoVariant(

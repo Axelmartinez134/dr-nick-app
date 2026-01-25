@@ -26,6 +26,12 @@ type LogoVariantTile = {
   format: "svg" | "other";
 };
 
+type GlobalLogoProviderGroup = {
+  source: LogoProvider;
+  rowsMatched: number;
+  tiles: LogoVariantTile[];
+};
+
 export function ImageLibraryModal() {
   const open = useEditorSelector((s: any) => !!(s as any).imageLibraryModalOpen);
   const bgRemovalEnabledAtInsert = useEditorSelector((s: any) => !!(s as any).imageLibraryBgRemovalEnabledAtInsert);
@@ -44,18 +50,34 @@ export function ImageLibraryModal() {
   // Phase 3C: Logos (read-only view mode)
   const [logoProvider, setLogoProvider] = useState<LogoProvider>("vectorlogozone");
   const [logoQuery, setLogoQuery] = useState("");
+  const [globalLogoQuery, setGlobalLogoQuery] = useState("");
   const [logoSelectedTag, setLogoSelectedTag] = useState<string | null>(null);
   const [logoTags, setLogoTags] = useState<Array<{ tag: string; count: number }>>([]);
   const [logoTagsLoading, setLogoTagsLoading] = useState(false);
   const [logoTiles, setLogoTiles] = useState<LogoVariantTile[]>([]);
   const [logoLoading, setLogoLoading] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [globalLogoGroups, setGlobalLogoGroups] = useState<GlobalLogoProviderGroup[]>([]);
+  const [globalLogoLoading, setGlobalLogoLoading] = useState(false);
+  const [globalLogoError, setGlobalLogoError] = useState<string | null>(null);
   const [cachingLogoKey, setCachingLogoKey] = useState<string | null>(null);
   const [cachedLogoKeys, setCachedLogoKeys] = useState<Set<string>>(() => new Set());
 
   const canInteract = useMemo(() => !showSpinner, [showSpinner]);
+  const globalActive = useMemo(() => !!String(globalLogoQuery || "").trim(), [globalLogoQuery]);
   const topLogoTags = useMemo(() => logoTags.slice(0, 12), [logoTags]);
   const moreLogoTags = useMemo(() => logoTags.slice(12, 200), [logoTags]);
+  const providerLabel = useMemo(() => {
+    const m: Record<LogoProvider, string> = {
+      vectorlogozone: "VectorLogoZone",
+      "lobe-icons": "Lobe Icons",
+      "developer-icons": "Developer Icons",
+      svgporn: "SVG Logos (svgporn)",
+      gilbarbara: "SVG Logos (gilbarbara)",
+      "simple-icons": "Simple Icons",
+    };
+    return (p: LogoProvider) => m[p] || p;
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -104,6 +126,7 @@ export function ImageLibraryModal() {
   useEffect(() => {
     if (!open) return;
     if (!actions?.searchLogoVariants) return;
+    if (globalActive) return;
 
     const q = String(logoQuery || "").trim();
     const tag = logoSelectedTag;
@@ -142,6 +165,41 @@ export function ImageLibraryModal() {
     };
   }, [actions, logoProvider, logoQuery, logoSelectedTag, open]);
 
+  // Debounced global search (all providers; grouped by provider; hard cap 20 total tiles)
+  useEffect(() => {
+    if (!open) return;
+    if (!actions?.searchLogoVariantsGlobal) return;
+
+    const q = String(globalLogoQuery || "").trim();
+    if (!q) {
+      setGlobalLogoGroups([]);
+      setGlobalLogoError(null);
+      setGlobalLogoLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setGlobalLogoLoading(true);
+    setGlobalLogoError(null);
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const groups = (await actions.searchLogoVariantsGlobal({ q, limit: 20 })) as GlobalLogoProviderGroup[];
+          if (!cancelled) setGlobalLogoGroups(Array.isArray(groups) ? groups : []);
+        } catch (e: any) {
+          if (!cancelled) setGlobalLogoError(String(e?.message || e || "Failed to search logos globally"));
+        } finally {
+          if (!cancelled) setGlobalLogoLoading(false);
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [actions, globalLogoQuery, open]);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -163,7 +221,7 @@ export function ImageLibraryModal() {
         if (e.target === e.currentTarget) actions.onCloseImageLibraryModal?.();
       }}
     >
-      <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden">
+      <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div>
             <div className="text-base font-semibold text-slate-900">Add image</div>
@@ -183,24 +241,7 @@ export function ImageLibraryModal() {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr]">
-          {/* Left: Sources */}
-          <div className="border-b md:border-b-0 md:border-r border-slate-100 bg-slate-50/60 p-3">
-            <div className="text-xs font-semibold text-slate-700 mb-2">Sources</div>
-            <div className="space-y-1">
-              <div className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-semibold text-slate-900">
-                Upload
-              </div>
-              <div className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-500">
-                Recents <span className="ml-1 text-[11px]">(coming soon)</span>
-              </div>
-              <div className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-500">
-                Logos <span className="ml-1 text-[11px]">(coming soon)</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Upload panel */}
+        <div className="overflow-y-auto flex-1">
           <div className="p-5">
             {showSpinner ? (
               <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 flex items-center justify-between gap-3">
@@ -266,7 +307,7 @@ export function ImageLibraryModal() {
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="mt-5 flex flex-col gap-3">
               <div className="rounded-lg border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-semibold text-slate-900">Recents</div>
@@ -279,7 +320,7 @@ export function ImageLibraryModal() {
                   <div className="mt-2 text-xs text-slate-500">No recent images yet. Upload one to get started.</div>
                 ) : null}
                 {recents.length > 0 ? (
-                  <div className="mt-3 grid grid-cols-4 gap-2">
+                  <div className="mt-3 grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
                     {recents.map((a) => (
                       <button
                         key={a.id}
@@ -323,6 +364,18 @@ export function ImageLibraryModal() {
                   {logoTagsLoading ? <div className="text-xs text-slate-500">Loading tags…</div> : null}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
+                  <div className="h-9 rounded-md border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 flex items-center">
+                    Global
+                  </div>
+                  <input
+                    className="h-9 flex-1 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-700"
+                    value={globalLogoQuery}
+                    onChange={(e) => setGlobalLogoQuery(e.target.value)}
+                    placeholder="Search all providers…"
+                    disabled={!canInteract}
+                  />
+                </div>
+                <div className="mt-2 flex items-center gap-2">
                   <select
                     className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
                     value={logoProvider}
@@ -333,7 +386,7 @@ export function ImageLibraryModal() {
                       setLogoTiles([]);
                       setLogoError(null);
                     }}
-                    disabled={!canInteract}
+                    disabled={!canInteract || globalActive}
                     title="Logo source"
                   >
                     <option value="vectorlogozone">VectorLogoZone</option>
@@ -348,136 +401,234 @@ export function ImageLibraryModal() {
                     value={logoQuery}
                     onChange={(e) => setLogoQuery(e.target.value)}
                     placeholder="Search logos (name, slug, tag, domain)…"
-                    disabled={!canInteract}
+                    disabled={!canInteract || globalActive}
                   />
                 </div>
 
-                {logoError ? <div className="mt-2 text-xs text-red-600">{logoError}</div> : null}
+                {globalLogoError ? <div className="mt-2 text-xs text-red-600">{globalLogoError}</div> : null}
+                {!globalLogoError && logoError ? <div className="mt-2 text-xs text-red-600">{logoError}</div> : null}
+
+                {!globalActive ? (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-semibold text-slate-600">Top tags</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {topLogoTags.map((t) => {
+                        const active = logoSelectedTag === t.tag;
+                        return (
+                          <button
+                            key={t.tag}
+                            type="button"
+                            className={[
+                              "h-7 px-2 rounded-full border text-[11px] transition-colors",
+                              active ? "bg-black text-white border-black" : "bg-white text-slate-700 border-slate-200 hover:border-slate-300",
+                            ].join(" ")}
+                            disabled={!canInteract}
+                            onClick={() => setLogoSelectedTag(active ? null : t.tag)}
+                            title={`Filter by ${t.tag} (${t.count})`}
+                          >
+                            {t.tag}
+                          </button>
+                        );
+                      })}
+                      <select
+                        className="h-7 rounded-full border border-slate-200 bg-white px-2 text-[11px] text-slate-700"
+                        value={logoSelectedTag && !topLogoTags.some((x) => x.tag === logoSelectedTag) ? logoSelectedTag : ""}
+                        onChange={(e) => setLogoSelectedTag(e.target.value ? e.target.value : null)}
+                        disabled={!canInteract}
+                        title="More tags…"
+                      >
+                        <option value="">More tags…</option>
+                        {moreLogoTags.map((t) => (
+                          <option key={t.tag} value={t.tag}>
+                            {t.tag} ({t.count})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-500">
+                      Click a tile to cache + insert into the active slide.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 text-[11px] text-slate-500">Global search is active (provider tags are disabled).</div>
+                )}
 
                 <div className="mt-3">
-                  <div className="text-[11px] font-semibold text-slate-600">Top tags</div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {topLogoTags.map((t) => {
-                      const active = logoSelectedTag === t.tag;
-                      return (
-                        <button
-                          key={t.tag}
-                          type="button"
-                          className={[
-                            "h-7 px-2 rounded-full border text-[11px] transition-colors",
-                            active ? "bg-black text-white border-black" : "bg-white text-slate-700 border-slate-200 hover:border-slate-300",
-                          ].join(" ")}
-                          disabled={!canInteract}
-                          onClick={() => setLogoSelectedTag(active ? null : t.tag)}
-                          title={`Filter by ${t.tag} (${t.count})`}
-                        >
-                          {t.tag}
-                        </button>
-                      );
-                    })}
-                    <select
-                      className="h-7 rounded-full border border-slate-200 bg-white px-2 text-[11px] text-slate-700"
-                      value={logoSelectedTag && !topLogoTags.some((x) => x.tag === logoSelectedTag) ? logoSelectedTag : ""}
-                      onChange={(e) => setLogoSelectedTag(e.target.value ? e.target.value : null)}
-                      disabled={!canInteract}
-                      title="More tags…"
-                    >
-                      <option value="">More tags…</option>
-                      {moreLogoTags.map((t) => (
-                        <option key={t.tag} value={t.tag}>
-                          {t.tag} ({t.count})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    Phase 3E: click a tile to cache + insert into the active slide.
-                  </div>
-                </div>
+                  {globalActive ? (
+                    <>
+                      {globalLogoLoading ? <div className="text-xs text-slate-500">Searching globally…</div> : null}
+                      {!globalLogoLoading && globalLogoGroups.length === 0 ? (
+                        <div className="text-xs text-slate-500">No results yet. Try a different search.</div>
+                      ) : null}
+                      {globalLogoGroups.length > 0 ? (
+                        <div className="mt-2 max-h-[42vh] overflow-y-auto pr-1 space-y-5">
+                          {globalLogoGroups.map((g) => (
+                            <div key={g.source}>
+                              <div className="text-[11px] font-semibold text-slate-600">{providerLabel(g.source)}</div>
+                              <div className="mt-2 grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                                {g.tiles.map((t) => (
+                                  (() => {
+                                    const key = `${t.source}:${t.sourceKey}:${t.variantKey}`;
+                                    const caching = cachingLogoKey === key;
+                                    const cached = cachedLogoKeys.has(key);
+                                    return (
+                                      <button
+                                        key={key}
+                                        type="button"
+                                        className="relative aspect-square rounded-md border border-slate-200 bg-slate-50 overflow-hidden hover:border-slate-300 disabled:opacity-50"
+                                        disabled={!canInteract || caching}
+                                        onClick={async () => {
+                                          if (!actions?.importLogoVariant) return;
+                                          if (!actions?.insertCachedLogoToActiveSlide) return;
+                                          if (!canInteract) return;
+                                          setGlobalLogoError(null);
+                                          setLogoError(null);
+                                          setCachingLogoKey(key);
+                                          try {
+                                            const res = await actions.importLogoVariant({
+                                              source: t.source,
+                                              sourceKey: t.sourceKey,
+                                              variantKey: t.variantKey,
+                                              remoteUrl: t.remoteUrl,
+                                            });
+                                            // Mark cached in UI.
+                                            setCachedLogoKeys((prev) => {
+                                              const next = new Set(prev);
+                                              next.add(key);
+                                              return next;
+                                            });
 
-                <div className="mt-3">
-                  {logoLoading ? <div className="text-xs text-slate-500">Searching…</div> : null}
-                  {!logoLoading && logoTiles.length === 0 ? (
-                    <div className="text-xs text-slate-500">
-                      Type a search or select a tag to see logo variants.
-                    </div>
-                  ) : null}
-                  {logoTiles.length > 0 ? (
-                    <div className="mt-2 grid grid-cols-4 gap-2">
-                      {logoTiles.map((t) => (
-                        (() => {
-                          const key = `${t.source}:${t.sourceKey}:${t.variantKey}`;
-                          const caching = cachingLogoKey === key;
-                          const cached = cachedLogoKeys.has(key);
-                          return (
-                        <button
-                          key={key}
-                          type="button"
-                          className="relative aspect-square rounded-md border border-slate-200 bg-slate-50 overflow-hidden hover:border-slate-300 disabled:opacity-50"
-                          disabled={!canInteract || caching}
-                          onClick={async () => {
-                            if (!actions?.importLogoVariant) return;
-                            if (!actions?.insertCachedLogoToActiveSlide) return;
-                            if (!canInteract) return;
-                            setLogoError(null);
-                            setCachingLogoKey(key);
-                            try {
-                              const res = await actions.importLogoVariant({
-                                source: t.source,
-                                sourceKey: t.sourceKey,
-                                variantKey: t.variantKey,
-                                remoteUrl: t.remoteUrl,
-                              });
-                              // Mark cached in UI.
-                              setCachedLogoKeys((prev) => {
-                                const next = new Set(prev);
-                                next.add(key);
-                                return next;
-                              });
+                                            const url = String(res?.assetUrl || "").trim();
+                                            const bucket = String(res?.storage?.bucket || "").trim();
+                                            const path = String(res?.storage?.path || "").trim();
+                                            if (!url || !bucket || !path) throw new Error("Cached but missing url/storage info");
 
-                              const url = String(res?.assetUrl || "").trim();
-                              const bucket = String(res?.storage?.bucket || "").trim();
-                              const path = String(res?.storage?.path || "").trim();
-                              if (!url || !bucket || !path) throw new Error("Cached but missing url/storage info");
+                                            if (bgRemovalEnabledAtInsert) setInsertingLogoKey(key);
+                                            await actions.insertCachedLogoToActiveSlide({
+                                              url,
+                                              storage: { bucket, path },
+                                              source: t.source,
+                                              sourceKey: t.sourceKey,
+                                              variantKey: t.variantKey,
+                                            });
 
-                              if (bgRemovalEnabledAtInsert) setInsertingLogoKey(key);
-                              await actions.insertCachedLogoToActiveSlide({
-                                url,
-                                storage: { bucket, path },
-                                source: t.source,
-                                sourceKey: t.sourceKey,
-                                variantKey: t.variantKey,
-                              });
-
-                              // Close when done (if BG removal is ON, this only happens after reprocess finishes).
-                              actions.onCloseImageLibraryModal?.();
-                            } catch (e: any) {
-                              setLogoError(String(e?.message || e || "Logo import failed"));
-                            } finally {
-                              setCachingLogoKey(null);
-                              setInsertingLogoKey(null);
-                            }
-                          }}
-                          title={`${t.title} — ${t.variantKey}`}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={t.remoteUrl} alt="" className="absolute inset-0 w-full h-full object-contain" />
-                          {cached ? (
-                            <div className="absolute left-1 top-1 px-2 py-0.5 rounded-full bg-black text-white text-[10px]">
-                              Cached
+                                            // Close when done (if BG removal is ON, this only happens after reprocess finishes).
+                                            actions.onCloseImageLibraryModal?.();
+                                          } catch (e: any) {
+                                            setGlobalLogoError(String(e?.message || e || "Logo import failed"));
+                                          } finally {
+                                            setCachingLogoKey(null);
+                                            setInsertingLogoKey(null);
+                                          }
+                                        }}
+                                        title={`${t.title} — ${t.variantKey}`}
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={t.remoteUrl} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                                        {cached ? (
+                                          <div className="absolute left-1 top-1 px-2 py-0.5 rounded-full bg-black text-white text-[10px]">
+                                            Cached
+                                          </div>
+                                        ) : null}
+                                        {caching ? (
+                                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                                            <span className="inline-block h-5 w-5 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+                                          </div>
+                                        ) : null}
+                                      </button>
+                                    );
+                                  })()
+                                ))}
+                              </div>
                             </div>
-                          ) : null}
-                          {caching ? (
-                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                              <span className="inline-block h-5 w-5 rounded-full border-2 border-white/70 border-t-white animate-spin" />
-                            </div>
-                          ) : null}
-                        </button>
-                          );
-                        })()
-                      ))}
-                    </div>
-                  ) : null}
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      {logoLoading ? <div className="text-xs text-slate-500">Searching…</div> : null}
+                      {!logoLoading && logoTiles.length === 0 ? (
+                        <div className="text-xs text-slate-500">Type a search or select a tag to see logo variants.</div>
+                      ) : null}
+                      {logoTiles.length > 0 ? (
+                        <div className="mt-2 max-h-[42vh] overflow-y-auto pr-1 grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                          {logoTiles.map((t) => (
+                            (() => {
+                              const key = `${t.source}:${t.sourceKey}:${t.variantKey}`;
+                              const caching = cachingLogoKey === key;
+                              const cached = cachedLogoKeys.has(key);
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  className="relative aspect-square rounded-md border border-slate-200 bg-slate-50 overflow-hidden hover:border-slate-300 disabled:opacity-50"
+                                  disabled={!canInteract || caching}
+                                  onClick={async () => {
+                                    if (!actions?.importLogoVariant) return;
+                                    if (!actions?.insertCachedLogoToActiveSlide) return;
+                                    if (!canInteract) return;
+                                    setLogoError(null);
+                                    setCachingLogoKey(key);
+                                    try {
+                                      const res = await actions.importLogoVariant({
+                                        source: t.source,
+                                        sourceKey: t.sourceKey,
+                                        variantKey: t.variantKey,
+                                        remoteUrl: t.remoteUrl,
+                                      });
+                                      // Mark cached in UI.
+                                      setCachedLogoKeys((prev) => {
+                                        const next = new Set(prev);
+                                        next.add(key);
+                                        return next;
+                                      });
+
+                                      const url = String(res?.assetUrl || "").trim();
+                                      const bucket = String(res?.storage?.bucket || "").trim();
+                                      const path = String(res?.storage?.path || "").trim();
+                                      if (!url || !bucket || !path) throw new Error("Cached but missing url/storage info");
+
+                                      if (bgRemovalEnabledAtInsert) setInsertingLogoKey(key);
+                                      await actions.insertCachedLogoToActiveSlide({
+                                        url,
+                                        storage: { bucket, path },
+                                        source: t.source,
+                                        sourceKey: t.sourceKey,
+                                        variantKey: t.variantKey,
+                                      });
+
+                                      // Close when done (if BG removal is ON, this only happens after reprocess finishes).
+                                      actions.onCloseImageLibraryModal?.();
+                                    } catch (e: any) {
+                                      setLogoError(String(e?.message || e || "Logo import failed"));
+                                    } finally {
+                                      setCachingLogoKey(null);
+                                      setInsertingLogoKey(null);
+                                    }
+                                  }}
+                                  title={`${t.title} — ${t.variantKey}`}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={t.remoteUrl} alt="" className="absolute inset-0 w-full h-full object-contain" />
+                                  {cached ? (
+                                    <div className="absolute left-1 top-1 px-2 py-0.5 rounded-full bg-black text-white text-[10px]">
+                                      Cached
+                                    </div>
+                                  ) : null}
+                                  {caching ? (
+                                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                                      <span className="inline-block h-5 w-5 rounded-full border-2 border-white/70 border-t-white animate-spin" />
+                                    </div>
+                                  ) : null}
+                                </button>
+                              );
+                            })()
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
             </div>

@@ -118,6 +118,14 @@ type Args = {
     limit?: number;
   }) => Promise<any[]>;
 
+  searchLogoVariantsGlobal: (args: { q: string; limit?: number }) => Promise<
+    Array<{
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+      rowsMatched: number;
+      tiles: any[];
+    }>
+  >;
+
   // Logos (Phase 3D)
   importLogoVariant: (args: {
     source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -232,6 +240,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onInsertRecentImage,
     fetchLogoTags,
     searchLogoVariants,
+    searchLogoVariantsGlobal,
     importLogoVariant,
     insertCachedLogoToActiveSlide,
   } = args;
@@ -432,6 +441,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onInsertRecentImage: (asset: any) => onInsertRecentImage(asset),
     fetchLogoTags: (a: any) => fetchLogoTags(a),
     searchLogoVariants: (a: any) => searchLogoVariants(a),
+    searchLogoVariantsGlobal: (a: any) => searchLogoVariantsGlobal(a),
     importLogoVariant: (a: any) => importLogoVariant(a),
     insertCachedLogoToActiveSlide: (a: any) => insertCachedLogoToActiveSlide(a),
   };
@@ -510,6 +520,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onInsertRecentImage: (asset: any) => implRef.current?.onInsertRecentImage?.(asset),
       fetchLogoTags: (a: any) => implRef.current?.fetchLogoTags?.(a) ?? Promise.resolve([]),
       searchLogoVariants: (a: any) => implRef.current?.searchLogoVariants?.(a) ?? Promise.resolve([]),
+      searchLogoVariantsGlobal: (a: any) => implRef.current?.searchLogoVariantsGlobal?.(a) ?? Promise.resolve([]),
       importLogoVariant: (a: any) =>
         implRef.current?.importLogoVariant?.(a) ?? Promise.resolve({ cached: true, assetUrl: "", storage: { bucket: "", path: "" } }),
       insertCachedLogoToActiveSlide: (a: any) => implRef.current?.insertCachedLogoToActiveSlide?.(a) ?? Promise.resolve(),

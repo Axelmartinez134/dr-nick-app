@@ -21,7 +21,7 @@ import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
-import { fetchLogoTags, importLogoVariant, searchLogoVariants } from "@/features/editor/services/logosApi";
+import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
 import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSlidesPanel";
 import { EditorSlidesRow } from "@/features/editor/components/EditorSlidesRow";
@@ -3375,6 +3375,14 @@ export default function EditorShell() {
     [fetchJson]
   );
 
+  const searchLogoVariantsGlobalAction = useCallback(
+    async (args: { q: string; limit?: number }) => {
+      const out = await searchLogoVariantsGlobal(fetchJson, args);
+      return out.providers;
+    },
+    [fetchJson]
+  );
+
   const importLogoVariantAction = useCallback(
     async (args: {
       source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -4462,6 +4470,7 @@ export default function EditorShell() {
     // Logos (Phase 3C: read-only)
     fetchLogoTags: fetchLogoTagsAction,
     searchLogoVariants: searchLogoVariantsAction,
+    searchLogoVariantsGlobal: searchLogoVariantsGlobalAction,
 
     // Logos (Phase 3D: import + cache)
     importLogoVariant: importLogoVariantAction,

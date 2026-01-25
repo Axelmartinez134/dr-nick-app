@@ -137,6 +137,24 @@ export type EditorActions = {
     }>
   >;
 
+  // Logos (Global search: all providers; grouped by provider; hard cap 20 total tiles)
+  searchLogoVariantsGlobal: (args: { q: string; limit?: number }) => Promise<
+    Array<{
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+      rowsMatched: number;
+      tiles: Array<{
+        source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+        sourceKey: string;
+        title: string;
+        websiteDomain: string | null;
+        tags: string[];
+        variantKey: string;
+        remoteUrl: string;
+        format: 'svg' | 'other';
+      }>;
+    }>
+  >;
+
   // Logos (Phase 3D: import + global cache; still no insertion)
   importLogoVariant: (args: {
     source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
