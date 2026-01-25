@@ -1,4 +1,4 @@
-export type LogoProvider = 'vectorlogozone';
+export type LogoProvider = 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
 
 export type LogoTagStat = { tag: string; count: number };
 

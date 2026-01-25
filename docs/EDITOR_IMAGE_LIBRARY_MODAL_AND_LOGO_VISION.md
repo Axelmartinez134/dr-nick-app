@@ -163,7 +163,13 @@ User explicitly stated usage is “purely educational” and brands want usage i
 - On selection: **cache globally** into Supabase (shared across all editor users), convert **SVG → PNG on the server**, then insert as a normal image
 
 **Key UI decisions (approved)**
-- Logos section includes a **Provider dropdown** (starts with VectorLogoZone; later add Lobe Icons, gilbarbara/logos, developer-icons).
+- Logos section includes a **Provider dropdown**:
+  - VectorLogoZone
+  - Lobe Icons
+  - Developer Icons
+  - SVG Logos (svgporn)
+  - SVG Logos (gilbarbara)
+  - Simple Icons
 - Tag UI uses **Top tags as chips** (e.g., 12 chips) plus a **“More tags…” dropdown** for the full list.
 - Background removal toggle in the modal remains **default OFF** and controls BG removal **at insert-time**.
 
@@ -199,13 +205,57 @@ User explicitly stated usage is “purely educational” and brands want usage i
   - ON: keep modal open with spinner until BG removal finishes, then close
 **Manual QA**: end-to-end: search → import/cached → insert → appears in Recents.
 
-### Phase 4+: Additional sources (optional)
-Consider adding:
-- Lobe Icons
-- gilbarbara/logos
-- (Optional) developer-icons
+### Phase L (implemented): Logos — source #2 = Lobe Icons
+**Status**: Implemented (Phases **L1–L3**).
 
-Only after we validate their metadata formats and categories/tags.
+**Data reality (Lobe Icons)**
+- Repo: `lobehub/lobe-icons` (default branch: `master`)
+- Metadata per icon: `src/<Name>/index.md` frontmatter:
+  - `group: Provider|Model|Application` (used as the only tag; Option 1)
+  - `title` (display)
+  - `description` (usually a website URL; used as `website`)
+- Variants: static SVG pack in `packages/static-svg/icons/*.svg`
+  - Naming: `<key>.svg`, plus suffix variants like `-color`, `-text`, `-brand`, `-brand-color`, etc.
+
+**Manual ingestion (L1)**
+- Script: `scripts/logo_catalog/ingest_lobe_icons.mjs`
+- Writes rows into `public.editor_logo_catalog`:
+  - `source='lobe-icons'`
+  - `source_key=<baseKeyLower>`
+  - `tags=['provider'|'model'|'application']` (best-effort; some rows may have `[]` if no valid group)
+  - `variants[]` populated from static SVG filenames
+
+### Phase D (implemented): Logos — source #3 = Developer Icons
+**Status**: Implemented (Phases **D1–D3**).
+
+- Catalog ingestion: `scripts/logo_catalog/ingest_developer_icons.mjs`
+  - Tags: `categories` only (Title Case)
+  - Variants: `icons/*.svg` (ignore `icons/raw/`)
+
+### Phase S (implemented): Logos — source #4 = SVG Logos (svgporn)
+**Status**: Implemented (Phases **S1–S3**).
+
+- Catalog ingestion: `scripts/logo_catalog/ingest_svgporn.mjs`
+  - Tags: `categories[]` only (ignore dataset `tags[]`)
+  - Variants: `files[]` via `cdn.svglogos.dev`
+
+### Phase G (implemented): Logos — source #5 = SVG Logos (gilbarbara)
+**Status**: Implemented.
+
+- Catalog ingestion: `scripts/logo_catalog/ingest_gilbarbara_logos.mjs`
+  - Tags: enriched from the svgporn dataset categories when possible (matched by `shortname`)
+  - Variants: `logos/<shortname>/<variant>.svg` from the gilbarbara repo
+
+### Phase SI (implemented): Logos — source #6 = Simple Icons
+**Status**: Implemented.
+
+- Catalog ingestion: `scripts/logo_catalog/ingest_simple_icons.mjs`
+  - Tags: none upstream (search-only)
+  - Variants: one-per-icon `icons/<slug>.svg` from the Simple Icons repo (`develop` branch)
+  - Note: slugs are derived via `slugs.md` mapping (so icons like Airtable ingest correctly)
+
+### Phase 4+: Additional sources (optional)
+Only after we validate their metadata formats and categories/tags (or accept “search-only” providers).
 
 ---
 

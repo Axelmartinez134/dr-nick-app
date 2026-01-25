@@ -18,13 +18,24 @@ function safeString(v: any) {
   return String(v ?? '').trim();
 }
 
+function normalizeProviderSource(raw: string) {
+  const s = safeString(raw).toLowerCase();
+  if (s === 'vectorlogozone' || s === 'vlz') return 'vectorlogozone';
+  if (s === 'lobe-icons' || s === 'lobeicons' || s === 'lobe_icons') return 'lobe-icons';
+  if (s === 'developer-icons' || s === 'developericons' || s === 'developer_icons') return 'developer-icons';
+  if (s === 'svgporn' || s === 'svg-logos' || s === 'svglogos') return 'svgporn';
+  if (s === 'gilbarbara' || s === 'gilbarbara/logos' || s === 'logos') return 'gilbarbara';
+  if (s === 'simple-icons' || s === 'simpleicons' || s === 'simple_icons') return 'simple-icons';
+  return 'vectorlogozone';
+}
+
 export async function GET(req: NextRequest) {
   const authed = await getAuthedSupabase(req);
   if (!authed.ok) return NextResponse.json({ success: false, error: authed.error } satisfies Resp, { status: authed.status });
   const { supabase } = authed;
 
   const { searchParams } = new URL(req.url);
-  const source = safeString(searchParams.get('source') || 'vectorlogozone');
+  const source = normalizeProviderSource(searchParams.get('source') || 'vectorlogozone');
   const limit = clampInt(Number(searchParams.get('limit') || 200), 1, 500);
 
   // Phase 3C (conservative): compute tag stats in the server route by scanning catalog rows.

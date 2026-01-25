@@ -177,7 +177,7 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - Sections:
     - Upload (file picker)
     - Recents (grid of tiles, user-scoped)
-    - Logos (VectorLogoZone; Phase 3C/3D/3E)
+    - Logos (VectorLogoZone + Lobe Icons + Developer Icons + SVG Logos (svgporn) + SVG Logos (gilbarbara) + Simple Icons)
   - Close behaviors: outside click, Escape key, close button
   - Modal BG toggle:
     - default OFF (resets on open/close)
@@ -197,6 +197,76 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - `POST /api/editor/assets/logos/import`
   - Downloads the selected SVG, converts to PNG server-side, stores it into the shared bucket `editor-shared-assets`,
     and upserts `public.editor_logo_assets` so all editor users reuse the cached PNG.
+
+#### Logos (Phase L: Lobe Icons)
+- **Catalog ingestion (manual)**:
+  - Script: `scripts/logo_catalog/ingest_lobe_icons.mjs`
+  - Sources:
+    - Per-icon metadata: `src/<Name>/index.md` frontmatter (`title`, `group`, `description`)
+    - Variants: static pack at `packages/static-svg/icons/*.svg`
+  - Tags (Option 1): only `provider` / `model` / `application` derived from `group` (best-effort)
+- **Browse APIs**
+  - `GET /api/editor/assets/logos/tags?source=lobe-icons`
+  - `GET /api/editor/assets/logos/search?source=lobe-icons&q=...&tag=...`
+- **Import/cache + insert**
+  - Uses the same `POST /api/editor/assets/logos/import` pipeline (SVG→PNG via `sharp` → `editor-shared-assets`)
+  - Insert path is the existing “insert cached logo into slide” pipeline (records Recents; respects modal BG toggle)
+
+#### Logos (Phase D: Developer Icons)
+- **Catalog ingestion (manual)**:
+  - Script: `scripts/logo_catalog/ingest_developer_icons.mjs`
+  - Sources:
+    - Metadata: `lib/iconsData.ts` (`name`, `id`, `categories`, `keywords`, `url`)
+    - Variants: optimized `icons/*.svg` (ignore `icons/raw/`)
+  - Tags: categories only (Title Case, same as their site)
+- **Browse APIs**
+  - `GET /api/editor/assets/logos/tags?source=developer-icons`
+  - `GET /api/editor/assets/logos/search?source=developer-icons&q=...&tag=...`
+- **Import/cache + insert**
+  - Uses `POST /api/editor/assets/logos/import` (SVG→PNG via `sharp` → `editor-shared-assets`)
+  - Insert path records Recents; respects modal BG toggle
+
+#### Logos (Phase S: SVG Logos / svgporn)
+- **Catalog ingestion (manual)**:
+  - Script: `scripts/logo_catalog/ingest_svgporn.mjs`
+  - Dataset: `https://storage.googleapis.com/logos-c87b5.appspot.com/logos.json`
+  - Tags: `categories[]` only (ignore dataset `tags[]`)
+  - Variants: `files[]` → `https://cdn.svglogos.dev/logos/<filename>`
+  - Note: dataset can contain duplicate `shortname`; ingestion script dedupes `source_key` and merges variants/categories.
+- **Browse APIs**
+  - `GET /api/editor/assets/logos/tags?source=svgporn`
+  - `GET /api/editor/assets/logos/search?source=svgporn&q=...&tag=...`
+- **Import/cache + insert**
+  - Uses `POST /api/editor/assets/logos/import` (SVG→PNG via `sharp` → `editor-shared-assets`)
+  - Insert path records Recents; respects modal BG toggle
+
+#### Logos (Phase G: SVG Logos / gilbarbara)
+- **Catalog ingestion (manual)**:
+  - Script: `scripts/logo_catalog/ingest_gilbarbara_logos.mjs`
+  - Sources:
+    - Logos list: gilbarbara repo `logos.json`
+    - Tags enrichment: svgporn dataset categories matched by `shortname` (best-effort)
+  - Variants: `logos/<shortname>/<variant>.svg`
+- **Browse APIs**
+  - `GET /api/editor/assets/logos/tags?source=gilbarbara`
+  - `GET /api/editor/assets/logos/search?source=gilbarbara&q=...&tag=...`
+- **Import/cache + insert**
+  - Uses `POST /api/editor/assets/logos/import` (SVG→PNG via `sharp` → `editor-shared-assets`)
+  - Insert path records Recents; respects modal BG toggle
+
+#### Logos (Phase SI: Simple Icons)
+- **Catalog ingestion (manual)**:
+  - Script: `scripts/logo_catalog/ingest_simple_icons.mjs`
+  - Repo: `simple-icons/simple-icons` (`develop` branch)
+  - Tags: none upstream (search-only)
+  - Variants: one-per-icon `icons/<slug>.svg`
+  - Note: slugs derived via `slugs.md` mapping (needed because most JSON rows don’t include `slug`)
+- **Browse APIs**
+  - `GET /api/editor/assets/logos/tags?source=simple-icons`
+  - `GET /api/editor/assets/logos/search?source=simple-icons&q=...&tag=...`
+- **Import/cache + insert**
+  - Uses `POST /api/editor/assets/logos/import` (SVG→PNG via `sharp` → `editor-shared-assets`)
+  - Insert path records Recents; respects modal BG toggle
 
 #### Recents: stored table + API
 - **DB migration**: `supabase/migrations/20260125_000001_add_editor_recent_assets.sql`

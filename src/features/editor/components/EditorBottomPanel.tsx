@@ -333,33 +333,33 @@ export function EditorBottomPanel() {
                         </button>
                       ) : null}
 
-                      <button
+                  <button
                         className="h-12 flex-1 min-w-0 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
-                        disabled={
-                          !currentProjectId ||
-                          ui.aiImageGeneratingThis ||
-                          copyGenerating ||
-                          switchingSlides ||
-                          ui.imagePromptGenerating ||
+                    disabled={
+                      !currentProjectId ||
+                      ui.aiImageGeneratingThis ||
+                      copyGenerating ||
+                      switchingSlides ||
+                      ui.imagePromptGenerating ||
                           !String(aiImagePromptDraft ?? slides[activeSlideIndex]?.draftAiImagePrompt ?? "").trim()
-                        }
-                        onClick={actions.onClickGenerateAiImage}
-                      >
-                        {ui.aiImageGeneratingThis ? (
-                          <>
-                            <div
-                              className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
-                              style={{ width: `${ui.aiImageProgressThis || 0}%` }}
-                            />
-                            <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
-                              <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
+                    }
+                    onClick={actions.onClickGenerateAiImage}
+                  >
+                    {ui.aiImageGeneratingThis ? (
+                      <>
+                        <div
+                          className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
+                          style={{ width: `${ui.aiImageProgressThis || 0}%` }}
+                        />
+                        <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
+                          <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
                               <span className="text-sm font-bold">{Math.round(ui.aiImageProgressThis || 0)}%</span>
-                            </span>
-                          </>
-                        ) : (
-                          "🎨 Generate Image"
-                        )}
-                      </button>
+                        </span>
+                      </>
+                    ) : (
+                      "🎨 Generate Image"
+                    )}
+                  </button>
                     </div>
 
                     {String(aiImageGenModel) === "gemini-3-pro-image-preview" && aiImageSettingsOpen ? (

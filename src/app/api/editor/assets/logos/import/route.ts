@@ -100,11 +100,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Missing source/sourceKey/variantKey/remoteUrl' } satisfies Resp, { status: 400 });
   }
 
-  // Phase 3D: only VectorLogoZone supported.
-  if (source !== 'vectorlogozone') {
-    return NextResponse.json({ success: false, error: 'Unsupported logo source (Phase 3D supports vectorlogozone only)' } satisfies Resp, {
-      status: 400,
-    });
+  // Supported providers
+  if (
+    source !== 'vectorlogozone' &&
+    source !== 'lobe-icons' &&
+    source !== 'developer-icons' &&
+    source !== 'svgporn' &&
+    source !== 'gilbarbara' &&
+    source !== 'simple-icons'
+  ) {
+    return NextResponse.json({ success: false, error: 'Unsupported logo source' } satisfies Resp, { status: 400 });
   }
 
   // If already cached, return it (shared across all editor users).

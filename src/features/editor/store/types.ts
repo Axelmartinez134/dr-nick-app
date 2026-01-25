@@ -115,15 +115,18 @@ export type EditorActions = {
   }) => Promise<void> | void;
 
   // Logos (Phase 3C: read-only)
-  fetchLogoTags: (args: { source: 'vectorlogozone'; limit?: number }) => Promise<Array<{ tag: string; count: number }>>;
+  fetchLogoTags: (args: {
+    source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+    limit?: number;
+  }) => Promise<Array<{ tag: string; count: number }>>;
   searchLogoVariants: (args: {
-    source: 'vectorlogozone';
+    source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
     q?: string;
     tag?: string | null;
     limit?: number;
   }) => Promise<
     Array<{
-      source: 'vectorlogozone';
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
       sourceKey: string;
       title: string;
       websiteDomain: string | null;
@@ -136,7 +139,7 @@ export type EditorActions = {
 
   // Logos (Phase 3D: import + global cache; still no insertion)
   importLogoVariant: (args: {
-    source: 'vectorlogozone';
+    source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
     sourceKey: string;
     variantKey: string;
     remoteUrl: string;
@@ -146,7 +149,7 @@ export type EditorActions = {
   insertCachedLogoToActiveSlide: (args: {
     url: string;
     storage: { bucket: string; path: string };
-    source: 'vectorlogozone';
+    source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
     sourceKey: string;
     variantKey: string;
   }) => Promise<void>;

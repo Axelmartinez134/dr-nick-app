@@ -560,18 +560,18 @@ export default function TemplateEditorModal(props: {
                     >
                       + Shape
                     </button>
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
-                      disabled={saving}
-                      onClick={() => {
-                        canvasRef.current?.addTextLayer?.();
-                        const next = canvasRef.current?.exportDefinition() || definition;
-                        setDefinition(next);
-                      }}
-                    >
-                      + Text
-                    </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
+                    disabled={saving}
+                    onClick={() => {
+                      canvasRef.current?.addTextLayer?.();
+                      const next = canvasRef.current?.exportDefinition() || definition;
+                      setDefinition(next);
+                    }}
+                  >
+                    + Text
+                  </button>
                   </div>
                 </div>
                 <div className="border border-gray-200 rounded bg-white max-h-56 overflow-y-auto">
@@ -968,8 +968,8 @@ export default function TemplateEditorModal(props: {
                             setDefinition(next);
                           }}
                         />
-                      </div>
-                    </div>
+            </div>
+          </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>

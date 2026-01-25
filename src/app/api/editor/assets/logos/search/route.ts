@@ -39,8 +39,13 @@ function clampInt(n: number, min: number, max: number) {
 
 function normalizeProviderSource(raw: string) {
   const s = safeString(raw).toLowerCase();
-  // Phase 3C: first provider only
   if (s === 'vectorlogozone' || s === 'vlz') return 'vectorlogozone';
+  if (s === 'lobe-icons' || s === 'lobeicons' || s === 'lobe_icons') return 'lobe-icons';
+  if (s === 'developer-icons' || s === 'developericons' || s === 'developer_icons') return 'developer-icons';
+  if (s === 'svgporn' || s === 'svg-logos' || s === 'svglogos') return 'svgporn';
+  if (s === 'gilbarbara' || s === 'gilbarbara/logos' || s === 'logos') return 'gilbarbara';
+  if (s === 'simple-icons' || s === 'simpleicons' || s === 'simple_icons') return 'simple-icons';
+  // Conservative default
   return 'vectorlogozone';
 }
 

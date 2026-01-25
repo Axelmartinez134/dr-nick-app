@@ -13,7 +13,7 @@ type RecentAsset = {
   use_count: number;
 };
 
-type LogoProvider = "vectorlogozone";
+type LogoProvider = "vectorlogozone" | "lobe-icons" | "developer-icons" | "svgporn" | "gilbarbara" | "simple-icons";
 
 type LogoVariantTile = {
   source: LogoProvider;
@@ -331,11 +331,17 @@ export function ImageLibraryModal() {
                       setLogoSelectedTag(null);
                       setLogoQuery("");
                       setLogoTiles([]);
+                      setLogoError(null);
                     }}
                     disabled={!canInteract}
                     title="Logo source"
                   >
                     <option value="vectorlogozone">VectorLogoZone</option>
+                    <option value="lobe-icons">Lobe Icons</option>
+                    <option value="developer-icons">Developer Icons</option>
+                    <option value="svgporn">SVG Logos (svgporn)</option>
+                    <option value="gilbarbara">SVG Logos (gilbarbara)</option>
+                    <option value="simple-icons">Simple Icons</option>
                   </select>
                   <input
                     className="h-9 flex-1 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-700"

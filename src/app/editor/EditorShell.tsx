@@ -3352,7 +3352,10 @@ export default function EditorShell() {
   );
 
   const fetchLogoTagsAction = useCallback(
-    async (args: { source: 'vectorlogozone'; limit?: number }) => {
+    async (args: {
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+      limit?: number;
+    }) => {
       const out = await fetchLogoTags(fetchJson, args);
       return out.tags;
     },
@@ -3360,7 +3363,12 @@ export default function EditorShell() {
   );
 
   const searchLogoVariantsAction = useCallback(
-    async (args: { source: 'vectorlogozone'; q?: string; tag?: string | null; limit?: number }) => {
+    async (args: {
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+      q?: string;
+      tag?: string | null;
+      limit?: number;
+    }) => {
       const out = await searchLogoVariants(fetchJson, args);
       return out.tiles;
     },
@@ -3368,7 +3376,12 @@ export default function EditorShell() {
   );
 
   const importLogoVariantAction = useCallback(
-    async (args: { source: 'vectorlogozone'; sourceKey: string; variantKey: string; remoteUrl: string }) => {
+    async (args: {
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+      sourceKey: string;
+      variantKey: string;
+      remoteUrl: string;
+    }) => {
       const out = await importLogoVariant(fetchJson, args);
       return { cached: out.cached, assetUrl: out.asset.url, storage: out.asset.storage };
     },
@@ -3376,7 +3389,13 @@ export default function EditorShell() {
   );
 
   const insertCachedLogoToActiveSlide = useCallback(
-    async (args: { url: string; storage: { bucket: string; path: string }; source: 'vectorlogozone'; sourceKey: string; variantKey: string }) => {
+    async (args: {
+      url: string;
+      storage: { bucket: string; path: string };
+      source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
+      sourceKey: string;
+      variantKey: string;
+    }) => {
       const url = String(args?.url || '').trim();
       const bucket = String(args?.storage?.bucket || '').trim();
       const path = String(args?.storage?.path || '').trim();

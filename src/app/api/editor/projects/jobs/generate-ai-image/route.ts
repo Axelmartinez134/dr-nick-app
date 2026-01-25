@@ -286,18 +286,18 @@ export async function POST(req: NextRequest) {
       });
     } else {
       // Default/fallback: OpenAI GPT Image
-      console.log('[generate-ai-image] 🎨 Calling GPT-Image-1.5...');
+    console.log('[generate-ai-image] 🎨 Calling GPT-Image-1.5...');
       const dataUrl = await generateMedicalImage(noTextPrompt);
-
-      // Extract base64 from data URL
-      const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
-      if (!base64Match) {
-        throw new Error('Invalid image data returned from GPT-Image');
-      }
-      const imageBase64 = base64Match[1];
+    
+    // Extract base64 from data URL
+    const base64Match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+    if (!base64Match) {
+      throw new Error('Invalid image data returned from GPT-Image');
+    }
+    const imageBase64 = base64Match[1];
       sourceMimeType = 'image/png';
-      originalBuffer = Buffer.from(imageBase64, 'base64');
-      console.log('[generate-ai-image] ✅ GPT-Image generated, size:', originalBuffer.length, 'bytes');
+    originalBuffer = Buffer.from(imageBase64, 'base64');
+    console.log('[generate-ai-image] ✅ GPT-Image generated, size:', originalBuffer.length, 'bytes');
     }
 
     // Normalize to PNG for all downstream handling + storage.
