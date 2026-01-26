@@ -193,6 +193,7 @@ export type EditorWorkspaceState = {
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
   uploadImageForActiveSlide: (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) => void;
   handleUserImageChange: (payload: any) => void;
+  handleUserExtraImageChange: (payload: any) => void;
 
   onUserTextChangeRegular: (change: any) => void;
   onUserTextChangeEnhanced: (change: any) => void;
@@ -245,6 +246,13 @@ export type EditorWorkspaceUiState = {
   // Image menu / busy state
   imageMenuOpen: boolean;
   imageMenuPos: { x: number; y: number } | null;
+  imageMenuInfo?: {
+    hasAnySelectedImage: boolean;
+    selectedStickerIds: string[];
+    selectedPrimary: boolean;
+    canSetAsPrimary: boolean;
+    singleStickerId: string | null;
+  } | null;
   imageBusy: boolean;
 };
 
@@ -255,6 +263,9 @@ export type EditorWorkspaceActionsState = {
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
   uploadImageForActiveSlide: (file: File) => void;
   handleUserImageChange: (payload: any) => void;
+  handleUserExtraImageChange: (payload: any) => void;
+  openImageMenu: (x: number, y: number) => void;
+  setSelectedStickerAsPrimary: () => void;
 
   onUserTextChangeRegular: (change: any) => void;
   onUserTextChangeEnhanced: (change: any) => void;

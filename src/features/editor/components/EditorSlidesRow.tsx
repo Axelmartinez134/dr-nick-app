@@ -71,6 +71,7 @@ export function EditorSlidesRow() {
     addLog,
     imageMenuOpen,
     imageMenuPos,
+    imageMenuInfo,
     imageBusy,
   } = workspaceUi;
 
@@ -78,8 +79,11 @@ export function EditorSlidesRow() {
     computeTemplateIdForSlide,
     hasImageForActiveSlide,
     deleteImageForActiveSlide,
+    setSelectedStickerAsPrimary,
+    openImageMenu,
     uploadImageForActiveSlide,
     handleUserImageChange,
+    handleUserExtraImageChange,
     onUserTextChangeRegular,
     onUserTextChangeEnhanced,
     onMobileViewportPointerDown,
@@ -156,11 +160,21 @@ export function EditorSlidesRow() {
             <button
               type="button"
               className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
-              disabled={imageBusy || !hasImageForActiveSlide()}
+              disabled={imageBusy || !(imageMenuInfo?.hasAnySelectedImage || hasImageForActiveSlide())}
               onClick={() => deleteImageForActiveSlide("menu")}
             >
               Remove image
             </button>
+            {imageMenuInfo?.canSetAsPrimary ? (
+              <button
+                type="button"
+                className="mt-1 w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
+                disabled={imageBusy}
+                onClick={() => setSelectedStickerAsPrimary()}
+              >
+                Set as primary
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -250,6 +264,8 @@ export function EditorSlidesRow() {
                         displayHeightPx={displayH}
                         onUserTextChange={templateTypeId === "regular" ? onUserTextChangeRegular : onUserTextChangeEnhanced}
                         onUserImageChange={handleUserImageChange}
+                        onUserExtraImageChange={handleUserExtraImageChange}
+                        onOpenImageMenu={openImageMenu}
                       />
                     )}
                   </div>
@@ -416,6 +432,8 @@ export function EditorSlidesRow() {
                                     : undefined
                                 }
                                 onUserImageChange={i === activeSlideIndex ? handleUserImageChange : undefined}
+                                onUserExtraImageChange={i === activeSlideIndex ? handleUserExtraImageChange : undefined}
+                                onOpenImageMenu={i === activeSlideIndex ? openImageMenu : undefined}
                               />
                             );
                           })()}

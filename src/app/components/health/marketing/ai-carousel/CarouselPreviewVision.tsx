@@ -75,6 +75,16 @@ interface CarouselPreviewProps {
     height: number;
     angle?: number;
   }) => void;
+  onUserExtraImageChange?: (change: {
+    canvasSlideIndex?: number;
+    imageId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    angle?: number;
+  }) => void;
+  onOpenImageMenu?: (x: number, y: number) => void;
   // Display sizing (CSS pixels). The canvas internal resolution remains 1080×1440.
   // Avoid using parent CSS transforms for scaling; they break Fabric hit-testing.
   displayWidthPx?: number;  // default 540
@@ -119,6 +129,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       showLayoutOverlays,
       onUserTextChange,
       onUserImageChange,
+      onUserExtraImageChange,
+      onOpenImageMenu,
       displayWidthPx,
       displayHeightPx,
     },
@@ -135,6 +147,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const interactionRef = useRef<{ clampText: boolean; clampImage: boolean; pushTextOut: boolean }>({ clampText: true, clampImage: true, pushTextOut: true });
     const onUserTextChangeRef = useRef<CarouselPreviewProps["onUserTextChange"]>(undefined);
     const onUserImageChangeRef = useRef<CarouselPreviewProps["onUserImageChange"]>(undefined);
+    const onUserExtraImageChangeRef = useRef<CarouselPreviewProps["onUserExtraImageChange"]>(undefined);
+    const onOpenImageMenuRef = useRef<CarouselPreviewProps["onOpenImageMenu"]>(undefined);
     // When the user moves a single line, we should NOT auto-move other lines (editor-like behavior).
     // IMPORTANT: This must NOT be time-based because renders are async (font/image loads) and may exceed any small window.
     // Instead, treat it as a one-shot "next render only" restriction and clear after enforcement runs.
@@ -143,6 +157,20 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     // global post-render invariant enforcement (which can move other lines). We rely on the
     // per-line auto-fix in `object:modified` for the moved line.
     const skipNextGlobalInvariantEnforcementRef = useRef<boolean>(false);
+    // Debug-only: track the drag-guard and enforcement mode transitions to avoid log spam.
+    const lastDragGuardRef = useRef<boolean>(false);
+    const lastEnforceSkipRef = useRef<boolean>(false);
+    const lastEnforceDbgSigRef = useRef<string>('');
+
+    const shouldDebugWrap = () => {
+      try {
+        // Local-only debugging: enable with `localStorage.setItem('dn_debug_wrap', '1')`
+        // and disable with `localStorage.removeItem('dn_debug_wrap')`.
+        return Boolean(typeof window !== 'undefined' && window.localStorage?.getItem('dn_debug_wrap') === '1');
+      } catch {
+        return false;
+      }
+    };
     // Multi-select move persistence:
     // When Fabric moves an `activeSelection`, child objects' coordinates can be selection-relative.
     // Persist by capturing absolute start positions and applying the selection dx/dy on release.
@@ -218,6 +246,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     useEffect(() => {
       onUserImageChangeRef.current = onUserImageChange;
     }, [onUserImageChange]);
+    useEffect(() => {
+      onUserExtraImageChangeRef.current = onUserExtraImageChange;
+    }, [onUserExtraImageChange]);
+    useEffect(() => {
+      onOpenImageMenuRef.current = onOpenImageMenu;
+    }, [onOpenImageMenu]);
     useEffect(() => {
       showLayoutOverlaysRef.current = !!showLayoutOverlays;
     }, [showLayoutOverlays]);
@@ -890,7 +924,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const role = obj?.data?.role;
           const t = String(obj?.type || '').toLowerCase();
           const isSelection = t === 'activeselection' || t === 'group';
-          if (!isSelection && role !== 'user-image' && role !== 'user-text') return;
+          if (!isSelection && role !== 'user-image' && role !== 'user-image-sticker' && role !== 'user-text') return;
           if (role === 'user-text') {
             // STRICT Lock Layout: do not auto-clamp or push text while locked.
             if (!lockTextLayout && interactionRef.current.clampText) clampObjectToRect(obj, rect);
@@ -931,6 +965,30 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }
           } else if (role === 'user-image') {
             if (suppressTextInvariantsWhileDraggingUserImage) draggingUserImageRef.current = true;
+            try {
+              const next = !!draggingUserImageRef.current;
+              if (next !== lastDragGuardRef.current) {
+                lastDragGuardRef.current = next;
+                if (shouldDebugWrap()) onDebugLog?.(`🧲 DragGuard ${next ? 'ON' : 'OFF'} (moving user-image)`);
+              }
+            } catch {
+              // ignore
+            }
+            // Debug: verify Fabric thinks we're dragging ONLY the image (not a selection).
+            try {
+              if (suppressTextInvariantsWhileDraggingUserImage && shouldDebugWrap()) {
+                const aabb = getAABBTopLeft(obj);
+                onDebugLog?.(
+                  `🖼️ Drag user-image: type=${String(obj?.type || 'n/a')} ` +
+                    `aabb=(${Math.round(aabb.x)},${Math.round(aabb.y)}) ${Math.round(aabb.width)}x${Math.round(aabb.height)} ` +
+                    `lock=${lockTextLayout ? '1' : '0'} suppress=${suppressTextInvariantsWhileDraggingUserImage ? '1' : '0'}`
+                );
+              }
+            } catch {
+              // ignore
+            }
+            if (!lockTextLayout && interactionRef.current.clampImage) clampObjectToRect(obj, rect);
+          } else if (role === 'user-image-sticker') {
             if (!lockTextLayout && interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
           canvas.requestRenderAll?.();
@@ -940,13 +998,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (!rect) return;
           const obj = e?.target;
           const role = obj?.data?.role;
-          if (role !== 'user-image' && role !== 'user-text') return;
+          if (role !== 'user-image' && role !== 'user-image-sticker' && role !== 'user-text') return;
           if (role === 'user-text') {
             if (!lockTextLayout && interactionRef.current.clampText) clampObjectToRect(obj, rect);
             const hasMask = !!overlayDataRef.current.maskU8;
             if (!lockTextLayout && interactionRef.current.clampText && !hasMask) pushTextOutOfImage(obj);
             if (!lockTextLayout) scheduleInvalidCheck(canvas, obj);
-          } else if (role === 'user-image') {
+          } else if (role === 'user-image' || role === 'user-image-sticker') {
             if (!lockTextLayout && interactionRef.current.clampImage) clampObjectToRect(obj, rect);
           }
           canvas.requestRenderAll?.();
@@ -978,11 +1036,28 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (!cb) return;
           if (!obj || obj?.data?.role !== 'user-image') return;
           const aabb = getAABBTopLeft(obj);
-          // For rotation: save angle separately, but use AABB for position/size
-          // so text wrapping works correctly around the rotated bounding box
           const angle = typeof obj.angle === 'number' ? obj.angle : 0;
           cb({
             canvasSlideIndex,
+            x: aabb.x,
+            y: aabb.y,
+            width: Math.max(1, aabb.width),
+            height: Math.max(1, aabb.height),
+            angle,
+          });
+        };
+
+        const notifyUserImageSticker = (obj: any) => {
+          const cb = onUserExtraImageChangeRef.current;
+          if (!cb) return;
+          if (!obj || obj?.data?.role !== 'user-image-sticker') return;
+          const imageId = String(obj?.data?.imageId || '').trim();
+          if (!imageId) return;
+          const aabb = getAABBTopLeft(obj);
+          const angle = typeof obj.angle === 'number' ? obj.angle : 0;
+          cb({
+            canvasSlideIndex,
+            imageId,
             x: aabb.x,
             y: aabb.y,
             width: Math.max(1, aabb.width),
@@ -1005,8 +1080,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 (typeof (obj as any).getObjects === 'function' ? (obj as any).getObjects() : null) ||
                 (Array.isArray((obj as any)._objects) ? (obj as any)._objects : []) ||
                 [];
-              const children = childrenAll.filter((c: any) => c?.data?.role === 'user-text');
-              if (children.length > 0) {
+              const childrenText = childrenAll.filter((c: any) => c?.data?.role === 'user-text');
+              const childrenImages = childrenAll.filter((c: any) => c?.data?.role === 'user-image');
+              const childrenStickers = childrenAll.filter((c: any) => c?.data?.role === 'user-image-sticker');
+              const childrenAny = [...childrenText, ...childrenImages, ...childrenStickers];
+              if (childrenAny.length > 0) {
                 // Skip global enforcement once after this commit so nothing else snaps.
                 skipNextGlobalInvariantEnforcementRef.current = true;
                 // Clear any stale drag state from the older implementation.
@@ -1020,9 +1098,23 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 }
 
                 // Persist each child's now-finalized absolute position.
-                children.forEach((child: any) => {
+                childrenText.forEach((child: any) => {
                   try {
                     notifyUserText(child, false);
+                  } catch {
+                    // ignore per-child
+                  }
+                });
+                childrenImages.forEach((child: any) => {
+                  try {
+                    notifyUserImage(child);
+                  } catch {
+                    // ignore per-child
+                  }
+                });
+                childrenStickers.forEach((child: any) => {
+                  try {
+                    notifyUserImageSticker(child);
                   } catch {
                     // ignore per-child
                   }
@@ -1032,7 +1124,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 try {
                   const fabric = fabricModuleRef.current;
                   if (fabric && typeof fabric.ActiveSelection === 'function') {
-                    const sel = new fabric.ActiveSelection(children, { canvas });
+                    const sel = new fabric.ActiveSelection(childrenAny, { canvas });
                     canvas.setActiveObject?.(sel);
                   }
                 } catch {
@@ -1086,7 +1178,31 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           }
           if (obj?.data?.role === 'user-image') {
             draggingUserImageRef.current = false;
+            try {
+              const next = !!draggingUserImageRef.current;
+              if (next !== lastDragGuardRef.current) {
+                lastDragGuardRef.current = next;
+                if (shouldDebugWrap()) onDebugLog?.(`🧲 DragGuard ${next ? 'ON' : 'OFF'} (modified user-image)`);
+              }
+            } catch {
+              // ignore
+            }
+            try {
+              if (!shouldDebugWrap()) {
+                notifyUserImage(obj);
+                return;
+              }
+              const aabb = getAABBTopLeft(obj);
+              onDebugLog?.(
+                `🖼️ Modified user-image: aabb=(${Math.round(aabb.x)},${Math.round(aabb.y)}) ${Math.round(aabb.width)}x${Math.round(aabb.height)} ` +
+                  `angle=${Number.isFinite(obj?.angle as any) ? Math.round(Number(obj.angle)) : 0}`
+              );
+            } catch {
+              // ignore
+            }
             notifyUserImage(obj);
+          } else if (obj?.data?.role === 'user-image-sticker') {
+            notifyUserImageSticker(obj);
           }
         };
         // IMPORTANT: Do NOT persist on every keystroke (text:changed) because it triggers React updates
@@ -1138,14 +1254,128 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           }
         };
 
+        // Phase 4: right-click / long-press on an image opens the image menu (EditorShell renders it).
+        const imageLongPressRef: { t: number | null; x: number; y: number; target: any } = { t: null, x: 0, y: 0, target: null };
+        const clearLongPress = () => {
+          try {
+            if (imageLongPressRef.t) window.clearTimeout(imageLongPressRef.t);
+          } catch {
+            // ignore
+          }
+          imageLongPressRef.t = null;
+          imageLongPressRef.target = null;
+        };
+        const openMenu = (clientX: number, clientY: number) => {
+          try {
+            const cb = onOpenImageMenuRef.current;
+            if (!cb) return;
+            cb(clientX, clientY);
+          } catch {
+            // ignore
+          }
+        };
+        const selectionHasAnyImage = (sel: any) => {
+          try {
+            const children: any[] =
+              (typeof sel?.getObjects === 'function' ? sel.getObjects() : null) ||
+              (Array.isArray(sel?._objects) ? sel._objects : []) ||
+              [];
+            return children.some((c: any) => c?.data?.role === 'user-image' || c?.data?.role === 'user-image-sticker');
+          } catch {
+            return false;
+          }
+        };
+        const onMouseDown = (opt: any) => {
+          const ev = opt?.e as any;
+          if (!ev) return;
+          const clientX = Number(ev.clientX || 0);
+          const clientY = Number(ev.clientY || 0);
+          const button = Number(ev.button);
+          const pointerType = String(ev.pointerType || '');
+
+          // Right click (mouse)
+          if (button === 2) {
+            try {
+              ev.preventDefault?.();
+              ev.stopPropagation?.();
+            } catch {
+              // ignore
+            }
+            const target = opt?.target || null;
+            const role = target?.data?.role || null;
+            const t = String(target?.type || '').toLowerCase();
+            const isSelection = t === 'activeselection' || t === 'group';
+            if (role === 'user-image' || role === 'user-image-sticker') {
+              try {
+                canvas.setActiveObject?.(target);
+                canvas.requestRenderAll?.();
+              } catch {
+                // ignore
+              }
+              openMenu(clientX, clientY);
+              return;
+            }
+            if (isSelection && selectionHasAnyImage(target)) {
+              openMenu(clientX, clientY);
+            }
+            return;
+          }
+
+          // Long press (touch)
+          if (pointerType === 'touch') {
+            clearLongPress();
+            imageLongPressRef.x = clientX;
+            imageLongPressRef.y = clientY;
+            imageLongPressRef.target = opt?.target || null;
+            const target = imageLongPressRef.target;
+            const role = target?.data?.role || null;
+            const t = String(target?.type || '').toLowerCase();
+            const isSelection = t === 'activeselection' || t === 'group';
+            const shouldArm = role === 'user-image' || role === 'user-image-sticker' || (isSelection && selectionHasAnyImage(target));
+            if (!shouldArm) return;
+            imageLongPressRef.t = window.setTimeout(() => {
+              try {
+                const tgt = imageLongPressRef.target;
+                const role2 = tgt?.data?.role || null;
+                if (role2 === 'user-image' || role2 === 'user-image-sticker') {
+                  try {
+                    canvas.setActiveObject?.(tgt);
+                    canvas.requestRenderAll?.();
+                  } catch {
+                    // ignore
+                  }
+                }
+                openMenu(imageLongPressRef.x, imageLongPressRef.y);
+              } finally {
+                clearLongPress();
+              }
+            }, 520);
+          }
+        };
+        const onMouseUp = () => clearLongPress();
+        const onObjectMovingForLongPress = () => clearLongPress();
+
         canvas.on('object:moving', onObjectMoving);
         canvas.on('object:scaling', onObjectScaling);
         canvas.on('object:modified', onObjectModified);
+        canvas.on('mouse:down', onMouseDown);
+        canvas.on('mouse:up', onMouseUp);
+        canvas.on('object:moving', onObjectMovingForLongPress);
         canvas.on('text:editing:entered', onTextEditingEntered as any);
         canvas.on('text:editing:exited', onTextEditingExited as any);
         canvas.on('object:added', onObjectAdded);
         // Store for cleanup
-        (canvas as any).__dnClampHandlers = { onObjectMoving, onObjectScaling, onObjectModified, onTextEditingEntered, onTextEditingExited, onObjectAdded };
+        (canvas as any).__dnClampHandlers = {
+          onObjectMoving,
+          onObjectScaling,
+          onObjectModified,
+          onMouseDown,
+          onMouseUp,
+          onObjectMovingForLongPress,
+          onTextEditingEntered,
+          onTextEditingExited,
+          onObjectAdded,
+        };
 
         // Smart Guides (visual-only): enabled only when lockTextLayout is true.
         try {
@@ -1175,8 +1405,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             const sg = (c as any).__dnSmartGuides;
             if (h) {
               c.off('object:moving', h.onObjectMoving);
+              c.off('object:moving', h.onObjectMovingForLongPress);
               c.off('object:scaling', h.onObjectScaling);
               c.off('object:modified', h.onObjectModified);
+              c.off('mouse:down', h.onMouseDown);
+              c.off('mouse:up', h.onMouseUp);
               c.off('text:editing:entered', h.onTextEditingEntered);
               c.off('text:editing:exited', h.onTextEditingExited);
               c.off('object:added', h.onObjectAdded);
@@ -1706,7 +1939,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               angle: desiredAngle,
               selectable: true,
             });
-            (fabricImage as any).data = { role: 'user-image' };
+            (fabricImage as any).data = { role: 'user-image', imageKind: 'primary' };
             // NOTE: Rotation controls enabled for user images
 
             console.log('[Preview Vision] 📐 Image positioned and scaled');
@@ -1771,6 +2004,93 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         };
         
         imgElement.src = layout.image.url;
+      }
+
+      // STEP 1B: Load and add extra sticker images (Phase 2)
+      try {
+        const extras = Array.isArray((layout as any)?.extraImages) ? (((layout as any).extraImages as any[]) || []) : [];
+        for (const ex of extras) {
+          const exUrl = String(ex?.url || '').trim();
+          if (!exUrl) continue;
+          const exId = String(ex?.id || '').trim();
+          if (!exId) continue;
+
+          const imgElement = new Image();
+          imgElement.crossOrigin = 'anonymous';
+          imgElement.onload = () => {
+            if (cancelled) return;
+            if (!canvas || typeof canvas.add !== 'function') return;
+            try {
+              const desiredLeft = Number(ex?.x || 0);
+              const desiredTop = Number(ex?.y || 0);
+              const desiredAngle = Number.isFinite(Number(ex?.angle)) ? Number(ex.angle) : 0;
+              const desiredW = Number(ex?.width || 0);
+              const desiredH = Number(ex?.height || 0);
+
+              const fabricImage = new fabric.Image(imgElement, {
+                left: desiredLeft,
+                top: desiredTop,
+                originX: 'left',
+                originY: 'top',
+                scaleX: imgElement.width ? (desiredW / imgElement.width) : 1,
+                scaleY: imgElement.height ? (desiredH / imgElement.height) : 1,
+                angle: desiredAngle,
+                selectable: true,
+                evented: true,
+              });
+              (fabricImage as any).data = { role: 'user-image-sticker', imageId: exId };
+              canvas.add(fabricImage);
+
+              // Stacking: place sticker above template assets but below user text.
+              const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
+              try {
+                if (typeof canvas.moveTo === 'function') {
+                  canvas.moveTo(fabricImage, templateCount);
+                } else if (typeof (fabricImage as any).moveTo === 'function') {
+                  (fabricImage as any).moveTo(templateCount);
+                }
+              } catch {
+                // ignore
+              }
+
+              // If sticker loads after text has been added, force all text to the front.
+              try {
+                const objs = canvas.getObjects?.() || [];
+                objs.forEach((obj: any) => {
+                  if (obj?.data?.role === 'user-text') {
+                    if (typeof canvas.bringObjectToFront === 'function') {
+                      canvas.bringObjectToFront(obj);
+                    } else if (typeof canvas.bringToFront === 'function') {
+                      canvas.bringToFront(obj);
+                    } else if (typeof canvas.moveTo === 'function') {
+                      canvas.moveTo(obj, (canvas.getObjects?.().length || 1) - 1);
+                    } else if (typeof obj?.moveTo === 'function') {
+                      obj.moveTo((canvas.getObjects?.().length || 1) - 1);
+                    }
+                  }
+                });
+              } catch {
+                // ignore
+              }
+
+              canvas.renderAll();
+              try {
+                updateOverlayData();
+                canvas.requestRenderAll?.();
+              } catch {
+                // ignore
+              }
+            } catch (e) {
+              console.warn('[Preview Vision] ⚠️ Failed to add extra image sticker:', e);
+            }
+          };
+          imgElement.onerror = () => {
+            // ignore (best-effort)
+          };
+          imgElement.src = exUrl;
+        }
+      } catch {
+        // ignore
       }
 
       // STEP 2: Add text lines with mixed formatting
@@ -1959,7 +2279,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               const br = typeof (textObj as any).getBoundingRect === 'function' ? (textObj as any).getBoundingRect(true, true) : null;
               dbg(
                 `🧪 TightText line ${index + 1}: type=${String((textObj as any).type)} align=${String(line.textAlign)} ` +
-                  `laneW=${laneW} textW=${lineW0 ?? 'n/a'} objW=${Math.round(rawWidth)} scaledW=${Math.round(scaledWidth)} ` +
+                  `laneW=${laneW} pos=(${Math.round(Number(line.position?.x ?? 0))},${Math.round(Number(line.position?.y ?? 0))}) ` +
+                  `block=${String(((line as any)?.block || '')).toUpperCase() || 'n/a'} ` +
+                  `textW=${lineW0 ?? 'n/a'} objW=${Math.round(rawWidth)} scaledW=${Math.round(scaledWidth)} ` +
                   `padding=${Number((textObj as any).padding || 0)} ` +
                   `bboxW=${br?.width ? Math.round(br.width) : 'n/a'} text="${String(line.text || '').slice(0, 32)}"`
               );
@@ -2109,7 +2431,57 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // We still allow manual moves (object:modified handlers) and allow the user to explicitly Realign.
           // Also: when the user is actively dragging the image AND the editor has enabled "auto realign on release",
           // we skip this post-render enforcement so text doesn't "fight" the image drag (it will reflow on release).
-          const results = (lockTextLayout || (suppressTextInvariantsWhileDraggingUserImage && draggingUserImageRef.current))
+          const skip = !!(lockTextLayout || (suppressTextInvariantsWhileDraggingUserImage && draggingUserImageRef.current));
+          try {
+            if (!shouldDebugWrap()) {
+              if (skip !== lastEnforceSkipRef.current) lastEnforceSkipRef.current = skip;
+            }
+            // Emit at least once per imageRect change (so we don't miss logs when skip doesn't toggle).
+            const ir = getCurrentUserImageRect(canvas) || overlayDataRef.current.imageRect;
+            const irSig = ir ? `${Math.round(ir.x)},${Math.round(ir.y)} ${Math.round(ir.width)}x${Math.round(ir.height)}` : 'null';
+            const firstLine = Array.isArray((layout as any)?.textLines) ? (layout as any).textLines?.[0] : null;
+            const y0 = firstLine?.position?.y;
+            const allowedW = Number.isFinite((allowed as any)?.width) ? Math.round(Number((allowed as any).width)) : 0;
+            const imgY = Number.isFinite((ir as any)?.y) ? Math.round(Number((ir as any).y)) : null;
+            // Detect when we appear to be narrowing lanes ABOVE the image (symptom: wrapping starts at image-top even when image is lower).
+            let wrapAnomaly = '';
+            try {
+              const tl = Array.isArray((layout as any)?.textLines) ? (layout as any).textLines : [];
+              const checks = tl.slice(0, 10).map((l: any, i: number) => {
+                const ly = Number.isFinite(l?.position?.y as any) ? Math.round(Number(l.position.y)) : null;
+                const lw = Number.isFinite(l?.maxWidth as any) ? Math.round(Number(l.maxWidth)) : null;
+                return { i: i + 1, y: ly, w: lw, b: String((l?.block || '')).toUpperCase() };
+              });
+              if (imgY != null && allowedW > 0) {
+                const bad = checks.filter((c: { i: number; y: number | null; w: number | null; b: string }) => c.y != null && c.w != null && c.y < imgY && c.w < (allowedW - 8));
+                if (bad.length > 0) {
+                  wrapAnomaly = `lines=${bad.map((b: { i: number; y: number | null; w: number | null; b: string }) => `${b.i}@y${b.y}:w${b.w}${b.b ? `:${b.b}` : ''}`).join(',')}`;
+                }
+              }
+            } catch {
+              // ignore
+            }
+            const sig =
+              `${skip ? 'S' : 'R'}|${irSig}|y0=${Number.isFinite(y0 as any) ? Math.round(Number(y0)) : 'na'}` +
+              `|aw=${allowedW}|iy=${imgY ?? 'na'}|a=${wrapAnomaly ? '1' : '0'}`;
+            if (sig !== lastEnforceDbgSigRef.current) {
+              lastEnforceDbgSigRef.current = sig;
+              if (shouldDebugWrap()) {
+                onDebugLog?.(
+                  `🧱 EnforceTextInvariants ${skip ? 'SKIP' : 'RUN'} ` +
+                    `(lock=${lockTextLayout ? '1' : '0'} suppress=${suppressTextInvariantsWhileDraggingUserImage ? '1' : '0'} drag=${draggingUserImageRef.current ? '1' : '0'}) ` +
+                    `imageRect=${irSig} allowedW=${allowedW} firstLineY=${Number.isFinite(y0 as any) ? Math.round(Number(y0)) : 'na'}` +
+                    (wrapAnomaly ? ` 🧷 WrapAnomaly(imgY=${imgY}): ${wrapAnomaly}` : '')
+                );
+              }
+            }
+            if (skip !== lastEnforceSkipRef.current) {
+              lastEnforceSkipRef.current = skip;
+            }
+          } catch {
+            // ignore
+          }
+          const results = skip
             ? []
             : enforceTextInvariantsSequential({
                 items,

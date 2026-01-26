@@ -515,6 +515,13 @@ export default function EditorShell() {
   const [mobileSaveBusy, setMobileSaveBusy] = useState<number | null>(null); // slide index or null
   const [imageMenuOpen, setImageMenuOpen] = useState(false);
   const [imageMenuPos, setImageMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [imageMenuInfo, setImageMenuInfo] = useState<{
+    hasAnySelectedImage: boolean;
+    selectedStickerIds: string[];
+    selectedPrimary: boolean;
+    canSetAsPrimary: boolean;
+    singleStickerId: string | null;
+  } | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const [bgRemovalBusyKeys, setBgRemovalBusyKeys] = useState<Set<string>>(new Set());
   const [activeImageSelected, setActiveImageSelected] = useState(false);
@@ -3267,11 +3274,96 @@ export default function EditorShell() {
     return false;
   };
 
+  // Phase 3 (multi-image): Delete/Backspace removes selected image objects from the slide (remove-from-slide only).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const key = e.key;
+      if (key !== "Delete" && key !== "Backspace") return;
+      const target = (e.target as any) || null;
+      if (isEditableTarget(target)) return;
+      // Best-effort: if no project, do nothing.
+      if (!currentProjectIdRef.current) return;
+      // Only intercept when the Fabric selection includes at least one image object.
+      try {
+        const slideIndex = activeSlideIndexRef.current;
+        const handle = slideCanvasRefs.current?.[slideIndex]?.current || null;
+        const canvas = (handle as any)?.canvas || handle || null;
+        const activeObj = canvas?.getActiveObject?.() || null;
+        const t = String(activeObj?.type || "").toLowerCase();
+        const isSelection = t === "activeselection" || t === "group";
+        const items: any[] = isSelection
+          ? ((typeof (activeObj as any)?.getObjects === "function" ? (activeObj as any).getObjects() : null) ||
+              (Array.isArray((activeObj as any)?._objects) ? (activeObj as any)._objects : []) ||
+              [])
+          : (activeObj ? [activeObj] : []);
+        const hasAnyImage = items.some((obj: any) => {
+          const role = obj?.data?.role;
+          return role === "user-image" || role === "user-image-sticker";
+        });
+        if (!hasAnyImage) return;
+      } catch {
+        return;
+      }
+      e.preventDefault();
+      void deleteImageForActiveSlide("button");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // Intentionally keep stable: uses refs for current project/slide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function computeDefaultUploadedImagePlacement(templateSnapshot: any | null, imageW: number, imageH: number) {
     return computeDefaultUploadedImagePlacementShared(templateSnapshot, imageW, imageH);
   }
 
+  const computeImageMenuInfo = useCallback(() => {
+    try {
+      const slideIndex = activeSlideIndexRef.current;
+      const handle = slideCanvasRefs.current?.[slideIndex]?.current || null;
+      const canvas = (handle as any)?.canvas || handle || null;
+      const activeObj = canvas?.getActiveObject?.() || null;
+      const t = String(activeObj?.type || "").toLowerCase();
+      const isSelection = t === "activeselection" || t === "group";
+      const items: any[] = isSelection
+        ? ((typeof (activeObj as any)?.getObjects === "function" ? (activeObj as any).getObjects() : null) ||
+            (Array.isArray((activeObj as any)?._objects) ? (activeObj as any)._objects : []) ||
+            [])
+        : (activeObj ? [activeObj] : []);
+
+      let selectedPrimary = false;
+      const stickerIds: string[] = [];
+      items.forEach((obj: any) => {
+        const role = obj?.data?.role;
+        if (role === "user-image") selectedPrimary = true;
+        if (role === "user-image-sticker") {
+          const id = String(obj?.data?.imageId || "").trim();
+          if (id) stickerIds.push(id);
+        }
+      });
+      const hasAnySelectedImage = selectedPrimary || stickerIds.length > 0;
+      const singleStickerId = !selectedPrimary && stickerIds.length === 1 ? stickerIds[0] : null;
+      const canSetAsPrimary = !!singleStickerId;
+      return {
+        hasAnySelectedImage,
+        selectedStickerIds: stickerIds,
+        selectedPrimary,
+        canSetAsPrimary,
+        singleStickerId,
+      };
+    } catch {
+      return {
+        hasAnySelectedImage: false,
+        selectedStickerIds: [],
+        selectedPrimary: false,
+        canSetAsPrimary: false,
+        singleStickerId: null,
+      };
+    }
+  }, [activeSlideIndexRef, slideCanvasRefs]);
+
   const openImageMenu = (x: number, y: number) => {
+    setImageMenuInfo(computeImageMenuInfo());
     setImageMenuPos({ x, y });
     setImageMenuOpen(true);
   };
@@ -3279,14 +3371,17 @@ export default function EditorShell() {
   const closeImageMenu = () => {
     setImageMenuOpen(false);
     setImageMenuPos(null);
+    setImageMenuInfo(null);
   };
 
   const {
     uploadImageForActiveSlide,
     insertRecentImageForActiveSlide,
     setActiveSlideImageBgRemoval,
-    deleteImageForActiveSlide,
     handleUserImageChange,
+    handleUserExtraImageChange,
+    removeImagesFromSlide,
+    promoteStickerToPrimary,
   } = useImageOps({
     slideCount,
     EMPTY_LAYOUT,
@@ -3319,6 +3414,74 @@ export default function EditorShell() {
     runRealignTextForActiveSlide,
     scheduleAutoRealignAfterRelease,
   });
+
+  const setSelectedStickerAsPrimary = useCallback(async () => {
+    if (!currentProjectId) return;
+    const info = computeImageMenuInfo();
+    const stickerId = String(info?.singleStickerId || "").trim();
+    if (!stickerId) return;
+    const slideIndex = activeSlideIndexRef.current;
+    closeImageMenu();
+    await promoteStickerToPrimary({ slideIndex, stickerId });
+  }, [activeSlideIndexRef, closeImageMenu, computeImageMenuInfo, currentProjectId, promoteStickerToPrimary]);
+
+  const deleteImageForActiveSlide = useCallback(
+    async (reason: "menu" | "button") => {
+      if (!currentProjectId) return;
+      const slideIndex = activeSlideIndexRef.current;
+      const handle = slideCanvasRefs.current?.[slideIndex]?.current || null;
+      const canvas = (handle as any)?.canvas || handle || null;
+
+      // Determine which images are selected on the active canvas.
+      let removePrimary = false;
+      const removeStickerIds: string[] = [];
+      try {
+        const activeObj = canvas?.getActiveObject?.() || null;
+        const t = String(activeObj?.type || "").toLowerCase();
+        const isSelection = t === "activeselection" || t === "group";
+        const items: any[] = isSelection
+          ? ((typeof (activeObj as any)?.getObjects === "function" ? (activeObj as any).getObjects() : null) ||
+              (Array.isArray((activeObj as any)?._objects) ? (activeObj as any)._objects : []) ||
+              [])
+          : (activeObj ? [activeObj] : []);
+        items.forEach((obj: any) => {
+          const role = obj?.data?.role;
+          if (role === "user-image") removePrimary = true;
+          if (role === "user-image-sticker") {
+            const id = String(obj?.data?.imageId || "").trim();
+            if (id) removeStickerIds.push(id);
+          }
+        });
+      } catch {
+        // ignore
+      }
+
+      // If nothing is selected, fall back to removing the primary image (legacy behavior).
+      if (!removePrimary && removeStickerIds.length === 0) {
+        try {
+          const currentLayoutState =
+            slideIndex === activeSlideIndex ? (layoutData as any) : ((slidesRef.current?.[slideIndex] as any)?.layoutData as any);
+          const hasPrimaryUrl = !!String(currentLayoutState?.layout?.image?.url || '').trim();
+          if (!hasPrimaryUrl) return;
+          removePrimary = true;
+        } catch {
+          return;
+        }
+      }
+
+      await removeImagesFromSlide({ slideIndex, removePrimary, removeStickerIds, reason });
+
+      // Clear selection after delete.
+      try {
+        canvas?.discardActiveObject?.();
+        canvas?.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+      setActiveImageSelected(false);
+    },
+    [activeSlideIndex, activeSlideIndexRef, currentProjectId, layoutData, removeImagesFromSlide, slideCanvasRefs, slidesRef]
+  );
 
   const onInsertRecentImage = useCallback(
     async (asset: { id: string; url: string; storage_bucket?: string | null; storage_path?: string | null; kind?: string | null }) => {
@@ -4514,8 +4677,10 @@ export default function EditorShell() {
     activeImageSelected,
     hasImageForActiveSlide,
     deleteImageForActiveSlide,
+    setSelectedStickerAsPrimary,
     uploadImageForActiveSlide,
     handleUserImageChange,
+    handleUserExtraImageChange,
     canvasTextSelection,
     applyCanvasInlineMark,
     clearCanvasInlineMarks,
@@ -4539,6 +4704,7 @@ export default function EditorShell() {
     addLog,
     imageMenuOpen,
     imageMenuPos,
+    imageMenuInfo,
     VIEWPORT_PAD,
     translateX,
     totalW,

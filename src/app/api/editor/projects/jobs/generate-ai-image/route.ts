@@ -434,9 +434,13 @@ export async function POST(req: NextRequest) {
       slideRow.layout_snapshot && typeof slideRow.layout_snapshot === 'object'
         ? { ...(slideRow.layout_snapshot as any) }
         : {};
+    // Phase 5 guardrail: server-side AI image generation replaces PRIMARY image but must preserve stickers (extraImages[]).
+    // baseLayout spread already preserves extraImages[], but keep explicit so refactors don't drop it.
+    const prevExtras = Array.isArray((baseLayout as any)?.extraImages) ? ((baseLayout as any).extraImages as any[]) : null;
 
     const nextLayoutSnapshot = {
       ...baseLayout,
+      ...(prevExtras ? { extraImages: prevExtras } : {}),
       image: {
         x: placement.x,
         y: placement.y,

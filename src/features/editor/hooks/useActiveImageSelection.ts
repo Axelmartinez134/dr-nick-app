@@ -14,8 +14,19 @@ export function useActiveImageSelection(params: {
     try {
       const c = (canvasRef as any)?.current?.canvas;
       const obj = c?.getActiveObject?.() || null;
+      const t = String(obj?.type || "").toLowerCase();
+      const isSelection = t === "activeselection" || t === "group";
+      if (isSelection) {
+        const children: any[] =
+          (typeof (obj as any)?.getObjects === "function" ? (obj as any).getObjects() : null) ||
+          (Array.isArray((obj as any)?._objects) ? (obj as any)._objects : []) ||
+          [];
+        const hasAnyImage = children.some((ch: any) => ch?.data?.role === "user-image" || ch?.data?.role === "user-image-sticker");
+        setActiveImageSelected(hasAnyImage);
+        return;
+      }
       const role = obj?.data?.role || null;
-      setActiveImageSelected(role === "user-image");
+      setActiveImageSelected(role === "user-image" || role === "user-image-sticker");
     } catch {
       setActiveImageSelected(false);
     }

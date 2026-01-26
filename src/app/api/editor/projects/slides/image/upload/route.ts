@@ -40,6 +40,16 @@ function withVersion(url: string, v: string) {
   return `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(v)}`;
 }
 
+function solidMask128(alphaThreshold = 0): NonNullable<UploadResponse['mask']> {
+  const w = 128;
+  const h = 128;
+  // 1 byte per pixel, any non-zero is treated as "solid" by the client overlay renderer.
+  const u8 = new Uint8Array(w * h);
+  u8.fill(255);
+  const dataB64 = Buffer.from(u8).toString('base64');
+  return { w, h, dataB64, alphaThreshold };
+}
+
 export async function POST(req: NextRequest) {
   const authed = await getAuthedSupabase(req);
   if (!authed.ok) {
@@ -120,15 +130,28 @@ export async function POST(req: NextRequest) {
     // ignore; upload will still error meaningfully
   }
 
-  const baseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
-  const activePath = `${baseDir}/image.${ext}`;
+  // Multi-image Phase 1 guardrail:
+  // Avoid per-slide fixed paths (which would overwrite an existing primary image when uploading a sticker).
+  // Store each upload under a unique subdirectory so multiple uploads can coexist.
+  const uploadId = (() => {
+    try {
+      const v = (globalThis as any)?.crypto?.randomUUID?.();
+      if (v) return String(v);
+    } catch {
+      // ignore
+    }
+    return `upl_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  })();
+
+  const baseDir = `projects/${projectId}/slides/${slideIndex}/images/${uploadId}`.replace(/^\/+/, '');
+  const activePath = `${baseDir}/active.${ext}`;
   const originalPath = `${baseDir}/original.${ext}`;
-  const processedPath = `${baseDir}/image.png`; // active when bg removal succeeds
+  const processedPath = `${baseDir}/processed.png`; // active when bg removal succeeds
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
   // Always store original for retries (Phase 3 requirement).
-  const { error: upOrigErr } = await svc.storage.from(BUCKET).upload(originalPath, buffer, { contentType, upsert: true });
+  const { error: upOrigErr } = await svc.storage.from(BUCKET).upload(originalPath, buffer, { contentType, upsert: false });
   if (upOrigErr) {
     return NextResponse.json({ success: false, error: upOrigErr.message } as UploadResponse, { status: 400 });
   }
@@ -140,7 +163,9 @@ export async function POST(req: NextRequest) {
   let outPath = activePath;
   let outContentType = contentType;
   let outBytes: Uint8Array | null = null;
-  let outMask: UploadResponse['mask'] | undefined = undefined;
+  // Per spec: always provide a mask so overlays can visualize wrap behavior.
+  // If we cannot compute a real alpha silhouette, fall back to a solid rectangular mask.
+  let outMask: UploadResponse['mask'] | undefined = solidMask128(0);
   let status: UploadResponse['bgRemovalStatus'] = bgRemovalEnabled ? 'processing' : 'disabled';
   let processed: UploadResponse['processed'] | undefined = undefined;
 
@@ -149,7 +174,7 @@ export async function POST(req: NextRequest) {
   try {
     if (!bgRemovalEnabled) {
       // Store active as-is for compatibility.
-      const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: true });
+      const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: false });
       if (upActiveErr) throw new Error(upActiveErr.message);
       status = 'disabled';
     } else {
@@ -161,7 +186,7 @@ export async function POST(req: NextRequest) {
         outContentType = contentType;
         outMask = computeAlphaMask128FromPngBytes(new Uint8Array(buffer), 32, 128, 128);
         // Ensure active object exists too.
-        const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: true });
+        const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: false });
         if (upActiveErr) throw new Error(upActiveErr.message);
         status = 'skipped-alpha';
       } else {
@@ -187,7 +212,7 @@ export async function POST(req: NextRequest) {
         // Upload processed PNG as the ACTIVE image.
         outPath = processedPath;
         outContentType = 'image/png';
-        const { error: upProcErr } = await svc.storage.from(BUCKET).upload(processedPath, Buffer.from(outBytes), { contentType: 'image/png', upsert: true });
+        const { error: upProcErr } = await svc.storage.from(BUCKET).upload(processedPath, Buffer.from(outBytes), { contentType: 'image/png', upsert: false });
         if (upProcErr) throw new Error(upProcErr.message);
         const { data: procUrl } = svc.storage.from(BUCKET).getPublicUrl(processedPath);
         processed = { bucket: BUCKET, path: processedPath, url: withVersion(procUrl.publicUrl, v), contentType: 'image/png' };
@@ -197,7 +222,7 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     // Keep original visible if removal fails; still store active as the original upload.
     try {
-      const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: true });
+      const { error: upActiveErr } = await svc.storage.from(BUCKET).upload(activePath, buffer, { contentType, upsert: false });
       if (upActiveErr) throw upActiveErr;
     } catch {
       // If even this fails, treat as fatal below.
@@ -206,7 +231,8 @@ export async function POST(req: NextRequest) {
     outPath = activePath;
     outContentType = contentType;
     status = bgRemovalEnabled ? 'failed' : 'disabled';
-    outMask = undefined;
+    // Keep fallback mask so overlays remain visual even after BG removal failure.
+    outMask = outMask || solidMask128(0);
   }
 
   const { data } = svc.storage.from(BUCKET).getPublicUrl(outPath);

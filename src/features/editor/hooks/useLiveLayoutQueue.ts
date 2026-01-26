@@ -212,6 +212,24 @@ export function useLiveLayoutQueue(params: {
               });
         if (!nextLayout) continue;
 
+        // Phase multi-image: Preserve the latest extraImages[] so debounced live-layout cannot clobber sticker geometry.
+        // IMPORTANT: Use the *current* slide layout at process-time (not the queued snapshot), because users may have
+        // moved/resized stickers after the work item was enqueued.
+        try {
+          const curSlideNow = slidesRef.current?.[slideIndex] || null;
+          const existingNow =
+            (curSlideNow as any)?.layoutData?.layout ||
+            (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+            (item as any)?.existingLayout ||
+            null;
+          const extraNow = (existingNow && Array.isArray((existingNow as any).extraImages)) ? ((existingNow as any).extraImages as any[]) : null;
+          if (extraNow && extraNow.length) {
+            (nextLayout as any).extraImages = extraNow;
+          }
+        } catch {
+          // ignore
+        }
+
         const effectiveBodyFontSizePx =
           item.templateTypeId === "regular"
             ? Number((nextLayout as any)?.textLines?.[0]?.baseSize ?? item.bodyFontSizePx ?? 48)

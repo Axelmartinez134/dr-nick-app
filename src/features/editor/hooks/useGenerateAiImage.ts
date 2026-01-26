@@ -349,8 +349,13 @@ export function useGenerateAiImage(params: {
           currentProjectIdRef.current === projectIdAtStart && activeSlideIndexRef.current === targetSlide;
         const currentLayout = isActiveTarget ? layoutData : (slidesRef.current?.[targetSlide] as any)?.layoutData;
         const baseLayout = (currentLayout as any)?.layout ? { ...(currentLayout as any).layout } : { ...EMPTY_LAYOUT };
+        // Phase 5 guardrail: AI image generation replaces the PRIMARY image but must preserve any sticker images.
+        // NOTE: baseLayout spread already preserves extraImages[], but we keep an explicit reference to avoid accidental drops
+        // if this code is refactored later.
+        const prevExtras = Array.isArray((baseLayout as any)?.extraImages) ? ((baseLayout as any).extraImages as any[]) : null;
         const nextLayout = {
           ...baseLayout,
+          ...(prevExtras ? { extraImages: prevExtras } : {}),
           image: {
             x: placement.x,
             y: placement.y,

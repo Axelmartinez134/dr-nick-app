@@ -122,6 +122,17 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 - **Smart Guides helper (lock mode)**: `src/app/components/health/marketing/ai-carousel/smartGuides.ts`
   - Visual-only horizontal alignment guides (left/center/right)
 
+### Debug: wrap/realign instrumentation (kept for future sessions)
+To avoid spamming production Debug output, wrap/realign logs are **gated** behind a localStorage flag:
+
+- **Enable**: in DevTools console run `localStorage.setItem('dn_debug_wrap', '1')`, then refresh `/editor`.
+- **Disable**: run `localStorage.removeItem('dn_debug_wrap')`, then refresh.
+
+When enabled, you’ll see Debug panel entries prefixed with:
+- `🖼️` image move bounds snapshots (primary image only)
+- `🧲` drag-guard / auto-realign guard state
+- `🧱` invariant enforcement decisions + wrap anomaly detector
+
 ## Rich text editor (bottom panel)
 - **RichText component**: `src/app/editor/RichTextInput.tsx`
   - Emits `{ text, ranges }` (inline style ranges)

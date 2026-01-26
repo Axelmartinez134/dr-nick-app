@@ -19,6 +19,22 @@ export type ImageOps = {
     height: number;
     angle?: number;
   }) => void;
+  handleUserExtraImageChange: (change: {
+    canvasSlideIndex?: number;
+    imageId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    angle?: number;
+  }) => void;
+  removeImagesFromSlide: (args: {
+    slideIndex?: number;
+    removePrimary?: boolean;
+    removeStickerIds?: string[];
+    reason?: 'menu' | 'button' | 'key';
+  }) => Promise<void>;
+  promoteStickerToPrimary: (args: { slideIndex?: number; stickerId: string }) => Promise<void>;
 };
 
 export function useImageOps(params: {
@@ -118,6 +134,34 @@ export function useImageOps(params: {
 
   const imageMoveSaveTimeoutRef = useRef<number | null>(null);
 
+  const solidMask128 = useCallback(() => {
+    const w = 128;
+    const h = 128;
+    const u8 = new Uint8Array(w * h);
+    u8.fill(255);
+    try {
+      // eslint-disable-next-line no-undef
+      const btoaFn = (globalThis as any).btoa || btoa;
+      let bin = '';
+      for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+      const dataB64 = btoaFn(bin);
+      return { w, h, dataB64, alphaThreshold: 0 };
+    } catch {
+      // Best-effort: overlays will treat missing dataB64 as "no mask", but we try to avoid crashes.
+      return { w, h, dataB64: '', alphaThreshold: 0 };
+    }
+  }, []);
+
+  const makeImageId = useCallback(() => {
+    try {
+      const v = (globalThis as any)?.crypto?.randomUUID?.();
+      if (v) return String(v);
+    } catch {
+      // ignore
+    }
+    return `img_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }, []);
+
   const uploadImageForActiveSlide = useCallback(
     async (file: File, opts?: { bgRemovalEnabledAtInsert?: boolean }) => {
       if (!currentProjectId) throw new Error('Create or load a project first.');
@@ -194,9 +238,48 @@ export function useImageOps(params: {
                 ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
                 : baseLayoutAtStart)
             : baseLayoutAtStart;
-        const nextLayout = {
-          ...latestBaseLayout,
-          image: {
+        const hasPrimary = !!String((latestBaseLayout as any)?.image?.url || '').trim();
+        const primaryUrl = String((latestBaseLayout as any)?.image?.url || '').trim() || null;
+
+        // Multi-image Phase 1:
+        // - If no primary exists yet: set `layout.image` (unchanged behavior).
+        // - If primary exists: append a sticker image to `layout.extraImages[]` and keep `layout.image` untouched.
+        const nextLayout = (() => {
+          if (!hasPrimary) {
+            return {
+              ...latestBaseLayout,
+              image: {
+                x: placement.x,
+                y: placement.y,
+                width: placement.width,
+                height: placement.height,
+                url,
+                storage: { bucket: 'carousel-project-images', path },
+                bgRemovalEnabled: bgRemovalEnabledFromServer,
+                bgRemovalStatus,
+                ...(original
+                  ? {
+                      original: {
+                        url: String(original.url || ''),
+                        storage: original.storage || { bucket: 'carousel-project-images', path: String(original.path || '') },
+                      },
+                    }
+                  : {}),
+                ...(processed
+                  ? {
+                      processed: {
+                        url: String(processed.url || ''),
+                        storage: processed.storage || { bucket: 'carousel-project-images', path: String(processed.path || '') },
+                      },
+                    }
+                  : {}),
+                ...(mask ? { mask } : {}),
+              },
+            };
+          }
+
+          const sticker: any = {
+            id: makeImageId(),
             x: placement.x,
             y: placement.y,
             width: placement.width,
@@ -222,21 +305,31 @@ export function useImageOps(params: {
                 }
               : {}),
             ...(mask ? { mask } : {}),
-          },
-        };
+          };
+
+          const prevExtras = Array.isArray((latestBaseLayout as any)?.extraImages) ? ([...(latestBaseLayout as any).extraImages] as any[]) : [];
+          return { ...latestBaseLayout, extraImages: [...prevExtras, sticker] };
+        })();
 
         // Only apply UI updates if the user is still viewing this project.
         if (currentProjectIdRef.current === projectIdAtStart) {
           setSlides((prev: any[]) =>
             prev.map((s, i) =>
-              i !== slideIndexAtStart ? s : { ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any }
+              i !== slideIndexAtStart
+                ? s
+                : {
+                    ...s,
+                    layoutData: { success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any,
+                  }
             )
           );
           slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== slideIndexAtStart ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
+            i !== slideIndexAtStart
+              ? s
+              : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any } as any)
           );
           if (activeSlideIndexRef.current === slideIndexAtStart) {
-            setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+            setLayoutData({ success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any);
           }
         }
 
@@ -527,24 +620,47 @@ export function useImageOps(params: {
           isAiGenerated: String(asset?.kind || '') === 'ai',
         };
 
+        // Always keep a mask so Show Layout Overlays can visualize the wrap area,
+        // even when BG removal is OFF (logos/recents frequently insert with bgRemoval OFF).
+        if (!(nextImg as any).mask) (nextImg as any).mask = solidMask128();
         if (!bgRemovalEnabledAtInsert) {
-          if ((nextImg as any).mask) delete (nextImg as any).mask;
           if ((nextImg as any).processed) delete (nextImg as any).processed;
         }
 
-        const nextLayout = { ...latestBaseLayout, image: nextImg };
+        const hasPrimary = !!String((latestBaseLayout as any)?.image?.url || '').trim();
+        const primaryUrl = String((latestBaseLayout as any)?.image?.url || '').trim() || null;
+
+        // Multi-image Phase 1:
+        // - If no primary exists yet: set `layout.image` (unchanged behavior).
+        // - If primary exists: append a sticker to `layout.extraImages[]` and keep `layout.image` untouched.
+        // NOTE: BG removal at insert currently only works for the primary image (via setActiveSlideImageBgRemoval).
+        // For stickers we store as-is for now (no insert-time BG removal).
+        const nextLayout = (() => {
+          if (!hasPrimary) return { ...latestBaseLayout, image: nextImg };
+          const sticker: any = { ...nextImg, id: makeImageId(), bgRemovalEnabled: false, bgRemovalStatus: 'disabled' };
+          if (!(sticker as any).mask) (sticker as any).mask = solidMask128();
+          const prevExtras = Array.isArray((latestBaseLayout as any)?.extraImages) ? ([...(latestBaseLayout as any).extraImages] as any[]) : [];
+          return { ...latestBaseLayout, extraImages: [...prevExtras, sticker] };
+        })();
 
         if (currentProjectIdRef.current === projectIdAtStart) {
           setSlides((prev: any[]) =>
-            prev.map((s, i) => (i !== slideIndexAtStart ? s : { ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any }))
+            prev.map((s, i) =>
+              i !== slideIndexAtStart
+                ? s
+                : { ...s, layoutData: { success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any }
+            )
           );
           slidesRef.current = slidesRef.current.map((s, i) =>
-            i !== slideIndexAtStart ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: url } as any } as any)
+            i !== slideIndexAtStart
+              ? s
+              : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any } as any)
           );
           if (activeSlideIndexRef.current === slideIndexAtStart) {
-            setLayoutData({ success: true, layout: nextLayout, imageUrl: url } as any);
+            setLayoutData({ success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any);
           }
-          setActiveImageSelected(true);
+          // Only mark "active image selected" when setting the primary slot.
+          if (!hasPrimary) setActiveImageSelected(true);
         }
 
         await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
@@ -564,7 +680,7 @@ export function useImageOps(params: {
           // ignore
         }
 
-        if (bgRemovalEnabledAtInsert) {
+        if (bgRemovalEnabledAtInsert && !hasPrimary) {
           if (!(storageBucket && storagePath)) {
             throw new Error('Cannot run background removal for this recent image (missing stored source path).');
           }
@@ -593,6 +709,7 @@ export function useImageOps(params: {
       setLayoutData,
       setSlides,
       setActiveSlideImageBgRemoval,
+      makeImageId,
       slidesRef,
       templateSnapshots,
     ]
@@ -688,6 +805,35 @@ export function useImageOps(params: {
       const prevImage = (baseLayout as any)?.image || null;
       if (!prevImage || !prevImage.url) return; // no user image to update
 
+      const debugWrap =
+        (() => {
+          try {
+            // Local-only debugging: enable with `localStorage.setItem('dn_debug_wrap', '1')`
+            // and disable with `localStorage.removeItem('dn_debug_wrap')`.
+            return typeof window !== 'undefined' && window.localStorage?.getItem('dn_debug_wrap') === '1';
+          } catch {
+            return false;
+          }
+        })();
+
+      // Debug: track image drag updates + whether this will schedule auto realign on release (Enhanced only).
+      if (debugWrap) {
+        try {
+          const s = slidesRef.current?.[slideIndex] || {};
+          const auto = !!(s as any)?.autoRealignOnImageRelease;
+          const locked = !!(s as any)?.layoutLocked;
+          addLog(
+            `🖼️ IMG change slide ${slideIndex + 1}: ` +
+              `prev=(${Math.round(Number(prevImage?.x ?? 0))},${Math.round(Number(prevImage?.y ?? 0))}) ${Math.round(Number(prevImage?.width ?? 0))}x${Math.round(Number(prevImage?.height ?? 0))} ` +
+              `next=(${Math.round(Number(change.x ?? 0))},${Math.round(Number(change.y ?? 0))}) ${Math.round(Number(change.width ?? 0))}x${Math.round(Number(change.height ?? 0))} ` +
+              `angle=${Number.isFinite(change.angle as any) ? Math.round(Number(change.angle)) : 0} ` +
+              `type=${templateTypeId} autoRealign=${auto ? '1' : '0'} locked=${locked ? '1' : '0'}`
+          );
+        } catch {
+          // ignore
+        }
+      }
+
       // Enable Undo for image moves/resizes/rotations too. Push only when bounds actually changed.
       try {
         const eps = 0.5;
@@ -735,6 +881,17 @@ export function useImageOps(params: {
       }, 500);
 
       // Enhanced-only: optional safety-guarded auto realign when the user releases the image.
+      if (debugWrap) {
+        try {
+          const s = slidesRef.current?.[slideIndex] || {};
+          addLog(
+            `🧲 AutoRealign check slide ${slideIndex + 1}: type=${templateTypeId} ` +
+              `auto=${!!(s as any)?.autoRealignOnImageRelease ? '1' : '0'} locked=${!!(s as any)?.layoutLocked ? '1' : '0'}`
+          );
+        } catch {
+          // ignore
+        }
+      }
       scheduleAutoRealignAfterRelease({
         projectIdAtRelease: currentProjectId,
         slideIndexAtRelease: slideIndex,
@@ -770,12 +927,246 @@ export function useImageOps(params: {
     ]
   );
 
+  const handleUserExtraImageChange = useCallback(
+    (change: {
+      canvasSlideIndex?: number;
+      imageId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      angle?: number;
+    }) => {
+      if (!currentProjectId) return;
+      const slideIndex = Number.isInteger((change as any)?.canvasSlideIndex) ? Number((change as any).canvasSlideIndex) : activeSlideIndex;
+      if (slideIndex < 0 || slideIndex >= slideCount) return;
+      const imageId = String((change as any)?.imageId || '').trim();
+      if (!imageId) return;
+
+      const currentLayoutState =
+        slideIndex === activeSlideIndex ? (layoutData as any) : ((slidesRef.current?.[slideIndex] as any)?.layoutData as any);
+      const baseLayout = currentLayoutState?.layout ? { ...currentLayoutState.layout } : { ...EMPTY_LAYOUT };
+      const prevExtrasRaw = (baseLayout as any)?.extraImages;
+      const prevExtras = Array.isArray(prevExtrasRaw) ? ([...prevExtrasRaw] as any[]) : [];
+      if (prevExtras.length === 0) return;
+      const idx = prevExtras.findIndex((x) => String(x?.id || '') === imageId);
+      if (idx < 0) return;
+
+      const prev = prevExtras[idx] || {};
+
+      // Enable Undo for image moves/resizes/rotations too. Push only when bounds actually changed.
+      try {
+        const eps = 0.5;
+        const didMove =
+          Math.abs(Number(prev?.x ?? 0) - Number(change.x ?? 0)) > eps ||
+          Math.abs(Number(prev?.y ?? 0) - Number(change.y ?? 0)) > eps;
+        const didResize =
+          Math.abs(Number(prev?.width ?? 0) - Number(change.width ?? 0)) > eps ||
+          Math.abs(Number(prev?.height ?? 0) - Number(change.height ?? 0)) > eps;
+        const didRotate = Math.abs(Number(prev?.angle ?? 0) - Number(change.angle ?? 0)) > eps;
+        if (didMove || didResize || didRotate) pushUndoSnapshot();
+      } catch {
+        pushUndoSnapshot();
+      }
+
+      const nextOne = {
+        ...prev,
+        x: Math.round(Number(change.x) || 0),
+        y: Math.round(Number(change.y) || 0),
+        width: Math.max(1, Math.round(Number(change.width) || 1)),
+        height: Math.max(1, Math.round(Number(change.height) || 1)),
+        angle: Number(change.angle) || 0,
+      };
+      prevExtras[idx] = nextOne;
+      const nextLayout = { ...baseLayout, extraImages: prevExtras };
+
+      if (slideIndex === activeSlideIndex) {
+        const primaryUrl = String((nextLayout as any)?.image?.url || '').trim() || null;
+        setLayoutData({ success: true, layout: nextLayout, imageUrl: primaryUrl } as any);
+      }
+      setSlides((prevArr: any[]) =>
+        prevArr.map((s, i) =>
+          i !== slideIndex
+            ? s
+            : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: String((nextLayout as any)?.image?.url || '').trim() || null } as any } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s, i) =>
+        i !== slideIndex
+          ? s
+          : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: String((nextLayout as any)?.image?.url || '').trim() || null } as any } as any)
+      );
+
+      // Debounced persist (500ms) after user finishes moving/resizing the sticker.
+      if (imageMoveSaveTimeoutRef.current) window.clearTimeout(imageMoveSaveTimeoutRef.current);
+      const projectIdAtSchedule = currentProjectId;
+      const slideIndexAtSchedule = slideIndex;
+      const layoutAtSchedule = nextLayout;
+      imageMoveSaveTimeoutRef.current = window.setTimeout(() => {
+        void saveSlidePatchForProject(projectIdAtSchedule, slideIndexAtSchedule, { layoutSnapshot: layoutAtSchedule });
+      }, 500);
+    },
+    [
+      EMPTY_LAYOUT,
+      activeSlideIndex,
+      currentProjectId,
+      layoutData,
+      pushUndoSnapshot,
+      saveSlidePatchForProject,
+      setLayoutData,
+      setSlides,
+      slideCount,
+      slidesRef,
+    ]
+  );
+
+  const removeImagesFromSlide = useCallback(
+    async (args: { slideIndex?: number; removePrimary?: boolean; removeStickerIds?: string[]; reason?: 'menu' | 'button' | 'key' }) => {
+      if (!currentProjectId) return;
+      const slideIndex = Number.isInteger(args?.slideIndex as any) ? Number(args.slideIndex) : activeSlideIndex;
+      if (slideIndex < 0 || slideIndex >= slideCount) return;
+      const removePrimary = !!args?.removePrimary;
+      const removeStickerIds = Array.isArray(args?.removeStickerIds) ? (args.removeStickerIds as string[]) : [];
+      if (!removePrimary && removeStickerIds.length === 0) return;
+
+      const projectIdAtStart = currentProjectId;
+      const baseLayoutState =
+        slideIndex === activeSlideIndex ? (layoutData as any) : ((slidesRef.current?.[slideIndex] as any)?.layoutData as any);
+      const baseLayout = baseLayoutState?.layout ? { ...baseLayoutState.layout } : { ...EMPTY_LAYOUT };
+
+      const nextLayout: any = { ...baseLayout };
+      if (removePrimary && nextLayout.image) delete nextLayout.image;
+      if (removeStickerIds.length > 0) {
+        const prevExtrasRaw = nextLayout.extraImages;
+        const prevExtras = Array.isArray(prevExtrasRaw) ? (prevExtrasRaw as any[]) : [];
+        nextLayout.extraImages = prevExtras.filter((x) => !removeStickerIds.includes(String(x?.id || '')));
+      }
+
+      // If extras is now empty, keep it but allow it to be cleaned up later.
+      const primaryUrl = String(nextLayout?.image?.url || '').trim() || null;
+
+      if (currentProjectIdRef.current === projectIdAtStart) {
+        setSlides((prevArr: any[]) =>
+          prevArr.map((s, i) =>
+            i !== slideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: primaryUrl } as any } as any)
+          )
+        );
+        slidesRef.current = slidesRef.current.map((s, i) =>
+          i !== slideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: primaryUrl } as any } as any)
+        );
+        if (activeSlideIndexRef.current === slideIndex) {
+          setLayoutData({ success: true, layout: nextLayout, imageUrl: primaryUrl } as any);
+        }
+      }
+
+      // Persist
+      await saveSlidePatchForProject(projectIdAtStart, slideIndex, { layoutSnapshot: nextLayout });
+    },
+    [
+      EMPTY_LAYOUT,
+      activeSlideIndex,
+      activeSlideIndexRef,
+      currentProjectId,
+      currentProjectIdRef,
+      layoutData,
+      saveSlidePatchForProject,
+      setLayoutData,
+      setSlides,
+      slideCount,
+      slidesRef,
+    ]
+  );
+
+  const promoteStickerToPrimary = useCallback(
+    async (args: { slideIndex?: number; stickerId: string }) => {
+      if (!currentProjectId) return;
+      const slideIndex = Number.isInteger(args?.slideIndex as any) ? Number(args.slideIndex) : activeSlideIndex;
+      if (slideIndex < 0 || slideIndex >= slideCount) return;
+      const stickerId = String(args?.stickerId || '').trim();
+      if (!stickerId) return;
+
+      const projectIdAtStart = currentProjectId;
+      const baseLayoutState =
+        slideIndex === activeSlideIndex ? (layoutData as any) : ((slidesRef.current?.[slideIndex] as any)?.layoutData as any);
+      const baseLayout = baseLayoutState?.layout ? { ...baseLayoutState.layout } : { ...EMPTY_LAYOUT };
+      const prevExtrasRaw = (baseLayout as any)?.extraImages;
+      const prevExtras = Array.isArray(prevExtrasRaw) ? ([...prevExtrasRaw] as any[]) : [];
+      const idx = prevExtras.findIndex((x) => String(x?.id || '') === stickerId);
+      if (idx < 0) return;
+
+      const sticker = prevExtras[idx];
+      const prevPrimary = (baseLayout as any)?.image || null;
+
+      // Undo checkpoint (big semantic change).
+      try {
+        pushUndoSnapshot();
+      } catch {
+        // ignore
+      }
+
+      // Remove sticker from extras.
+      const nextExtras = prevExtras.filter((x) => String(x?.id || '') !== stickerId);
+
+      // Demote existing primary -> sticker (per Phase 4 spec).
+      if (prevPrimary && String(prevPrimary?.url || '').trim()) {
+        const demoted = { ...prevPrimary, id: makeImageId() };
+        if (!(demoted as any).mask) (demoted as any).mask = solidMask128();
+        nextExtras.push(demoted);
+      }
+
+      const nextPrimary = { ...sticker };
+      // Primary does not need an id; keep it harmlessly if present.
+      if (!(nextPrimary as any).mask) (nextPrimary as any).mask = solidMask128();
+
+      const nextLayout: any = { ...baseLayout, image: nextPrimary, extraImages: nextExtras };
+
+      const primaryUrl = String(nextPrimary?.url || '').trim() || null;
+      if (currentProjectIdRef.current === projectIdAtStart) {
+        setSlides((prevArr: any[]) =>
+          prevArr.map((s, i) =>
+            i !== slideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: primaryUrl } as any } as any)
+          )
+        );
+        slidesRef.current = slidesRef.current.map((s, i) =>
+          i !== slideIndex ? s : ({ ...s, layoutData: { success: true, layout: nextLayout, imageUrl: primaryUrl } as any } as any)
+        );
+        if (activeSlideIndexRef.current === slideIndex) {
+          setLayoutData({ success: true, layout: nextLayout, imageUrl: primaryUrl } as any);
+        }
+      }
+
+      await saveSlidePatchForProject(projectIdAtStart, slideIndex, { layoutSnapshot: nextLayout });
+      addLog(`⭐ Set sticker as primary (slide ${slideIndex + 1})`);
+      setActiveImageSelected(true);
+    },
+    [
+      EMPTY_LAYOUT,
+      activeSlideIndex,
+      activeSlideIndexRef,
+      addLog,
+      currentProjectId,
+      currentProjectIdRef,
+      layoutData,
+      makeImageId,
+      pushUndoSnapshot,
+      saveSlidePatchForProject,
+      setActiveImageSelected,
+      setLayoutData,
+      setSlides,
+      slideCount,
+      slidesRef,
+    ]
+  );
+
   return {
     uploadImageForActiveSlide,
     insertRecentImageForActiveSlide,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
     handleUserImageChange,
+    handleUserExtraImageChange,
+    removeImagesFromSlide,
+    promoteStickerToPrimary,
   };
 }
 
