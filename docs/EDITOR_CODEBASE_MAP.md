@@ -106,6 +106,7 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 - **Modals**:
   - `src/features/editor/components/TemplateSettingsModal.tsx` (reads store)
   - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
+  - `src/features/editor/components/IdeasModal.tsx` (reads store; Generate Ideas + queue + create carousel)
 - **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspaceNav`, `state.workspaceRefs`, `state.workspaceUi`, `state.workspaceActions`)
   - **Empty-state placeholder centering**: keep placeholders `w-full h-full` (don’t hard-code 540×720) so “No template selected” stays centered at all display sizes
 - **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanelUi` + `state.actions`)
@@ -180,6 +181,7 @@ When enabled, you’ll see Debug panel entries prefixed with:
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
+- **Generate Ideas (topics + queue + create carousel)**: `src/features/editor/components/IdeasModal.tsx`
 - **Wiring wrapper (Stage 3D)**: `src/features/editor/hooks/useEditorJobs.ts` (centralizes how the three job hooks are wired together)
   - Phase 2: AI image success also “touches” Recents so generated PNGs show up in the Image Library modal
 
@@ -302,6 +304,28 @@ When enabled, you’ll see Debug panel entries prefixed with:
   - `src/features/editor/components/EditorBottomPanel.tsx` shows a spinner + status text while copy is running (and a hint if no project is selected)
 
 #### Generate AI Image (model dropdown + per-project BG Removal)
+#### Generate Ideas (topics) + Create Carousel (Ideas modal)
+- **UI**: `src/features/editor/components/IdeasModal.tsx`
+  - Entry point: **Left sidebar → Colors → “💡 Generate Ideas”**
+  - Idea statuses: `pending` | `approved` | `dismissed`
+  - Supports:
+    - manual Source Title + URL tagging
+    - approve/dismiss + approved queue
+    - delete source (cascades ideas/runs)
+    - create carousel from approved idea (creates a new project and kicks off Generate Copy)
+- **APIs**
+  - `GET  /api/editor/ideas/sources` (grouped sources + ideas; `includeDismissed`)
+  - `POST /api/editor/ideas/generate`
+  - `POST /api/editor/ideas/update` (approve/dismiss/unapprove/reorderApproved)
+  - `POST /api/editor/ideas/sources/delete`
+  - `POST /api/editor/ideas/create-carousel`
+  - `GET  /api/editor/ideas/carousel-runs` (audit lookup: idea → created project)
+  - `GET/POST /api/editor/user-settings/ideas-prompt` (per-user ideas prompt override)
+- **DB migrations**
+  - `supabase/migrations/20260126_000001_add_editor_ideas.sql` (sources/runs/ideas + ideas_prompt_override column)
+  - `supabase/migrations/20260126_000002_editor_ideas_delete_policies.sql` (delete policies)
+  - `supabase/migrations/20260126_000003_add_editor_idea_carousel_runs.sql` (audit: idea→project)
+
 - **Client UX**: `src/features/editor/components/EditorBottomPanel.tsx`
   - **Model dropdown** (per-user default): `GPT Image (gpt-image-1.5)` and `Gemini 3 Pro (gemini-3-pro-image-preview)`
   - **Gemini settings popover** (session-only): Aspect ratio + Size
@@ -411,6 +435,25 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - Click a recent tile with BG toggle ON
   - Expected: modal stays open and shows spinner while BG removal runs
   - Expected: after BG removal finishes, modal closes and the inserted image is the processed PNG + mask
+
+### Manual QA (Generate Ideas modal)
+- Open `/editor`
+- In the left sidebar under **Colors**, click **💡 Generate Ideas**
+  - Expected: modal opens; scrolling works within the modal
+- In **Ideas Prompt**, type a change
+  - Expected: shows “Saving…” then “Saved ✓”
+- Enter **Source Title** and **Source URL**, click **Generate Ideas**
+  - Expected: progress line updates; 8 ideas appear under that source
+- Approve 2–3 ideas
+  - Expected: they appear in **Approved Queue**
+- Dismiss an idea
+  - Expected: it disappears; toggle **Show dismissed** to see it
+- Click **Create carousel** on an approved idea
+  - Expected: a new project is created with project title = idea title
+  - Expected: editor switches to the newest created project
+  - Expected: Generate Copy runs automatically; queue item flips to ✅ Created
+- Delete a source from the left column (🗑️) and confirm
+  - Expected: the source disappears and its ideas are gone (cascaded delete)
 
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.

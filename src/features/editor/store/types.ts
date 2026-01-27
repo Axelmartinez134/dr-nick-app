@@ -94,6 +94,46 @@ export type EditorActions = {
   onCloseImageLibraryModal: () => void;
   onToggleImageLibraryBgRemovalAtInsert: () => void;
 
+  // Ideas modal (Phase 1)
+  onOpenIdeasModal: () => void;
+  onCloseIdeasModal: () => void;
+  fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<
+    Array<{
+      id: string;
+      sourceTitle: string;
+      sourceUrl: string;
+      lastGeneratedAt: string | null;
+      createdAt: string | null;
+      updatedAt: string | null;
+      ideas: Array<{
+        id: string;
+        source_id: string;
+        run_id: string;
+        title: string;
+        bullets: any;
+        status: string;
+        approved_sort_index: number | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+    }>
+  >;
+
+  // Ideas (Phase 2)
+  fetchIdeasPromptOverride: () => Promise<string>;
+  saveIdeasPromptOverride: (next: string) => Promise<string>;
+  runGenerateIdeas: (args: { sourceTitle: string; sourceUrl: string; topicCount?: number }) => Promise<any>;
+  updateIdea: (body:
+    | { action: "approve"; ideaId: string }
+    | { action: "dismiss"; ideaId: string }
+    | { action: "unapprove"; ideaId: string }
+    | { action: "reorderApproved"; ideaIds: string[] }
+  ) => Promise<any>;
+  deleteIdeaSource: (sourceId: string) => Promise<any>;
+  createCarouselFromIdea: (args: { ideaId: string; templateTypeId: TemplateTypeId }) => Promise<{ projectId: string }>;
+  fetchProjectJobStatus: (args: { projectId: string; jobType?: string }) => Promise<any>;
+  fetchIdeaCarouselRuns: (ideaIds: string[]) => Promise<Record<string, { projectId: string; createdAt: string }>>;
+
   // Image Library recents (Phase 2)
   fetchRecentAssets: (limit?: number) => Promise<
     Array<{
@@ -439,6 +479,7 @@ export type EditorState = {
   promptModalSection: PromptSection;
   imageLibraryModalOpen: boolean;
   imageLibraryBgRemovalEnabledAtInsert: boolean;
+  ideasModalOpen: boolean;
 
   // Prompt values (template-type overrides)
   templateTypePrompt: string;

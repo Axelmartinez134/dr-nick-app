@@ -20,6 +20,7 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
+import { IdeasModal } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -196,6 +197,12 @@ export default function EditorShell() {
     if (!imageLibraryModalOpen) return;
     setImageLibraryBgRemovalEnabledAtInsert(!imageLibraryBgRemovalEnabledAtInsert);
   }, [imageLibraryBgRemovalEnabledAtInsert, imageLibraryModalOpen, setImageLibraryBgRemovalEnabledAtInsert]);
+
+  // Phase 6B (Ideas): store-owned modal state (Phase 1)
+  const ideasModalOpen = useEditorSelector((s: any) => !!(s as any).ideasModalOpen);
+  const setIdeasModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ ideasModalOpen: !!next } as any);
+  }, [editorStore]);
 
   const templateTypePrompt = useEditorSelector((s) => String(s.templateTypePrompt || ""));
   const setTemplateTypePrompt = useCallback((next: string) => {
@@ -3514,6 +3521,144 @@ export default function EditorShell() {
     [fetchJson]
   );
 
+  const fetchIdeaSourcesAndIdeas = useCallback(
+    async (includeDismissed?: boolean) => {
+      const inc = !!includeDismissed;
+      const j = await fetchJson(`/api/editor/ideas/sources?includeDismissed=${inc ? "1" : "0"}`, { method: "GET" });
+      if (!j?.success) throw new Error(j?.error || "Failed to load idea sources");
+      return Array.isArray(j?.sources) ? j.sources : [];
+    },
+    [fetchJson]
+  );
+
+  const fetchIdeasPromptOverride = useCallback(async () => {
+    const j = await fetchJson("/api/editor/user-settings/ideas-prompt", { method: "GET" });
+    if (!j?.success) throw new Error(j?.error || "Failed to load ideas prompt");
+    return String(j?.ideasPromptOverride || "");
+  }, [fetchJson]);
+
+  const saveIdeasPromptOverride = useCallback(
+    async (next: string) => {
+      const j = await fetchJson("/api/editor/user-settings/ideas-prompt", {
+        method: "POST",
+        body: JSON.stringify({ ideasPromptOverride: String(next || "") }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to save ideas prompt");
+      return String(j?.ideasPromptOverride || "");
+    },
+    [fetchJson]
+  );
+
+  const runGenerateIdeas = useCallback(
+    async (args: { sourceTitle: string; sourceUrl: string; topicCount?: number }) => {
+      const j = await fetchJson("/api/editor/ideas/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          sourceTitle: String(args?.sourceTitle || ""),
+          sourceUrl: String(args?.sourceUrl || ""),
+          topicCount: Number.isFinite(Number(args?.topicCount)) ? Number(args?.topicCount) : 8,
+        }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to generate ideas");
+      return j;
+    },
+    [fetchJson]
+  );
+
+  const updateIdea = useCallback(
+    async (
+      body:
+        | { action: "approve"; ideaId: string }
+        | { action: "dismiss"; ideaId: string }
+        | { action: "unapprove"; ideaId: string }
+        | { action: "reorderApproved"; ideaIds: string[] }
+    ) => {
+      const j = await fetchJson("/api/editor/ideas/update", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to update idea");
+      return j;
+    },
+    [fetchJson]
+  );
+
+  const deleteIdeaSource = useCallback(
+    async (sourceId: string) => {
+      const sid = String(sourceId || "").trim();
+      if (!sid) throw new Error("sourceId is required");
+      const j = await fetchJson("/api/editor/ideas/sources/delete", {
+        method: "POST",
+        body: JSON.stringify({ sourceId: sid }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to delete source");
+      return j;
+    },
+    [fetchJson]
+  );
+
+  const createCarouselFromIdea = useCallback(
+    async (args: { ideaId: string; templateTypeId: "regular" | "enhanced" }) => {
+      const ideaId = String(args?.ideaId || "").trim();
+      const templateTypeId = args?.templateTypeId === "regular" ? "regular" : "enhanced";
+      if (!ideaId) throw new Error("ideaId is required");
+
+      addLog?.(`💡 Create carousel from idea: idea=${ideaId} type=${templateTypeId.toUpperCase()}`);
+      const j = await fetchJson("/api/editor/ideas/create-carousel", {
+        method: "POST",
+        body: JSON.stringify({ ideaId, templateTypeId }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to create carousel project");
+
+      const projectId = String(j?.project?.id || "").trim();
+      if (!projectId) throw new Error("Missing projectId from create-carousel response");
+
+      // Switch editor to the newest created project (as requested).
+      await loadProject(projectId);
+
+      // Kick off Generate Copy for the newly created project, without awaiting completion.
+      // This reuses the existing, proven pipeline (progress codes + emphasis + enqueue layouts + auto image prompts for Enhanced).
+      try {
+        const a = editorStore.getState?.().actions as any;
+        a?.onClickGenerateCopy?.();
+      } catch {
+        // ignore
+      }
+
+      return { projectId };
+    },
+    [addLog, editorStore, fetchJson, loadProject]
+  );
+
+  const fetchProjectJobStatus = useCallback(
+    async (args: { projectId: string; jobType?: string }) => {
+      const pid = String(args?.projectId || "").trim();
+      if (!pid) throw new Error("projectId is required");
+      const jobType = args?.jobType ? String(args.jobType) : "";
+      const url =
+        `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}` +
+        (jobType ? `&jobType=${encodeURIComponent(jobType)}` : "");
+      const j = await fetchJson(url, { method: "GET" });
+      if (!j?.success) throw new Error(j?.error || "Failed to load job status");
+      return j;
+    },
+    [fetchJson]
+  );
+
+  const fetchIdeaCarouselRuns = useCallback(
+    async (ideaIds: string[]) => {
+      const ids = Array.isArray(ideaIds) ? ideaIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
+      if (ids.length === 0) return {};
+      const j = await fetchJson(
+        `/api/editor/ideas/carousel-runs?ideaIds=${encodeURIComponent(ids.slice(0, 200).join(","))}`,
+        { method: "GET" }
+      );
+      if (!j?.success) throw new Error(j?.error || "Failed to load carousel runs");
+      return (j?.createdByIdeaId && typeof j.createdByIdeaId === "object") ? j.createdByIdeaId : {};
+    },
+    [fetchJson]
+  );
+
   const fetchLogoTagsAction = useCallback(
     async (args: {
       source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -4627,6 +4772,16 @@ export default function EditorShell() {
     onOpenImageLibraryModal,
     onCloseImageLibraryModal,
     onToggleImageLibraryBgRemovalAtInsert,
+    setIdeasModalOpen,
+    fetchIdeaSourcesAndIdeas,
+    fetchIdeasPromptOverride,
+    saveIdeasPromptOverride,
+    runGenerateIdeas,
+    updateIdea,
+    deleteIdeaSource,
+    createCarouselFromIdea,
+    fetchProjectJobStatus,
+    fetchIdeaCarouselRuns,
     fetchRecentAssets,
     onInsertRecentImage,
 
@@ -4868,6 +5023,8 @@ export default function EditorShell() {
       <TemplateSettingsModal />
 
       <PromptsModal promptTextareaRef={promptTextareaRef} emphasisTextareaRef={emphasisTextareaRef} />
+
+      <IdeasModal />
 
       <ImageLibraryModal />
     </div>

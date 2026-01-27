@@ -104,6 +104,23 @@ type Args = {
   fetchRecentAssets: (limit?: number) => Promise<any[]>;
   onInsertRecentImage: (asset: { id: string; url: string; storage_bucket?: string | null; storage_path?: string | null; kind?: string | null }) => Promise<void> | void;
 
+  // Ideas modal (Phase 1)
+  setIdeasModalOpen: (next: boolean) => void;
+  fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<any[]>;
+  fetchIdeasPromptOverride: () => Promise<string>;
+  saveIdeasPromptOverride: (next: string) => Promise<string>;
+  runGenerateIdeas: (args: { sourceTitle: string; sourceUrl: string; topicCount?: number }) => Promise<any>;
+  updateIdea: (body:
+    | { action: "approve"; ideaId: string }
+    | { action: "dismiss"; ideaId: string }
+    | { action: "unapprove"; ideaId: string }
+    | { action: "reorderApproved"; ideaIds: string[] }
+  ) => Promise<any>;
+  deleteIdeaSource: (sourceId: string) => Promise<any>;
+  createCarouselFromIdea: (args: { ideaId: string; templateTypeId: "regular" | "enhanced" }) => Promise<{ projectId: string }>;
+  fetchProjectJobStatus: (args: { projectId: string; jobType?: string }) => Promise<any>;
+  fetchIdeaCarouselRuns: (ideaIds: string[]) => Promise<Record<string, { projectId: string; createdAt: string }>>;
+
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
     source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -238,6 +255,16 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleImageLibraryBgRemovalAtInsert,
     fetchRecentAssets,
     onInsertRecentImage,
+    setIdeasModalOpen,
+    fetchIdeaSourcesAndIdeas,
+    fetchIdeasPromptOverride,
+    saveIdeasPromptOverride,
+    runGenerateIdeas,
+    updateIdea,
+    deleteIdeaSource,
+    createCarouselFromIdea,
+    fetchProjectJobStatus,
+    fetchIdeaCarouselRuns,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -437,6 +464,23 @@ export function useEditorStoreActionsSync(args: Args) {
     onOpenImageLibraryModal: () => onOpenImageLibraryModal(),
     onCloseImageLibraryModal: () => onCloseImageLibraryModal(),
     onToggleImageLibraryBgRemovalAtInsert: () => onToggleImageLibraryBgRemovalAtInsert(),
+    onOpenIdeasModal: () => {
+      setIdeasModalOpen(true);
+      editorStore.setState({ ideasModalOpen: true } as any);
+    },
+    onCloseIdeasModal: () => {
+      setIdeasModalOpen(false);
+      editorStore.setState({ ideasModalOpen: false } as any);
+    },
+    fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => fetchIdeaSourcesAndIdeas(includeDismissed),
+    fetchIdeasPromptOverride: () => fetchIdeasPromptOverride(),
+    saveIdeasPromptOverride: (next: string) => saveIdeasPromptOverride(next),
+    runGenerateIdeas: (a: any) => runGenerateIdeas(a),
+    updateIdea: (b: any) => updateIdea(b),
+    deleteIdeaSource: (sourceId: string) => deleteIdeaSource(sourceId),
+    createCarouselFromIdea: (a: any) => createCarouselFromIdea(a),
+    fetchProjectJobStatus: (a: any) => fetchProjectJobStatus(a),
+    fetchIdeaCarouselRuns: (ideaIds: string[]) => fetchIdeaCarouselRuns(ideaIds),
     fetchRecentAssets: (limit?: number) => fetchRecentAssets(limit),
     onInsertRecentImage: (asset: any) => onInsertRecentImage(asset),
     fetchLogoTags: (a: any) => fetchLogoTags(a),
@@ -516,6 +560,18 @@ export function useEditorStoreActionsSync(args: Args) {
       onOpenImageLibraryModal: () => implRef.current?.onOpenImageLibraryModal?.(),
       onCloseImageLibraryModal: () => implRef.current?.onCloseImageLibraryModal?.(),
       onToggleImageLibraryBgRemovalAtInsert: () => implRef.current?.onToggleImageLibraryBgRemovalAtInsert?.(),
+      onOpenIdeasModal: () => implRef.current?.onOpenIdeasModal?.(),
+      onCloseIdeasModal: () => implRef.current?.onCloseIdeasModal?.(),
+      fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) =>
+        implRef.current?.fetchIdeaSourcesAndIdeas?.(includeDismissed) ?? Promise.resolve([]),
+      fetchIdeasPromptOverride: () => implRef.current?.fetchIdeasPromptOverride?.() ?? Promise.resolve(""),
+      saveIdeasPromptOverride: (next: string) => implRef.current?.saveIdeasPromptOverride?.(next) ?? Promise.resolve(String(next || "")),
+      runGenerateIdeas: (a: any) => implRef.current?.runGenerateIdeas?.(a) ?? Promise.resolve({}),
+      updateIdea: (b: any) => implRef.current?.updateIdea?.(b) ?? Promise.resolve({}),
+      deleteIdeaSource: (sourceId: string) => implRef.current?.deleteIdeaSource?.(sourceId) ?? Promise.resolve({}),
+      createCarouselFromIdea: (a: any) => implRef.current?.createCarouselFromIdea?.(a) ?? Promise.resolve({ projectId: "" }),
+      fetchProjectJobStatus: (a: any) => implRef.current?.fetchProjectJobStatus?.(a) ?? Promise.resolve({}),
+      fetchIdeaCarouselRuns: (ideaIds: string[]) => implRef.current?.fetchIdeaCarouselRuns?.(ideaIds) ?? Promise.resolve({}),
       fetchRecentAssets: (limit?: number) => implRef.current?.fetchRecentAssets?.(limit) ?? Promise.resolve([]),
       onInsertRecentImage: (asset: any) => implRef.current?.onInsertRecentImage?.(asset),
       fetchLogoTags: (a: any) => implRef.current?.fetchLogoTags?.(a) ?? Promise.resolve([]),

@@ -251,6 +251,16 @@ export function EditorSidebar() {
               </div>
             </div>
           </div>
+
+          <button
+            type="button"
+            className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+            onClick={actions.onOpenIdeasModal}
+            disabled={switchingSlides}
+            title="Generate topic ideas from Poppy"
+          >
+            💡 Generate Ideas
+          </button>
         </div>
       </div>
     </div>
