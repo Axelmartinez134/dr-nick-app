@@ -591,6 +591,9 @@ export function EditorBottomPanel() {
               <span className="text-sm font-semibold text-slate-900">Caption</span>
             </div>
             <div className="flex items-center gap-2">
+              {ui.captionRegenGenerating ? (
+                <span className="text-xs text-slate-500">Generating...</span>
+              ) : null}
                 {ui.captionCopyStatus === "copied" ? (
                 <span className="text-xs text-emerald-700 font-medium">Copied!</span>
                 ) : ui.captionCopyStatus === "error" ? (
@@ -598,9 +601,28 @@ export function EditorBottomPanel() {
               ) : null}
               <button
                 type="button"
+                className="h-8 w-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                onClick={() => actions.onOpenPromptModal?.("caption")}
+                disabled={copyGenerating}
+                title="Edit caption regenerate prompt"
+                aria-label="Edit caption regenerate prompt"
+              >
+                ⚙️
+              </button>
+              <button
+                type="button"
+                className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                onClick={actions.onClickRegenerateCaption}
+                disabled={ui.captionRegenGenerating || !currentProjectId || copyGenerating || switchingSlides}
+                title="Regenerate caption with Claude"
+              >
+                {ui.captionRegenGenerating ? "Generating..." : "Regenerate"}
+              </button>
+              <button
+                type="button"
                 className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                   onClick={actions.onClickCopyCaption}
-                disabled={copyGenerating}
+                disabled={copyGenerating || ui.captionRegenGenerating}
                 title="Copy caption to clipboard"
               >
                 Copy
@@ -613,8 +635,11 @@ export function EditorBottomPanel() {
             placeholder="Write a caption..."
             value={ui.captionDraft}
             onChange={(e) => actions.onChangeCaption(e.target.value)}
-            disabled={copyGenerating}
+            disabled={copyGenerating || ui.captionRegenGenerating}
           />
+          {ui.captionRegenError ? (
+            <div className="mt-2 text-xs text-red-600">❌ {ui.captionRegenError}</div>
+          ) : null}
         </div>
 
         <DebugCard

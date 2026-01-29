@@ -1,5 +1,5 @@
 export type TemplateTypeId = "regular" | "enhanced";
-export type PromptSection = "prompt" | "emphasis" | "image";
+export type PromptSection = "prompt" | "emphasis" | "image" | "caption";
 export type ProjectBackgroundEffectType = "none" | "dots_n8n";
 
 // Phase 4: Theme ids are lightweight strings (registry-backed for now).
@@ -39,6 +39,7 @@ export type EditorActions = {
   onChangeTemplateTypePrompt: (next: string) => void;
   onChangeTemplateTypeEmphasisPrompt: (next: string) => void;
   onChangeTemplateTypeImageGenPrompt: (next: string) => void;
+  onChangeCaptionRegenPrompt: (next: string) => void;
 
   // Typography/colors
   onChangeHeadlineFontKey: (nextKey: string) => void;
@@ -82,6 +83,7 @@ export type EditorActions = {
   onClickToggleOverlays: () => void;
 
   onClickCopyCaption: () => void;
+  onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
 
   setShowDebugPreview: (next: boolean) => void;
@@ -385,7 +387,10 @@ export type EditorBottomPanelState = {
   // Caption
   captionDraft: string;
   captionCopyStatus: "idle" | "copied" | "error";
+  captionRegenGenerating: boolean;
+  captionRegenError: string | null;
   onClickCopyCaption: () => void;
+  onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
 
   // Debug card
@@ -440,6 +445,8 @@ export type EditorBottomPanelUiState = {
   // Caption
   captionDraft: string;
   captionCopyStatus: "idle" | "copied" | "error";
+  captionRegenGenerating: boolean;
+  captionRegenError: string | null;
 
   // Debug card
   debugScreenshot: string | null;
@@ -485,6 +492,10 @@ export type EditorState = {
   templateTypePrompt: string;
   templateTypeEmphasisPrompt: string;
   templateTypeImageGenPrompt: string;
+  // Caption regen prompt (global per-user; stored on editor_users)
+  captionRegenPrompt: string;
+  captionRegenPromptSaveStatus: PromptSaveStatus;
+  captionRegenPromptSaveError: string | null;
 
   // Template mappings (template-type overrides)
   templateTypeMappingSlide1: string | null;

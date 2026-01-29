@@ -47,12 +47,13 @@ type Args = {
   setSlides: any;
   setTemplateSettingsOpen: (next: boolean) => void;
   setPromptModalOpen: (next: boolean) => void;
-  setPromptModalSection: (next: "prompt" | "emphasis" | "image") => void;
+  setPromptModalSection: (next: "prompt" | "emphasis" | "image" | "caption") => void;
   setTemplateEditorOpen: (next: boolean) => void;
   promptDirtyRef: any;
   setTemplateTypePrompt: (next: string) => void;
   setTemplateTypeEmphasisPrompt: (next: string) => void;
   setTemplateTypeImageGenPrompt: (next: string) => void;
+  setCaptionRegenPrompt: (next: string) => void;
   setHeadlineFontFamily: (next: string) => void;
   setHeadlineFontWeight: (next: number) => void;
   setBodyFontFamily: (next: string) => void;
@@ -92,6 +93,7 @@ type Args = {
   onClickUndo: () => void;
   onClickToggleOverlays: () => void;
   onClickCopyCaption: () => void;
+  onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
   setShowDebugPreview: (next: boolean) => void;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
@@ -207,6 +209,7 @@ export function useEditorStoreActionsSync(args: Args) {
     setTemplateTypePrompt,
     setTemplateTypeEmphasisPrompt,
     setTemplateTypeImageGenPrompt,
+    setCaptionRegenPrompt,
     setHeadlineFontFamily,
     setHeadlineFontWeight,
     setBodyFontFamily,
@@ -245,6 +248,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onClickUndo,
     onClickToggleOverlays,
     onClickCopyCaption,
+    onClickRegenerateCaption,
     onChangeCaption,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
@@ -316,7 +320,7 @@ export function useEditorStoreActionsSync(args: Args) {
       setTemplateEditorOpen(true);
     },
 
-    onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => {
+    onOpenPromptModal: (section: "prompt" | "emphasis" | "image" | "caption") => {
       setPromptModalSection(section);
       setPromptModalOpen(true);
       editorStore.setState({ promptModalSection: section, promptModalOpen: true } as any);
@@ -349,6 +353,12 @@ export function useEditorStoreActionsSync(args: Args) {
         templateTypeImageGenPrompt: next,
         templateTypeImageGenPromptPreviewLine: String(next || "").split("\n")[0] || "",
       } as any);
+    },
+    onChangeCaptionRegenPrompt: (next: string) => {
+      // Different persistence path than template-type settings; use a dedicated dirty ref in EditorShell,
+      // but we still keep the store in sync immediately so the textarea caret doesn't jump.
+      setCaptionRegenPrompt(next);
+      editorStore.setState({ captionRegenPrompt: next } as any);
     },
 
     onChangeHeadlineFontKey: (raw: string) => {
@@ -456,6 +466,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onClickUndo: () => onClickUndo(),
     onClickToggleOverlays: () => onClickToggleOverlays(),
     onClickCopyCaption: () => onClickCopyCaption(),
+    onClickRegenerateCaption: () => onClickRegenerateCaption(),
     onChangeCaption: (next: string) => onChangeCaption(next),
     setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
     setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
@@ -505,11 +516,12 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseTemplateSettings: () => implRef.current?.onCloseTemplateSettings?.(),
       onOpenTemplateEditor: () => implRef.current?.onOpenTemplateEditor?.(),
 
-      onOpenPromptModal: (section: "prompt" | "emphasis" | "image") => implRef.current?.onOpenPromptModal?.(section),
+      onOpenPromptModal: (section: "prompt" | "emphasis" | "image" | "caption") => implRef.current?.onOpenPromptModal?.(section),
       onClosePromptsModal: () => implRef.current?.onClosePromptsModal?.(),
       onChangeTemplateTypePrompt: (next: string) => implRef.current?.onChangeTemplateTypePrompt?.(next),
       onChangeTemplateTypeEmphasisPrompt: (next: string) => implRef.current?.onChangeTemplateTypeEmphasisPrompt?.(next),
       onChangeTemplateTypeImageGenPrompt: (next: string) => implRef.current?.onChangeTemplateTypeImageGenPrompt?.(next),
+      onChangeCaptionRegenPrompt: (next: string) => implRef.current?.onChangeCaptionRegenPrompt?.(next),
 
       onChangeHeadlineFontKey: (raw: string) => implRef.current?.onChangeHeadlineFontKey?.(raw),
       onChangeBodyFontKey: (raw: string) => implRef.current?.onChangeBodyFontKey?.(raw),
@@ -552,6 +564,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onClickUndo: () => implRef.current?.onClickUndo?.(),
       onClickToggleOverlays: () => implRef.current?.onClickToggleOverlays?.(),
       onClickCopyCaption: () => implRef.current?.onClickCopyCaption?.(),
+      onClickRegenerateCaption: () => implRef.current?.onClickRegenerateCaption?.(),
       onChangeCaption: (next: string) => implRef.current?.onChangeCaption?.(next),
       setShowDebugPreview: (next: boolean) => implRef.current?.setShowDebugPreview?.(next),
       setActiveSlideImageBgRemoval: (nextEnabled: boolean) => implRef.current?.setActiveSlideImageBgRemoval?.(nextEnabled),

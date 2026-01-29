@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 10;
 
 type Body = {
-  ideasPromptOverride: string | null;
+  captionRegenPromptOverride: string | null;
 };
 
 function serviceClient() {
@@ -24,7 +24,8 @@ function serviceClient() {
 
 function sanitizePrompt(input: string): string {
   // Remove ASCII control chars that can break JSON payloads/logging,
-  // but preserve common whitespace formatting (tabs/newlines).
+  // but preserve common whitespace formatting (tabs/newlines) so prompts
+  // behave like other multi-line prompt editors in /editor.
   return String(input || '')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
     .trim();
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
   // Must be an editor user (RLS: select self).
   const { data: editorRow, error: editorErr } = await supabase
     .from('editor_users')
-    .select('user_id, ideas_prompt_override')
+    .select('user_id, caption_regen_prompt_override')
     .eq('user_id', user.id)
     .maybeSingle();
   if (editorErr || !editorRow?.user_id) {
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    ideasPromptOverride: String((editorRow as any)?.ideas_prompt_override || ''),
+    captionRegenPromptOverride: String((editorRow as any)?.caption_regen_prompt_override || ''),
   });
 }
 
@@ -77,10 +78,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
   }
 
-  const raw = (body as any)?.ideasPromptOverride;
+  const raw = (body as any)?.captionRegenPromptOverride;
   const next = raw === null ? null : sanitizePrompt(String(raw ?? ''));
-  if (next !== null && next.length > 20_000) {
-    return NextResponse.json({ success: false, error: 'ideasPromptOverride too long' }, { status: 400 });
+  if (next !== null && next.length > 50_000) {
+    return NextResponse.json({ success: false, error: 'captionRegenPromptOverride too long' }, { status: 400 });
   }
 
   const svc = serviceClient();
@@ -90,12 +91,12 @@ export async function POST(req: NextRequest) {
 
   const { error: upErr } = await svc
     .from('editor_users')
-    .update({ ideas_prompt_override: next })
+    .update({ caption_regen_prompt_override: next })
     .eq('user_id', user.id);
   if (upErr) {
     return NextResponse.json({ success: false, error: upErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, ideasPromptOverride: next ?? '' });
+  return NextResponse.json({ success: true, captionRegenPromptOverride: next ?? '' });
 }
 

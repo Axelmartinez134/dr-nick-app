@@ -166,8 +166,12 @@ export default function EditorShell() {
     editorStore.setState({ promptModalOpen: next } as any);
   }, [editorStore]);
 
-  const promptModalSection = useEditorSelector((s) => (s.promptModalSection === "emphasis" || s.promptModalSection === "image" ? s.promptModalSection : "prompt"));
-  const setPromptModalSection = useCallback((next: "prompt" | "emphasis" | "image") => {
+  const promptModalSection = useEditorSelector((s) =>
+    s.promptModalSection === "emphasis" || s.promptModalSection === "image" || s.promptModalSection === "caption"
+      ? s.promptModalSection
+      : "prompt"
+  );
+  const setPromptModalSection = useCallback((next: "prompt" | "emphasis" | "image" | "caption") => {
     editorStore.setState({ promptModalSection: next } as any);
   }, [editorStore]);
 
@@ -227,6 +231,36 @@ export default function EditorShell() {
       templateTypeImageGenPromptPreviewLine: String(next || "").split("\n")[0] || "",
     } as any);
   }, [editorStore]);
+
+  // Caption regen prompt (global per-user; stored on editor_users)
+  const captionRegenPrompt = useEditorSelector((s: any) => String((s as any).captionRegenPrompt || ""));
+  const captionRegenPromptSaveStatus = useEditorSelector(
+    (s: any) => (String((s as any).captionRegenPromptSaveStatus || "idle") as any) || "idle"
+  );
+  const setCaptionRegenPromptSaveStatus = useCallback(
+    (next: "idle" | "saving" | "saved" | "error") => {
+      editorStore.setState({ captionRegenPromptSaveStatus: next } as any);
+    },
+    [editorStore]
+  );
+  const setCaptionRegenPromptSaveError = useCallback(
+    (next: string | null) => {
+      editorStore.setState({ captionRegenPromptSaveError: next } as any);
+    },
+    [editorStore]
+  );
+  const captionRegenPromptDirtyRef = useRef(false);
+  const captionRegenPromptSaveTimeoutRef = useRef<number | null>(null);
+  const captionRegenPromptLoadedRef = useRef(false);
+  const setCaptionRegenPrompt = useCallback(
+    (next: string) => {
+      captionRegenPromptDirtyRef.current = true;
+      setCaptionRegenPromptSaveError(null);
+      if (captionRegenPromptSaveStatus === "error") setCaptionRegenPromptSaveStatus("idle");
+      editorStore.setState({ captionRegenPrompt: String(next || "") } as any);
+    },
+    [captionRegenPromptSaveStatus, editorStore, setCaptionRegenPromptSaveError, setCaptionRegenPromptSaveStatus]
+  );
 
   const templateTypeMappingSlide1 = useEditorSelector((s) => (s.templateTypeMappingSlide1 ? String(s.templateTypeMappingSlide1) : null));
   const setTemplateTypeMappingSlide1 = useCallback((next: string | null) => {
@@ -849,6 +883,8 @@ export default function EditorShell() {
   ]);
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [captionRegenGenerating, setCaptionRegenGenerating] = useState(false);
+  const [captionRegenError, setCaptionRegenError] = useState<string | null>(null);
   const [showLayoutOverlays, setShowLayoutOverlays] = useState(false);
   const [showAdvancedLayoutControls, setShowAdvancedLayoutControls] = useState(false);
 
@@ -3114,11 +3150,17 @@ export default function EditorShell() {
 
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emphasisTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const captionRegenTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     if (!promptModalOpen) return;
     // Focus the correct textarea based on which button opened the modal.
     window.setTimeout(() => {
-      const el = promptModalSection === "emphasis" ? emphasisTextareaRef.current : promptTextareaRef.current;
+      const el =
+        promptModalSection === "emphasis"
+          ? emphasisTextareaRef.current
+          : promptModalSection === "caption"
+            ? captionRegenTextareaRef.current
+            : promptTextareaRef.current;
       if (!el) return;
       try {
         el.focus();
@@ -3128,6 +3170,59 @@ export default function EditorShell() {
       }
     }, 0);
   }, [promptModalOpen, promptModalSection]);
+
+  // Caption regen prompt: load once per session (when user is available).
+  useEffect(() => {
+    if (!user?.id) return;
+    if (captionRegenPromptLoadedRef.current) return;
+    captionRegenPromptLoadedRef.current = true;
+    void (async () => {
+      try {
+        setCaptionRegenPromptSaveStatus("idle");
+        setCaptionRegenPromptSaveError(null);
+        const p = await fetchCaptionRegenPromptOverride();
+        // Do NOT mark dirty when loading.
+        captionRegenPromptDirtyRef.current = false;
+        editorStore.setState({ captionRegenPrompt: p } as any);
+      } catch (e: any) {
+        // Keep empty; user can paste their prompt in modal.
+        setCaptionRegenPromptSaveError(String(e?.message || "Failed to load caption regen prompt"));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Caption regen prompt: debounced autosave (separate persistence path from template-type settings).
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!captionRegenPromptDirtyRef.current) return;
+    if (captionRegenPromptSaveTimeoutRef.current) window.clearTimeout(captionRegenPromptSaveTimeoutRef.current);
+    const nextAtSchedule = captionRegenPrompt;
+    captionRegenPromptSaveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        setCaptionRegenPromptSaveStatus("saving");
+        setCaptionRegenPromptSaveError(null);
+        const saved = await saveCaptionRegenPromptOverride(nextAtSchedule);
+        // Only clear dirty if no newer edit occurred.
+        if (captionRegenPrompt === nextAtSchedule) {
+          captionRegenPromptDirtyRef.current = false;
+          editorStore.setState({ captionRegenPrompt: saved } as any);
+        }
+        setCaptionRegenPromptSaveStatus("saved");
+        window.setTimeout(() => setCaptionRegenPromptSaveStatus("idle"), 1200);
+      } catch (e: any) {
+        const msg = String(e?.message || "Failed to save caption regen prompt");
+        setCaptionRegenPromptSaveError(msg);
+        setCaptionRegenPromptSaveStatus("error");
+        // Keep dirty so another edit will retry save.
+        window.setTimeout(() => setCaptionRegenPromptSaveStatus("idle"), 2000);
+      }
+    }, 600);
+    return () => {
+      if (captionRegenPromptSaveTimeoutRef.current) window.clearTimeout(captionRegenPromptSaveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captionRegenPrompt, user?.id]);
 
   // Debounced autosave: template type prompt + mapping → overrides/global (depending on scope)
   useEffect(() => {
@@ -3545,6 +3640,24 @@ export default function EditorShell() {
       });
       if (!j?.success) throw new Error(j?.error || "Failed to save ideas prompt");
       return String(j?.ideasPromptOverride || "");
+    },
+    [fetchJson]
+  );
+
+  const fetchCaptionRegenPromptOverride = useCallback(async () => {
+    const j = await fetchJson("/api/editor/user-settings/caption-regen-prompt", { method: "GET" });
+    if (!j?.success) throw new Error(j?.error || "Failed to load caption regen prompt");
+    return String(j?.captionRegenPromptOverride || "");
+  }, [fetchJson]);
+
+  const saveCaptionRegenPromptOverride = useCallback(
+    async (next: string) => {
+      const j = await fetchJson("/api/editor/user-settings/caption-regen-prompt", {
+        method: "POST",
+        body: JSON.stringify({ captionRegenPromptOverride: String(next || "") }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to save caption regen prompt");
+      return String(j?.captionRegenPromptOverride || "");
     },
     [fetchJson]
   );
@@ -4584,6 +4697,43 @@ export default function EditorShell() {
       // ignore
     }
   };
+  const onClickRegenerateCaption = async () => {
+    const pid = String(currentProjectId || "").trim();
+    if (!pid) return;
+    if (copyGenerating || switchingSlides) return;
+    if (captionRegenGenerating) return;
+
+    setCaptionRegenGenerating(true);
+    setCaptionRegenError(null);
+    try {
+      addLog?.(`✍️ Regenerating caption with Claude...`);
+      const j = await fetchJson("/api/editor/projects/jobs/regenerate-caption", {
+        method: "POST",
+        body: JSON.stringify({ projectId: pid }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to regenerate caption");
+
+      const nextCaption = String(j?.caption || "");
+      onChangeCaption(nextCaption);
+
+      if (j?.debug?.promptSentToClaude) {
+        try {
+          addLog?.(`🧪 CaptionRegen full prompt sent to Claude (JSON):`);
+          addLog?.(JSON.stringify(String(j.debug.promptSentToClaude || "")));
+        } catch {
+          // ignore
+        }
+      }
+
+      addLog?.(`✅ Caption regenerated`);
+    } catch (e: any) {
+      const msg = String(e?.message || "Caption regeneration failed");
+      setCaptionRegenError(msg);
+      addLog?.(`❌ Caption regeneration failed: ${msg}`);
+    } finally {
+      setCaptionRegenGenerating(false);
+    }
+  };
   const onClickCopyCaption = async () => {
     const ok = await copyToClipboard(captionDraft || "");
     setCaptionCopyStatus(ok ? "copied" : "error");
@@ -4638,6 +4788,8 @@ export default function EditorShell() {
         bgRemovalBusyKeys,
         captionDraft: captionDraft || "",
         captionCopyStatus,
+        captionRegenGenerating,
+        captionRegenError,
         debugScreenshot: debugScreenshot || null,
         showDebugPreview,
         debugLogs: Array.isArray(debugLogs) ? debugLogs : [],
@@ -4658,6 +4810,8 @@ export default function EditorShell() {
     bgRemovalBusyKeys,
     captionCopyStatus,
     captionDraft,
+    captionRegenError,
+    captionRegenGenerating,
     copyError,
     copyGenerating,
     currentProjectId,
@@ -4725,6 +4879,7 @@ export default function EditorShell() {
     setTemplateTypePrompt,
     setTemplateTypeEmphasisPrompt,
     setTemplateTypeImageGenPrompt,
+    setCaptionRegenPrompt,
     setHeadlineFontFamily,
     setHeadlineFontWeight,
     setBodyFontFamily,
@@ -4763,6 +4918,7 @@ export default function EditorShell() {
     onClickUndo,
     onClickToggleOverlays,
     onClickCopyCaption,
+    onClickRegenerateCaption,
     onChangeCaption,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
@@ -5022,7 +5178,11 @@ export default function EditorShell() {
 
       <TemplateSettingsModal />
 
-      <PromptsModal promptTextareaRef={promptTextareaRef} emphasisTextareaRef={emphasisTextareaRef} />
+      <PromptsModal
+        promptTextareaRef={promptTextareaRef}
+        emphasisTextareaRef={emphasisTextareaRef}
+        captionRegenTextareaRef={captionRegenTextareaRef}
+      />
 
       <IdeasModal />
 

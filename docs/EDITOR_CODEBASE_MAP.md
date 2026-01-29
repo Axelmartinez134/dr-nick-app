@@ -455,6 +455,20 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - Delete a source from the left column (🗑️) and confirm
   - Expected: the source disappears and its ideas are gone (cascaded delete)
 
+### Manual QA (Caption Regenerate)
+- Open `/editor` and load any project with slide text
+- In the ✍️ **Caption** card, click **⚙️** and paste your Caption Regenerate prompt
+  - Expected: prompt auto-saves (reopen the modal and it persists)
+- Click **Regenerate**
+  - Expected: button shows “Generating…” and is disabled while running
+  - Expected: caption textarea is replaced with the new caption when finished
+- Click **Regenerate** again (2–3 times)
+  - Expected: each run uses prior attempts as “rejected captions” context (so the next result should be meaningfully different)
+- Refresh the page and click **Regenerate** again
+  - Expected: still uses the full project history (DB-backed), not just the current session
+- If it fails (missing env / Claude error)
+  - Expected: shows a red error line under the caption textarea
+
 ## Projects + slides (server APIs)
 All editor project data is owner-scoped and accessed via `/api/editor/...`.
 
