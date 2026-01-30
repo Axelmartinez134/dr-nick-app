@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../../../editor/_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../../../editor/_utils';
 import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 
 export const runtime = 'nodejs';
@@ -324,6 +324,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -332,13 +336,29 @@ export async function POST(request: NextRequest) {
   }
   if (!body.projectId) return NextResponse.json({ success: false, error: 'projectId is required' }, { status: 400 });
 
-  // Load project (and ensure ownership via RLS + explicit filter)
-  const { data: project, error: projectErr } = await supabase
+  // Load project (account-scoped)
+  let { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
-    .select('id, owner_user_id, template_type_id, prompt_snapshot')
+    .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id')
     .eq('id', body.projectId)
-    .eq('owner_user_id', user.id)
-    .single();
+    .eq('account_id', accountId)
+    .maybeSingle();
+
+  // Backwards-safe: legacy row without account_id (owned by caller)
+  if (!project?.id) {
+    const legacy = await supabase
+      .from('carousel_projects')
+      .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id')
+      .eq('id', body.projectId)
+      .eq('owner_user_id', user.id)
+      .is('account_id', null)
+      .maybeSingle();
+    projectErr = projectErr || legacy.error;
+    project = legacy.data as any;
+    if (project?.id) {
+      await supabase.from('carousel_projects').update({ account_id: accountId }).eq('id', body.projectId);
+    }
+  }
   if (projectErr || !project) {
     return NextResponse.json({ success: false, error: projectErr?.message || 'Project not found' }, { status: 404 });
   }
@@ -347,7 +367,16 @@ export async function POST(request: NextRequest) {
   const prompt = sanitizePrompt(project.prompt_snapshot || '');
   if (!prompt) return NextResponse.json({ success: false, error: 'Project prompt is empty' }, { status: 400 });
 
-  // Per-user Poppy routing (board/chat/model) stored on editor_users.
+  // Phase E: per-account Poppy routing (board/chat/model) stored on editor_account_settings.
+  const { data: settingsRow, error: settingsErr } = await supabase
+    .from('editor_account_settings')
+    .select('poppy_conversation_url')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (settingsErr) {
+    return NextResponse.json({ success: false, error: settingsErr.message }, { status: 500 });
+  }
+  // Backwards-safe: legacy per-user source.
   const { data: editorRow, error: editorErr } = await supabase
     .from('editor_users')
     .select('poppy_conversation_url')
@@ -356,10 +385,12 @@ export async function POST(request: NextRequest) {
   if (editorErr) {
     return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
   }
-  const poppyConversationUrl = String((editorRow as any)?.poppy_conversation_url || '').trim();
+  const poppyConversationUrl =
+    String((settingsRow as any)?.poppy_conversation_url || '').trim() ||
+    String((editorRow as any)?.poppy_conversation_url || '').trim();
   if (!poppyConversationUrl) {
     return NextResponse.json(
-      { success: false, error: 'Missing poppy_conversation_url for this user' },
+      { success: false, error: 'Missing poppy_conversation_url for this account' },
       { status: 400 }
     );
   }
@@ -386,6 +417,7 @@ export async function POST(request: NextRequest) {
   const { data: job, error: jobErr } = await supabase
     .from('carousel_generation_jobs')
     .insert({
+      account_id: accountId,
       project_id: project.id,
       template_type_id: templateTypeId,
       status: 'running',
@@ -419,7 +451,11 @@ export async function POST(request: NextRequest) {
     const caption = payload.caption as string;
 
     // Load per-user effective emphasis prompt for this template type.
-    const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(supabase, user.id, templateTypeId);
+    const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
+      supabase,
+      { accountId, actorUserId: user.id },
+      templateTypeId
+    );
     const emphasisInstruction = String(ttEffective?.emphasisPrompt || '').trim();
 
     // Generate emphasis ranges (Generate Copy only; Realign untouched).

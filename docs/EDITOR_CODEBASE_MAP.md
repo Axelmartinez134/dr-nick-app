@@ -76,10 +76,23 @@ This guidance is **ONLY for `/editor`**. It’s intentionally high-level so it s
 
 ## Auth + gating
 - **Auth state + editor allowlist**: `src/app/components/auth/AuthContext.tsx`
-  - Checks `public.editor_users` to set `isEditorUser`
+  - **Agency model**: checks `public.editor_account_memberships` to gate editor access
+  - Note: `public.editor_users` still exists for editor profile fields, but **not** for tenant access control
 - **/editor gate**: `src/app/editor/page.tsx`
   - Redirects to `/` if not authed
-  - Shows “Access denied” if not in `editor_users`
+  - Shows “Access denied” if user has **no account membership**
+
+## Multi-tenant (Agency accounts) — core rules
+This is **editor-only** multi-tenancy. It does **not** affect the Health/Profile side of the app.
+
+- **Active account context**
+  - Stored client-side as `localStorage["editor.activeAccountId"]`
+  - Attached to editor API requests as `x-account-id` (via `fetchJson` in `src/app/editor/EditorShell.tsx`)
+  - Server routes derive the effective account via `resolveActiveAccountId(...)` in `src/app/api/editor/_utils.ts`
+  - **Security boundary is enforced by RLS** on account-scoped tables (`account_id` + membership policies)
+- **Superadmin switching UI**
+  - `src/features/editor/components/EditorTopBar.tsx` renders an **Account dropdown** only for superadmins
+  - Source of truth: `GET /api/editor/accounts/me` (returns `isSuperadmin`, `activeAccountId`, memberships list)
 
 ## Refactor end-state (feature folder)
 `src/app/editor/EditorShell.tsx` remains the route entry, but most editor logic now lives in `src/features/editor/`.
@@ -284,7 +297,9 @@ When enabled, you’ll see Debug panel entries prefixed with:
 #### Recents: stored table + API
 - **DB migration**: `supabase/migrations/20260125_000001_add_editor_recent_assets.sql`
   - Table: `public.editor_recent_assets`
-  - Dedupe: by `(owner_user_id, storage_bucket, storage_path)` when storage is present; otherwise by `(owner_user_id, url)`
+  - Phase G dedupe (account-scoped):
+    - `editor_recent_assets (account_id, storage_bucket, storage_path)` when storage is present
+    - otherwise `editor_recent_assets (account_id, url)`
 - **Server route**: `GET/POST /api/editor/assets/recents`
   - Implementation: `src/app/api/editor/assets/recents/route.ts`
   - Canonicalizes URLs by stripping `?v=` so storage cache-busters don’t break dedupe
@@ -292,12 +307,13 @@ When enabled, you’ll see Debug panel entries prefixed with:
 #### Auth nuance (important)
 - `src/app/api/editor/_utils.ts` uses `getAuthedSupabase()` which **requires** `Authorization: Bearer <token>`.
 - Therefore the Image Library modal must load Recents via the editor’s authed `fetchJson` (wired through `state.actions.fetchRecentAssets`), not via unauthenticated `fetch()`.
+- **Agency nuance**: editor API calls must also include `x-account-id` (handled automatically by `fetchJson` in `EditorShell.tsx`).
 
-#### Generate Copy → Poppy routing (per editor user)
+#### Generate Copy → Poppy routing (per account)
 - **Server route**: `POST /api/editor/projects/jobs/generate-copy`
   - Implementation: `src/app/api/editor/projects/jobs/generate-copy/route.ts`
-  - Looks up **per-user** `public.editor_users.poppy_conversation_url` and uses it to call Poppy
-  - **Hard fails** if missing: `Missing poppy_conversation_url for this user`
+  - Looks up **per-account** `public.editor_account_settings.poppy_conversation_url` and uses it to call Poppy
+  - **Hard fails** if missing for the active account: `Missing poppy_conversation_url for this account`
   - Uses `model` from the stored URL’s query params (does **not** use env `POPPY_MODEL` for Generate Copy)
 - **Client UX**:
   - `src/features/editor/hooks/useGenerateCopy.ts` logs the Poppy routing used (`board_id/chat_id/model`) into the Debug panel after the API responds
@@ -320,27 +336,28 @@ When enabled, you’ll see Debug panel entries prefixed with:
   - `POST /api/editor/ideas/sources/delete`
   - `POST /api/editor/ideas/create-carousel`
   - `GET  /api/editor/ideas/carousel-runs` (audit lookup: idea → created project)
-  - `GET/POST /api/editor/user-settings/ideas-prompt` (per-user ideas prompt override)
+  - `GET/POST /api/editor/user-settings/ideas-prompt` (**per-account** ideas prompt override)
 - **DB migrations**
   - `supabase/migrations/20260126_000001_add_editor_ideas.sql` (sources/runs/ideas + ideas_prompt_override column)
   - `supabase/migrations/20260126_000002_editor_ideas_delete_policies.sql` (delete policies)
   - `supabase/migrations/20260126_000003_add_editor_idea_carousel_runs.sql` (audit: idea→project)
 
 - **Client UX**: `src/features/editor/components/EditorBottomPanel.tsx`
-  - **Model dropdown** (per-user default): `GPT Image (gpt-image-1.5)` and `Gemini 3 Pro (gemini-3-pro-image-preview)`
+  - **Model dropdown** (per-account default): `GPT Image (gpt-image-1.5)` and `Gemini 3 Pro (gemini-3-pro-image-preview)`
   - **Gemini settings popover** (session-only): Aspect ratio + Size
     - Has explicit close button and dismisses on outside click
   - **BG Removal? toggle** (per-project): controls whether AI-generated images auto-run background removal
   - **AI Image Prompt textarea**: uses immediate store sync to avoid caret-jump while typing (same pattern as Caption)
 - **Client orchestration**:
-  - `src/features/editor/hooks/useGenerateAiImage.ts` sends prompt + imageConfig; server enforces per-user model from DB
+  - `src/features/editor/hooks/useGenerateAiImage.ts` sends prompt + imageConfig; server enforces per-account model from DB
   - `src/app/editor/EditorShell.tsx` owns the UI state + actions, and persists the per-project BG Removal toggle via `POST /api/editor/projects/update`
 - **Server route**: `POST /api/editor/projects/jobs/generate-ai-image`
   - Implementation: `src/app/api/editor/projects/jobs/generate-ai-image/route.ts`
-  - Enforces **per-user** `editor_users.ai_image_gen_model` (client cannot override)
+  - Enforces **per-account** `editor_account_settings.ai_image_gen_model` (client cannot override)
   - Reads **per-project** `carousel_projects.ai_image_autoremovebg_enabled` (default ON)
   - Always stores a **PNG** in Supabase Storage (converts upstream JPEG → PNG via `sharp`)
   - Always computes/stores an alpha mask for wrapping (when BG Removal is OFF the mask is naturally “solid rectangle”)
+  - Phase H: storage path prefixing uses `accounts/<accountId>/...` within `carousel-project-images`
 
 ### Live layout queue + realign orchestration (Stage 4B)
 - **Hook**: `src/features/editor/hooks/useLiveLayoutQueue.ts`
@@ -458,7 +475,7 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 ### Manual QA (Caption Regenerate)
 - Open `/editor` and load any project with slide text
 - In the ✍️ **Caption** card, click **⚙️** and paste your Caption Regenerate prompt
-  - Expected: prompt auto-saves (reopen the modal and it persists)
+  - Expected: prompt auto-saves (reopen the modal and it persists) **per-account**
 - Click **Regenerate**
   - Expected: button shows “Generating…” and is disabled while running
   - Expected: caption textarea is replaced with the new caption when finished
@@ -470,7 +487,7 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
   - Expected: shows a red error line under the caption textarea
 
 ## Projects + slides (server APIs)
-All editor project data is owner-scoped and accessed via `/api/editor/...`.
+All editor project data is **account-scoped** (`account_id`) and accessed via `/api/editor/...`.
 
 ### Project list/load/create/update
 - `GET  /api/editor/projects/list` → list active projects (filters archived)
@@ -579,8 +596,8 @@ All fields below live on `public.carousel_projects`:
 
 ## Initial load path
 - Client calls `POST /api/editor/initial-state`
-  - Loads templates + projects (owner-only)
-  - Bootstraps starter template for first-time editor users (if needed)
+  - Loads templates + projects (account-scoped)
+  - Bootstraps starter templates for the active account (if needed)
   - Returns effective template type settings + template snapshots
  - **Client orchestration**: `src/features/editor/hooks/useEditorBootstrap.ts`
 
@@ -590,17 +607,23 @@ All fields below live on `public.carousel_projects`:
 
 ## Database (high level)
 Key tables used by `/editor`:
-- `public.editor_users` (allowlist gate for `/editor`)
-  - `poppy_conversation_url` (per-user Poppy board/chat/model for Generate Copy)
-  - `ai_image_gen_model` (per-user default image model used by Generate Image; server enforced)
+- `public.editor_accounts` (tenant/workspace)
+- `public.editor_account_memberships` (who can access which account + role: `owner`/`admin`)
+- `public.editor_superadmins` (who sees the account switcher)
+- `public.editor_account_settings` (per-account settings)
+  - `poppy_conversation_url` (Poppy board/chat/model for Generate Copy & Ideas)
+  - `ai_image_gen_model` (default image model used by Generate AI Image; server enforced)
+  - `ideas_prompt_override` (Generate Ideas prompt)
+  - `caption_regen_prompt_override` (Caption Regenerate prompt)
+- `public.editor_users` (editor profile fields; **not** the tenant boundary)
 - `public.editor_recent_assets` (Phase 2: Image Library Recents)
-  - user-scoped and deduped by storage path when available, else by URL
+  - account-scoped and deduped by storage path when available, else by URL
 - `public.editor_logo_catalog` (Phase 3: Logos catalog; shared)
   - provider-agnostic logo metadata and variants used for fast search + tag filtering
 - `public.editor_logo_assets` (Phase 3: Logos raster cache; shared)
   - provider-agnostic cached PNGs for logo variants, stored in `editor-shared-assets`
 - `public.carousel_projects`
-  - `owner_user_id`
+  - `account_id` (tenant boundary)
   - `template_type_id`
   - `slide*_template_id_snapshot` fields
   - `archived_at` (soft archive)
@@ -618,8 +641,8 @@ Key tables used by `/editor`:
   - `headline`, `body`
   - `layout_snapshot` (what the canvas renders)
   - `input_snapshot` (text content + style ranges + editor flags under `input_snapshot.editor`)
-- `public.carousel_templates` (owner-only templates)
-- `public.carousel_template_type_overrides` (per-user template-type settings)
+- `public.carousel_templates` (account-owned templates)
+- `public.carousel_template_type_overrides` (account-owned template-type settings)
 - `public.carousel_generation_jobs` (job tracking for AI)
 
 ## “Where do I change X?” (common tasks)
@@ -635,11 +658,10 @@ Key tables used by `/editor`:
   - Wiring/orchestration: `src/app/editor/EditorShell.tsx`
   - Recents API: `src/app/api/editor/assets/recents/route.ts`
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
-  - Per-user Poppy routing URL: `public.editor_users.poppy_conversation_url`
-  - Migration: `supabase/migrations/20260121_000002_add_poppy_conversation_url_to_editor_users.sql`
+  - Per-account Poppy routing URL: `public.editor_account_settings.poppy_conversation_url`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
-  - Per-user image model: `public.editor_users.ai_image_gen_model` (migration: `supabase/migrations/20260122_000001_add_ai_image_gen_model_to_editor_users.sql`)
+  - Per-account image model: `public.editor_account_settings.ai_image_gen_model`
   - Per-project BG Removal default: `public.carousel_projects.ai_image_autoremovebg_enabled` (migration: `supabase/migrations/20260123_000001_add_ai_image_autoremovebg_enabled_to_carousel_projects.sql`)
   - Server route: `src/app/api/editor/projects/jobs/generate-ai-image/route.ts` (always stores PNG; mask always present)
 - **Realign button behavior**: `src/app/editor/EditorShell.tsx` (calls the existing live-layout pipeline)

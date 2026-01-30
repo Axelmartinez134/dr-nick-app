@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase, type TemplateTypeId } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId, type TemplateTypeId } from '../../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../../projects/_effective';
 
 export const runtime = 'nodejs';
@@ -52,6 +52,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -67,9 +71,11 @@ export async function POST(request: NextRequest) {
   // Load idea (ownership enforced)
   const { data: idea, error: ideaErr } = await supabase
     .from('editor_ideas')
-    .select('id, owner_user_id, source_id, title, bullets, status')
+    .select('id, account_id, owner_user_id, source_id, title, bullets, status')
     .eq('id', ideaId)
-    .eq('owner_user_id', user.id)
+    // Phase G: account-scoped ideas (shared within account).
+    // Backwards-safe fallback for legacy rows.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
     .maybeSingle();
   if (ideaErr) return NextResponse.json({ success: false, error: ideaErr.message }, { status: 500 });
   if (!idea) return NextResponse.json({ success: false, error: 'Idea not found' }, { status: 404 });
@@ -77,15 +83,17 @@ export async function POST(request: NextRequest) {
   // Load source for metadata
   const { data: source, error: sourceErr } = await supabase
     .from('editor_idea_sources')
-    .select('id, owner_user_id, source_title, source_url')
+    .select('id, account_id, owner_user_id, source_title, source_url')
     .eq('id', (idea as any).source_id)
-    .eq('owner_user_id', user.id)
+    // Phase G: account-scoped sources (shared within account).
+    // Backwards-safe fallback for legacy rows.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
     .maybeSingle();
   if (sourceErr) return NextResponse.json({ success: false, error: sourceErr.message }, { status: 500 });
   if (!source) return NextResponse.json({ success: false, error: 'Source not found' }, { status: 404 });
 
-  // Load effective template-type settings (so we use the user's current Poppy prompt defaults/overrides).
-  const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, user.id, templateTypeId);
+  // Load effective template-type settings (account-scoped).
+  const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
 
   const topicTitle = String((idea as any).title || '').trim() || 'Untitled Topic';
   const promptRendered = buildInjectedPrompt({
@@ -104,12 +112,19 @@ export async function POST(request: NextRequest) {
     model: null,
   };
   try {
+    const { data: settingsRow } = await supabase
+      .from('editor_account_settings')
+      .select('poppy_conversation_url')
+      .eq('account_id', accountId)
+      .maybeSingle();
     const { data: editorRow } = await supabase
       .from('editor_users')
       .select('poppy_conversation_url')
       .eq('user_id', user.id)
       .maybeSingle();
-    const poppyConversationUrl = String((editorRow as any)?.poppy_conversation_url || '').trim();
+    const poppyConversationUrl =
+      String((settingsRow as any)?.poppy_conversation_url || '').trim() ||
+      String((editorRow as any)?.poppy_conversation_url || '').trim();
     if (poppyConversationUrl) {
       const u = new URL(poppyConversationUrl);
       poppyRoutingMeta = {
@@ -127,6 +142,7 @@ export async function POST(request: NextRequest) {
   const { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .insert({
+      account_id: accountId,
       owner_user_id: user.id,
       title: topicTitle,
       template_type_id: templateTypeId,
@@ -161,6 +177,7 @@ export async function POST(request: NextRequest) {
 
   // Audit row (prompt_rendered + routing meta)
   await supabase.from('editor_idea_carousel_runs').insert({
+    account_id: accountId,
     owner_user_id: user.id,
     idea_id: idea.id,
     source_id: source.id,

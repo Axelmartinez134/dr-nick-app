@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getAuthedSupabase } from '../../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../../../_utils';
 import { computeAlphaMask128FromPngBytes, pngHasAnyTransparency } from '../_mask';
 
 export const runtime = 'nodejs';
@@ -67,6 +67,12 @@ export async function POST(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) {
+    return NextResponse.json({ success: false, error: acct.error, statusCode: acct.status } satisfies Resp, { status: acct.status });
+  }
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -80,15 +86,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'projectId and slideIndex (0..5) are required' } satisfies Resp, { status: 400 });
   }
 
-  // Ownership check
+  // Account-scoped project access check
   const { data: project, error: projErr } = await supabase
     .from('carousel_projects')
-    .select('id, owner_user_id')
+    .select('id, owner_user_id, account_id')
     .eq('id', projectId)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle();
   if (projErr || !project?.id) {
     return NextResponse.json({ success: false, error: 'Project not found' } satisfies Resp, { status: 404 });
+  }
+
+  // Backwards-safe: patch legacy null account_id (owned by caller)
+  if (!(project as any)?.account_id) {
+    await supabase.from('carousel_projects').update({ account_id: accountId }).eq('id', projectId).eq('owner_user_id', user.id);
   }
 
   const svc = serviceClient();
@@ -101,7 +112,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Server missing REMOVEBG_API_KEY' } satisfies Resp, { status: 500 });
   }
 
-  const baseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
+  // Phase H (optional): prefer account-prefixed storage paths.
+  // IMPORTANT: keep legacy fallback candidates for pre-Phase-H paths.
+  const baseDir = `accounts/${accountId}/projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
+  const legacyBaseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
   const processedPath = `${baseDir}/image.png`;
   const v = String(Date.now());
 
@@ -109,6 +123,7 @@ export async function POST(req: NextRequest) {
   const explicit = candidateForPath((body as any)?.path);
   const found = await downloadFirstExisting(svc, [
     ...(explicit ? [explicit] : []),
+    // Phase H paths (account-prefixed)
     { path: `${baseDir}/original.png`, contentType: 'image/png', ext: 'png' },
     { path: `${baseDir}/original.webp`, contentType: 'image/webp', ext: 'webp' },
     { path: `${baseDir}/original.jpg`, contentType: 'image/jpeg', ext: 'jpg' },
@@ -117,6 +132,15 @@ export async function POST(req: NextRequest) {
     { path: `${baseDir}/image.webp`, contentType: 'image/webp', ext: 'webp' },
     { path: `${baseDir}/image.jpg`, contentType: 'image/jpeg', ext: 'jpg' },
     { path: `${baseDir}/image.jpeg`, contentType: 'image/jpeg', ext: 'jpeg' },
+    // Legacy paths (pre-Phase-H)
+    { path: `${legacyBaseDir}/original.png`, contentType: 'image/png', ext: 'png' },
+    { path: `${legacyBaseDir}/original.webp`, contentType: 'image/webp', ext: 'webp' },
+    { path: `${legacyBaseDir}/original.jpg`, contentType: 'image/jpeg', ext: 'jpg' },
+    { path: `${legacyBaseDir}/original.jpeg`, contentType: 'image/jpeg', ext: 'jpeg' },
+    { path: `${legacyBaseDir}/image.png`, contentType: 'image/png', ext: 'png' },
+    { path: `${legacyBaseDir}/image.webp`, contentType: 'image/webp', ext: 'webp' },
+    { path: `${legacyBaseDir}/image.jpg`, contentType: 'image/jpeg', ext: 'jpg' },
+    { path: `${legacyBaseDir}/image.jpeg`, contentType: 'image/jpeg', ext: 'jpeg' },
   ]);
 
   if (!found) {

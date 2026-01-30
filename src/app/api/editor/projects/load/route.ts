@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -14,17 +14,39 @@ export async function GET(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   if (!id) return NextResponse.json({ success: false, error: 'Project id is required' }, { status: 400 });
 
-  const { data: project, error: projectErr } = await supabase
+  // Primary: account-scoped
+  let { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select(PROJECT_SELECT)
     .eq('id', id)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .is('archived_at', null)
-    .single();
+    .maybeSingle();
+
+  // Backwards-safe: legacy rows created after Phase B without account_id
+  if (!project?.id) {
+    const legacy = await supabase
+      .from('carousel_projects')
+      .select(PROJECT_SELECT)
+      .eq('id', id)
+      .eq('owner_user_id', user.id)
+      .is('account_id', null)
+      .is('archived_at', null)
+      .maybeSingle();
+    projectErr = projectErr || legacy.error;
+    project = legacy.data as any;
+    if (project?.id) {
+      await supabase.from('carousel_projects').update({ account_id: accountId }).eq('id', project.id);
+    }
+  }
   if (projectErr || !project) {
     return NextResponse.json({ success: false, error: projectErr?.message || 'Project not found' }, { status: 404 });
   }

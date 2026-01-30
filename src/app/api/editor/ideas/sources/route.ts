@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -17,6 +17,10 @@ export async function GET(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   const { searchParams } = new URL(request.url);
   const includeDismissed = toBool(searchParams.get('includeDismissed'));
 
@@ -24,7 +28,9 @@ export async function GET(request: NextRequest) {
   const { data: sources, error: sourcesErr } = await supabase
     .from('editor_idea_sources')
     .select('id, owner_user_id, source_title, source_url, last_generated_at, created_at, updated_at')
-    .eq('owner_user_id', user.id)
+    // Phase G: account-scoped ideas/sources (shared within account).
+    // Backwards-safe fallback for legacy rows.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
     .order('last_generated_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(250);
@@ -37,7 +43,9 @@ export async function GET(request: NextRequest) {
     let q = supabase
       .from('editor_ideas')
       .select('id, source_id, run_id, title, bullets, status, approved_sort_index, created_at, updated_at')
-      .eq('owner_user_id', user.id)
+      // Phase G: account-scoped ideas (shared within account).
+      // Backwards-safe fallback for legacy rows.
+      .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
       .in('source_id', sourceIds)
       .order('created_at', { ascending: false })
       .limit(5000);

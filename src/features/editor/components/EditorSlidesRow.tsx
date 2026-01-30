@@ -243,6 +243,7 @@ export function EditorSlidesRow() {
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
                         textColor={projectTextColor}
+                        deferInit={false}
                         backgroundEffectEnabled={projectBackgroundEffectEnabled}
                         backgroundEffectType={projectBackgroundEffectType}
                         templateSnapshot={snap}
@@ -290,6 +291,7 @@ export function EditorSlidesRow() {
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
                     textColor={projectTextColor}
+                    deferInit={true}
                     backgroundEffectEnabled={projectBackgroundEffectEnabled}
                     backgroundEffectType={projectBackgroundEffectType}
                     templateSnapshot={snap}
@@ -403,6 +405,7 @@ export function EditorSlidesRow() {
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}
+                                deferInit={i !== activeSlideIndex}
                                 backgroundEffectEnabled={projectBackgroundEffectEnabled}
                                 backgroundEffectType={projectBackgroundEffectType}
                                 templateSnapshot={snap}

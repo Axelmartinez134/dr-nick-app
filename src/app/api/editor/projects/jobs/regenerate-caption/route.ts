@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -249,6 +249,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -258,13 +262,13 @@ export async function POST(request: NextRequest) {
   const projectId = String(body?.projectId || '').trim();
   if (!projectId) return NextResponse.json({ success: false, error: 'projectId is required' }, { status: 400 });
 
-  // Load project (caption + title) and ensure ownership via RLS + explicit filter.
+  // Load project (caption + title) in active account.
   const { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select('id, owner_user_id, title, caption')
     .eq('id', projectId)
-    .eq('owner_user_id', user.id)
-    .single();
+    .eq('account_id', accountId)
+    .maybeSingle();
   if (projectErr || !project) {
     return NextResponse.json({ success: false, error: projectErr?.message || 'Project not found' }, { status: 404 });
   }
@@ -279,14 +283,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Could not load slides' }, { status: 500 });
   }
 
-  // Load per-user prompt override (global).
-  const { data: editorRow } = await supabase
-    .from('editor_users')
+  // Phase E: per-account prompt override (shared within account).
+  const { data: settingsRow } = await supabase
+    .from('editor_account_settings')
     .select('caption_regen_prompt_override')
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle();
   const systemPromptRaw =
-    String((editorRow as any)?.caption_regen_prompt_override || '').trim() || buildDefaultCaptionPrompt();
+    String((settingsRow as any)?.caption_regen_prompt_override || '').trim() || buildDefaultCaptionPrompt();
   const systemPrompt = sanitizeText(systemPromptRaw);
 
   // Load prior runs (all) to give "rejected attempts" context.
@@ -294,7 +298,9 @@ export async function POST(request: NextRequest) {
     .from('carousel_caption_regen_runs')
     .select('output_caption, created_at')
     .eq('project_id', projectId)
-    .eq('owner_user_id', user.id)
+    // Phase G: account-scoped caption regen history (shared within account).
+    // Backwards-safe fallback for legacy rows.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
     .order('created_at', { ascending: true });
   const rejectedCaptions: string[] = (priorRuns || [])
     .map((r: any) => String(r?.output_caption || '').trim())
@@ -354,6 +360,7 @@ export async function POST(request: NextRequest) {
       rejectedCaptions,
     };
     await supabase.from('carousel_caption_regen_runs').insert({
+      account_id: accountId,
       owner_user_id: user.id,
       project_id: projectId,
       prompt_rendered: fullPromptSentToClaude,
@@ -366,7 +373,7 @@ export async function POST(request: NextRequest) {
       .from('carousel_projects')
       .update({ caption })
       .eq('id', projectId)
-      .eq('owner_user_id', user.id);
+      .eq('account_id', accountId);
 
     return NextResponse.json({
       success: true,

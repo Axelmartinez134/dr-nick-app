@@ -64,13 +64,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function checkEditorMembership(userId: string): Promise<boolean> {
     try {
+      // Phase C (agency accounts): /editor access is granted if the user belongs to >= 1 account.
+      // IMPORTANT: do NOT use maybeSingle() here because users can belong to multiple accounts.
       const { data, error } = await supabase
-        .from('editor_users')
-        .select('user_id')
+        .from('editor_account_memberships')
+        .select('id')
         .eq('user_id', userId)
-        .maybeSingle()
+        .limit(1)
       if (error) return false
-      return !!data?.user_id
+      return Array.isArray(data) && data.length > 0
     } catch {
       return false
     }

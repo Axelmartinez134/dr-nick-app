@@ -19,6 +19,10 @@ export function EditorTopBar() {
   const actions = useEditorSelector((s) => s.actions);
 
   const [editorFirstName, setEditorFirstName] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<Array<{ accountId: string; displayName: string; role: string }>>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string>("");
+  const [isSuperadmin, setIsSuperadmin] = useState<boolean>(false);
+  const [accountsLoading, setAccountsLoading] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +54,88 @@ export function EditorTopBar() {
     }
 
     void loadName();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAccountContext() {
+      const userId = user?.id;
+      if (!userId) {
+        setAccounts([]);
+        setActiveAccountId("");
+        setIsSuperadmin(false);
+        setAccountsLoading(false);
+        return;
+      }
+
+      setAccountsLoading(true);
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token || "";
+        if (!token) {
+          if (cancelled) return;
+          setAccounts([]);
+          setActiveAccountId("");
+          setIsSuperadmin(false);
+          setAccountsLoading(false);
+          return;
+        }
+
+        const rawActive = (() => {
+          try {
+            return typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+          } catch {
+            return "";
+          }
+        })();
+
+        const res = await fetch("/api/editor/accounts/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            ...(rawActive ? { "x-account-id": rawActive } : {}),
+          },
+        });
+        const j = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !j?.success) {
+          setAccounts([]);
+          setActiveAccountId("");
+          setIsSuperadmin(false);
+          setAccountsLoading(false);
+          return;
+        }
+
+        const nextAccounts = Array.isArray(j.accounts) ? j.accounts : [];
+        const nextActive = String(j.activeAccountId || "").trim();
+        setAccounts(nextAccounts);
+        setActiveAccountId(nextActive);
+        setIsSuperadmin(!!j.isSuperadmin);
+        setAccountsLoading(false);
+
+        // Keep localStorage aligned with resolved account so subsequent requests are consistent.
+        if (nextActive) {
+          try {
+            localStorage.setItem("editor.activeAccountId", nextActive);
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        if (cancelled) return;
+        setAccounts([]);
+        setActiveAccountId("");
+        setIsSuperadmin(false);
+        setAccountsLoading(false);
+      }
+    }
+
+    void loadAccountContext();
     return () => {
       cancelled = true;
     };
@@ -100,6 +186,35 @@ export function EditorTopBar() {
         </div>
       </div>
       <div className="flex items-center gap-2 min-w-0">
+        {isSuperadmin && accounts.length > 0 ? (
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-semibold text-slate-600 whitespace-nowrap">Account</div>
+            <select
+              className="h-9 max-w-[220px] rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-900 shadow-sm"
+              value={activeAccountId}
+              disabled={accountsLoading || accounts.length <= 1}
+              onChange={(e) => {
+                const next = String(e.target.value || "").trim();
+                if (!next || next === activeAccountId) return;
+                try {
+                  localStorage.setItem("editor.activeAccountId", next);
+                } catch {
+                  // ignore
+                }
+                // Hard reload so the editor bootstraps cleanly under the new account context.
+                window.location.reload();
+              }}
+              title="Switch account"
+              aria-label="Switch account"
+            >
+              {accounts.map((a: any) => (
+                <option key={String(a.accountId)} value={String(a.accountId)}>
+                  {String(a.displayName || "Account")}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <input
           className="h-9 w-[320px] max-w-[40vw] rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
           value={projectTitleValue}

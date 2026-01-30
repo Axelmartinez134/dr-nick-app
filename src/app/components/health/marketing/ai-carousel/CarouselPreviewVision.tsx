@@ -24,6 +24,9 @@ interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
   backgroundColor: string;
   textColor: string;
+  // When true, delay Fabric init until the browser is idle.
+  // Used by /editor to init only the active slide immediately (big first-paint speed win).
+  deferInit?: boolean;
   // Optional slide background effect (used by /editor)
   backgroundEffectEnabled?: boolean;
   backgroundEffectType?: 'none' | 'dots_n8n';
@@ -108,6 +111,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       layout,
       backgroundColor,
       textColor,
+      deferInit,
       backgroundEffectEnabled,
       backgroundEffectType,
       templateSnapshot,
@@ -140,6 +144,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const fabricCanvasRef = useRef<any>(null);
     const fabricModuleRef = useRef<any>(null);
     const [fabricLoaded, setFabricLoaded] = useState(false);
+    const [shouldInit, setShouldInit] = useState<boolean>(() => !deferInit);
     const constraintsRef = useRef<{
       contentRectRaw: null | { x: number; y: number; width: number; height: number };
       allowedRect: null | { x: number; y: number; width: number; height: number };
@@ -214,6 +219,41 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Guardrails
       return Math.max(0.05, Math.min(4, z));
     };
+
+    useEffect(() => {
+      if (!deferInit) setShouldInit(true);
+    }, [deferInit]);
+
+    // For deferred previews, kick initialization during idle time so /editor can paint quickly first.
+    useEffect(() => {
+      if (shouldInit) return;
+      if (typeof window === 'undefined') return;
+
+      let cancelled = false;
+      const kick = () => {
+        if (cancelled) return;
+        setShouldInit(true);
+      };
+
+      const w = window as any;
+      if (typeof w.requestIdleCallback === 'function') {
+        const id = w.requestIdleCallback(kick, { timeout: 1500 });
+        return () => {
+          cancelled = true;
+          try {
+            if (typeof w.cancelIdleCallback === 'function') w.cancelIdleCallback(id);
+          } catch {
+            // ignore
+          }
+        };
+      }
+
+      const t = window.setTimeout(kick, 0);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(t);
+      };
+    }, [shouldInit]);
 
     // Debug hook: confirm wiring regardless of Fabric lifecycle.
     useEffect(() => {
@@ -634,6 +674,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
     // Initialize Fabric canvas once
     useEffect(() => {
+      if (!shouldInit) return;
       console.log('[Preview Vision] 🎨 Initializing canvas...');
       if (!canvasRef.current) {
         console.log('[Preview Vision] ❌ Canvas ref not ready');
@@ -1431,7 +1472,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           setFabricLoaded(false);
         }
       };
-    }, []); // Only run once on mount
+    }, [shouldInit]); // Init when allowed (immediate or deferred)
 
     // Keep Fabric's pointer mapping accurate when display size changes.
     useEffect(() => {

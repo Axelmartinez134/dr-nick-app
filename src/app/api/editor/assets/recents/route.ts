@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -38,6 +38,10 @@ export async function GET(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   const { searchParams } = new URL(req.url);
   const limitRaw = Number(searchParams.get('limit') || '');
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 30;
@@ -45,7 +49,9 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from('editor_recent_assets')
     .select('id, url, storage_bucket, storage_path, kind, last_used_at, use_count')
-    .eq('owner_user_id', user.id)
+    // Phase G: account-scoped recents (shared within account).
+    // Backwards-safe fallback: allow legacy rows with account_id IS NULL owned by this user.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
     .order('last_used_at', { ascending: false })
     .limit(limit);
 
@@ -63,6 +69,10 @@ export async function POST(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: any = {};
   try {
     body = (await req.json()) as any;
@@ -78,6 +88,7 @@ export async function POST(req: NextRequest) {
   const kind = String(body?.kind || 'upload').trim() || 'upload';
 
   const patch: any = {
+    account_id: accountId,
     owner_user_id: user.id,
     url,
     storage_bucket: storageBucket,
@@ -86,24 +97,39 @@ export async function POST(req: NextRequest) {
     last_used_at: new Date().toISOString(),
   };
 
+  const upsertId = async (onConflict: string) => {
+    const { data, error } = await supabase
+      .from('editor_recent_assets')
+      .upsert(patch, { onConflict })
+      .select('id')
+      .single();
+    return { data, error };
+  };
+
   // Best practice: dedupe by storage when present, else by url.
   // We avoid incrementing use_count for now (optional); default on insert is 1.
   if (storageBucket && storagePath) {
-    const { data, error } = await supabase
-      .from('editor_recent_assets')
-      .upsert(patch, { onConflict: 'owner_user_id,storage_bucket,storage_path' })
-      .select('id')
-      .single();
-    if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, id: data?.id || null });
+    // Phase G: prefer account-scoped uniqueness; fall back to legacy owner-scoped constraint if migration not applied.
+    const { data, error } = await upsertId('account_id,storage_bucket,storage_path');
+    if (!error) return NextResponse.json({ success: true, id: data?.id || null });
+    const msg = String((error as any)?.message || '');
+    if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('conflict')) {
+      const legacy = await upsertId('owner_user_id,storage_bucket,storage_path');
+      if (legacy.error) return NextResponse.json({ success: false, error: legacy.error.message }, { status: 500 });
+      return NextResponse.json({ success: true, id: legacy.data?.id || null });
+    }
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 
-  const { data, error } = await supabase
-    .from('editor_recent_assets')
-    .upsert(patch, { onConflict: 'owner_user_id,url' })
-    .select('id')
-    .single();
-  if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true, id: data?.id || null });
+  // Phase G: prefer account-scoped uniqueness; fall back to legacy owner-scoped constraint if migration not applied.
+  const { data, error } = await upsertId('account_id,url');
+  if (!error) return NextResponse.json({ success: true, id: data?.id || null });
+  const msg = String((error as any)?.message || '');
+  if (msg.toLowerCase().includes('no unique') || msg.toLowerCase().includes('conflict')) {
+    const legacy = await upsertId('owner_user_id,url');
+    if (legacy.error) return NextResponse.json({ success: false, error: legacy.error.message }, { status: 500 });
+    return NextResponse.json({ success: true, id: legacy.data?.id || null });
+  }
+  return NextResponse.json({ success: false, error: error.message }, { status: 500 });
 }
 

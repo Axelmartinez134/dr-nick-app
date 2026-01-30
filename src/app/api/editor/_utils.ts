@@ -31,6 +31,52 @@ export async function getAuthedSupabase(request: NextRequest) {
   return { ok: true as const, supabase, user, token };
 }
 
+export function getActiveAccountIdHeader(request: NextRequest): string | null {
+  const raw = request.headers.get('x-account-id');
+  const s = String(raw || '').trim();
+  return s || null;
+}
+
+export async function resolveActiveAccountId(args: {
+  request: NextRequest;
+  supabase: any;
+  userId: string;
+}): Promise<{ ok: true; accountId: string } | { ok: false; status: 400 | 403; error: string }> {
+  const { request, supabase, userId } = args;
+  const header = getActiveAccountIdHeader(request);
+
+  // If header is provided, trust it and rely on RLS for enforcement.
+  // IMPORTANT: We intentionally avoid an extra membership lookup here because /editor makes many API calls
+  // on load, and the added round-trip can make the UI feel slow (e.g. 5–10s).
+  if (header) {
+    return { ok: true, accountId: header };
+  }
+
+  // Backwards-safe fallback: use user's "Personal" account (created_by_user_id = userId).
+  // This preserves the old single-tenant behavior when no account header is present.
+  const { data: acct, error: acctErr } = await supabase
+    .from('editor_accounts')
+    .select('id')
+    .eq('created_by_user_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (acctErr) return { ok: false, status: 403, error: 'Forbidden' };
+  if (acct?.id) return { ok: true, accountId: String(acct.id) };
+
+  // Last resort: pick any membership.
+  const { data: mem, error: memErr } = await supabase
+    .from('editor_account_memberships')
+    .select('account_id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (memErr) return { ok: false, status: 403, error: 'Forbidden' };
+  if (!mem?.account_id) return { ok: false, status: 403, error: 'Forbidden' };
+  return { ok: true, accountId: String(mem.account_id) };
+}
+
 export type TemplateTypeId = 'regular' | 'enhanced';
 
 export type TemplateTypeDefaultsRow = {

@@ -1265,6 +1265,15 @@ export default function EditorShell() {
     const method = String((init as any)?.method || "GET").toUpperCase();
     const clientCtxLoggedRef = (fetchJson as any).__clientCtxLoggedRef || { current: false };
     (fetchJson as any).__clientCtxLoggedRef = clientCtxLoggedRef;
+    const activeAccountId = (() => {
+      try {
+        // Phase A: account context is optional and backwards-safe.
+        // If unset, server routes will continue to behave as before (user-scoped).
+        return typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+      } catch {
+        return "";
+      }
+    })();
 
     const logClientCtxOnce = () => {
       if (clientCtxLoggedRef.current) return;
@@ -1289,6 +1298,7 @@ export default function EditorShell() {
       headers: {
         ...(init?.headers || {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(activeAccountId ? { "x-account-id": activeAccountId } : {}),
           "Content-Type": "application/json",
       },
     });

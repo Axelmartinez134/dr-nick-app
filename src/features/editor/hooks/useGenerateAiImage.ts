@@ -66,6 +66,15 @@ export function useGenerateAiImage(params: {
     saveSlidePatchForProject,
   } = params;
 
+  const getActiveAccountHeader = () => {
+    try {
+      const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+      return id ? ({ "x-account-id": id } as Record<string, string>) : ({} as Record<string, string>);
+    } catch {
+      return {} as Record<string, string>;
+    }
+  };
+
   const [aiImageGeneratingKeys, setAiImageGeneratingKeys] = useState<Set<string>>(new Set());
   const [aiImageErrorByKey, setAiImageErrorByKey] = useState<Record<string, string | null>>({});
   const [aiImageProgressByKey, setAiImageProgressByKey] = useState<Record<string, number>>({});
@@ -162,7 +171,7 @@ export function useGenerateAiImage(params: {
           if (!token) return;
           const statusRes = await fetch(
             `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=generate-ai-image&slideIndex=${slideIndex}`,
-            { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+            { method: 'GET', headers: { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() } }
           );
           const statusData = await statusRes.json().catch(() => ({}));
           const activeJob = statusData?.activeJob || null;
@@ -274,7 +283,7 @@ export function useGenerateAiImage(params: {
           if (!token) return;
           const statusRes = await fetch(
             `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(projectIdAtStart)}&jobType=generate-ai-image&slideIndex=${targetSlide}`,
-            { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+            { method: 'GET', headers: { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() } }
           );
           const statusData = await statusRes.json().catch(() => ({}));
           const job = statusData?.activeJob || null;
@@ -297,7 +306,7 @@ export function useGenerateAiImage(params: {
 
         const res = await fetch('/api/editor/projects/jobs/generate-ai-image', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...getActiveAccountHeader() },
           body: JSON.stringify({
             projectId: projectIdAtStart,
             slideIndex: targetSlide,
@@ -491,7 +500,7 @@ export function useGenerateAiImage(params: {
         }
         const statusRes = await fetch(
           `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=generate-ai-image&slideIndex=${slideIndex}`,
-          { method: 'GET', headers: { Authorization: `Bearer ${token}` } }
+          { method: 'GET', headers: { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() } }
         );
         const statusData = await statusRes.json().catch(() => ({}));
         if (cancelled) return;

@@ -153,7 +153,7 @@ export function PromptsModal(props: PromptsModalProps) {
                 ) : null}
               </div>
               <div className="mt-0.5 text-xs text-slate-500">
-                Global per-user prompt used when you click <span className="font-semibold">Regenerate</span> in the ✍️ Caption card.
+                Global per-account prompt used when you click <span className="font-semibold">Regenerate</span> in the ✍️ Caption card.
               </div>
               <textarea
                 ref={captionRegenTextareaRef}

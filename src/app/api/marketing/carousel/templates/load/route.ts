@@ -42,8 +42,14 @@ export async function GET(request: NextRequest) {
     .from('carousel_templates')
     .select('id, name, owner_user_id, definition, updated_at')
     .eq('id', id)
-    .eq('owner_user_id', user.id)
-    .single();
+    // Backwards-safe:
+    // - If x-account-id is present, load template within that account (shared workspace).
+    // - Else fall back to legacy owner-only behavior for non-editor marketing pages.
+    .eq(
+      request.headers.get('x-account-id') ? 'account_id' : 'owner_user_id',
+      request.headers.get('x-account-id') ? String(request.headers.get('x-account-id') || '').trim() : user.id
+    )
+    .maybeSingle();
 
   if (error || !data) {
     return NextResponse.json({ success: false, error: error?.message || 'Template not found' } as LoadTemplateResponse, { status: 404 });

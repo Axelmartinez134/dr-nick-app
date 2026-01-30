@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -11,6 +11,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: authed.error }, { status: authed.status });
   }
   const { supabase, user } = authed;
+
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
 
   const { searchParams } = new URL(request.url);
   const ideaIdsRaw = String(searchParams.get('ideaIds') || '').trim();
@@ -31,7 +35,9 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from('editor_idea_carousel_runs')
     .select('idea_id, project_id, created_at')
-    .eq('owner_user_id', user.id)
+    // Phase G: account-scoped idea carousel runs (shared within account).
+    // Backwards-safe fallback for legacy rows.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
     .in('idea_id', ideaIds)
     .order('created_at', { ascending: false })
     .limit(2000);

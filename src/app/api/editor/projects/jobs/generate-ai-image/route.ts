@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getAuthedSupabase } from '../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../../_utils';
 import { generateMedicalImage } from '@/lib/gpt-image-generator';
 import { generateGeminiImagePng } from '@/lib/gemini-image-generator';
 import { computeAlphaMask128FromPngBytes } from '../../slides/image/_mask';
@@ -122,6 +122,12 @@ export async function POST(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) {
+    return NextResponse.json({ success: false, error: acct.error } as GenerateResponse, { status: acct.status });
+  }
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = await req.json();
@@ -145,14 +151,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Ownership check
+  // Account-scoped project access
   const { data: project, error: projErr } = await supabase
     .from('carousel_projects')
     .select(
       'id, owner_user_id, template_type_id, ai_image_autoremovebg_enabled, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot'
     )
     .eq('id', projectId)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle();
 
   if (projErr || !project?.id) {
@@ -170,26 +176,31 @@ export async function POST(req: NextRequest) {
   // Per-project setting: default ON.
   const aiImageAutoRemoveBgEnabled = (project as any)?.ai_image_autoremovebg_enabled !== false;
 
-  // Enforce per-user model selection from DB (client cannot override).
+  // Phase E: per-account model selection from DB (client cannot override).
+  const { data: settingsRow, error: settingsErr } = await supabase
+    .from('editor_account_settings')
+    .select('ai_image_gen_model')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (settingsErr) {
+    return NextResponse.json({ success: false, error: settingsErr.message } as GenerateResponse, { status: 500 });
+  }
+  // Backwards-safe legacy fallback.
   const { data: editorUserRow, error: editorUserErr } = await supabase
     .from('editor_users')
-    .select('user_id, ai_image_gen_model')
+    .select('ai_image_gen_model')
     .eq('user_id', user.id)
     .maybeSingle();
   if (editorUserErr) {
-    // Distinguish true auth/permission issues from schema/runtime problems (e.g. migration not applied).
     return NextResponse.json(
-      {
-        success: false,
-        error: `Editor user lookup failed: ${editorUserErr.message}`,
-      } as GenerateResponse,
+      { success: false, error: `Editor user lookup failed: ${editorUserErr.message}` } as GenerateResponse,
       { status: 500 }
     );
   }
-  if (!editorUserRow?.user_id) {
-    return NextResponse.json({ success: false, error: 'Forbidden' } as GenerateResponse, { status: 403 });
-  }
-  const aiImageGenModel = String((editorUserRow as any)?.ai_image_gen_model || 'gpt-image-1.5').trim();
+  const aiImageGenModel =
+    String((settingsRow as any)?.ai_image_gen_model || '').trim() ||
+    String((editorUserRow as any)?.ai_image_gen_model || '').trim() ||
+    'gpt-image-1.5';
 
   const svc = serviceClient();
   if (!svc) {
@@ -203,6 +214,7 @@ export async function POST(req: NextRequest) {
   const { data: job, error: jobErr } = await supabase
     .from('carousel_generation_jobs')
     .insert({
+      account_id: accountId,
       project_id: project.id,
       template_type_id: 'enhanced',
       job_type: 'generate-ai-image',
@@ -244,7 +256,8 @@ export async function POST(req: NextRequest) {
   const jobId = job.id as string;
   console.log('[generate-ai-image] 📋 Created job:', jobId);
 
-  const baseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
+  // Phase H (optional): prefix storage paths by account for easier long-term organization.
+  const baseDir = `accounts/${accountId}/projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
   // NOTE: we ALWAYS store PNG in Supabase (even if the upstream model returned JPEG).
   const originalPath = `${baseDir}/ai-original.png`;
   const processedPath = `${baseDir}/ai-image.png`;

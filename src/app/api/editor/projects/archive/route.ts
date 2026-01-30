@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -16,6 +16,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -29,7 +33,7 @@ export async function POST(request: NextRequest) {
     .from('carousel_projects')
     .update({ archived_at: new Date().toISOString() })
     .eq('id', projectId)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .is('archived_at', null)
     .select('id, title, template_type_id, caption, updated_at, created_at, archived_at')
     .maybeSingle();

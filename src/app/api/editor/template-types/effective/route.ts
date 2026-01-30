@@ -2,6 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getAuthedSupabase,
+  resolveActiveAccountId,
   mergeTemplateTypeDefaults,
   type TemplateTypeDefaultsRow,
   type TemplateTypeId,
@@ -16,6 +17,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: authed.error }, { status: authed.status });
   }
   const { supabase, user } = authed;
+
+  const acct = await resolveActiveAccountId({ request: request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
 
   const { searchParams } = new URL(request.url);
   const templateTypeId = (searchParams.get('type') || '') as TemplateTypeId;
@@ -40,9 +45,9 @@ export async function GET(request: NextRequest) {
   const { data: override, error: overrideErr } = await supabase
     .from('carousel_template_type_overrides')
     .select(
-      'user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
+      'account_id, user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
     )
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
     .eq('template_type_id', templateTypeId)
     .maybeSingle();
   // If override lookup fails, we treat it as "no override".
@@ -50,7 +55,7 @@ export async function GET(request: NextRequest) {
 
   const effectiveRaw = mergeTemplateTypeDefaults(defaults as TemplateTypeDefaultsRow, safeOverride);
 
-  // Template IDs must be owned by this user (templates are user-private).
+  // Template IDs must belong to this account (templates are account-shared).
   const candidateIds = [
     effectiveRaw.slide1TemplateId,
     effectiveRaw.slide2to5TemplateId,
@@ -62,7 +67,7 @@ export async function GET(request: NextRequest) {
       .from('carousel_templates')
       .select('id')
       .in('id', candidateIds)
-      .eq('owner_user_id', user.id);
+      .eq('account_id', accountId);
     allowed = new Set((rows || []).map((r: any) => String(r.id)));
   }
 

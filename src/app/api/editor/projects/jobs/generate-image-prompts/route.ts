@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase, DEFAULT_IMAGE_GEN_PROMPT } from '../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId, DEFAULT_IMAGE_GEN_PROMPT } from '../../../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 
 export const runtime = 'nodejs';
@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -39,13 +43,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'projectId is required' }, { status: 400 });
   }
 
-  // Load project to get template_type_id
+  // Load project to get template_type_id (account-scoped)
   const { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select('id, owner_user_id, template_type_id')
     .eq('id', body.projectId)
-    .eq('owner_user_id', user.id)
-    .single();
+    .eq('account_id', accountId)
+    .maybeSingle();
 
   if (projectErr || !project) {
     return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
@@ -68,7 +72,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Load the per-user effective image gen prompt for Enhanced
-  const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(supabase, user.id, 'enhanced');
+  const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
+    supabase,
+    { accountId, actorUserId: user.id },
+    'enhanced'
+  );
   const systemPrompt = String(ttEffective?.imageGenPrompt || '').trim() || DEFAULT_IMAGE_GEN_PROMPT;
 
   // Build the input for Claude

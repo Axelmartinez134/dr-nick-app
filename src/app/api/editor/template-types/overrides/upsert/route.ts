@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase, type TemplateTypeId } from '../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId, type TemplateTypeId } from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -22,6 +22,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -33,7 +37,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid template type' }, { status: 400 });
   }
 
-  const patch: any = { user_id: user.id, template_type_id: body.templateTypeId };
+  // Phase F: overrides are account-owned (shared within account).
+  // Keep user_id as "last updated by" for debugging/audit.
+  const patch: any = { account_id: accountId, user_id: user.id, template_type_id: body.templateTypeId };
   if (body.promptOverride !== undefined) patch.prompt_override = body.promptOverride;
   if (body.emphasisPromptOverride !== undefined) patch.emphasis_prompt_override = body.emphasisPromptOverride;
   if (body.imageGenPromptOverride !== undefined) patch.image_gen_prompt_override = body.imageGenPromptOverride;
@@ -42,15 +48,15 @@ export async function POST(request: NextRequest) {
   if (body.slide6TemplateIdOverride !== undefined) patch.slide6_template_id_override = body.slide6TemplateIdOverride;
 
   // Nothing to upsert
-  if (Object.keys(patch).length <= 2) {
+  if (Object.keys(patch).length <= 3) {
     return NextResponse.json({ success: false, error: 'No fields to update' }, { status: 400 });
   }
 
   const { data, error } = await supabase
     .from('carousel_template_type_overrides')
-    .upsert(patch, { onConflict: 'user_id,template_type_id' })
+    .upsert(patch, { onConflict: 'account_id,template_type_id' })
     .select(
-      'user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
+      'account_id, user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
     )
     .single();
 

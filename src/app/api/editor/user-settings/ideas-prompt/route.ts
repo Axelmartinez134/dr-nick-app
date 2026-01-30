@@ -1,7 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -9,18 +8,6 @@ export const maxDuration = 10;
 type Body = {
   ideasPromptOverride: string | null;
 };
-
-function serviceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SERVICE ||
-    process.env.NEXT_PRIVATE_SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
 
 function sanitizePrompt(input: string): string {
   // Remove ASCII control chars that can break JSON payloads/logging,
@@ -37,19 +24,37 @@ export async function GET(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
-  // Must be an editor user (RLS: select self).
-  const { data: editorRow, error: editorErr } = await supabase
-    .from('editor_users')
-    .select('user_id, ideas_prompt_override')
-    .eq('user_id', user.id)
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
+  // Phase E: per-account prompt override (shared within account).
+  const { data: settingsRow } = await supabase
+    .from('editor_account_settings')
+    .select('ideas_prompt_override')
+    .eq('account_id', accountId)
     .maybeSingle();
-  if (editorErr || !editorRow?.user_id) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+
+  // Backwards-safe fallback (legacy per-user).
+  let legacy: string | null = null;
+  if (settingsRow?.ideas_prompt_override === null || settingsRow?.ideas_prompt_override === undefined) {
+    const { data: editorRow } = await supabase
+      .from('editor_users')
+      .select('ideas_prompt_override')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    legacy = (editorRow as any)?.ideas_prompt_override ?? null;
+    // Best-effort: hydrate account settings so future reads are consistent.
+    if (legacy !== null && legacy !== undefined) {
+      await supabase
+        .from('editor_account_settings')
+        .upsert({ account_id: accountId, ideas_prompt_override: legacy }, { onConflict: 'account_id' });
+    }
   }
 
   return NextResponse.json({
     success: true,
-    ideasPromptOverride: String((editorRow as any)?.ideas_prompt_override || ''),
+    ideasPromptOverride: String((settingsRow as any)?.ideas_prompt_override ?? legacy ?? ''),
   });
 }
 
@@ -60,15 +65,9 @@ export async function POST(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
-  // Must be an editor user (RLS: select self).
-  const { data: editorRow, error: editorErr } = await supabase
-    .from('editor_users')
-    .select('user_id')
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (editorErr || !editorRow?.user_id) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-  }
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
 
   let body: Body;
   try {
@@ -83,15 +82,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'ideasPromptOverride too long' }, { status: 400 });
   }
 
-  const svc = serviceClient();
-  if (!svc) {
-    return NextResponse.json({ success: false, error: 'Server missing Supabase service role env' }, { status: 500 });
-  }
-
-  const { error: upErr } = await svc
-    .from('editor_users')
-    .update({ ideas_prompt_override: next })
-    .eq('user_id', user.id);
+  const { error: upErr } = await supabase
+    .from('editor_account_settings')
+    .upsert({ account_id: accountId, ideas_prompt_override: next }, { onConflict: 'account_id' });
   if (upErr) {
     return NextResponse.json({ success: false, error: upErr.message }, { status: 500 });
   }

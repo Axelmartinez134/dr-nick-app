@@ -35,7 +35,13 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from('carousel_templates')
     .select('id, name, updated_at')
-    .eq('owner_user_id', user.id)
+    // Backwards-safe:
+    // - If x-account-id is present, list templates within that account (shared workspace).
+    // - Else fall back to legacy owner-only behavior for non-editor marketing pages.
+    .eq(
+      request.headers.get('x-account-id') ? 'account_id' : 'owner_user_id',
+      request.headers.get('x-account-id') ? String(request.headers.get('x-account-id') || '').trim() : user.id
+    )
     .order('updated_at', { ascending: false });
 
   if (error) {

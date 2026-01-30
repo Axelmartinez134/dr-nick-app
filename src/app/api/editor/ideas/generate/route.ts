@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -175,13 +175,21 @@ Rules (HARD):
   }
 }
 
-async function updateRunProgress(supabase: any, runId: string, patch: { status?: string; error?: string | null }) {
+async function updateRunProgress(
+  supabase: any,
+  args: { runId: string; accountId: string; userId: string },
+  patch: { status?: string; error?: string | null }
+) {
   try {
     const dbPatch: any = {};
     if (patch.status) dbPatch.status = patch.status;
     if (patch.error !== undefined) dbPatch.error = patch.error;
     if (Object.keys(dbPatch).length === 0) return;
-    await supabase.from('editor_idea_runs').update(dbPatch).eq('id', runId);
+    await supabase
+      .from('editor_idea_runs')
+      .update(dbPatch)
+      .eq('id', args.runId)
+      .or(`account_id.eq.${args.accountId},and(account_id.is.null,owner_user_id.eq.${args.userId})`);
   } catch {
     // best-effort only
   }
@@ -193,6 +201,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: authed.error }, { status: authed.status });
   }
   const { supabase, user } = authed;
+
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
 
   let body: Body;
   try {
@@ -208,7 +220,14 @@ export async function POST(request: NextRequest) {
   if (!sourceTitle) return NextResponse.json({ success: false, error: 'sourceTitle is required' }, { status: 400 });
   if (!sourceUrl) return NextResponse.json({ success: false, error: 'sourceUrl is required' }, { status: 400 });
 
-  // Load per-user Poppy routing + Ideas prompt override.
+  // Phase E: per-account Poppy routing + Ideas prompt override.
+  const { data: settingsRow, error: settingsErr } = await supabase
+    .from('editor_account_settings')
+    .select('poppy_conversation_url, ideas_prompt_override')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (settingsErr) return NextResponse.json({ success: false, error: settingsErr.message }, { status: 500 });
+  // Backwards-safe legacy fallback.
   const { data: editorRow, error: editorErr } = await supabase
     .from('editor_users')
     .select('poppy_conversation_url, ideas_prompt_override')
@@ -216,13 +235,17 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
   if (editorErr) return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
 
-  const poppyConversationUrl = String((editorRow as any)?.poppy_conversation_url || '').trim();
+  const poppyConversationUrl =
+    String((settingsRow as any)?.poppy_conversation_url || '').trim() ||
+    String((editorRow as any)?.poppy_conversation_url || '').trim();
   if (!poppyConversationUrl) {
-    return NextResponse.json({ success: false, error: 'Missing poppy_conversation_url for this user' }, { status: 400 });
+    return NextResponse.json({ success: false, error: 'Missing poppy_conversation_url for this account' }, { status: 400 });
   }
 
   const ideasPromptTemplate =
-    String((editorRow as any)?.ideas_prompt_override || '').trim() || DEFAULT_IDEAS_PROMPT;
+    String((settingsRow as any)?.ideas_prompt_override || '').trim() ||
+    String((editorRow as any)?.ideas_prompt_override || '').trim() ||
+    DEFAULT_IDEAS_PROMPT;
 
   // Non-secret debug metadata (board/chat/model), persisted on the run row.
   let poppyRoutingMeta: { boardId: string | null; chatId: string | null; model: string | null } = {
@@ -251,17 +274,31 @@ export async function POST(request: NextRequest) {
   // Create or reuse Source group.
   const nowIso = new Date().toISOString();
   const upsertPayload = {
+    account_id: accountId,
     owner_user_id: user.id,
     source_title: sourceTitle,
     source_url: sourceUrl,
     updated_at: nowIso,
   };
 
-  const { data: sourceRow, error: sourceErr } = await supabase
-    .from('editor_idea_sources')
-    .upsert(upsertPayload as any, { onConflict: 'owner_user_id,source_title,source_url' })
-    .select('id, source_title, source_url, last_generated_at, created_at, updated_at')
-    .single();
+  const upsertSource = async (onConflict: string) => {
+    const { data, error } = await supabase
+      .from('editor_idea_sources')
+      .upsert(upsertPayload as any, { onConflict })
+      .select('id, source_title, source_url, last_generated_at, created_at, updated_at')
+      .single();
+    return { data, error };
+  };
+  // Phase G: prefer account-scoped uniqueness; fall back to legacy owner-scoped constraint if migration not applied.
+  const { data: sourceRow, error: sourceErr } = await (async () => {
+    const res = await upsertSource('account_id,source_title,source_url');
+    if (!res.error) return res;
+    const msg = String((res.error as any)?.message || '').toLowerCase();
+    if (msg.includes('no unique') || msg.includes('conflict')) {
+      return await upsertSource('owner_user_id,source_title,source_url');
+    }
+    return res;
+  })();
 
   if (sourceErr || !sourceRow) {
     return NextResponse.json({ success: false, error: sourceErr?.message || 'Failed to upsert source' }, { status: 500 });
@@ -271,6 +308,7 @@ export async function POST(request: NextRequest) {
   const { data: runRow, error: runErr } = await supabase
     .from('editor_idea_runs')
     .insert({
+      account_id: accountId,
       owner_user_id: user.id,
       source_id: sourceRow.id,
       status: 'running',
@@ -290,7 +328,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const poppy = await callPoppy(promptRendered, { poppyConversationUrl });
-    await updateRunProgress(supabase, runId, { status: 'running', error: 'progress:parse' });
+    await updateRunProgress(supabase, { runId, accountId, userId: user.id }, { status: 'running', error: 'progress:parse' });
     const parsed = await callAnthropicParseIdeas({ rawToParse: poppy.rawText, topicCount });
     const payload = extractJsonObject(parsed.rawText);
     assertValidIdeasPayload(payload, topicCount);
@@ -306,8 +344,9 @@ export async function POST(request: NextRequest) {
     }));
 
     // Persist ideas
-    await updateRunProgress(supabase, runId, { status: 'running', error: 'progress:save' });
+    await updateRunProgress(supabase, { runId, accountId, userId: user.id }, { status: 'running', error: 'progress:save' });
     const ideaRows = topics.map((t) => ({
+      account_id: accountId,
       owner_user_id: user.id,
       source_id: sourceRow.id,
       run_id: runId,
@@ -326,13 +365,13 @@ export async function POST(request: NextRequest) {
       .from('editor_idea_sources')
       .update({ last_generated_at: nowIso, updated_at: nowIso })
       .eq('id', sourceRow.id)
-      .eq('owner_user_id', user.id);
+      .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`);
 
     await supabase
       .from('editor_idea_runs')
       .update({ status: 'completed', error: null, finished_at: nowIso })
       .eq('id', runId)
-      .eq('owner_user_id', user.id);
+      .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`);
 
     return NextResponse.json({
       success: true,
@@ -355,7 +394,7 @@ export async function POST(request: NextRequest) {
       .from('editor_idea_runs')
       .update({ status: 'failed', error: msg, finished_at: new Date().toISOString() })
       .eq('id', runId)
-      .eq('owner_user_id', user.id);
+      .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`);
     return NextResponse.json({ success: false, error: msg, runId }, { status: 500 });
   }
 }

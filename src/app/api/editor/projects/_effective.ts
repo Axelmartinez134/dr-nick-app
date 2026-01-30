@@ -8,7 +8,7 @@ import {
 
 export async function loadEffectiveTemplateTypeSettings(
   supabase: SupabaseClient,
-  userId: string,
+  args: { accountId: string; actorUserId: string },
   templateTypeId: TemplateTypeId
 ) {
   const [defaultsRes, overrideRes] = await Promise.all([
@@ -22,9 +22,9 @@ export async function loadEffectiveTemplateTypeSettings(
     supabase
       .from('carousel_template_type_overrides')
       .select(
-        'user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
+        'account_id, user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
       )
-      .eq('user_id', userId)
+      .eq('account_id', args.accountId)
       .eq('template_type_id', templateTypeId)
       .maybeSingle(),
   ]);
@@ -39,7 +39,7 @@ export async function loadEffectiveTemplateTypeSettings(
 
   const effectiveRaw = mergeTemplateTypeDefaults(defaults as TemplateTypeDefaultsRow, safeOverride);
 
-  // Template IDs must be owned by this user (templates are user-private).
+  // Template IDs must belong to this account (templates are account-shared).
   const candidateIds = [
     effectiveRaw.slide1TemplateId,
     effectiveRaw.slide2to5TemplateId,
@@ -51,7 +51,7 @@ export async function loadEffectiveTemplateTypeSettings(
       .from('carousel_templates')
       .select('id')
       .in('id', candidateIds)
-      .eq('owner_user_id', userId);
+      .eq('account_id', args.accountId);
     allowed = new Set((rows || []).map((r: any) => String(r.id)));
   }
 

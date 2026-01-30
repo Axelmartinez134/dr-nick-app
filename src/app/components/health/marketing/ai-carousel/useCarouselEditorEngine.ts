@@ -97,6 +97,9 @@ export function useCarouselEditorEngine(opts?: {
       const response = await fetch('/api/marketing/carousel/templates/list', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
+          ...(typeof localStorage !== 'undefined' && localStorage.getItem('editor.activeAccountId')
+            ? { 'x-account-id': String(localStorage.getItem('editor.activeAccountId') || '').trim() }
+            : {}),
         },
       });
 
@@ -121,7 +124,12 @@ export function useCarouselEditorEngine(opts?: {
       if (!session) return;
 
       const response = await fetch(`/api/marketing/carousel/templates/load?id=${templateId}`, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          ...(typeof localStorage !== 'undefined' && localStorage.getItem('editor.activeAccountId')
+            ? { 'x-account-id': String(localStorage.getItem('editor.activeAccountId') || '').trim() }
+            : {}),
+        },
       });
       const result = await response.json();
       if (!result.success) {

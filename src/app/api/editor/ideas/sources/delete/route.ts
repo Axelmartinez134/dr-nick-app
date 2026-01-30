@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: authed.error }, { status: authed.status });
   }
   const { supabase, user } = authed;
+
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
 
   let body: Body;
   try {
@@ -31,7 +35,9 @@ export async function POST(request: NextRequest) {
     .from('editor_idea_sources')
     .delete()
     .eq('id', sourceId)
-    .eq('owner_user_id', user.id);
+    // Phase G: account-scoped sources (shared within account).
+    // Backwards-safe fallback for legacy rows.
+    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`);
 
   if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
 

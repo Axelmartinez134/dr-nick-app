@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthedSupabase } from '../../../../_utils';
 import { computeAlphaMask128FromPngBytes, pngHasAnyTransparency } from '../_mask';
+import { resolveActiveAccountId } from '../../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -57,6 +58,10 @@ export async function POST(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error } as UploadResponse, { status: acct.status });
+  const accountId = acct.accountId;
+
   const form = await req.formData();
   const file = form.get('file') as File | null;
   const projectId = String(form.get('projectId') || '');
@@ -70,15 +75,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Ownership check via RLS + explicit filter.
+  // Account-scoped project access check.
   const { data: project, error: projErr } = await supabase
     .from('carousel_projects')
-    .select('id, owner_user_id')
+    .select('id, owner_user_id, account_id')
     .eq('id', projectId)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle();
   if (projErr || !project?.id) {
     return NextResponse.json({ success: false, error: 'Project not found' } as UploadResponse, { status: 404 });
+  }
+
+  // Backwards-safe: patch legacy null account_id (owned by caller) so it doesn't disappear later.
+  if (!(project as any)?.account_id) {
+    await supabase.from('carousel_projects').update({ account_id: accountId }).eq('id', projectId).eq('owner_user_id', user.id);
   }
 
   // Validate file type / size
@@ -143,7 +153,9 @@ export async function POST(req: NextRequest) {
     return `upl_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   })();
 
-  const baseDir = `projects/${projectId}/slides/${slideIndex}/images/${uploadId}`.replace(/^\/+/, '');
+  // Phase H (optional): prefix storage paths by account to keep assets naturally partitioned.
+  // This is not required for correctness (RLS already enforces access), but helps future maintenance.
+  const baseDir = `accounts/${accountId}/projects/${projectId}/slides/${slideIndex}/images/${uploadId}`.replace(/^\/+/, '');
   const activePath = `${baseDir}/active.${ext}`;
   const originalPath = `${baseDir}/original.${ext}`;
   const processedPath = `${baseDir}/processed.png`; // active when bg removal succeeds

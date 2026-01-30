@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -18,6 +18,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: authed.error }, { status: authed.status });
   }
   const { supabase, user } = authed;
+
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
 
   let body: Body;
   try {
@@ -37,7 +41,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'No fields to update' }, { status: 400 });
   }
 
-  // Safety: validate that any non-null template IDs are owned by the current user.
+  // Safety: validate that any non-null template IDs belong to the active account.
   const idsToValidate = [
     body.slide1TemplateIdSnapshot ?? null,
     body.slide2to5TemplateIdSnapshot ?? null,
@@ -50,13 +54,13 @@ export async function POST(request: NextRequest) {
       .from('carousel_templates')
       .select('id')
       .in('id', uniq)
-      .eq('owner_user_id', user.id);
+      .eq('account_id', accountId);
     if (rowsErr) return NextResponse.json({ success: false, error: rowsErr.message }, { status: 500 });
     const found = new Set((rows || []).map((r: any) => String(r.id)));
     const missing = uniq.filter((id) => !found.has(id));
     if (missing.length > 0) {
       return NextResponse.json(
-        { success: false, error: `Template not found or not owned: ${missing.join(', ')}` },
+        { success: false, error: `Template not found in this account: ${missing.join(', ')}` },
         { status: 403 }
       );
     }
@@ -66,7 +70,7 @@ export async function POST(request: NextRequest) {
     .from('carousel_projects')
     .update(patch)
     .eq('id', body.projectId)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .select(
       'id, owner_user_id, title, template_type_id, caption, prompt_snapshot, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot, created_at, updated_at'
     )

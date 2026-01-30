@@ -1,7 +1,7 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import type { CarouselTemplateDefinitionV1 } from '@/lib/carousel-template-types';
-import { getAuthedSupabase } from '../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../projects/_effective';
 
 export const runtime = 'nodejs';
@@ -39,18 +39,27 @@ export async function POST(req: NextRequest) {
   }
   const { supabase, user } = authed;
 
-  // Must be an editor user.
-  const { data: editorRow, error: editorErr } = await supabase
+  // Phase D: /editor boot is gated by account membership (Phase C). We treat editor_users as optional here.
+  const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
+  // Phase E: per-account editor settings (shared within account).
+  const { data: settingsRow } = await supabase
+    .from('editor_account_settings')
+    .select('ai_image_gen_model')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  // Backwards-safe: legacy per-user source if account settings row is missing.
+  const { data: editorRow } = await supabase
     .from('editor_users')
-    .select('user_id, ai_image_gen_model')
+    .select('ai_image_gen_model')
     .eq('user_id', user.id)
     .maybeSingle();
-  if (editorErr) {
-    return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
-  }
-  if (!editorRow?.user_id) {
-    return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
-  }
+  const aiImageGenModel =
+    String((settingsRow as any)?.ai_image_gen_model || '').trim() ||
+    String((editorRow as any)?.ai_image_gen_model || '').trim() ||
+    'gpt-image-1.5';
 
   let templateTypeId: TemplateTypeId = 'regular';
   try {
@@ -65,16 +74,19 @@ export async function POST(req: NextRequest) {
   let bootstrapCreated = false;
   let starterTemplateId: string | null = null;
 
+  // Backwards-safe: patch any legacy projects created after Phase B without account_id into the user's Personal account.
+  await supabase.from('carousel_projects').update({ account_id: accountId }).eq('owner_user_id', user.id).is('account_id', null);
+
   const [templatesRes, projectsRes] = await Promise.all([
     supabase
       .from('carousel_templates')
       .select('id, name, updated_at')
-      .eq('owner_user_id', user.id)
+      .eq('account_id', accountId)
       .order('updated_at', { ascending: false }),
     supabase
       .from('carousel_projects')
       .select('id, title, template_type_id, caption, updated_at, created_at')
-      .eq('owner_user_id', user.id)
+      .eq('account_id', accountId)
       .is('archived_at', null)
       .order('updated_at', { ascending: false }),
   ]);
@@ -93,7 +105,7 @@ export async function POST(req: NextRequest) {
     const def = starterTemplateDefinition();
     const { data: inserted, error: insErr } = await supabase
       .from('carousel_templates')
-      .insert({ name: 'Starter Template', owner_user_id: user.id, definition: def as any })
+      .insert({ name: 'Starter Template', owner_user_id: user.id, account_id: accountId, definition: def as any })
       .select('id, name, updated_at')
       .single();
     if (insErr || !inserted?.id) {
@@ -111,6 +123,7 @@ export async function POST(req: NextRequest) {
       .upsert(
         [
           {
+            account_id: accountId,
             user_id: user.id,
             template_type_id: 'regular',
             slide1_template_id_override: starterTemplateId,
@@ -118,6 +131,7 @@ export async function POST(req: NextRequest) {
             slide6_template_id_override: starterTemplateId,
           },
           {
+            account_id: accountId,
             user_id: user.id,
             template_type_id: 'enhanced',
             slide1_template_id_override: starterTemplateId,
@@ -125,12 +139,12 @@ export async function POST(req: NextRequest) {
             slide6_template_id_override: starterTemplateId,
           },
         ],
-        { onConflict: 'user_id,template_type_id' }
+        { onConflict: 'account_id,template_type_id' }
       );
   }
 
-  // Load effective settings for current template type (defaults + per-user overrides).
-  const { defaults, override, effective } = await loadEffectiveTemplateTypeSettings(supabase, user.id, templateTypeId);
+  // Load effective settings for current template type (defaults + per-account overrides).
+  const { defaults, override, effective } = await loadEffectiveTemplateTypeSettings(supabase, { accountId, actorUserId: user.id }, templateTypeId);
 
   // Preload mapped template definitions (slide 1 / 2-5 / 6).
   const ids = [effective.slide1TemplateId, effective.slide2to5TemplateId, effective.slide6TemplateId].filter(Boolean) as string[];
@@ -141,7 +155,7 @@ export async function POST(req: NextRequest) {
       .from('carousel_templates')
       .select('id, definition')
       .in('id', uniq)
-      .eq('owner_user_id', user.id);
+      .eq('account_id', accountId);
     (defs || []).forEach((r: any) => {
       if (r?.id) templateSnapshotsById[String(r.id)] = r.definition;
     });
@@ -152,7 +166,7 @@ export async function POST(req: NextRequest) {
     bootstrap: { created: bootstrapCreated, starterTemplateId },
     templateTypeId,
     editorUser: {
-      aiImageGenModel: (editorRow as any)?.ai_image_gen_model || 'gpt-image-1.5',
+      aiImageGenModel,
     },
     templates: (templatesOut || []).map((t: any) => ({ id: t.id, name: t.name, updatedAt: t.updated_at })),
     projects: projects || [],

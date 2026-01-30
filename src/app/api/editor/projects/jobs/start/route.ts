@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase, type TemplateTypeId } from '../../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId, type TemplateTypeId } from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -29,12 +33,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid template type' }, { status: 400 });
   }
 
-  // Ensure user owns project (RLS also enforces, but we want a clean 404/403)
+  // Ensure project exists in active account
   const { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select('id')
     .eq('id', body.projectId)
-    .eq('owner_user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle();
   if (projectErr) return NextResponse.json({ success: false, error: projectErr.message }, { status: 500 });
   if (!project) return NextResponse.json({ success: false, error: 'Project not found' }, { status: 404 });
@@ -43,6 +47,7 @@ export async function POST(request: NextRequest) {
   const { data: job, error: jobErr } = await supabase
     .from('carousel_generation_jobs')
     .insert({
+      account_id: accountId,
       project_id: body.projectId,
       template_type_id: body.templateTypeId,
       status: 'pending',

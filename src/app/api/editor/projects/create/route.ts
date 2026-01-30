@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase, type TemplateTypeId } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId, type TemplateTypeId } from '../../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../_effective';
 
 export const runtime = 'nodejs';
@@ -20,6 +20,10 @@ export async function POST(request: NextRequest) {
   }
   const { supabase, user } = authed;
 
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return NextResponse.json({ success: false, error: acct.error }, { status: acct.status });
+  const accountId = acct.accountId;
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -32,13 +36,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { effective } = await loadEffectiveTemplateTypeSettings(supabase, user.id, body.templateTypeId);
+    const { effective } = await loadEffectiveTemplateTypeSettings(supabase, { accountId, actorUserId: user.id }, body.templateTypeId);
 
     const title = (body.title || 'Untitled Project').trim() || 'Untitled Project';
 
     const { data: project, error: projectErr } = await supabase
       .from('carousel_projects')
       .insert({
+        account_id: accountId,
         owner_user_id: user.id,
         title,
         template_type_id: body.templateTypeId,
