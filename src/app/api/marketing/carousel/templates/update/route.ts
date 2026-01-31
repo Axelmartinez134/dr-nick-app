@@ -73,18 +73,32 @@ export async function POST(request: NextRequest) {
   if (typeof body.name === 'string') patch.name = body.name;
   if (body.definition !== undefined) patch.definition = body.definition;
 
+  const accountHeader = String(request.headers.get('x-account-id') || '').trim();
+
   // IMPORTANT:
-  // The DB RLS policy for carousel_templates UPDATE is `(is_admin_user() AND auth.uid() = owner_user_id)`.
-  // Even though editor_users are included in is_admin_user(), that owner check prevents collaborative edits.
-  // We intentionally enforce editor access above, then use a service role client to perform the update.
+  // For account-scoped editing, templates are shared within the account.
+  // For legacy (no x-account-id), we keep owner-only behavior for non-editor marketing pages.
   const svc = serviceClient();
   const client = svc || authedClient;
 
-  const { data: updated, error } = await client
-    .from('carousel_templates')
-    .update(patch)
-    .eq('id', body.id)
-    .eq('owner_user_id', user.id)
+  if (accountHeader) {
+    const { data: mem, error: memErr } = await authedClient
+      .from('editor_account_memberships')
+      .select('role')
+      .eq('account_id', accountHeader)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (memErr) {
+      return NextResponse.json({ success: false, error: memErr.message } as UpdateTemplateResponse, { status: 500 });
+    }
+    const role = String((mem as any)?.role || '');
+    if (role !== 'owner' && role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden' } as UpdateTemplateResponse, { status: 403 });
+    }
+  }
+
+  const q = client.from('carousel_templates').update(patch).eq('id', body.id);
+  const { data: updated, error } = await (accountHeader ? q.eq('account_id', accountHeader) : q.eq('owner_user_id', user.id))
     .select('id')
     .maybeSingle();
 

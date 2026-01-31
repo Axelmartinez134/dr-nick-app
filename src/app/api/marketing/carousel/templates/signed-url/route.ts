@@ -47,8 +47,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Server configuration error' } as SignedUrlResponse, { status: 500 });
   }
 
-  const verificationClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const { data: { user }, error: userError } = await verificationClient.auth.getUser(token);
+  const authedClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const {
+    data: { user },
+    error: userError,
+  } = await authedClient.auth.getUser();
   if (userError || !user) {
     return NextResponse.json({ success: false, error: 'Unauthorized' } as SignedUrlResponse, { status: 401 });
   }
@@ -61,15 +66,43 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Sanity + authZ: ensure template exists and is owned by this user (templates are user-private).
-  const { data: tpl, error: tplErr } = await supabase
-    .from('carousel_templates')
-    .select('id, owner_user_id')
-    .eq('id', templateId)
-    .eq('owner_user_id', user.id)
-    .single();
-  if (tplErr || !tpl) {
-    return NextResponse.json({ success: false, error: 'Template not found' } as SignedUrlResponse, { status: 404 });
+  const accountHeader = String(request.headers.get('x-account-id') || '').trim();
+
+  if (accountHeader) {
+    // Account-scoped: allow any account member to mint a signed URL for template assets in that account.
+    const { data: mem, error: memErr } = await authedClient
+      .from('editor_account_memberships')
+      .select('id')
+      .eq('account_id', accountHeader)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (memErr) {
+      return NextResponse.json({ success: false, error: memErr.message } as SignedUrlResponse, { status: 500 });
+    }
+    if (!mem?.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' } as SignedUrlResponse, { status: 403 });
+    }
+
+    const { data: tpl, error: tplErr } = await supabase
+      .from('carousel_templates')
+      .select('id, account_id')
+      .eq('id', templateId)
+      .eq('account_id', accountHeader)
+      .maybeSingle();
+    if (tplErr || !tpl?.id) {
+      return NextResponse.json({ success: false, error: 'Template not found' } as SignedUrlResponse, { status: 404 });
+    }
+  } else {
+    // Legacy: ensure template exists and is owned by this user (templates are user-private).
+    const { data: tpl, error: tplErr } = await supabase
+      .from('carousel_templates')
+      .select('id, owner_user_id')
+      .eq('id', templateId)
+      .eq('owner_user_id', user.id)
+      .maybeSingle();
+    if (tplErr || !tpl?.id) {
+      return NextResponse.json({ success: false, error: 'Template not found' } as SignedUrlResponse, { status: 404 });
+    }
   }
 
   const { data, error } = await supabase.storage

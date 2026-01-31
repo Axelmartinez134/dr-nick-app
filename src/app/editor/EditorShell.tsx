@@ -20,7 +20,7 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
-import { IdeasModal } from "@/features/editor/components";
+import { CreateAccountModal, IdeasModal } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -206,6 +206,12 @@ export default function EditorShell() {
   const ideasModalOpen = useEditorSelector((s: any) => !!(s as any).ideasModalOpen);
   const setIdeasModalOpen = useCallback((next: boolean) => {
     editorStore.setState({ ideasModalOpen: !!next } as any);
+  }, [editorStore]);
+
+  // Phase 6C (Accounts): store-owned modal state (Phase 1 UI shell only)
+  const createAccountModalOpen = useEditorSelector((s: any) => !!(s as any).createAccountModalOpen);
+  const setCreateAccountModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ createAccountModalOpen: !!next } as any);
   }, [editorStore]);
 
   const templateTypePrompt = useEditorSelector((s) => String(s.templateTypePrompt || ""));
@@ -4939,6 +4945,7 @@ export default function EditorShell() {
     onCloseImageLibraryModal,
     onToggleImageLibraryBgRemovalAtInsert,
     setIdeasModalOpen,
+    setCreateAccountModalOpen,
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
@@ -5197,6 +5204,8 @@ export default function EditorShell() {
       <IdeasModal />
 
       <ImageLibraryModal />
+
+      <CreateAccountModal />
     </div>
   );
 }

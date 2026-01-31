@@ -69,17 +69,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Missing file, templateId, or assetId' } as UploadTemplateAssetResponse, { status: 400 });
   }
 
-  // Enforce ownership: templates are user-private.
-  const { data: tpl, error: tplErr } = await supabase
-    .from('carousel_templates')
-    .select('id, owner_user_id')
-    .eq('id', templateId)
-    .single();
-  if (tplErr || !tpl?.id) {
-    return NextResponse.json({ success: false, error: 'Template not found' } as UploadTemplateAssetResponse, { status: 404 });
-  }
-  if (String((tpl as any).owner_user_id || '') !== user.id) {
-    return NextResponse.json({ success: false, error: 'Forbidden' } as UploadTemplateAssetResponse, { status: 403 });
+  const accountHeader = String(req.headers.get('x-account-id') || '').trim();
+
+  if (accountHeader) {
+    // Account-scoped: only account owner/admin can upload template assets.
+    const { data: mem, error: memErr } = await authedClient
+      .from('editor_account_memberships')
+      .select('role')
+      .eq('account_id', accountHeader)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (memErr) {
+      return NextResponse.json({ success: false, error: memErr.message } as UploadTemplateAssetResponse, { status: 500 });
+    }
+    const role = String((mem as any)?.role || '');
+    if (role !== 'owner' && role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden' } as UploadTemplateAssetResponse, { status: 403 });
+    }
+
+    const { data: tpl, error: tplErr } = await supabase
+      .from('carousel_templates')
+      .select('id, account_id')
+      .eq('id', templateId)
+      .eq('account_id', accountHeader)
+      .maybeSingle();
+    if (tplErr || !tpl?.id) {
+      return NextResponse.json({ success: false, error: 'Template not found' } as UploadTemplateAssetResponse, { status: 404 });
+    }
+  } else {
+    // Legacy: templates are user-private.
+    const { data: tpl, error: tplErr } = await supabase
+      .from('carousel_templates')
+      .select('id, owner_user_id')
+      .eq('id', templateId)
+      .maybeSingle();
+    if (tplErr || !tpl?.id) {
+      return NextResponse.json({ success: false, error: 'Template not found' } as UploadTemplateAssetResponse, { status: 404 });
+    }
+    if (String((tpl as any).owner_user_id || '') !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' } as UploadTemplateAssetResponse, { status: 403 });
+    }
   }
 
   const ext = (file.name.split('.').pop() || 'bin').toLowerCase();

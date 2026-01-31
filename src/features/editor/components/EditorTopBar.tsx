@@ -213,6 +213,15 @@ export function EditorTopBar() {
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-sm shadow-sm disabled:opacity-50"
+              onClick={() => actions?.onOpenCreateAccountModal?.()}
+              disabled={accountsLoading}
+              title="Create a new client account"
+            >
+              + New Account
+            </button>
           </div>
         ) : null}
         <input

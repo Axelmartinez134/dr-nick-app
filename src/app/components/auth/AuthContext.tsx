@@ -62,6 +62,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const isDoctor = !!(user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAIL && user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
   const isPatient = !!user && !isDoctor
 
+  function isNoRowSingleError(err: any): boolean {
+    // Supabase/PostgREST "single() but 0 rows" often surfaces as:
+    // - HTTP 406 Not Acceptable
+    // - code: PGRST116
+    // - message: "JSON object requested, multiple (or no) rows returned"
+    const status = Number((err as any)?.status || (err as any)?.statusCode || 0)
+    const code = String((err as any)?.code || '').trim()
+    const msg = String((err as any)?.message || '').toLowerCase()
+    return (
+      status === 406 ||
+      code === 'PGRST116' ||
+      msg.includes('json object requested') ||
+      msg.includes('0 rows') ||
+      msg.includes('no rows')
+    )
+  }
+
   async function checkEditorMembership(userId: string): Promise<boolean> {
     try {
       // Phase C (agency accounts): /editor access is granted if the user belongs to >= 1 account.
@@ -132,7 +149,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
               .from('profiles')
               .select('client_status')
               .eq('id', session.user!.id)
-              .single()
+              .maybeSingle()
+            if (error && !isNoRowSingleError(error)) {
+              // If profiles row doesn't exist, treat as non-Past (no redirect) and avoid console noise.
+              return
+            }
             if (!error && profile?.client_status === 'Past') {
               pastRedirectTriggeredRef.current = true
               if (window.location.pathname !== '/inactive') {
@@ -192,7 +213,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
               .from('profiles')
               .select('client_status')
               .eq('id', session.user!.id)
-              .single()
+              .maybeSingle()
+            if (error && !isNoRowSingleError(error)) {
+              return
+            }
             if (!error && profile?.client_status === 'Past') {
               pastRedirectTriggeredRef.current = true
               if (window.location.pathname !== '/inactive') {
@@ -382,9 +406,11 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
       .from('profiles')
       .select('client_status')
       .eq('id', user.id)
-      .single()
+      .maybeSingle()
 
     if (profileError) {
+      // If the profile row doesn't exist, do nothing (avoid noisy 406/PGRST116 logs).
+      if ((profileError as any)?.status === 406 || (profileError as any)?.code === 'PGRST116') return
       console.warn('gapFillMissedWeeks: failed to load profile', profileError)
       return
     }

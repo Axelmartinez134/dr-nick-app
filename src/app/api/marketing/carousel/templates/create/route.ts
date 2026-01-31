@@ -69,11 +69,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Template name is required' } as CreateTemplateResponse, { status: 400 });
   }
 
+  const accountHeader = String(request.headers.get('x-account-id') || '').trim();
+  if (accountHeader) {
+    // Account-scoped: only account owner/admin can create templates.
+    const { data: mem, error: memErr } = await authedClient
+      .from('editor_account_memberships')
+      .select('role')
+      .eq('account_id', accountHeader)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (memErr) {
+      return NextResponse.json({ success: false, error: memErr.message } as CreateTemplateResponse, { status: 500 });
+    }
+    const role = String((mem as any)?.role || '');
+    if (role !== 'owner' && role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden' } as CreateTemplateResponse, { status: 403 });
+    }
+  }
+
   const { data, error } = await authedClient
     .from('carousel_templates')
     .insert({
       name: body.name.trim(),
       owner_user_id: user.id,
+      ...(accountHeader ? { account_id: accountHeader } : {}),
       definition: body.definition || {},
     })
     .select('id')

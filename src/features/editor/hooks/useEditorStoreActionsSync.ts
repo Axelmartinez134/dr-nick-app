@@ -123,6 +123,9 @@ type Args = {
   fetchProjectJobStatus: (args: { projectId: string; jobType?: string }) => Promise<any>;
   fetchIdeaCarouselRuns: (ideaIds: string[]) => Promise<Record<string, { projectId: string; createdAt: string }>>;
 
+  // Accounts (Phase 1: UI shell only)
+  setCreateAccountModalOpen: (next: boolean) => void;
+
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
     source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -269,6 +272,7 @@ export function useEditorStoreActionsSync(args: Args) {
     createCarouselFromIdea,
     fetchProjectJobStatus,
     fetchIdeaCarouselRuns,
+    setCreateAccountModalOpen,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -483,6 +487,15 @@ export function useEditorStoreActionsSync(args: Args) {
       setIdeasModalOpen(false);
       editorStore.setState({ ideasModalOpen: false } as any);
     },
+
+    onOpenCreateAccountModal: () => {
+      setCreateAccountModalOpen(true);
+      editorStore.setState({ createAccountModalOpen: true } as any);
+    },
+    onCloseCreateAccountModal: () => {
+      setCreateAccountModalOpen(false);
+      editorStore.setState({ createAccountModalOpen: false } as any);
+    },
     fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => fetchIdeaSourcesAndIdeas(includeDismissed),
     fetchIdeasPromptOverride: () => fetchIdeasPromptOverride(),
     saveIdeasPromptOverride: (next: string) => saveIdeasPromptOverride(next),
@@ -575,6 +588,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onToggleImageLibraryBgRemovalAtInsert: () => implRef.current?.onToggleImageLibraryBgRemovalAtInsert?.(),
       onOpenIdeasModal: () => implRef.current?.onOpenIdeasModal?.(),
       onCloseIdeasModal: () => implRef.current?.onCloseIdeasModal?.(),
+      onOpenCreateAccountModal: () => implRef.current?.onOpenCreateAccountModal?.(),
+      onCloseCreateAccountModal: () => implRef.current?.onCloseCreateAccountModal?.(),
       fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) =>
         implRef.current?.fetchIdeaSourcesAndIdeas?.(includeDismissed) ?? Promise.resolve([]),
       fetchIdeasPromptOverride: () => implRef.current?.fetchIdeasPromptOverride?.() ?? Promise.resolve(""),

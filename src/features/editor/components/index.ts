@@ -15,6 +15,8 @@ export { IdeasModal } from './IdeasModal';
 
 export { ImageLibraryModal } from './ImageLibraryModal';
 
+export { CreateAccountModal } from './CreateAccountModal';
+
 export { DebugCard } from './DebugCard';
 export type { DebugCardProps } from './DebugCard';
 

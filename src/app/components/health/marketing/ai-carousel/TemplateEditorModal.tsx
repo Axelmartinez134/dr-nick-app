@@ -232,7 +232,17 @@ export default function TemplateEditorModal(props: {
   const authHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
-    return { Authorization: `Bearer ${session.access_token}` };
+    const activeAccountId = (() => {
+      try {
+        return typeof localStorage !== 'undefined' ? String(localStorage.getItem('editor.activeAccountId') || '').trim() : '';
+      } catch {
+        return '';
+      }
+    })();
+    return {
+      Authorization: `Bearer ${session.access_token}`,
+      ...(activeAccountId ? { 'x-account-id': activeAccountId } : {}),
+    };
   };
 
   const loadTemplateById = async (id: string) => {

@@ -659,7 +659,19 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
               }
               const templateId = String(objectPath.split('/')[0] || '');
               const url = `/api/marketing/carousel/templates/signed-url?templateId=${encodeURIComponent(templateId)}&path=${encodeURIComponent(objectPath)}&expiresIn=3600`;
-              const r = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` } });
+              const activeAccountId = (() => {
+                try {
+                  return typeof localStorage !== 'undefined' ? String(localStorage.getItem('editor.activeAccountId') || '').trim() : '';
+                } catch {
+                  return '';
+                }
+              })();
+              const r = await fetch(url, {
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                  ...(activeAccountId ? { 'x-account-id': activeAccountId } : {}),
+                },
+              });
               const j = await r.json();
               if (j?.success && j?.signedUrl) {
                 imgEl.src = j.signedUrl;

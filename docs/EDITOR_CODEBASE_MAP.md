@@ -93,6 +93,20 @@ This is **editor-only** multi-tenancy. It does **not** affect the Health/Profile
 - **Superadmin switching UI**
   - `src/features/editor/components/EditorTopBar.tsx` renders an **Account dropdown** only for superadmins
   - Source of truth: `GET /api/editor/accounts/me` (returns `isSuperadmin`, `activeAccountId`, memberships list)
+- **Create new client accounts (superadmin)**
+  - **UI**: `src/features/editor/components/CreateAccountModal.tsx`
+    - Entry point: `+ New Account` button in `src/features/editor/components/EditorTopBar.tsx`
+    - Includes “Existing user found — will attach as Owner” flow (password ignored)
+    - Includes “Clone defaults” (only Regular/Enhanced mappings + referenced templates)
+    - Success UX includes **Switch to Account** (sets `localStorage["editor.activeAccountId"]` then reloads)
+  - **API (superadmin-only)**
+    - `POST /api/editor/accounts/lookup-user` → checks if an auth user exists for an email
+    - `POST /api/editor/accounts/create` → creates:
+      - `editor_accounts`
+      - `editor_account_memberships` (client `owner`, Axel `admin`)
+      - `editor_account_settings` (poppy url + model + prompts)
+      - `editor_users` row for the owner (legacy editor endpoints still check it)
+    - **Safety**: create route includes cleanup on partial failure to avoid orphaned accounts/templates/users
 
 ## Refactor end-state (feature folder)
 `src/app/editor/EditorShell.tsx` remains the route entry, but most editor logic now lives in `src/features/editor/`.
@@ -120,6 +134,7 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - `src/features/editor/components/TemplateSettingsModal.tsx` (reads store)
   - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
   - `src/features/editor/components/IdeasModal.tsx` (reads store; Generate Ideas + queue + create carousel)
+  - `src/features/editor/components/CreateAccountModal.tsx` (reads store; superadmin-only onboarding flow)
 - **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspaceNav`, `state.workspaceRefs`, `state.workspaceUi`, `state.workspaceActions`)
   - **Empty-state placeholder centering**: keep placeholders `w-full h-full` (don’t hard-code 540×720) so “No template selected” stays centered at all display sizes
 - **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanelUi` + `state.actions`)
@@ -394,6 +409,12 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - **Template editor modal**: `src/app/components/health/marketing/ai-carousel/TemplateEditorModal.tsx`
 - **Template editor canvas (Fabric.js) + assets**: `src/app/components/health/marketing/ai-carousel/TemplateEditorCanvas.tsx`
   - Supports template assets of type `text`, `image`, and `shape` (rectangle w/ optional rounded corners)
+- **Account scoping (IMPORTANT)**
+  - Template editor API routes live under `src/app/api/marketing/carousel/templates/*`
+  - When operating in `/editor`, these requests MUST include `x-account-id` so templates resolve within the active account.
+  - When `x-account-id` is present:
+    - **Read** (e.g. `templates/load`, `templates/list`, `templates/signed-url`): allowed for account members
+    - **Write** (e.g. `templates/create`, `templates/update`, `templates/duplicate`, `templates/upload-asset`): allowed for account `owner`/`admin`
 - **Template type settings (effective merged)**:
   - `src/app/api/editor/template-types/effective/route.ts`
   - `src/app/api/editor/template-types/overrides/upsert/route.ts`

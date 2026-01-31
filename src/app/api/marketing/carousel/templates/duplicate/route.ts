@@ -64,6 +64,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Server missing Supabase service role env' } satisfies Resp, { status: 500 });
   }
 
+  const accountHeader = String(request.headers.get('x-account-id') || '').trim();
+  if (accountHeader) {
+    const { data: mem, error: memErr } = await authedClient
+      .from('editor_account_memberships')
+      .select('role')
+      .eq('account_id', accountHeader)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (memErr) {
+      return NextResponse.json({ success: false, error: memErr.message } satisfies Resp, { status: 500 });
+    }
+    const role = String((mem as any)?.role || '');
+    if (role !== 'owner' && role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden' } satisfies Resp, { status: 403 });
+    }
+  }
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -84,8 +101,20 @@ export async function POST(request: NextRequest) {
   if (srcErr || !srcTpl) {
     return NextResponse.json({ success: false, error: srcErr?.message || 'Template not found' } satisfies Resp, { status: 404 });
   }
-  if (String((srcTpl as any).owner_user_id || '') !== user.id) {
-    return NextResponse.json({ success: false, error: 'Forbidden' } satisfies Resp, { status: 403 });
+  if (accountHeader) {
+    const { data: scope, error: scopeErr } = await supabase
+      .from('carousel_templates')
+      .select('id, account_id')
+      .eq('id', sourceTemplateId)
+      .eq('account_id', accountHeader)
+      .maybeSingle();
+    if (scopeErr || !scope?.id) {
+      return NextResponse.json({ success: false, error: 'Template not found' } satisfies Resp, { status: 404 });
+    }
+  } else {
+    if (String((srcTpl as any).owner_user_id || '') !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' } satisfies Resp, { status: 403 });
+    }
   }
 
   const newName = `${String(srcTpl.name || 'Untitled Template')} (Copy)`;
@@ -97,6 +126,7 @@ export async function POST(request: NextRequest) {
     .insert({
       name: newName,
       owner_user_id: user.id,
+      ...(accountHeader ? { account_id: accountHeader } : {}),
       definition: def,
     })
     .select('id')
