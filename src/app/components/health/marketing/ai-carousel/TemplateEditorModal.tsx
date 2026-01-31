@@ -72,6 +72,10 @@ export default function TemplateEditorModal(props: {
   const [shapeStroke, setShapeStroke] = useState<string>('#111827');
   const [shapeStrokeWidth, setShapeStrokeWidth] = useState<number>(0);
 
+  const [imageMenu, setImageMenu] = useState<null | { x: number; y: number; layerId: string }>(null);
+  const [imageMaskShape, setImageMaskShape] = useState<'none' | 'circle'>('none');
+  const [imageCropEditingLayerId, setImageCropEditingLayerId] = useState<string | null>(null);
+
   const [newTemplateName, setNewTemplateName] = useState('');
 
   // Template text is edited directly on-canvas (layers), not via special form fields.
@@ -114,6 +118,8 @@ export default function TemplateEditorModal(props: {
     setCreateSectionOpen(true);
     setCtxMenu(null);
     setShapeMenu(null);
+    setImageMenu(null);
+    setImageCropEditingLayerId(null);
     setSelectedLayerId(null);
     setEditingLayerId(null);
     setEditingLayerName('');
@@ -138,6 +144,7 @@ export default function TemplateEditorModal(props: {
     setEditingLayerName('');
     setNewTemplateName('');
     setCreateSectionOpen(Boolean(!props.currentTemplateId));
+    setImageCropEditingLayerId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -220,6 +227,27 @@ export default function TemplateEditorModal(props: {
 
   const closeCtxMenu = () => setCtxMenu(null);
   const closeShapeMenu = () => setShapeMenu(null);
+  const closeImageMenu = () => setImageMenu(null);
+
+  const cloneDef = (d: CarouselTemplateDefinitionV1) => JSON.parse(JSON.stringify(d)) as CarouselTemplateDefinitionV1;
+  const getSlide0 = (d: CarouselTemplateDefinitionV1) =>
+    d.slides?.find((s) => s.slideIndex === 0) || d.slides?.[0] || { slideIndex: 0, contentRegion: { x: 0, y: 0, width: 1080, height: 1440 }, assets: [] };
+
+  const patchImageAsset = (layerId: string, patch: Partial<TemplateImageAsset>) => {
+    // IMPORTANT: the Fabric canvas is the source of truth for drag/resize changes.
+    // If we patch from stale `definition`, toggling mask/crop can "snap" the image back to an older rect.
+    const base = (canvasRef.current?.exportDefinition?.() as CarouselTemplateDefinitionV1 | undefined) || definition;
+    const next = cloneDef(base);
+    const slide0: any = getSlide0(next);
+    const assets = Array.isArray(slide0.assets) ? (slide0.assets as any[]) : [];
+    const idx = assets.findIndex((a) => a && String(a.id) === String(layerId) && a.type === 'image');
+    if (idx === -1) return;
+    assets[idx] = { ...(assets[idx] as any), ...patch };
+    slide0.assets = assets;
+    next.slides = [slide0];
+    setDefinition(next);
+    canvasRef.current?.loadDefinition(next);
+  };
 
   const openTextContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
     if (!hasSelectedTemplate) return;
@@ -263,18 +291,45 @@ export default function TemplateEditorModal(props: {
     setShapeMenu({ x: clientX, y: clientY, layerId });
   };
 
+  const openImageContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
+    if (!hasSelectedTemplate) return;
+    if (!layerId || layerId === '__content_region__') return;
+    const layer = layers.find((x) => x.id === layerId);
+    if (layer?.type !== 'image') return;
+    const base = (canvasRef.current?.exportDefinition?.() as CarouselTemplateDefinitionV1 | undefined) || definition;
+    if (base !== definition) setDefinition(base);
+    const slide0: any = getSlide0(base);
+    const assets = Array.isArray(slide0.assets) ? (slide0.assets as any[]) : [];
+    const asset = assets.find((a) => a && String(a.id) === String(layerId) && a.type === 'image');
+    const mask = String(asset?.maskShape || 'none') === 'circle' ? 'circle' : 'none';
+    setImageMaskShape(mask);
+    setImageMenu({ x: clientX, y: clientY, layerId });
+  };
+
   useEffect(() => {
     if (!open) return;
-    if (!ctxMenu && !shapeMenu) return;
+    if (!ctxMenu && !shapeMenu && !imageMenu && !imageCropEditingLayerId) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (imageCropEditingLayerId) {
+          e.preventDefault();
+          e.stopPropagation();
+          canvasRef.current?.finishImageCropMode?.();
+          setImageCropEditingLayerId(null);
+          // Sync definition so Save captures latest crop values.
+          const next = canvasRef.current?.exportDefinition?.() || definition;
+          setDefinition(next);
+          return;
+        }
         closeCtxMenu();
         closeShapeMenu();
+        closeImageMenu();
       }
     };
     const onClick = () => {
       closeCtxMenu();
       closeShapeMenu();
+      closeImageMenu();
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('mousedown', onClick);
@@ -282,7 +337,7 @@ export default function TemplateEditorModal(props: {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('mousedown', onClick);
     };
-  }, [open, ctxMenu, shapeMenu]);
+  }, [open, ctxMenu, shapeMenu, imageMenu, imageCropEditingLayerId, definition]);
 
   const authHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -701,7 +756,7 @@ export default function TemplateEditorModal(props: {
                           ].join(" ")}
                           onContextMenu={(e) => {
                             // Right-click / two-finger click on a layer row opens the settings menu (text/shape).
-                            if (l.type !== 'text' && l.type !== 'shape') return;
+                            if (l.type !== 'text' && l.type !== 'shape' && l.type !== 'image') return;
                             if (l.id === '__content_region__') return;
                             e.preventDefault();
                             e.stopPropagation();
@@ -709,6 +764,7 @@ export default function TemplateEditorModal(props: {
                             canvasRef.current?.selectLayer?.(l.id);
                             if (l.type === 'text') openTextContextMenuForLayer(l.id, e.clientX, e.clientY);
                             if (l.type === 'shape') openShapeContextMenuForLayer(l.id, e.clientX, e.clientY);
+                            if (l.type === 'image') openImageContextMenuForLayer(l.id, e.clientX, e.clientY);
                           }}
                           onDoubleClick={(e) => {
                             // Double-click a TEXT layer row to start editing the text on canvas.
@@ -869,8 +925,50 @@ export default function TemplateEditorModal(props: {
           </div>
 
           <div className="flex items-start justify-center min-w-0">
-            <div
-              className="relative w-full max-w-[560px] overflow-hidden"
+            <div className="w-full max-w-[560px]">
+              {imageCropEditingLayerId ? (
+                <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-violet-900">Crop mode</div>
+                      <div className="text-xs text-violet-900/80">
+                        Drag to move • Scroll to zoom • Press <span className="font-semibold">Esc</span> to exit
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="h-8 px-3 rounded-md bg-black text-white text-xs font-semibold"
+                        onClick={() => {
+                          canvasRef.current?.finishImageCropMode?.();
+                          setImageCropEditingLayerId(null);
+                          const next = canvasRef.current?.exportDefinition?.() || definition;
+                          setDefinition(next);
+                        }}
+                        title="Done (Esc)"
+                      >
+                        Done
+                      </button>
+                      <button
+                        type="button"
+                        className="h-8 px-3 rounded-md border border-gray-200 bg-white text-xs font-semibold text-black"
+                        onClick={() => {
+                          if (!imageCropEditingLayerId) return;
+                          canvasRef.current?.resetImageCrop?.(imageCropEditingLayerId);
+                          const next = canvasRef.current?.exportDefinition?.() || definition;
+                          setDefinition(next);
+                        }}
+                        title="Reset crop"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div
+                className="relative w-full overflow-hidden"
               onContextMenu={(e) => {
                 // Context menu for text/shape styling in Template Editor (right-click / two-finger click).
                 e.preventDefault();
@@ -878,6 +976,8 @@ export default function TemplateEditorModal(props: {
 
                 // Phase 3: lock canvas interactions until a template is selected.
                 if (!hasSelectedTemplate) return;
+                  // While cropping, right-click menus are disabled (use the banner actions instead).
+                  if (imageCropEditingLayerId) return;
 
                 // Prefer current Fabric selection if available; fallback to selected layer in the list.
                 const activeId = canvasRef.current?.getActiveLayerId?.() || selectedLayerId;
@@ -885,9 +985,10 @@ export default function TemplateEditorModal(props: {
                 const layer = layers.find((x) => x.id === activeId);
                 if (layer?.type === 'text') openTextContextMenuForLayer(activeId, e.clientX, e.clientY);
                 if (layer?.type === 'shape') openShapeContextMenuForLayer(activeId, e.clientX, e.clientY);
+                if (layer?.type === 'image') openImageContextMenuForLayer(activeId, e.clientX, e.clientY);
               }}
-            >
-              <TemplateEditorCanvas ref={canvasRef} initialDefinition={definition} />
+              >
+                <TemplateEditorCanvas ref={canvasRef} initialDefinition={definition} />
 
               {!hasSelectedTemplate ? (
                 <div className="absolute inset-0 z-[150] flex items-center justify-center">
@@ -1158,6 +1259,116 @@ export default function TemplateEditorModal(props: {
                   </div>
                 </div>
               ) : null}
+
+              {imageMenu ? (
+                <div
+                  className="fixed z-[200] bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-[260px]"
+                  style={{ left: imageMenu.x, top: imageMenu.y }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="text-xs font-semibold text-black mb-2">Image settings</div>
+                  <div className="space-y-2">
+                    <div>
+                      <div className="text-[11px] font-semibold text-black/70 mb-1">Mask</div>
+                      <select
+                        className="w-full h-9 rounded-md border border-gray-200 px-2 text-sm text-black bg-white"
+                        value={imageMaskShape}
+                        onChange={(e) => {
+                          const next = e.target.value === 'circle' ? 'circle' : 'none';
+                          setImageMaskShape(next);
+                          if (imageCropEditingLayerId === imageMenu.layerId && next !== 'circle') {
+                            canvasRef.current?.finishImageCropMode?.();
+                            setImageCropEditingLayerId(null);
+                          }
+                          if (next === 'circle') {
+                            patchImageAsset(imageMenu.layerId, {
+                              maskShape: 'circle',
+                              crop: { scale: 1, offsetX: 0, offsetY: 0 },
+                            } as any);
+                          } else {
+                            patchImageAsset(imageMenu.layerId, { maskShape: 'none', crop: undefined } as any);
+                          }
+                        }}
+                      >
+                        <option value="none">None</option>
+                        <option value="circle">Circle (avatar)</option>
+                      </select>
+                    </div>
+
+                    {imageMaskShape === 'circle' ? (
+                      <div className="space-y-2 pt-1">
+                        {imageCropEditingLayerId === imageMenu.layerId ? (
+                          <>
+                            <div className="text-[11px] text-black/70">
+                              Crop mode: drag to pan • scroll to zoom • click Done when finished
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="flex-1 h-9 rounded-md bg-black text-white text-sm font-semibold disabled:bg-black/30"
+                                onClick={() => {
+                                  canvasRef.current?.finishImageCropMode?.();
+                                  setImageCropEditingLayerId(null);
+                                  // Sync definition state so Save uses latest crop values even if user doesn't move anything else.
+                                  const next = canvasRef.current?.exportDefinition?.() || definition;
+                                  setDefinition(next);
+                                }}
+                              >
+                                Done
+                              </button>
+                              <button
+                                type="button"
+                                className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-black"
+                                onClick={() => {
+                                  canvasRef.current?.resetImageCrop?.(imageMenu.layerId);
+                                  const next = canvasRef.current?.exportDefinition?.() || definition;
+                                  setDefinition(next);
+                                }}
+                                title="Reset crop"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="flex-1 h-9 rounded-md bg-black text-white text-sm font-semibold disabled:bg-black/30"
+                              disabled={imageCropEditingLayerId !== null}
+                              onClick={() => {
+                                setImageCropEditingLayerId(imageMenu.layerId);
+                                canvasRef.current?.selectLayer?.(imageMenu.layerId);
+                                canvasRef.current?.startImageCropMode?.(imageMenu.layerId);
+                              }}
+                              title={imageCropEditingLayerId ? 'Finish current crop first' : 'Edit crop (pan/zoom inside circle)'}
+                            >
+                              Edit crop…
+                            </button>
+                            <button
+                              type="button"
+                              className="h-9 px-3 rounded-md border border-gray-200 bg-white text-sm text-black"
+                              onClick={() => {
+                                canvasRef.current?.resetImageCrop?.(imageMenu.layerId);
+                                const next = canvasRef.current?.exportDefinition?.() || definition;
+                                setDefinition(next);
+                              }}
+                              title="Reset crop"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-black/60">
+                        Switch Mask to Circle to enable crop editing.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              </div>
             </div>
           </div>
         </div>

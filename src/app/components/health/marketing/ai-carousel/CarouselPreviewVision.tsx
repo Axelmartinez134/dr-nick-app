@@ -30,6 +30,9 @@ interface CarouselPreviewProps {
   // Optional slide background effect (used by /editor)
   backgroundEffectEnabled?: boolean;
   backgroundEffectType?: 'none' | 'dots_n8n';
+  // /editor-only: allow Template image masking (e.g. circular avatars).
+  // Kept opt-in so other routes that reuse this renderer are unaffected.
+  enableTemplateImageMasks?: boolean;
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
   // Optional: template ID (for debug overlays/logging).
   templateId?: string | null;
@@ -114,6 +117,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       deferInit,
       backgroundEffectEnabled,
       backgroundEffectType,
+      enableTemplateImageMasks,
       templateSnapshot,
       templateId,
       slideIndex,
@@ -1810,6 +1814,83 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         const assets = (slide0?.assets || []) as TemplateAsset[];
         if (!Array.isArray(assets) || assets.length === 0) return;
 
+        // Phase 5: apply the same circle crop math used in TemplateEditorCanvas.
+        // This makes the /editor canvas match Template Editor 1:1.
+        const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+        const computeCoverCropRect = (iw: number, ih: number, containerW: number, containerH: number) => {
+          const ar = containerW / Math.max(1, containerH);
+          const srcAr = iw / Math.max(1, ih);
+          let cw: number;
+          let ch: number;
+          if (srcAr > ar) {
+            ch = ih;
+            cw = ih * ar;
+          } else {
+            cw = iw;
+            ch = iw / ar;
+          }
+          cw = Math.max(1, Math.min(iw, cw));
+          ch = Math.max(1, Math.min(ih, ch));
+          return { cw, ch };
+        };
+
+        const applyCircleMaskCropToImage = (
+          imgObj: any,
+          imgEl: HTMLImageElement,
+          containerW: number,
+          containerH: number,
+          crop?: { scale: number; offsetX: number; offsetY: number }
+        ) => {
+          const iw = Math.max(1, imgEl.naturalWidth || imgEl.width || 1);
+          const ih = Math.max(1, imgEl.naturalHeight || imgEl.height || 1);
+          const { cw: coverW, ch: coverH } = computeCoverCropRect(iw, ih, containerW, containerH);
+
+          const mult = clamp(Number(crop?.scale ?? 1) || 1, 1, 4);
+          const cw = clamp(coverW / mult, 1, iw);
+          const ch = clamp(coverH / mult, 1, ih);
+
+          // Convert template-pixel offsets to source-pixel offsets (relative to crop rect size).
+          const offXPx = Number(crop?.offsetX ?? 0) || 0;
+          const offYPx = Number(crop?.offsetY ?? 0) || 0;
+          const shiftXSrc = offXPx * (cw / Math.max(1, containerW));
+          const shiftYSrc = offYPx * (ch / Math.max(1, containerH));
+
+          const centerX = iw / 2;
+          const centerY = ih / 2;
+          const cropX = clamp(centerX - cw / 2 + shiftXSrc, 0, Math.max(0, iw - cw));
+          const cropY = clamp(centerY - ch / 2 + shiftYSrc, 0, Math.max(0, ih - ch));
+
+          // Scale so the cropped region fills the container exactly.
+          const scale = containerW / Math.max(1, cw);
+          const outputR = Math.max(1, Math.floor(Math.min(containerW, containerH) / 2));
+          const rObj = outputR / Math.max(1e-6, scale);
+
+          try {
+            imgObj.set?.({
+              width: cw,
+              height: ch,
+              cropX,
+              cropY,
+              scaleX: scale,
+              scaleY: scale,
+            });
+            const clip = new fabric.Circle({
+              radius: rObj,
+              originX: 'center',
+              originY: 'center',
+              left: 0,
+              top: 0,
+              fill: '#000000',
+              selectable: false,
+              evented: false,
+            });
+            (imgObj as any).clipPath = clip;
+            imgObj.setCoords?.();
+          } catch {
+            // ignore
+          }
+        };
+
         // Deterministic ordering by zIndex, then stable id.
         const sorted = [...assets].sort((a, b) => {
           const za = (a.zIndex ?? 0);
@@ -1847,6 +1928,40 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               imgElement.crossOrigin = 'anonymous';
               imgElement.onload = () => {
                 try {
+                  const wantMask =
+                    !!enableTemplateImageMasks && String((imgA as any).maskShape || 'none') === 'circle';
+                  if (wantMask) {
+                    const fimg = new fabric.Image(imgElement, {
+                      left: imgA.rect.x,
+                      top: imgA.rect.y,
+                      originX: 'left',
+                      originY: 'top',
+                      selectable: false,
+                      evented: false,
+                    });
+                    (fimg as any).data = { role: 'template-asset', assetId: imgA.id, assetKind: imgA.kind, assetType: 'image' };
+                    disableRotationControls(fimg);
+                    applyCircleMaskCropToImage(
+                      fimg,
+                      imgElement,
+                      Math.max(1, imgA.rect.width),
+                      Math.max(1, imgA.rect.height),
+                      (imgA as any)?.crop
+                    );
+                    canvas.add(fimg);
+                    try {
+                      if (typeof canvas.moveTo === 'function') {
+                        canvas.moveTo(fimg, orderIndex);
+                      } else if (typeof (fimg as any).moveTo === 'function') {
+                        (fimg as any).moveTo(orderIndex);
+                      }
+                    } catch {
+                      // ignore
+                    }
+                    canvas.renderAll();
+                    return;
+                  }
+
                   const fimg = new fabric.Image(imgElement, {
                     left: imgA.rect.x,
                     top: imgA.rect.y,
@@ -1901,7 +2016,21 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                   if (!session) return;
                   const templateId = String(objectPath.split('/')[0] || '');
                   const url = `/api/marketing/carousel/templates/signed-url?templateId=${encodeURIComponent(templateId)}&path=${encodeURIComponent(objectPath)}&expiresIn=3600`;
-                  const r = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` } });
+                  const activeAccountId = (() => {
+                    try {
+                      return typeof localStorage !== 'undefined'
+                        ? String(localStorage.getItem('editor.activeAccountId') || '').trim()
+                        : '';
+                    } catch {
+                      return '';
+                    }
+                  })();
+                  const r = await fetch(url, {
+                    headers: {
+                      Authorization: `Bearer ${session.access_token}`,
+                      ...(activeAccountId ? { 'x-account-id': activeAccountId } : {}),
+                    },
+                  });
                   const j = await r.json();
                   if (j?.success && j?.signedUrl) {
                     imgElement.src = j.signedUrl;

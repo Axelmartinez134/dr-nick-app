@@ -47,6 +47,18 @@ export interface TemplateImageAsset extends TemplateAssetBase {
   };
   // Optional: the image's intrinsic size can be stored for editor UX; not required for rendering.
   intrinsic?: { width: number; height: number };
+  // Optional: non-destructive masking/crop metadata (Template Editor + /editor rendering).
+  // These fields are intentionally optional for backward compatibility with older templates.
+  maskShape?: 'none' | 'circle';
+  crop?: {
+    // Multiplier on top of the "cover" scale that ensures the mask is fully filled.
+    // 1.0 means "just cover"; higher values zoom in further.
+    scale: number;
+    // Offsets applied to the image *inside* the mask, in template-canvas pixels (1080×1440 space),
+    // where positive x moves the image right and positive y moves it down.
+    offsetX: number;
+    offsetY: number;
+  };
 }
 
 export interface TemplateTextAsset extends TemplateAssetBase {

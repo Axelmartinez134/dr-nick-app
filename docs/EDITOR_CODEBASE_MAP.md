@@ -431,8 +431,19 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
     - “Create new template” is **collapsed by default** (click-to-open) and auto-collapses after Create
     - When no template is selected, **the canvas + all edit controls are locked**, with a prompt:
       “Select a Template or Create one to begin editing.”
+  - **Avatar crop (circle mask) (2026-01-31)**:
+    - Per-image layer setting via right-click → **Mask: None / Circle (avatar)**
+    - Crop mode: right-click → **Edit crop…** then **drag to pan** and **scroll to zoom** (press **Esc** or **Done** to exit)
 - **Template editor canvas (Fabric.js) + assets**: `src/app/components/health/marketing/ai-carousel/TemplateEditorCanvas.tsx`
   - Supports template assets of type `text`, `image`, and `shape` (rectangle w/ optional rounded corners)
+  - **Image mask/crop fields (persisted on template definition)**: `src/lib/carousel-template-types.ts`
+    - `TemplateImageAsset.maskShape?: 'none' | 'circle'`
+    - `TemplateImageAsset.crop?: { scale: number; offsetX: number; offsetY: number }`
+      - `scale` is clamped to \(1.0 \rightarrow 4.0\)
+      - offsets are clamped so the circle never shows empty pixels
+  - **/editor rendering opt-in**: `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx`
+    - Use `enableTemplateImageMasks={true}` (passed from `/editor` via `src/features/editor/components/EditorSlidesRow.tsx`)
+    - When enabled and `maskShape === 'circle'`, the same crop math is applied so `/editor` matches Template Editor 1:1
 - **Account scoping (IMPORTANT)**
   - Template editor API routes live under `src/app/api/marketing/carousel/templates/*`
   - When operating in `/editor`, these requests MUST include `x-account-id` so templates resolve within the active account.
@@ -453,6 +464,12 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - Create or open an existing template
 - From the locked state, expand Create and create a new template
   - Expected: template loads, editor unlocks, Create section auto-collapses
+- Right-click an **image** layer → Mask → **Circle (avatar)** → **Edit crop…**
+  - Expected: a visible “Crop mode” banner appears with instructions + Done/Reset
+  - Expected: a “Crop mode” pill appears on the canvas
+  - Expected: drag pans, scroll zooms, and Esc exits crop mode
+- Save Template, close modal, reopen `/editor` project using that template
+  - Expected: the avatar crop (mask + pan/zoom) matches Template Editor 1:1
 - Click **+ Shape** to add a rectangle layer
 - Drag + resize the rectangle (stretch into a non-square) and confirm it renders correctly
 - Right-click the shape and set **Corner radius** > 0 (verify rounded corners)

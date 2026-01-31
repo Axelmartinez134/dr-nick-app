@@ -46,6 +46,11 @@ export interface TemplateEditorCanvasHandle {
     patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number }>
   ) => void;
   startTextEditing: (layerId: string) => void;
+  // Phase 4: avatar-style crop mode for circular-masked images.
+  startImageCropMode: (layerId: string) => void;
+  finishImageCropMode: () => void;
+  resetImageCrop: (layerId: string) => void;
+  getActiveImageCropLayerId: () => string | null;
 }
 
 function clone<T>(v: T): T {
@@ -69,6 +74,8 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
     const [ready, setReady] = useState(false);
     const [assetCount, setAssetCount] = useState(0);
     const [lastImageError, setLastImageError] = useState<string | null>(null);
+    const [cropModeLayerId, setCropModeLayerId] = useState<string | null>(null);
+    const [cropDragging, setCropDragging] = useState(false);
 
     const defRef = useRef<CarouselTemplateDefinitionV1>({
       template_version: 1,
@@ -91,6 +98,124 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       } catch {
         // ignore
       }
+    };
+
+    const getSlide0 = (d: CarouselTemplateDefinitionV1) =>
+      d.slides?.find((s) => s.slideIndex === 0) || d.slides?.[0] || defaultSlide0();
+
+    const getImageAssetById = (layerId: string) => {
+      const def = defRef.current;
+      const slide0: any = getSlide0(def);
+      const assets = Array.isArray(slide0.assets) ? (slide0.assets as any[]) : [];
+      const idx = assets.findIndex((a) => a && String(a.id) === String(layerId) && a.type === 'image');
+      if (idx === -1) return null;
+      return { slide0, assets, idx, asset: assets[idx] as TemplateImageAsset };
+    };
+
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+    // Compute a "cover" crop rect in SOURCE pixel space, matched to the container aspect ratio.
+    const computeCoverCropRect = (iw: number, ih: number, containerW: number, containerH: number) => {
+      const ar = containerW / Math.max(1, containerH);
+      const srcAr = iw / Math.max(1, ih);
+      // Crop rect in source pixels.
+      let cw: number;
+      let ch: number;
+      if (srcAr > ar) {
+        // source is wider → use full height, crop width
+        ch = ih;
+        cw = ih * ar;
+      } else {
+        // source is taller/narrower → use full width, crop height
+        cw = iw;
+        ch = iw / ar;
+      }
+      cw = Math.max(1, Math.min(iw, cw));
+      ch = Math.max(1, Math.min(ih, ch));
+      return { cw, ch };
+    };
+
+    // Apply crop fields (scale + offsets in TEMPLATE PIXELS) to a fabric.Image using cropX/cropY.
+    // This keeps the object's rendered bounding box fixed to containerW×containerH, preventing "jumping"
+    // and keeping selection handles stable.
+    const applyCircleMaskCropToImage = (
+      fabric: any,
+      imgObj: any,
+      imgEl: HTMLImageElement,
+      containerW: number,
+      containerH: number,
+      crop?: { scale: number; offsetX: number; offsetY: number }
+    ) => {
+      const iw = Math.max(1, imgEl.naturalWidth || imgEl.width || 1);
+      const ih = Math.max(1, imgEl.naturalHeight || imgEl.height || 1);
+      const { cw: coverW, ch: coverH } = computeCoverCropRect(iw, ih, containerW, containerH);
+
+      const mult = clamp(Number(crop?.scale ?? 1) || 1, 1, 4);
+      const cw = clamp(coverW / mult, 1, iw);
+      const ch = clamp(coverH / mult, 1, ih);
+
+      // Convert template-pixel offsets to source-pixel offsets (relative to crop rect size).
+      const offXPx = Number(crop?.offsetX ?? 0) || 0;
+      const offYPx = Number(crop?.offsetY ?? 0) || 0;
+      const shiftXSrc = offXPx * (cw / Math.max(1, containerW));
+      const shiftYSrc = offYPx * (ch / Math.max(1, containerH));
+
+      const centerX = iw / 2;
+      const centerY = ih / 2;
+      const minCropX = 0;
+      const minCropY = 0;
+      const maxCropX = Math.max(0, iw - cw);
+      const maxCropY = Math.max(0, ih - ch);
+      const cropX = clamp(centerX - cw / 2 + shiftXSrc, minCropX, maxCropX);
+      const cropY = clamp(centerY - ch / 2 + shiftYSrc, minCropY, maxCropY);
+
+      // Scale so the cropped region fills the container exactly.
+      const scale = containerW / Math.max(1, cw);
+
+      // ClipPath must be specified in object coords (pre-scale) so it appears as a circle in canvas pixels.
+      const outputR = Math.max(1, Math.floor(Math.min(containerW, containerH) / 2));
+      const rObj = outputR / Math.max(1e-6, scale);
+
+      try {
+        imgObj.set?.({
+          width: cw,
+          height: ch,
+          cropX,
+          cropY,
+          scaleX: scale,
+          scaleY: scale,
+        });
+        const clip = new fabric.Circle({
+          radius: rObj,
+          originX: 'center',
+          originY: 'center',
+          left: 0,
+          top: 0,
+          fill: '#000000',
+          selectable: false,
+          evented: false,
+        });
+        (imgObj as any).clipPath = clip;
+        imgObj.setCoords?.();
+      } catch {
+        // ignore
+      }
+    };
+
+    const createMaskedImageObject = (fabric: any, imgEl: HTMLImageElement, asset: TemplateImageAsset) => {
+      const w = Math.max(1, asset.rect.width);
+      const h = Math.max(1, asset.rect.height);
+      const imgObj = new fabric.Image(imgEl, {
+        left: asset.rect.x,
+        top: asset.rect.y,
+        originX: 'left',
+        originY: 'top',
+        selectable: true,
+        evented: true,
+      });
+      disableRotation(imgObj);
+      applyCircleMaskCropToImage(fabric, imgObj, imgEl, w, h, (asset as any).crop);
+      return imgObj;
     };
 
     const rectFromObj = (obj: any): TemplateRect => {
@@ -600,16 +725,19 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
           imgEl.onload = () => {
             try {
               setLastImageError(null);
-              const obj = new fabric.Image(imgEl, {
-                left: img.rect.x,
-                top: img.rect.y,
-                originX: 'left',
-                originY: 'top',
-                scaleX: img.rect.width / imgEl.width,
-                scaleY: img.rect.height / imgEl.height,
-                selectable: true,
-                evented: true,
-              });
+              const wantCircle = String((img as any).maskShape || 'none') === 'circle';
+              const obj = wantCircle
+                ? createMaskedImageObject(fabric, imgEl, img)
+                : new fabric.Image(imgEl, {
+                    left: img.rect.x,
+                    top: img.rect.y,
+                    originX: 'left',
+                    originY: 'top',
+                    scaleX: img.rect.width / imgEl.width,
+                    scaleY: img.rect.height / imgEl.height,
+                    selectable: true,
+                    evented: true,
+                  });
               (obj as any).data = { role: 'template-asset', assetId: img.id, assetType: 'image', assetKind: img.kind };
               disableRotation(obj);
               canvas.add(obj);
@@ -721,6 +849,114 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
 
       canvas.renderAll();
     };
+
+    // Phase 4: crop mode interaction (pan/zoom inside circular mask).
+    const cropModeRef = useRef<{
+      layerId: string | null;
+      dragging: boolean;
+      lastPointer: { x: number; y: number } | null;
+      prevCanvasState: null | {
+        selection: boolean;
+        skipTargetFind: boolean;
+        defaultCursor?: string;
+        hoverCursor?: string;
+        moveCursor?: string;
+      };
+    }>({ layerId: null, dragging: false, lastPointer: null, prevCanvasState: null });
+
+    // DOM-level crop interaction (reliable). This avoids relying on Fabric mouse events for drag.
+    const cropDragRef = useRef<{ dragging: boolean; lastClientX: number; lastClientY: number } | null>(null);
+
+    const setCropModeLocks = (obj: any, enabled: boolean) => {
+      try {
+        obj.lockMovementX = !!enabled;
+        obj.lockMovementY = !!enabled;
+        obj.hasControls = !enabled;
+        if (typeof obj.setControlsVisibility === 'function') {
+          obj.setControlsVisibility({ mtr: false });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const getImageObjById = (layerId: string) => {
+      const obj = assetObjByIdRef.current.get(layerId);
+      if (!obj) return null;
+      if (obj.type === 'image') return obj;
+      return null;
+    };
+
+    const applyCropToActiveLayer = () => {
+      const layerId = cropModeRef.current.layerId;
+      if (!layerId) return;
+      const imgObj = getImageObjById(layerId);
+      if (!imgObj) return;
+
+      // Container size is the asset rect size (selection box stays fixed).
+      const w = Math.max(1, Number(imgObj.getScaledWidth?.() || 0) || Number(imgObj.width || 1) * Number(imgObj.scaleX || 1));
+      const h = Math.max(1, Number(imgObj.getScaledHeight?.() || 0) || Number(imgObj.height || 1) * Number(imgObj.scaleY || 1));
+
+      const info = getImageAssetById(layerId);
+      if (!info) return;
+      const crop = (info.asset as any)?.crop;
+      // imgObj uses cropX/cropY; need the underlying element to compute source dims.
+      const el = imgObj.getElement?.() as HTMLImageElement | undefined;
+      if (!el) return;
+      applyCircleMaskCropToImage(fabricRef.current, imgObj, el, w, h, crop);
+      try {
+        fabricCanvasRef.current?.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+    };
+
+    const setCropForLayer = (layerId: string, nextCrop: { scale: number; offsetX: number; offsetY: number }) => {
+      const info = getImageAssetById(layerId);
+      if (!info) return;
+      // Update the definition snapshot used for export/save.
+      info.assets[info.idx] = { ...(info.assets[info.idx] as any), crop: nextCrop };
+      (info.slide0 as any).assets = info.assets as any;
+      (defRef.current as any).slides = [info.slide0];
+      applyCropToActiveLayer();
+    };
+
+    const onCropWheel = (opt: any) => {
+      const layerId = cropModeRef.current.layerId;
+      if (!layerId) return;
+      const e = opt?.e;
+      if (!e) return;
+      e.preventDefault?.();
+      e.stopPropagation?.();
+
+      const info = getImageAssetById(layerId);
+      if (!info) return;
+      const cur = (info.asset as any)?.crop || { scale: 1, offsetX: 0, offsetY: 0 };
+      const deltaY = Number(e.deltaY || 0);
+      const factor = deltaY > 0 ? 0.92 : 1.08; // zoom out / in
+      const nextScale = Math.max(1, Math.min(4, (Number(cur.scale || 1) || 1) * factor));
+      setCropForLayer(layerId, { scale: nextScale, offsetX: Number(cur.offsetX || 0) || 0, offsetY: Number(cur.offsetY || 0) || 0 });
+    };
+
+    useEffect(() => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas) return;
+      try {
+        canvas.off?.('mouse:wheel', onCropWheel);
+
+        canvas.on?.('mouse:wheel', onCropWheel);
+      } catch {
+        // ignore
+      }
+      return () => {
+        try {
+          canvas.off?.('mouse:wheel', onCropWheel);
+        } catch {
+          // ignore
+        }
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ready]);
 
     useEffect(() => {
       if (!canvasElRef.current) return;
@@ -843,6 +1079,100 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       getShapeLayerStyle: (layerId: string) => getShapeStyleForLayer(layerId),
       setShapeLayerStyle: (layerId: string, patch: any) => setShapeStyleForLayer(layerId, patch),
       startTextEditing: (layerId: string) => startEditingTextLayer(layerId),
+      startImageCropMode: (layerId: string) => {
+        const info = getImageAssetById(layerId);
+        if (!info) return;
+        const mask = String((info.asset as any)?.maskShape || 'none');
+        if (mask !== 'circle') return;
+
+        cropModeRef.current.layerId = String(layerId);
+        cropModeRef.current.dragging = false;
+        cropModeRef.current.lastPointer = null;
+        setCropModeLayerId(String(layerId));
+
+        // Put the Fabric canvas into an "interaction capture" mode so panning feels seamless.
+        // We pan on drag anywhere (not just when clicking the image), and we don't want Fabric to
+        // start selection/move transforms in the background.
+        try {
+          const canvas = fabricCanvasRef.current;
+          if (canvas) {
+            cropModeRef.current.prevCanvasState = {
+              selection: !!canvas.selection,
+              skipTargetFind: !!canvas.skipTargetFind,
+              defaultCursor: canvas.defaultCursor,
+              hoverCursor: canvas.hoverCursor,
+              moveCursor: canvas.moveCursor,
+            };
+            canvas.discardActiveObject?.();
+            canvas.selection = false;
+            canvas.skipTargetFind = true;
+            canvas.defaultCursor = 'grab';
+            canvas.hoverCursor = 'grab';
+            canvas.moveCursor = 'grab';
+            canvas.requestRenderAll?.();
+          }
+        } catch {
+          // ignore
+        }
+
+        // Ensure crop defaults exist.
+        const cur = (info.asset as any)?.crop || { scale: 1, offsetX: 0, offsetY: 0 };
+        setCropForLayer(String(layerId), {
+          scale: Math.max(1, Math.min(4, Number(cur.scale || 1) || 1)),
+          offsetX: Number(cur.offsetX || 0) || 0,
+          offsetY: Number(cur.offsetY || 0) || 0,
+        });
+
+        // Lock the image object so transforms don't fight crop panning.
+        const imgObj = getImageObjById(String(layerId));
+        if (imgObj) {
+          setCropModeLocks(imgObj, true);
+        }
+      },
+      finishImageCropMode: () => {
+        const layerId = cropModeRef.current.layerId;
+        cropModeRef.current.layerId = null;
+        cropModeRef.current.dragging = false;
+        cropModeRef.current.lastPointer = null;
+        setCropModeLayerId(null);
+        cropDragRef.current = null;
+        if (!layerId) return;
+        const imgObj = getImageObjById(String(layerId));
+        if (imgObj) {
+          setCropModeLocks(imgObj, false);
+          try {
+            imgObj.setCoords?.();
+            fabricCanvasRef.current?.requestRenderAll?.();
+          } catch {
+            // ignore
+          }
+        }
+
+        // Restore Fabric canvas interaction state.
+        try {
+          const canvas = fabricCanvasRef.current;
+          const prev = cropModeRef.current.prevCanvasState;
+          cropModeRef.current.prevCanvasState = null;
+          if (canvas && prev) {
+            canvas.selection = prev.selection;
+            canvas.skipTargetFind = prev.skipTargetFind;
+            if (prev.defaultCursor !== undefined) canvas.defaultCursor = prev.defaultCursor;
+            if (prev.hoverCursor !== undefined) canvas.hoverCursor = prev.hoverCursor;
+            if (prev.moveCursor !== undefined) canvas.moveCursor = prev.moveCursor;
+            canvas.requestRenderAll?.();
+          }
+        } catch {
+          // ignore
+        }
+      },
+      resetImageCrop: (layerId: string) => {
+        const info = getImageAssetById(layerId);
+        if (!info) return;
+        const mask = String((info.asset as any)?.maskShape || 'none');
+        if (mask !== 'circle') return;
+        setCropForLayer(String(layerId), { scale: 1, offsetX: 0, offsetY: 0 });
+      },
+      getActiveImageCropLayerId: () => cropModeRef.current.layerId,
     }), [initialDefinition]);
 
     return (
@@ -865,9 +1195,105 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
             borderRadius: '8px',
             overflow: 'hidden',
             backgroundColor: '#f9fafb',
+            position: 'relative',
           }}
         >
           <canvas ref={canvasElRef} width={1080} height={1440} style={{ display: 'block' }} />
+          {cropModeLayerId ? (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                cursor: cropDragging ? 'grabbing' : 'grab',
+              }}
+              onPointerDown={(e) => {
+                if (!cropModeLayerId) return;
+                cropDragRef.current = { dragging: true, lastClientX: e.clientX, lastClientY: e.clientY };
+                setCropDragging(true);
+                try {
+                  (e.currentTarget as any)?.setPointerCapture?.(e.pointerId);
+                } catch {
+                  // ignore
+                }
+                e.preventDefault();
+              }}
+              onPointerMove={(e) => {
+                if (!cropModeLayerId) return;
+                const st = cropDragRef.current;
+                if (!st?.dragging) return;
+                const dxCss = e.clientX - st.lastClientX;
+                const dyCss = e.clientY - st.lastClientY;
+                st.lastClientX = e.clientX;
+                st.lastClientY = e.clientY;
+                // Convert CSS pixels to template-canvas pixels (1080×1440) using Fabric zoom.
+                const dx = dxCss / DISPLAY_ZOOM;
+                const dy = dyCss / DISPLAY_ZOOM;
+                const info = getImageAssetById(cropModeLayerId);
+                if (!info) return;
+                const cur = (info.asset as any)?.crop || { scale: 1, offsetX: 0, offsetY: 0 };
+                setCropForLayer(cropModeLayerId, {
+                  scale: Number(cur.scale || 1) || 1,
+                  offsetX: (Number(cur.offsetX || 0) || 0) + dx,
+                  offsetY: (Number(cur.offsetY || 0) || 0) + dy,
+                });
+                e.preventDefault();
+              }}
+              onPointerUp={(e) => {
+                if (cropDragRef.current) cropDragRef.current.dragging = false;
+                setCropDragging(false);
+                try {
+                  (e.currentTarget as any)?.releasePointerCapture?.(e.pointerId);
+                } catch {
+                  // ignore
+                }
+                e.preventDefault();
+              }}
+              onPointerCancel={() => {
+                if (cropDragRef.current) cropDragRef.current.dragging = false;
+                setCropDragging(false);
+              }}
+              onWheel={(e) => {
+                if (!cropModeLayerId) return;
+                e.preventDefault();
+                const info = getImageAssetById(cropModeLayerId);
+                if (!info) return;
+                const cur = (info.asset as any)?.crop || { scale: 1, offsetX: 0, offsetY: 0 };
+                const factor = e.deltaY > 0 ? 0.92 : 1.08;
+                const nextScale = Math.max(1, Math.min(4, (Number(cur.scale || 1) || 1) * factor));
+                setCropForLayer(cropModeLayerId, {
+                  scale: nextScale,
+                  offsetX: Number(cur.offsetX || 0) || 0,
+                  offsetY: Number(cur.offsetY || 0) || 0,
+                });
+              }}
+            />
+          ) : null}
+          {cropModeLayerId ? (
+            <div
+              style={{
+                position: 'absolute',
+                left: 10,
+                top: 10,
+                pointerEvents: 'none',
+              }}
+            >
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  background: 'rgba(17, 24, 39, 0.85)',
+                  color: '#fff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                Crop mode
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     );
