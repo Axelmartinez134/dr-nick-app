@@ -72,11 +72,59 @@ export default function TemplateEditorModal(props: {
   const [shapeStroke, setShapeStroke] = useState<string>('#111827');
   const [shapeStrokeWidth, setShapeStrokeWidth] = useState<number>(0);
 
-  const [newTemplateName, setNewTemplateName] = useState('Dr Nick IG');
+  const [newTemplateName, setNewTemplateName] = useState('');
 
   // Template text is edited directly on-canvas (layers), not via special form fields.
 
+  // Phase 0: prep for later Template Editor UX changes (no behavior change).
+  const hasSelectedTemplate = Boolean(activeTemplateId);
+  // Future UI state (next phases):
+  // - Create section collapsed/expanded
+  // - Lock editor controls + canvas until a template is selected
+
+  // Phase 2: "Create new template" is click-to-open (collapsed by default).
+  const [createSectionOpen, setCreateSectionOpen] = useState(false);
+
+  // Phase 1: Template dropdown should be alphabetical (A→Z, case-insensitive),
+  // tie-break by updatedAt newest-first (then keep original order).
+  const sortedTemplates = useMemo(() => {
+    const withIdx = (props.templates || []).map((t, idx) => ({ t, idx }));
+    withIdx.sort((a, b) => {
+      const an = String(a.t?.name || '').trim();
+      const bn = String(b.t?.name || '').trim();
+      const byName = an.localeCompare(bn, undefined, { sensitivity: 'base' });
+      if (byName !== 0) return byName;
+
+      const aTime = Date.parse(String(a.t?.updatedAt || '')) || 0;
+      const bTime = Date.parse(String(b.t?.updatedAt || '')) || 0;
+      if (aTime !== bTime) return bTime - aTime; // newest first
+
+      return a.idx - b.idx; // stable
+    });
+    return withIdx.map((x) => x.t);
+  }, [props.templates]);
+
   const canEdit = useMemo(() => open, [open]);
+
+  // Phase 3: If no template is selected, force the UI into a safe "locked" state.
+  useEffect(() => {
+    if (!open) return;
+    if (hasSelectedTemplate) return;
+    // UX: when locked, keep "Create new template" open so the user can start immediately.
+    setCreateSectionOpen(true);
+    setCtxMenu(null);
+    setShapeMenu(null);
+    setSelectedLayerId(null);
+    setEditingLayerId(null);
+    setEditingLayerName('');
+  }, [open, hasSelectedTemplate]);
+
+  // UX: once a template is selected/loaded, close the create section.
+  useEffect(() => {
+    if (!open) return;
+    if (!hasSelectedTemplate) return;
+    setCreateSectionOpen(false);
+  }, [open, hasSelectedTemplate]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +136,8 @@ export default function TemplateEditorModal(props: {
     setSelectedLayerId(null);
     setEditingLayerId(null);
     setEditingLayerName('');
+    setNewTemplateName('');
+    setCreateSectionOpen(Boolean(!props.currentTemplateId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -97,6 +147,9 @@ export default function TemplateEditorModal(props: {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      // Phase 3: lock all editing shortcuts until a template is selected.
+      if (!hasSelectedTemplate) return;
+
       // Undo (Cmd/Ctrl+Z)
       const isUndo = (e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey);
       if (isUndo) {
@@ -127,7 +180,7 @@ export default function TemplateEditorModal(props: {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, editingLayerId, selectedLayerId, definition]);
+  }, [open, hasSelectedTemplate, editingLayerId, selectedLayerId, definition]);
 
   useEffect(() => {
     if (!open) return;
@@ -169,6 +222,7 @@ export default function TemplateEditorModal(props: {
   const closeShapeMenu = () => setShapeMenu(null);
 
   const openTextContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
+    if (!hasSelectedTemplate) return;
     if (!layerId || layerId === '__content_region__') return;
     const layer = layers.find((x) => x.id === layerId);
     if (layer?.type !== 'text') return;
@@ -194,6 +248,7 @@ export default function TemplateEditorModal(props: {
   };
 
   const openShapeContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
+    if (!hasSelectedTemplate) return;
     if (!layerId || layerId === '__content_region__') return;
     const layer = layers.find((x) => x.id === layerId);
     if (layer?.type !== 'shape') return;
@@ -280,6 +335,8 @@ export default function TemplateEditorModal(props: {
       if (!json.success) throw new Error(json.error || 'Failed to create template');
       props.onRefreshTemplates();
       await loadTemplateById(json.id);
+      // Phase 2 UX: auto-collapse after successful Create.
+      setCreateSectionOpen(false);
     } catch (e: any) {
       setError(e?.message || 'Failed to create template');
     } finally {
@@ -429,15 +486,18 @@ export default function TemplateEditorModal(props: {
 
   if (!open) return null;
 
+  const editorUnlocked = hasSelectedTemplate && !loading && !saving;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
+      data-has-selected-template={hasSelectedTemplate}
       onMouseDown={(e) => {
         // Backdrop click closes (same behavior as ✕).
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-5xl bg-white rounded-lg shadow-xl overflow-hidden">
+      <div className="w-full max-w-7xl bg-white rounded-lg shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="text-lg font-semibold text-black">Template Editor</h2>
@@ -451,7 +511,9 @@ export default function TemplateEditorModal(props: {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+        {/* Layout note: the canvas has a fixed 540×720 display box, so we only enable 2-column layout
+            at a wide breakpoint and reserve a fixed-width right column. Below that, stack vertically. */}
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(420px,1fr)_560px] gap-6 p-6">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <label className="text-sm font-medium text-black">Template</label>
@@ -463,6 +525,13 @@ export default function TemplateEditorModal(props: {
                     setActiveTemplateId(null);
                     setDefinition(defaultDefinition());
                     canvasRef.current?.loadDefinition(defaultDefinition());
+                    // Phase 3: discard any unsaved default edits and re-lock.
+                    setError(null);
+                    setCtxMenu(null);
+                    setShapeMenu(null);
+                    setSelectedLayerId(null);
+                    setEditingLayerId(null);
+                    setEditingLayerName('');
                     return;
                   }
                   void loadTemplateById(v);
@@ -471,54 +540,88 @@ export default function TemplateEditorModal(props: {
                 disabled={loading || saving}
               >
                 <option value="">Select Template</option>
-                {props.templates.map(t => (
+                {sortedTemplates.map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4 border">
-              <div className="text-sm font-medium text-black mb-2">Create new template</div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    value={newTemplateName}
-                    onChange={(e) => setNewTemplateName(e.target.value)}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-black placeholder:text-black/50 disabled:text-black"
-                    placeholder="Template name..."
-                    disabled={saving}
-                  />
-                  <button
-                    onClick={createTemplate}
-                    disabled={saving || !newTemplateName.trim()}
-                    className="px-4 py-2 bg-black text-white rounded text-sm font-medium disabled:bg-black/30 disabled:text-white"
-                  >
-                    Create
-                  </button>
+              <button
+                type="button"
+                className="w-full flex items-center justify-between gap-3 text-left"
+                onClick={() => setCreateSectionOpen((v) => !v)}
+                aria-expanded={createSectionOpen}
+              >
+                <div className="text-sm font-medium text-black">Create new template</div>
+                <div className="text-black/60 text-xs select-none" aria-hidden="true">
+                  {createSectionOpen ? 'Hide' : 'Show'} ▾
                 </div>
-                <button
-                  onClick={duplicateTemplate}
-                  disabled={saving || !activeTemplateId}
-                  className="w-full px-4 py-2 bg-white border border-gray-300 text-black rounded text-sm font-medium disabled:opacity-50"
-                  title={activeTemplateId ? 'Duplicate selected template' : 'Select a template first'}
-                >
-                  Duplicate selected
-                </button>
-              </div>
-              <p className="text-xs text-black mt-2">
-                After creating, upload assets + position them, then set the contentRegion.
-              </p>
+              </button>
+
+              {createSectionOpen ? (
+                <div className="mt-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={newTemplateName}
+                        onChange={(e) => setNewTemplateName(e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-black placeholder:text-black/50 disabled:text-black"
+                        placeholder="e.g. IG 3:4 — Clean Minimal"
+                        disabled={saving}
+                      />
+                      <button
+                        onClick={createTemplate}
+                        disabled={saving || !newTemplateName.trim()}
+                        className="px-4 py-2 bg-black text-white rounded text-sm font-medium disabled:bg-black/30 disabled:text-white"
+                      >
+                        Create
+                      </button>
+                    </div>
+                    <button
+                      onClick={duplicateTemplate}
+                      disabled={saving || !activeTemplateId}
+                      className="w-full px-4 py-2 bg-white border border-gray-300 text-black rounded text-sm font-medium disabled:opacity-50"
+                      title={activeTemplateId ? 'Duplicate selected template' : 'Select a template first'}
+                    >
+                      Duplicate selected
+                    </button>
+                  </div>
+                  <p className="text-xs text-black mt-2">
+                    After creating, upload assets + position them, then set the contentRegion.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-black/70">
+                  Click to create a new template or duplicate an existing one.
+                </p>
+              )}
             </div>
 
-            <div className="space-y-3">
+            {!hasSelectedTemplate ? (
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-3 text-sm">
+                <div className="font-semibold">Select a Template or Create one to begin editing.</div>
+                <div className="text-xs mt-1 text-amber-900/80">
+                  Editing controls and the canvas are locked until you choose a template.
+                </div>
+              </div>
+            ) : null}
+
+            <div
+              className={[
+                "space-y-3",
+                editorUnlocked ? "" : "opacity-60 pointer-events-none select-none",
+              ].join(" ")}
+              aria-disabled={!editorUnlocked}
+            >
               <div>
                 <label className="block text-sm font-medium text-black mb-1">Template name</label>
                 <input
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-black placeholder:text-black/50 disabled:text-black"
-                  placeholder="e.g. Dr Nick IG"
-                  disabled={!canEdit}
+                  placeholder="e.g. IG 3:4 — Clean Minimal"
+                  disabled={!canEdit || !editorUnlocked}
                 />
               </div>
 
@@ -542,7 +645,7 @@ export default function TemplateEditorModal(props: {
                         }
                         uploadInputRef.current?.click();
                       }}
-                      disabled={saving}
+                      disabled={saving || !editorUnlocked}
                       className="px-4 py-2 bg-black text-white rounded text-sm font-medium disabled:bg-black/30 disabled:text-white"
                     >
                       Upload image asset
@@ -561,7 +664,7 @@ export default function TemplateEditorModal(props: {
                     <button
                       type="button"
                       className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
-                      disabled={saving}
+                      disabled={saving || !editorUnlocked}
                       onClick={() => {
                         canvasRef.current?.addRectLayer?.();
                         const next = canvasRef.current?.exportDefinition() || definition;
@@ -573,7 +676,7 @@ export default function TemplateEditorModal(props: {
                   <button
                     type="button"
                     className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
-                    disabled={saving}
+                    disabled={saving || !editorUnlocked}
                     onClick={() => {
                       canvasRef.current?.addTextLayer?.();
                       const next = canvasRef.current?.exportDefinition() || definition;
@@ -765,13 +868,16 @@ export default function TemplateEditorModal(props: {
             </p>
           </div>
 
-          <div className="flex items-start justify-center">
+          <div className="flex items-start justify-center min-w-0">
             <div
-              className="relative"
+              className="relative w-full max-w-[560px] overflow-hidden"
               onContextMenu={(e) => {
                 // Context menu for text/shape styling in Template Editor (right-click / two-finger click).
                 e.preventDefault();
                 e.stopPropagation();
+
+                // Phase 3: lock canvas interactions until a template is selected.
+                if (!hasSelectedTemplate) return;
 
                 // Prefer current Fabric selection if available; fallback to selected layer in the list.
                 const activeId = canvasRef.current?.getActiveLayerId?.() || selectedLayerId;
@@ -782,6 +888,20 @@ export default function TemplateEditorModal(props: {
               }}
             >
               <TemplateEditorCanvas ref={canvasRef} initialDefinition={definition} />
+
+              {!hasSelectedTemplate ? (
+                <div className="absolute inset-0 z-[150] flex items-center justify-center">
+                  <div className="absolute inset-0 bg-white/70" />
+                  <div className="relative max-w-[440px] mx-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4 text-center">
+                    <div className="text-sm font-semibold text-black">
+                      Select a Template or Create one to begin editing.
+                    </div>
+                    <div className="mt-1 text-xs text-black/70">
+                      The canvas and settings are locked until a template is selected.
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {ctxMenu ? (
                 <div

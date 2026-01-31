@@ -426,6 +426,11 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 
 ## Template system (editor)
 - **Template editor modal**: `src/app/components/health/marketing/ai-carousel/TemplateEditorModal.tsx`
+  - **UX guardrails (2026-01-31)**:
+    - Template dropdown is sorted **A→Z** (case-insensitive), tie-break by `updatedAt` newest-first
+    - “Create new template” is **collapsed by default** (click-to-open) and auto-collapses after Create
+    - When no template is selected, **the canvas + all edit controls are locked**, with a prompt:
+      “Select a Template or Create one to begin editing.”
 - **Template editor canvas (Fabric.js) + assets**: `src/app/components/health/marketing/ai-carousel/TemplateEditorCanvas.tsx`
   - Supports template assets of type `text`, `image`, and `shape` (rectangle w/ optional rounded corners)
 - **Account scoping (IMPORTANT)**
@@ -440,7 +445,14 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 
 ### Manual QA (Template Editor shapes)
 - Open `/editor` and open **Template Editor**
+- Confirm the editor starts in a **locked** state until a template is selected
+  - Expected: canvas blocked + edit controls disabled
+  - Expected: prompt shown in left panel and over the canvas
+- Confirm **Template dropdown** is sorted alphabetically (A→Z, case-insensitive)
+- Expand/collapse **Create new template** (should be collapsed by default)
 - Create or open an existing template
+- From the locked state, expand Create and create a new template
+  - Expected: template loads, editor unlocks, Create section auto-collapses
 - Click **+ Shape** to add a rectangle layer
 - Drag + resize the rectangle (stretch into a non-square) and confirm it renders correctly
 - Right-click the shape and set **Corner radius** > 0 (verify rounded corners)
