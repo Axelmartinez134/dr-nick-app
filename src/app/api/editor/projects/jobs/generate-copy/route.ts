@@ -364,8 +364,21 @@ export async function POST(request: NextRequest) {
   }
 
   const templateTypeId = project.template_type_id === 'enhanced' ? 'enhanced' : 'regular';
-  const prompt = sanitizePrompt(project.prompt_snapshot || '');
-  if (!prompt) return NextResponse.json({ success: false, error: 'Project prompt is empty' }, { status: 400 });
+
+  // IMPORTANT: Generate Copy uses the *current* effective template-type prompt (account-scoped),
+  // not the project's saved prompt_snapshot. This makes prompt edits apply immediately to all projects.
+  const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
+    supabase,
+    { accountId, actorUserId: user.id },
+    templateTypeId
+  );
+  const prompt = sanitizePrompt(String(ttEffective?.prompt || ''));
+  if (!prompt) {
+    return NextResponse.json(
+      { success: false, error: 'Template type prompt is empty' },
+      { status: 400 }
+    );
+  }
 
   // Phase E: per-account Poppy routing (board/chat/model) stored on editor_account_settings.
   const { data: settingsRow, error: settingsErr } = await supabase
@@ -450,12 +463,6 @@ export async function POST(request: NextRequest) {
     const slides = payload.slides as Array<{ headline?: string; body: string }>;
     const caption = payload.caption as string;
 
-    // Load per-user effective emphasis prompt for this template type.
-    const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
-      supabase,
-      { accountId, actorUserId: user.id },
-      templateTypeId
-    );
     const emphasisInstruction = String(ttEffective?.emphasisPrompt || '').trim();
 
     // Generate emphasis ranges (Generate Copy only; Realign untouched).
