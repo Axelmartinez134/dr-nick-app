@@ -107,6 +107,24 @@ This is **editor-only** multi-tenancy. It does **not** affect the Health/Profile
       - `editor_account_settings` (poppy url + model + prompts)
       - `editor_users` row for the owner (legacy editor endpoints still check it)
     - **Safety**: create route includes cleanup on partial failure to avoid orphaned accounts/templates/users
+- **Delete accounts (superadmin)**
+  - **UI**: `src/features/editor/components/EditorTopBar.tsx`
+    - Superadmin-only **⚙️** menu next to the Account dropdown
+    - Menu items:
+      - `+ New Account` (opens `CreateAccountModal`)
+      - `Delete current account…` (opens `DeleteAccountModal`)
+  - **UI**: `src/features/editor/components/DeleteAccountModal.tsx`
+    - Requires typing `DELETE` to enable deletion
+    - After success, switches you to a fallback account (prefers an owner `(Personal)` account) and reloads
+  - **API (superadmin-only)**
+    - `POST /api/editor/accounts/delete`
+      - Requires `confirmText === "DELETE"`
+      - Requires caller is a member of the account (prevents deleting arbitrary IDs)
+      - Uses service role to delete all account-scoped editor rows in a safe order
+      - **Guardrail**: refuses to delete any account whose display name contains `(Personal)`
+      - **Storage cleanup (best effort)**:
+        - Template assets: `carousel-templates/<templateId>/assets/*`
+        - Project images (Phase H): `carousel-project-images/accounts/<accountId>/*`
 
 ## Refactor end-state (feature folder)
 `src/app/editor/EditorShell.tsx` remains the route entry, but most editor logic now lives in `src/features/editor/`.
@@ -135,6 +153,7 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
   - `src/features/editor/components/IdeasModal.tsx` (reads store; Generate Ideas + queue + create carousel)
   - `src/features/editor/components/CreateAccountModal.tsx` (reads store; superadmin-only onboarding flow)
+  - `src/features/editor/components/DeleteAccountModal.tsx` (reads store; superadmin-only dangerous action)
 - **Slides/workspace strip**: `src/features/editor/components/EditorSlidesRow.tsx` (reads `state.workspaceNav`, `state.workspaceRefs`, `state.workspaceUi`, `state.workspaceActions`)
   - **Empty-state placeholder centering**: keep placeholders `w-full h-full` (don’t hard-code 540×720) so “No template selected” stays centered at all display sizes
 - **Bottom panel**: `src/features/editor/components/EditorBottomPanel.tsx` (reads `state.bottomPanelUi` + `state.actions`)
@@ -429,6 +448,17 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - Right-click a **text** layer and change **Color** (verify on-canvas updates)
 - Click **Save Template**, close modal, reopen the same template → shape persists with same styling
 - Open a project using that template → confirm the shape renders behind user content on the main canvas
+
+### Manual QA (Delete Account)
+- In `/editor` as Axel (superadmin), open the **Account ⚙️** menu
+- Click **Delete current account…**
+- Confirm the modal shows the active account name + id
+- Type `DELETE` → button enables
+- Delete a **throwaway client account**
+  - Expected: page reloads and you’re switched to your `(Personal)` account (or another fallback account)
+  - Expected: deleted account no longer appears in the account dropdown
+- Try deleting any `(Personal)` account
+  - Expected: API rejects with “Refusing to delete a Personal account.”
 
 ### Manual QA (Headline paragraph breaks + Realign)
 - In `/editor`, type a Headline with **Enter** (two headline lines, no blank gap) and confirm Realign keeps both lines

@@ -17,6 +17,8 @@ export { ImageLibraryModal } from './ImageLibraryModal';
 
 export { CreateAccountModal } from './CreateAccountModal';
 
+export { DeleteAccountModal } from './DeleteAccountModal';
+
 export { DebugCard } from './DebugCard';
 export type { DebugCardProps } from './DebugCard';
 

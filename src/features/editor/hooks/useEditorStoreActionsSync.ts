@@ -125,6 +125,7 @@ type Args = {
 
   // Accounts (Phase 1: UI shell only)
   setCreateAccountModalOpen: (next: boolean) => void;
+  setDeleteAccountModalOpen: (next: boolean) => void;
 
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
@@ -273,6 +274,7 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchProjectJobStatus,
     fetchIdeaCarouselRuns,
     setCreateAccountModalOpen,
+    setDeleteAccountModalOpen,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -496,6 +498,14 @@ export function useEditorStoreActionsSync(args: Args) {
       setCreateAccountModalOpen(false);
       editorStore.setState({ createAccountModalOpen: false } as any);
     },
+    onOpenDeleteAccountModal: () => {
+      setDeleteAccountModalOpen(true);
+      editorStore.setState({ deleteAccountModalOpen: true } as any);
+    },
+    onCloseDeleteAccountModal: () => {
+      setDeleteAccountModalOpen(false);
+      editorStore.setState({ deleteAccountModalOpen: false } as any);
+    },
     fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => fetchIdeaSourcesAndIdeas(includeDismissed),
     fetchIdeasPromptOverride: () => fetchIdeasPromptOverride(),
     saveIdeasPromptOverride: (next: string) => saveIdeasPromptOverride(next),
@@ -590,6 +600,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseIdeasModal: () => implRef.current?.onCloseIdeasModal?.(),
       onOpenCreateAccountModal: () => implRef.current?.onOpenCreateAccountModal?.(),
       onCloseCreateAccountModal: () => implRef.current?.onCloseCreateAccountModal?.(),
+      onOpenDeleteAccountModal: () => implRef.current?.onOpenDeleteAccountModal?.(),
+      onCloseDeleteAccountModal: () => implRef.current?.onCloseDeleteAccountModal?.(),
       fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) =>
         implRef.current?.fetchIdeaSourcesAndIdeas?.(includeDismissed) ?? Promise.resolve([]),
       fetchIdeasPromptOverride: () => implRef.current?.fetchIdeasPromptOverride?.() ?? Promise.resolve(""),

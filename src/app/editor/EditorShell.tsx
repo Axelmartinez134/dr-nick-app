@@ -20,7 +20,7 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
-import { CreateAccountModal, IdeasModal } from "@/features/editor/components";
+import { CreateAccountModal, DeleteAccountModal, IdeasModal } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -212,6 +212,11 @@ export default function EditorShell() {
   const createAccountModalOpen = useEditorSelector((s: any) => !!(s as any).createAccountModalOpen);
   const setCreateAccountModalOpen = useCallback((next: boolean) => {
     editorStore.setState({ createAccountModalOpen: !!next } as any);
+  }, [editorStore]);
+
+  const deleteAccountModalOpen = useEditorSelector((s: any) => !!(s as any).deleteAccountModalOpen);
+  const setDeleteAccountModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ deleteAccountModalOpen: !!next } as any);
   }, [editorStore]);
 
   const templateTypePrompt = useEditorSelector((s) => String(s.templateTypePrompt || ""));
@@ -4946,6 +4951,7 @@ export default function EditorShell() {
     onToggleImageLibraryBgRemovalAtInsert,
     setIdeasModalOpen,
     setCreateAccountModalOpen,
+    setDeleteAccountModalOpen,
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
@@ -5206,6 +5212,8 @@ export default function EditorShell() {
       <ImageLibraryModal />
 
       <CreateAccountModal />
+
+      <DeleteAccountModal />
     </div>
   );
 }

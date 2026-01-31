@@ -23,6 +23,24 @@ export function EditorTopBar() {
   const [activeAccountId, setActiveAccountId] = useState<string>("");
   const [isSuperadmin, setIsSuperadmin] = useState<boolean>(false);
   const [accountsLoading, setAccountsLoading] = useState<boolean>(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAccountMenuOpen(false);
+    };
+    const onMouseDown = () => {
+      // Best-effort close; menu item handlers preventDefault.
+      setAccountMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onMouseDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [accountMenuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,7 +205,7 @@ export function EditorTopBar() {
       </div>
       <div className="flex items-center gap-2 min-w-0">
         {isSuperadmin && accounts.length > 0 ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 relative">
             <div className="text-xs font-semibold text-slate-600 whitespace-nowrap">Account</div>
             <select
               className="h-9 max-w-[220px] rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-900 shadow-sm"
@@ -215,13 +233,53 @@ export function EditorTopBar() {
             </select>
             <button
               type="button"
-              className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-sm shadow-sm disabled:opacity-50"
-              onClick={() => actions?.onOpenCreateAccountModal?.()}
+              className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-sm shadow-sm disabled:opacity-50"
+              onMouseDown={(e) => {
+                // Prevent the global menu close handler from immediately firing.
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={() => setAccountMenuOpen((v) => !v)}
               disabled={accountsLoading}
-              title="Create a new client account"
+              title="Account settings"
+              aria-label="Account settings"
             >
-              + New Account
+              ⚙️
             </button>
+
+            {accountMenuOpen ? (
+              <div
+                className="absolute right-0 top-11 w-64 rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden z-50"
+                onMouseDown={(e) => {
+                  // Keep menu open for internal clicks (items will close manually).
+                  e.stopPropagation();
+                }}
+              >
+                <div className="px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-50 border-b border-slate-100">
+                  Account actions
+                </div>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-slate-900 hover:bg-slate-50"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    actions?.onOpenCreateAccountModal?.();
+                  }}
+                >
+                  + New Account
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-red-700 hover:bg-red-50"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    actions?.onOpenDeleteAccountModal?.();
+                  }}
+                >
+                  Delete current account…
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
         <input

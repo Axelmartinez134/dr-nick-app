@@ -103,6 +103,8 @@ export type EditorActions = {
   // Accounts (Phase 1: UI shell only)
   onOpenCreateAccountModal: () => void;
   onCloseCreateAccountModal: () => void;
+  onOpenDeleteAccountModal: () => void;
+  onCloseDeleteAccountModal: () => void;
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<
     Array<{
       id: string;
@@ -492,6 +494,7 @@ export type EditorState = {
   imageLibraryBgRemovalEnabledAtInsert: boolean;
   ideasModalOpen: boolean;
   createAccountModalOpen: boolean;
+  deleteAccountModalOpen: boolean;
 
   // Prompt values (template-type overrides)
   templateTypePrompt: string;
