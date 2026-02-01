@@ -19,6 +19,8 @@ export { CreateAccountModal } from './CreateAccountModal';
 
 export { DeleteAccountModal } from './DeleteAccountModal';
 
+export { BrandAlignmentModal } from './BrandAlignmentModal';
+
 export { DebugCard } from './DebugCard';
 export type { DebugCardProps } from './DebugCard';
 

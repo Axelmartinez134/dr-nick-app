@@ -127,6 +127,11 @@ type Args = {
   setCreateAccountModalOpen: (next: boolean) => void;
   setDeleteAccountModalOpen: (next: boolean) => void;
 
+  // Brand Alignment (Phase 0)
+  setBrandAlignmentModalOpen: (next: boolean) => void;
+  setBrandAlignmentPrompt: (next: string) => void;
+  runBrandAlignmentCheck: (args: { projectId: string }) => Promise<any>;
+
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
     source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -275,6 +280,9 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchIdeaCarouselRuns,
     setCreateAccountModalOpen,
     setDeleteAccountModalOpen,
+    setBrandAlignmentModalOpen,
+    setBrandAlignmentPrompt,
+    runBrandAlignmentCheck,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -506,6 +514,22 @@ export function useEditorStoreActionsSync(args: Args) {
       setDeleteAccountModalOpen(false);
       editorStore.setState({ deleteAccountModalOpen: false } as any);
     },
+    onOpenBrandAlignmentModal: () => {
+      setBrandAlignmentModalOpen(true);
+      editorStore.setState({ brandAlignmentModalOpen: true } as any);
+    },
+    onCloseBrandAlignmentModal: () => {
+      setBrandAlignmentModalOpen(false);
+      editorStore.setState({ brandAlignmentModalOpen: false } as any);
+    },
+    onChangeBrandAlignmentPrompt: (next: string) => {
+      setBrandAlignmentPrompt(next);
+    },
+    onClickRunBrandAlignmentCheck: () => {
+      const pid = String(currentProjectIdRef?.current || "").trim();
+      if (!pid) return;
+      void runBrandAlignmentCheck({ projectId: pid });
+    },
     fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => fetchIdeaSourcesAndIdeas(includeDismissed),
     fetchIdeasPromptOverride: () => fetchIdeasPromptOverride(),
     saveIdeasPromptOverride: (next: string) => saveIdeasPromptOverride(next),
@@ -589,6 +613,10 @@ export function useEditorStoreActionsSync(args: Args) {
       onClickCopyCaption: () => implRef.current?.onClickCopyCaption?.(),
       onClickRegenerateCaption: () => implRef.current?.onClickRegenerateCaption?.(),
       onChangeCaption: (next: string) => implRef.current?.onChangeCaption?.(next),
+      onOpenBrandAlignmentModal: () => implRef.current?.onOpenBrandAlignmentModal?.(),
+      onCloseBrandAlignmentModal: () => implRef.current?.onCloseBrandAlignmentModal?.(),
+      onChangeBrandAlignmentPrompt: (next: string) => implRef.current?.onChangeBrandAlignmentPrompt?.(next),
+      onClickRunBrandAlignmentCheck: () => implRef.current?.onClickRunBrandAlignmentCheck?.(),
       setShowDebugPreview: (next: boolean) => implRef.current?.setShowDebugPreview?.(next),
       setActiveSlideImageBgRemoval: (nextEnabled: boolean) => implRef.current?.setActiveSlideImageBgRemoval?.(nextEnabled),
       deleteImageForActiveSlide: (source: "menu" | "button") => implRef.current?.deleteImageForActiveSlide?.(source),

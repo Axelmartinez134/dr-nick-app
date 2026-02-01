@@ -20,7 +20,7 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
-import { CreateAccountModal, DeleteAccountModal, IdeasModal } from "@/features/editor/components";
+import { BrandAlignmentModal, CreateAccountModal, DeleteAccountModal, IdeasModal } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -219,6 +219,12 @@ export default function EditorShell() {
     editorStore.setState({ deleteAccountModalOpen: !!next } as any);
   }, [editorStore]);
 
+  // Brand Alignment (Phase 0): store-owned modal state
+  const brandAlignmentModalOpen = useEditorSelector((s: any) => !!(s as any).brandAlignmentModalOpen);
+  const setBrandAlignmentModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ brandAlignmentModalOpen: !!next } as any);
+  }, [editorStore]);
+
   const templateTypePrompt = useEditorSelector((s) => String(s.templateTypePrompt || ""));
   const setTemplateTypePrompt = useCallback((next: string) => {
     editorStore.setState({
@@ -272,6 +278,40 @@ export default function EditorShell() {
     },
     [captionRegenPromptSaveStatus, editorStore, setCaptionRegenPromptSaveError, setCaptionRegenPromptSaveStatus]
   );
+
+  // Brand alignment prompt (per-account; blank by default)
+  const brandAlignmentPrompt = useEditorSelector((s: any) => String((s as any).brandAlignmentPrompt || ""));
+  const brandAlignmentPromptSaveStatus = useEditorSelector(
+    (s: any) => (String((s as any).brandAlignmentPromptSaveStatus || "idle") as any) || "idle"
+  );
+  const setBrandAlignmentPromptSaveStatus = useCallback(
+    (next: "idle" | "saving" | "saved" | "error") => {
+      editorStore.setState({ brandAlignmentPromptSaveStatus: next } as any);
+    },
+    [editorStore]
+  );
+  const brandAlignmentPromptSaveError = useEditorSelector((s: any) => ((s as any).brandAlignmentPromptSaveError as any) || null);
+  const setBrandAlignmentPromptSaveError = useCallback(
+    (next: string | null) => {
+      editorStore.setState({ brandAlignmentPromptSaveError: next } as any);
+    },
+    [editorStore]
+  );
+  const brandAlignmentPromptDirtyRef = useRef(false);
+  const brandAlignmentPromptSaveTimeoutRef = useRef<number | null>(null);
+  const brandAlignmentPromptLoadedRef = useRef(false);
+  const setBrandAlignmentPrompt = useCallback(
+    (next: string) => {
+      brandAlignmentPromptDirtyRef.current = true;
+      setBrandAlignmentPromptSaveError(null);
+      if (brandAlignmentPromptSaveStatus === "error") setBrandAlignmentPromptSaveStatus("idle");
+      editorStore.setState({ brandAlignmentPrompt: String(next || "") } as any);
+    },
+    [brandAlignmentPromptSaveStatus, editorStore, setBrandAlignmentPromptSaveError, setBrandAlignmentPromptSaveStatus]
+  );
+
+  // Brand alignment run status (used for Phase 2 history refresh timing)
+  const brandAlignmentRunStatus = useEditorSelector((s: any) => String((s as any).brandAlignmentRunStatus || "idle"));
 
   const templateTypeMappingSlide1 = useEditorSelector((s) => (s.templateTypeMappingSlide1 ? String(s.templateTypeMappingSlide1) : null));
   const setTemplateTypeMappingSlide1 = useCallback((next: string | null) => {
@@ -3245,6 +3285,57 @@ export default function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [captionRegenPrompt, user?.id]);
 
+  // Brand alignment prompt: load once per session (when user is available).
+  useEffect(() => {
+    if (!user?.id) return;
+    if (brandAlignmentPromptLoadedRef.current) return;
+    brandAlignmentPromptLoadedRef.current = true;
+    void (async () => {
+      try {
+        setBrandAlignmentPromptSaveStatus("idle");
+        setBrandAlignmentPromptSaveError(null);
+        const p = await fetchBrandAlignmentPromptOverride();
+        // Do NOT mark dirty when loading.
+        brandAlignmentPromptDirtyRef.current = false;
+        editorStore.setState({ brandAlignmentPrompt: p } as any);
+      } catch (e: any) {
+        // Keep empty; user can paste their prompt in modal.
+        setBrandAlignmentPromptSaveError(String(e?.message || "Failed to load brand alignment prompt"));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Brand alignment prompt: debounced autosave (per-account setting).
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!brandAlignmentPromptDirtyRef.current) return;
+    if (brandAlignmentPromptSaveTimeoutRef.current) window.clearTimeout(brandAlignmentPromptSaveTimeoutRef.current);
+    const nextAtSchedule = brandAlignmentPrompt;
+    brandAlignmentPromptSaveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        setBrandAlignmentPromptSaveStatus("saving");
+        setBrandAlignmentPromptSaveError(null);
+        const saved = await saveBrandAlignmentPromptOverride(nextAtSchedule);
+        if (brandAlignmentPrompt === nextAtSchedule) {
+          brandAlignmentPromptDirtyRef.current = false;
+          editorStore.setState({ brandAlignmentPrompt: saved } as any);
+        }
+        setBrandAlignmentPromptSaveStatus("saved");
+        window.setTimeout(() => setBrandAlignmentPromptSaveStatus("idle"), 1200);
+      } catch (e: any) {
+        const msg = String(e?.message || "Failed to save brand alignment prompt");
+        setBrandAlignmentPromptSaveError(msg);
+        setBrandAlignmentPromptSaveStatus("error");
+        window.setTimeout(() => setBrandAlignmentPromptSaveStatus("idle"), 2000);
+      }
+    }, 600);
+    return () => {
+      if (brandAlignmentPromptSaveTimeoutRef.current) window.clearTimeout(brandAlignmentPromptSaveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandAlignmentPrompt, user?.id]);
+
   // Debounced autosave: template type prompt + mapping → overrides/global (depending on scope)
   useEffect(() => {
     if (!user?.id) return;
@@ -3671,6 +3762,12 @@ export default function EditorShell() {
     return String(j?.captionRegenPromptOverride || "");
   }, [fetchJson]);
 
+  const fetchBrandAlignmentPromptOverride = useCallback(async () => {
+    const j = await fetchJson("/api/editor/user-settings/brand-alignment-prompt", { method: "GET" });
+    if (!j?.success) throw new Error(j?.error || "Failed to load brand alignment prompt");
+    return String(j?.brandAlignmentPromptOverride || "");
+  }, [fetchJson]);
+
   const saveCaptionRegenPromptOverride = useCallback(
     async (next: string) => {
       const j = await fetchJson("/api/editor/user-settings/caption-regen-prompt", {
@@ -3682,6 +3779,102 @@ export default function EditorShell() {
     },
     [fetchJson]
   );
+
+  const saveBrandAlignmentPromptOverride = useCallback(
+    async (next: string) => {
+      const j = await fetchJson("/api/editor/user-settings/brand-alignment-prompt", {
+        method: "POST",
+        body: JSON.stringify({ brandAlignmentPromptOverride: String(next || "") }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to save brand alignment prompt");
+      return String(j?.brandAlignmentPromptOverride || "");
+    },
+    [fetchJson]
+  );
+
+  const runBrandAlignmentCheck = useCallback(
+    async (args: { projectId: string }) => {
+      const pid = String(args?.projectId || "").trim();
+      if (!pid) return null;
+      // Basic client-side guard to avoid noisy 400s.
+      if (!String(brandAlignmentPrompt || "").trim()) {
+        editorStore.setState({ brandAlignmentRunStatus: "error", brandAlignmentRunError: "Paste the Brand Alignment Prompt first." } as any);
+        return null;
+      }
+
+      editorStore.setState({ brandAlignmentRunStatus: "running", brandAlignmentRunError: null } as any);
+      try {
+        addLog?.("🧭 Brand alignment: checking slides + caption…");
+        const j = await fetchJson("/api/editor/projects/jobs/brand-alignment-check", {
+          method: "POST",
+          body: JSON.stringify({ projectId: pid }),
+        });
+        if (!j?.success) throw new Error(j?.error || "Brand alignment check failed");
+        const result = j?.result || null;
+        editorStore.setState({ brandAlignmentLatestResult: result, brandAlignmentRunStatus: "done", brandAlignmentRunError: null } as any);
+        addLog?.(`✅ Brand alignment check complete (score=${String(result?.overallScore ?? "—")} verdict=${String(result?.verdict ?? "—")})`);
+        if (j?.debug?.promptSentToClaude) {
+          try {
+            addLog?.("🧪 BrandAlignment full prompt sent to Claude (JSON):");
+            addLog?.(JSON.stringify(String(j.debug.promptSentToClaude || "")));
+          } catch {
+            // ignore
+          }
+        }
+        return result;
+      } catch (e: any) {
+        const msg = String(e?.message || "Brand alignment check failed");
+        editorStore.setState({ brandAlignmentRunStatus: "error", brandAlignmentRunError: msg } as any);
+        addLog?.(`❌ Brand alignment check failed: ${msg}`);
+        return null;
+      }
+    },
+    [addLog, brandAlignmentPrompt, editorStore, fetchJson]
+  );
+
+  // Brand Alignment (Phase 2): fetch run history for current project
+  const fetchBrandAlignmentRuns = useCallback(
+    async (args: { projectId: string; limit?: number }) => {
+      const pid = String(args?.projectId || "").trim();
+      if (!pid) throw new Error("projectId is required");
+      const n = Number.isFinite(Number(args?.limit)) ? Math.max(1, Math.min(100, Math.floor(Number(args?.limit)))) : 20;
+      const j = await fetchJson(
+        `/api/editor/projects/brand-alignment-runs?projectId=${encodeURIComponent(pid)}&limit=${encodeURIComponent(String(n))}`,
+        { method: "GET" }
+      );
+      if (!j?.success) throw new Error(j?.error || "Failed to load brand alignment history");
+      return Array.isArray(j?.runs) ? j.runs : [];
+    },
+    [fetchJson]
+  );
+
+  // Auto-load history when modal opens / project changes / a run finishes.
+  useEffect(() => {
+    if (!brandAlignmentModalOpen) return;
+    const pid = String(currentProjectId || "").trim();
+    if (!pid) {
+      editorStore.setState({ brandAlignmentRuns: [], brandAlignmentRunsStatus: "idle", brandAlignmentRunsError: null } as any);
+      return;
+    }
+    if (String(brandAlignmentRunStatus || "") === "running") return;
+
+    let cancelled = false;
+    editorStore.setState({ brandAlignmentRunsStatus: "loading", brandAlignmentRunsError: null } as any);
+    void (async () => {
+      try {
+        const runs = await fetchBrandAlignmentRuns({ projectId: pid, limit: 20 });
+        if (cancelled) return;
+        editorStore.setState({ brandAlignmentRuns: runs, brandAlignmentRunsStatus: "done", brandAlignmentRunsError: null } as any);
+      } catch (e: any) {
+        if (cancelled) return;
+        const msg = String(e?.message || "Failed to load brand alignment history");
+        editorStore.setState({ brandAlignmentRunsStatus: "error", brandAlignmentRunsError: msg } as any);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [brandAlignmentModalOpen, currentProjectId, editorStore, fetchBrandAlignmentRuns, brandAlignmentRunStatus]);
 
   const runGenerateIdeas = useCallback(
     async (args: { sourceTitle: string; sourceUrl: string; topicCount?: number }) => {
@@ -4901,6 +5094,7 @@ export default function EditorShell() {
     setTemplateTypeEmphasisPrompt,
     setTemplateTypeImageGenPrompt,
     setCaptionRegenPrompt,
+    setBrandAlignmentPrompt,
     setHeadlineFontFamily,
     setHeadlineFontWeight,
     setBodyFontFamily,
@@ -4952,6 +5146,7 @@ export default function EditorShell() {
     setIdeasModalOpen,
     setCreateAccountModalOpen,
     setDeleteAccountModalOpen,
+    setBrandAlignmentModalOpen,
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
@@ -4961,6 +5156,7 @@ export default function EditorShell() {
     createCarouselFromIdea,
     fetchProjectJobStatus,
     fetchIdeaCarouselRuns,
+    runBrandAlignmentCheck,
     fetchRecentAssets,
     onInsertRecentImage,
 
@@ -5206,6 +5402,8 @@ export default function EditorShell() {
         emphasisTextareaRef={emphasisTextareaRef}
         captionRegenTextareaRef={captionRegenTextareaRef}
       />
+
+      <BrandAlignmentModal />
 
       <IdeasModal />
 

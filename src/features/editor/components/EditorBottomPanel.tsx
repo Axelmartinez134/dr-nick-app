@@ -563,6 +563,16 @@ export function EditorBottomPanel() {
                 {showLayoutOverlays ? "Hide Layout Overlays" : "Show Layout Overlays"}
               </button>
 
+              <button
+                type="button"
+                className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                onClick={actions.onOpenBrandAlignmentModal}
+                disabled={switchingSlides || copyGenerating}
+                title="Check if your slides + caption align with your brand (Phase 0: prompt setup)"
+              >
+                Check Alignment
+              </button>
+
               {ui.saveError && <div className="text-xs text-red-600">❌ {ui.saveError}</div>}
               {ui.error && <div className="text-xs text-red-600">❌ {ui.error}</div>}
 

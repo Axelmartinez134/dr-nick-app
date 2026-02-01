@@ -86,6 +86,11 @@ export type EditorActions = {
   onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
 
+  // Brand Alignment (Phase 0)
+  onOpenBrandAlignmentModal: () => void;
+  onCloseBrandAlignmentModal: () => void;
+  onChangeBrandAlignmentPrompt: (next: string) => void;
+
   setShowDebugPreview: (next: boolean) => void;
 
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
@@ -105,6 +110,8 @@ export type EditorActions = {
   onCloseCreateAccountModal: () => void;
   onOpenDeleteAccountModal: () => void;
   onCloseDeleteAccountModal: () => void;
+  // Brand Alignment (Phase 1)
+  onClickRunBrandAlignmentCheck: () => void;
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<
     Array<{
       id: string;
@@ -495,6 +502,7 @@ export type EditorState = {
   ideasModalOpen: boolean;
   createAccountModalOpen: boolean;
   deleteAccountModalOpen: boolean;
+  brandAlignmentModalOpen: boolean;
 
   // Prompt values (template-type overrides)
   templateTypePrompt: string;
@@ -504,6 +512,17 @@ export type EditorState = {
   captionRegenPrompt: string;
   captionRegenPromptSaveStatus: PromptSaveStatus;
   captionRegenPromptSaveError: string | null;
+  // Brand alignment prompt (per-account)
+  brandAlignmentPrompt: string;
+  brandAlignmentPromptSaveStatus: PromptSaveStatus;
+  brandAlignmentPromptSaveError: string | null;
+  brandAlignmentRunStatus: "idle" | "running" | "done" | "error";
+  brandAlignmentRunError: string | null;
+  brandAlignmentLatestResult: any | null;
+  // Brand alignment run history (Phase 2)
+  brandAlignmentRunsStatus: "idle" | "loading" | "done" | "error";
+  brandAlignmentRunsError: string | null;
+  brandAlignmentRuns: any[];
 
   // Template mappings (template-type overrides)
   templateTypeMappingSlide1: string | null;
