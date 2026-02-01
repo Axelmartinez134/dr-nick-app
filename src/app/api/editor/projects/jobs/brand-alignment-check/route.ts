@@ -67,6 +67,55 @@ function assertStringArray(v: any, where: string, maxItems: number) {
   }
 }
 
+function normalizeSlideIndex(v: any): any {
+  // Claude sometimes returns human slide numbers (1..6) instead of 0-based indices (0..5).
+  // Normalize 1..6 => 0..5 for resilience while keeping the schema strict.
+  if (Number.isInteger(v) && v >= 1 && v <= 6) return v - 1;
+  return v;
+}
+
+function normalizePayload(payload: any): any {
+  if (!isPlainObject(payload)) return payload;
+
+  // slides[].slideIndex
+  if (Array.isArray((payload as any).slides)) {
+    (payload as any).slides = (payload as any).slides.map((s: any) => {
+      if (!isPlainObject(s)) return s;
+      return { ...s, slideIndex: normalizeSlideIndex((s as any).slideIndex) };
+    });
+
+    // Claude sometimes duplicates slideIndex or omits one.
+    // If slideIndex values are not a clean unique set of 0..5, fall back to array order.
+    const slidesArr = (payload as any).slides as any[];
+    if (slidesArr.length === 6) {
+      const idxs = slidesArr
+        .map((s) => (isPlainObject(s) ? (s as any).slideIndex : null))
+        .filter((v) => v !== null && v !== undefined);
+      const allIntsInRange =
+        idxs.length === 6 && idxs.every((v) => Number.isInteger(v) && v >= 0 && v <= 5);
+      const uniqueCount = new Set(idxs as any).size;
+      if (!allIntsInRange || uniqueCount !== 6) {
+        (payload as any).slides = slidesArr.map((s: any, i: number) => {
+          if (!isPlainObject(s)) return s;
+          return { ...s, slideIndex: i };
+        });
+      }
+    }
+  }
+
+  // issues[].slideIndex
+  if (Array.isArray((payload as any).issues)) {
+    (payload as any).issues = (payload as any).issues.map((it: any) => {
+      if (!isPlainObject(it)) return it;
+      const raw = (it as any).slideIndex;
+      if (raw === null || raw === undefined) return it;
+      return { ...it, slideIndex: normalizeSlideIndex(raw) };
+    });
+  }
+
+  return payload;
+}
+
 function assertValidPayload(payload: any) {
   if (!isPlainObject(payload)) throw new Error('Output must be a JSON object');
 
@@ -297,13 +346,15 @@ export async function POST(request: NextRequest) {
     `Rules:`,
     `- Be strict and specific. Provide concrete, actionable recommendations.`,
     `- If you quote, quote exact phrases from the context.`,
+    `- IMPORTANT: slideIndex is 0-based (slide 1 => 0, slide 6 => 5).`,
+    `- IMPORTANT: slides must include exactly one entry for each slideIndex 0..5 (no duplicates).`,
   ].join('\n');
 
   const fullPromptSentToClaude = `${systemPrompt}\n\n${userMessage}`;
 
   try {
     const out = await callAnthropic({ systemPrompt, userMessage });
-    const payload = extractJsonObject(out.text);
+    const payload = normalizePayload(extractJsonObject(out.text));
     assertValidPayload(payload);
 
     const overallScore = Number(payload.overallScore);
