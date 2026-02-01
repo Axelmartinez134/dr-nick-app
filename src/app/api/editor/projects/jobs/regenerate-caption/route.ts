@@ -319,7 +319,7 @@ export async function POST(request: NextRequest) {
   const title = String((project as any)?.title || '');
 
   const userMessage = [
-    `You are writing a LinkedIn carousel caption for Ax ("The Bottleneck Hunter").`,
+    `You are writing a LinkedIn carousel caption.`,
     ``,
     `HARD REQUIREMENTS:`,
     `- Use ONLY the information in the carousel context + the system prompt.`,
