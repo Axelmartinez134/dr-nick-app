@@ -33,6 +33,9 @@ interface CarouselPreviewProps {
   // /editor-only: allow Template image masking (e.g. circular avatars).
   // Kept opt-in so other routes that reuse this renderer are unaffected.
   enableTemplateImageMasks?: boolean;
+  // /editor-only: allow Template arrow shape rendering (arrow_solid / arrow_line).
+  // Kept opt-in so other routes that reuse this renderer are unaffected.
+  enableTemplateArrowShapes?: boolean;
   templateSnapshot?: CarouselTemplateDefinitionV1 | null;
   // Optional: template ID (for debug overlays/logging).
   templateId?: string | null;
@@ -118,6 +121,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       backgroundEffectEnabled,
       backgroundEffectType,
       enableTemplateImageMasks,
+      enableTemplateArrowShapes,
       templateSnapshot,
       templateId,
       slideIndex,
@@ -1891,6 +1895,42 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           }
         };
 
+        // Phase 5 (arrows): mirror the Template Editor arrow geometry in /editor rendering (opt-in).
+        const buildSolidArrowPoints = (w: number, h: number, headLenPx: number) => {
+          const headW = clamp(Number(headLenPx) || 0, 8, Math.max(8, w - 8));
+          const shaftW = Math.max(1, w - headW);
+          const shaftTop = h * 0.25;
+          const shaftBot = h * 0.75;
+          return [
+            { x: 0, y: shaftTop },
+            { x: shaftW, y: shaftTop },
+            { x: shaftW, y: 0 },
+            { x: w, y: h / 2 },
+            { x: shaftW, y: h },
+            { x: shaftW, y: shaftBot },
+            { x: 0, y: shaftBot },
+          ];
+        };
+        const buildLineArrowPath = (w: number, h: number, headLenPx: number) => {
+          const headW = clamp(Number(headLenPx) || 0, 8, Math.max(8, w - 8));
+          const x0 = 0;
+          const x1 = w;
+          const y = h / 2;
+          const hx = x1 - headW;
+          return `M ${x0} ${y} L ${x1} ${y} M ${hx} 0 L ${x1} ${y} L ${hx} ${h}`;
+        };
+        const getArrowHeadLenPx = (asset: any) => {
+          const px = Number(asset?.arrowHeadSizePx);
+          if (Number.isFinite(px) && px > 0) return px;
+          const pct = Number(asset?.arrowHeadSizePct);
+          if (Number.isFinite(pct) && pct > 0) {
+            const w = Math.max(1, Number(asset?.rect?.width) || 1);
+            return (w * pct) / 100;
+          }
+          const w = Math.max(1, Number(asset?.rect?.width) || 1);
+          return w * 0.35;
+        };
+
         // Deterministic ordering by zIndex, then stable id.
         const sorted = [...assets].sort((a, b) => {
           const za = (a.zIndex ?? 0);
@@ -2043,26 +2083,72 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               void setSrc();
             } else if (asset.type === 'shape') {
               const s = asset as TemplateShapeAsset;
-              if (s.shape !== 'rect') continue;
-              const r = Number.isFinite(Number(s.cornerRadius)) ? Math.max(0, Math.round(Number(s.cornerRadius))) : 0;
-              const rect = new fabric.Rect({
-                left: s.rect.x,
-                top: s.rect.y,
-                width: Math.max(1, s.rect.width),
-                height: Math.max(1, s.rect.height),
-                originX: 'left',
-                originY: 'top',
-                fill: s.style?.fill || '#111827',
-                stroke: s.style?.stroke || '#111827',
-                strokeWidth: Number(s.style?.strokeWidth || 0),
-                rx: r,
-                ry: r,
-                selectable: false,
-                evented: false,
-              });
-              (rect as any).data = { role: 'template-asset', assetId: s.id, assetKind: s.kind, assetType: 'shape' };
-              disableRotationControls(rect);
-              canvas.add(rect);
+              const shape = String((s as any).shape || 'rect');
+              if (shape === 'rect') {
+                const r = Number.isFinite(Number(s.cornerRadius)) ? Math.max(0, Math.round(Number(s.cornerRadius))) : 0;
+                const rect = new fabric.Rect({
+                  left: s.rect.x,
+                  top: s.rect.y,
+                  width: Math.max(1, s.rect.width),
+                  height: Math.max(1, s.rect.height),
+                  originX: 'left',
+                  originY: 'top',
+                  fill: s.style?.fill || '#111827',
+                  stroke: s.style?.stroke || '#111827',
+                  strokeWidth: Number(s.style?.strokeWidth || 0),
+                  rx: r,
+                  ry: r,
+                  selectable: false,
+                  evented: false,
+                });
+                (rect as any).data = { role: 'template-asset', assetId: s.id, assetKind: s.kind, assetType: 'shape', shape };
+                disableRotationControls(rect);
+                canvas.add(rect);
+                continue;
+              }
+
+              // Arrows are /editor-only for now (opt-in) to avoid affecting other routes.
+              if (!enableTemplateArrowShapes) continue;
+              if (shape !== 'arrow_solid' && shape !== 'arrow_line') continue;
+
+              const w = Math.max(1, s.rect.width);
+              const h = Math.max(1, s.rect.height);
+              const headLenPx = getArrowHeadLenPx(s);
+
+              if (shape === 'arrow_solid') {
+                const poly = new fabric.Polygon(buildSolidArrowPoints(w, h, headLenPx), {
+                  left: s.rect.x,
+                  top: s.rect.y,
+                  originX: 'left',
+                  originY: 'top',
+                  fill: s.style?.fill || '#111827',
+                  stroke: s.style?.stroke || '#111827',
+                  strokeWidth: Number(s.style?.strokeWidth || 0),
+                  strokeLineJoin: 'round',
+                  selectable: false,
+                  evented: false,
+                });
+                (poly as any).data = { role: 'template-asset', assetId: s.id, assetKind: s.kind, assetType: 'shape', shape };
+                disableRotationControls(poly);
+                canvas.add(poly);
+              } else {
+                const path = new fabric.Path(buildLineArrowPath(w, h, headLenPx), {
+                  left: s.rect.x,
+                  top: s.rect.y,
+                  originX: 'left',
+                  originY: 'top',
+                  fill: 'transparent',
+                  stroke: s.style?.stroke || '#111827',
+                  strokeWidth: Math.max(0, Number(s.style?.strokeWidth || 10)),
+                  strokeLineCap: 'round',
+                  strokeLineJoin: 'round',
+                  selectable: false,
+                  evented: false,
+                });
+                (path as any).data = { role: 'template-asset', assetId: s.id, assetKind: s.kind, assetType: 'shape', shape };
+                disableRotationControls(path);
+                canvas.add(path);
+              }
             }
           } catch (e) {
             console.warn('[Preview Vision] ⚠️ Failed to add template asset:', e);

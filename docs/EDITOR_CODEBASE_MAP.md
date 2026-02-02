@@ -434,16 +434,28 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
   - **Avatar crop (circle mask) (2026-01-31)**:
     - Per-image layer setting via right-click → **Mask: None / Circle (avatar)**
     - Crop mode: right-click → **Edit crop…** then **drag to pan** and **scroll to zoom** (press **Esc** or **Done** to exit)
+  - **Arrow shapes (solid/line) (2026-02-02)**:
+    - Add via the **+ Shape dropdown**: Rectangle / Arrow (solid) / Arrow (line)
+    - Right-click an arrow → **Arrowhead size** (absolute **px**), Fill, Stroke, Stroke width
+    - Arrowhead size is **absolute** (template pixels): resizing the arrow does **not** change head size (except clamp if the arrow becomes too narrow)
 - **Template editor canvas (Fabric.js) + assets**: `src/app/components/health/marketing/ai-carousel/TemplateEditorCanvas.tsx`
-  - Supports template assets of type `text`, `image`, and `shape` (rectangle w/ optional rounded corners)
+  - Supports template assets of type `text`, `image`, and `shape`:
+    - Rectangles (`shape: 'rect'`) w/ optional rounded corners
+    - Arrows (`shape: 'arrow_solid' | 'arrow_line'`) (right-pointing only; rotation disabled)
   - **Image mask/crop fields (persisted on template definition)**: `src/lib/carousel-template-types.ts`
     - `TemplateImageAsset.maskShape?: 'none' | 'circle'`
     - `TemplateImageAsset.crop?: { scale: number; offsetX: number; offsetY: number }`
       - `scale` is clamped to \(1.0 \rightarrow 4.0\)
       - offsets are clamped so the circle never shows empty pixels
+  - **Arrow fields (persisted on template definition)**: `src/lib/carousel-template-types.ts`
+    - `TemplateShapeAsset.shape: 'rect' | 'arrow_solid' | 'arrow_line'`
+    - `TemplateShapeAsset.arrowHeadSizePx?: number` (preferred; absolute head length in template pixels)
+    - `TemplateShapeAsset.arrowHeadSizePct?: number` (legacy fallback for older templates)
   - **/editor rendering opt-in**: `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx`
     - Use `enableTemplateImageMasks={true}` (passed from `/editor` via `src/features/editor/components/EditorSlidesRow.tsx`)
     - When enabled and `maskShape === 'circle'`, the same crop math is applied so `/editor` matches Template Editor 1:1
+    - Use `enableTemplateArrowShapes={true}` (passed from `/editor` via `src/features/editor/components/EditorSlidesRow.tsx`)
+    - When enabled and `shape === 'arrow_*'`, arrows render in the real `/editor` project canvas (Enhanced slides)
 - **Account scoping (IMPORTANT)**
   - Template editor API routes live under `src/app/api/marketing/carousel/templates/*`
   - When operating in `/editor`, these requests MUST include `x-account-id` so templates resolve within the active account.
@@ -470,13 +482,23 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
   - Expected: drag pans, scroll zooms, and Esc exits crop mode
 - Save Template, close modal, reopen `/editor` project using that template
   - Expected: the avatar crop (mask + pan/zoom) matches Template Editor 1:1
-- Click **+ Shape** to add a rectangle layer
+- Use the **+ Shape dropdown** to add:
+  - Rectangle
+  - Arrow (solid)
+  - Arrow (line)
 - Drag + resize the rectangle (stretch into a non-square) and confirm it renders correctly
 - Right-click the shape and set **Corner radius** > 0 (verify rounded corners)
 - Change **Fill**, **Stroke**, and **Stroke width** (verify on-canvas updates)
+- For **Arrow (solid)** / **Arrow (line)**:
+  - Right-click → adjust **Arrowhead size (px)** and confirm only the arrow updates
+  - Resize the arrow wider/narrower:
+    - Expected: the **arrowhead size does not change** (absolute), unless the arrow becomes too narrow and clamps
+  - Scrub Arrowhead size back and forth:
+    - Expected: the **contentRegion** box does not “grow” and the arrow does not “drift” in size
 - Right-click a **text** layer and change **Color** (verify on-canvas updates)
 - Click **Save Template**, close modal, reopen the same template → shape persists with same styling
 - Open a project using that template → confirm the shape renders behind user content on the main canvas
+  - Expected: arrows render in `/editor` Enhanced slides (opt-in prop enabled)
 
 ### Manual QA (Delete Account)
 - In `/editor` as Axel (superadmin), open the **Account ⚙️** menu

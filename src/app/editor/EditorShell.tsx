@@ -4829,6 +4829,16 @@ export default function EditorShell() {
 
   const onClickRegenerateImagePrompt = () => void runGenerateImagePrompts(activeSlideIndex);
   const onChangeAiImagePrompt = (newValue: string) => {
+    // IMPORTANT: keep `slidesRef.current` in sync immediately.
+    // The debounced autosave effect reads from the ref to decide whether the prompt changed.
+    // If we only update React state, the ref can be stale and the save may be skipped.
+    try {
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i === activeSlideIndex ? { ...s, draftAiImagePrompt: newValue } : s
+      );
+    } catch {
+      // ignore
+    }
     setSlides((prev: any) => prev.map((s: any, i: number) => (i === activeSlideIndex ? { ...s, draftAiImagePrompt: newValue } : s)));
     // Keep store in sync immediately so the textarea caret doesn't jump (same pattern as Caption).
     try {

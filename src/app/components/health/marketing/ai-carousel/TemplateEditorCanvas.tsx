@@ -31,6 +31,9 @@ export interface TemplateEditorCanvasHandle {
   reorderLayer: (layerId: string, direction: 'up' | 'down') => void;
   addTextLayer: () => void;
   addRectLayer: () => void;
+  // Phase 2 (arrows): creation helpers (UI lives in TemplateEditorModal).
+  addArrowSolidLayer: () => void;
+  addArrowLineLayer: () => void;
   renameLayer: (layerId: string, nextName: string) => void;
   deleteLayer: (layerId: string) => void;
   undo: () => void;
@@ -40,10 +43,17 @@ export interface TemplateEditorCanvasHandle {
     layerId: string,
     patch: Partial<{ fontFamily: string; fontWeight: any; fontSize: number; fontStyle: string; fill: string }>
   ) => void;
-  getShapeLayerStyle: (layerId: string) => null | { cornerRadius: number; fill: string; stroke: string; strokeWidth: number };
+  getShapeLayerStyle: (layerId: string) => null | {
+    shape: 'rect' | 'arrow_solid' | 'arrow_line' | 'unknown';
+    cornerRadius: number;
+    fill: string;
+    stroke: string;
+    strokeWidth: number;
+    arrowHeadSizePx?: number;
+  };
   setShapeLayerStyle: (
     layerId: string,
-    patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number }>
+    patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number; arrowHeadSizePx: number }>
   ) => void;
   startTextEditing: (layerId: string) => void;
   // Phase 4: avatar-style crop mode for circular-masked images.
@@ -100,6 +110,60 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       }
     };
 
+    // Phase 1 (arrows): dev-only preview flag so we can validate rendering before Phase 2 adds creation UI.
+    const shouldShowArrowDevPreview = (): boolean => {
+      if (process.env.NODE_ENV === 'production') return false;
+      try {
+        return typeof localStorage !== 'undefined' && localStorage.getItem('dn_template_arrow_test') === '1';
+      } catch {
+        return false;
+      }
+    };
+
+    const clampArrow = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+    const buildSolidArrowPoints = (w: number, h: number, headLenPx: number) => {
+      const headW = clampArrow(Number(headLenPx) || 0, 8, Math.max(8, w - 8));
+      const shaftW = Math.max(1, w - headW);
+      const shaftTop = h * 0.25;
+      const shaftBot = h * 0.75;
+      // Right-pointing arrow, local coords (0..w, 0..h)
+      return [
+        { x: 0, y: shaftTop },
+        { x: shaftW, y: shaftTop },
+        { x: shaftW, y: 0 },
+        { x: w, y: h / 2 },
+        { x: shaftW, y: h },
+        { x: shaftW, y: shaftBot },
+        { x: 0, y: shaftBot },
+      ];
+    };
+
+    const buildLineArrowPath = (w: number, h: number, headLenPx: number) => {
+      const headW = clampArrow(Number(headLenPx) || 0, 8, Math.max(8, w - 8));
+      const x0 = 0;
+      const x1 = w;
+      const y = h / 2;
+      const hx = x1 - headW;
+      // Make the arrow fill the full bounding box height (0..h) so export/import is stable.
+      // 3 segments: shaft, head top, head bottom
+      return `M ${x0} ${y} L ${x1} ${y} M ${hx} 0 L ${x1} ${y} L ${hx} ${h}`;
+    };
+
+    const getArrowHeadLenPx = (asset: any) => {
+      // Preferred: absolute head length in template pixels.
+      const px = Number(asset?.arrowHeadSizePx);
+      if (Number.isFinite(px) && px > 0) return px;
+      // Back-compat: legacy % (older templates).
+      const pct = Number(asset?.arrowHeadSizePct);
+      if (Number.isFinite(pct) && pct > 0) {
+        const w = Math.max(1, Number(asset?.rect?.width) || 1);
+        return (w * pct) / 100;
+      }
+      const w = Math.max(1, Number(asset?.rect?.width) || 1);
+      return w * 0.35;
+    };
+
     const getSlide0 = (d: CarouselTemplateDefinitionV1) =>
       d.slides?.find((s) => s.slideIndex === 0) || d.slides?.[0] || defaultSlide0();
 
@@ -110,6 +174,15 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       const idx = assets.findIndex((a) => a && String(a.id) === String(layerId) && a.type === 'image');
       if (idx === -1) return null;
       return { slide0, assets, idx, asset: assets[idx] as TemplateImageAsset };
+    };
+
+    const getShapeAssetById = (layerId: string) => {
+      const def = defRef.current;
+      const slide0: any = getSlide0(def);
+      const assets = Array.isArray(slide0.assets) ? (slide0.assets as any[]) : [];
+      const idx = assets.findIndex((a) => a && String(a.id) === String(layerId) && a.type === 'shape');
+      if (idx === -1) return null;
+      return { slide0, assets, idx, asset: assets[idx] as TemplateShapeAsset };
     };
 
     const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -229,6 +302,36 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       };
     };
 
+    // Arrow shapes must export rect without stroke to avoid compounding growth on repeated exports.
+    const arrowRectFromObj = (obj: any): TemplateRect => {
+      const sx = Number(obj?.scaleX ?? 1) || 1;
+      const sy = Number(obj?.scaleY ?? 1) || 1;
+      const width = (Number(obj?.width ?? 0) || 0) * sx;
+      const height = (Number(obj?.height ?? 0) || 0) * sy;
+      return {
+        x: obj?.left || 0,
+        y: obj?.top || 0,
+        width,
+        height,
+      };
+    };
+
+    // ContentRegion is a dashed/stroked rect. Fabric's getScaledWidth/Height can include stroke,
+    // which would cause the exported template contentRegion to "grow" a few px on every export.
+    // We must export the logical interior size (width/height * scale), excluding stroke.
+    const contentRegionRectFromObj = (obj: any): TemplateRect => {
+      const sx = Number(obj?.scaleX ?? 1) || 1;
+      const sy = Number(obj?.scaleY ?? 1) || 1;
+      const width = (Number(obj?.width ?? 0) || 0) * sx;
+      const height = (Number(obj?.height ?? 0) || 0) * sy;
+      return {
+        x: obj?.left || 0,
+        y: obj?.top || 0,
+        width,
+        height,
+      };
+    };
+
     const exportFromCanvas = (): CarouselTemplateDefinitionV1 => {
       const def = clone(defRef.current);
       const canvas = fabricCanvasRef.current;
@@ -239,7 +342,7 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       // Content region
       const regionObj = canvas.getObjects?.().find((o: any) => o?.data?.role === 'template-content-region');
       if (regionObj) {
-        slide0.contentRegion = rectFromObj(regionObj);
+        slide0.contentRegion = contentRegionRectFromObj(regionObj);
       }
 
       // Assets
@@ -254,7 +357,11 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       slide0.assets = (slide0.assets || []).map((a: any) => {
         const obj = byId.get(String(a.id));
         if (!obj) return a;
-        const rect = rectFromObj(obj);
+        const objShape = String(obj?.data?.shape || '');
+        const rect =
+          objShape === 'arrow_solid' || objShape === 'arrow_line'
+            ? arrowRectFromObj(obj)
+            : rectFromObj(obj);
 
         if (a.type === 'text') {
           const style: TemplateTextStyle = {
@@ -268,14 +375,35 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         }
 
         if (a.type === 'shape') {
+          const shape = String(a.shape || '');
+          const sx = Math.abs(Number(obj.scaleX ?? 1) || 1);
+          const sy = Math.abs(Number(obj.scaleY ?? 1) || 1);
+          const strokeScale = (sx + sy) / 2;
+          const baseStrokeWidth = Number.isFinite(Number(obj.strokeWidth))
+            ? Number(obj.strokeWidth)
+            : Number(a.style?.strokeWidth || 0);
+
           const style: TemplateShapeStyle = {
             fill: String(obj.fill || a.style?.fill || '#111827'),
             stroke: String(obj.stroke || a.style?.stroke || '#111827'),
-            strokeWidth: Number.isFinite(Number(obj.strokeWidth)) ? Number(obj.strokeWidth) : Number(a.style?.strokeWidth || 0),
+            // Phase 3 (arrows): bake stroke scaling into persisted strokeWidth so it matches after re-render.
+            // Rectangles keep the historical behavior (strokeWidth is not scaled on resize).
+            strokeWidth: shape === 'rect' ? baseStrokeWidth : Math.max(0, baseStrokeWidth * strokeScale),
           };
-          const rx = Number(obj.rx ?? obj.ry ?? a.cornerRadius ?? 0);
-          const cornerRadius = Number.isFinite(rx) ? Math.max(0, Math.round(rx)) : 0;
-          return { ...a, rect, style, cornerRadius };
+          // Only rectangles have corner radius.
+          if (shape === 'rect') {
+            const rx = Number(obj.rx ?? obj.ry ?? a.cornerRadius ?? 0);
+            const cornerRadius = Number.isFinite(rx) ? Math.max(0, Math.round(rx)) : 0;
+            return { ...a, rect, style, cornerRadius };
+          }
+          // Arrow shapes: preserve arrowhead size metadata.
+          return {
+            ...a,
+            rect,
+            style,
+            arrowHeadSizePx: (a as any).arrowHeadSizePx,
+            arrowHeadSizePct: (a as any).arrowHeadSizePct,
+          };
         }
 
         return { ...a, rect };
@@ -314,7 +442,9 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       const nameForAsset = (a: any, idx: number) => {
         if (typeof a?.name === 'string' && a.name.trim()) return a.name.trim();
         if (a?.type === 'shape') {
-          return a?.shape === 'rect' ? 'Rectangle' : 'Shape';
+          if (a?.shape === 'rect') return 'Rectangle';
+          if (String(a?.shape || '').startsWith('arrow')) return 'Arrow';
+          return 'Shape';
         }
         if (a?.type === 'image') {
           if (a?.kind === 'avatar') return 'Avatar';
@@ -455,6 +585,66 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       selectLayerOnCanvas(id);
     };
 
+    const addArrowSolidLayerToDef = () => {
+      pushHistory();
+      const def = exportFromCanvas();
+      const slide0 = def.slides?.find((s) => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const nextZ = assets.reduce((m: number, a: any) => Math.max(m, typeof a?.zIndex === 'number' ? a.zIndex : -1), -1) + 1;
+      const id = crypto.randomUUID();
+      const count = assets.filter((a: any) => a?.type === 'shape' && String(a?.shape || '').startsWith('arrow')).length + 1;
+      const initialW = 320;
+      const s: TemplateShapeAsset = {
+        id,
+        type: 'shape',
+        shape: 'arrow_solid' as any,
+        kind: 'shape_arrow_solid' as any,
+        name: `Arrow (solid) ${count}`,
+        rect: { x: 140, y: 320, width: initialW, height: 140 },
+        style: { fill: '#111827', stroke: '#111827', strokeWidth: 0 },
+        arrowHeadSizePx: initialW * 0.35,
+        locked: false,
+        zIndex: nextZ,
+        rotation: 0,
+      };
+      slide0.assets = [...assets, s as any];
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      renderFromDefinition(defRef.current);
+      selectLayerOnCanvas(id);
+    };
+
+    const addArrowLineLayerToDef = () => {
+      pushHistory();
+      const def = exportFromCanvas();
+      const slide0 = def.slides?.find((s) => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+      if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+      const assets = Array.isArray(slide0.assets) ? slide0.assets : [];
+      const nextZ = assets.reduce((m: number, a: any) => Math.max(m, typeof a?.zIndex === 'number' ? a.zIndex : -1), -1) + 1;
+      const id = crypto.randomUUID();
+      const count = assets.filter((a: any) => a?.type === 'shape' && String(a?.shape || '').startsWith('arrow')).length + 1;
+      const initialW = 320;
+      const s: TemplateShapeAsset = {
+        id,
+        type: 'shape',
+        shape: 'arrow_line' as any,
+        kind: 'shape_arrow_line' as any,
+        name: `Arrow (line) ${count}`,
+        rect: { x: 140, y: 480, width: initialW, height: 140 },
+        style: { fill: '#111827', stroke: '#111827', strokeWidth: 10 },
+        arrowHeadSizePx: initialW * 0.35,
+        locked: false,
+        zIndex: nextZ,
+        rotation: 0,
+      };
+      slide0.assets = [...assets, s as any];
+      def.slides = [slide0];
+      defRef.current = clone(def);
+      renderFromDefinition(defRef.current);
+      selectLayerOnCanvas(id);
+    };
+
     const renameLayerInDef = (layerId: string, nextName: string) => {
       const name = String(nextName || '').trim();
       if (!name) return;
@@ -577,48 +767,107 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       if (!layerId || layerId === contentRegionLayerId) return null;
       const obj = assetObjByIdRef.current.get(layerId);
       if (!obj) return null;
-      const isRect = obj.type === 'rect';
-      if (!isRect) return null;
+      const shape = ((): 'rect' | 'arrow_solid' | 'arrow_line' | 'unknown' => {
+        const s = String(obj?.data?.shape || '');
+        if (s === 'rect') return 'rect';
+        if (s === 'arrow_solid') return 'arrow_solid';
+        if (s === 'arrow_line') return 'arrow_line';
+        return 'unknown';
+      })();
+      if (shape === 'unknown') return null;
+
+      const shapeAsset = getShapeAssetById(layerId);
+      const arrowHeadSizePx =
+        shape !== 'rect' ? getArrowHeadLenPx(shapeAsset?.asset) : undefined;
+
       return {
-        cornerRadius: Math.max(0, Math.round(Number(obj.rx ?? obj.ry ?? 0) || 0)),
+        shape,
+        cornerRadius: shape === 'rect' ? Math.max(0, Math.round(Number(obj.rx ?? obj.ry ?? 0) || 0)) : 0,
         fill: String(obj.fill || '#111827'),
         stroke: String(obj.stroke || '#111827'),
         strokeWidth: Math.max(0, Math.round(Number(obj.strokeWidth ?? 0) || 0)),
+        ...(shape !== 'rect' ? { arrowHeadSizePx } : {}),
       };
     };
 
     const setShapeStyleForLayer = (
       layerId: string,
-      patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number }>
+      patch: Partial<{ cornerRadius: number; fill: string; stroke: string; strokeWidth: number; arrowHeadSizePx: number }>
     ) => {
       if (!layerId || layerId === contentRegionLayerId) return;
       const obj = assetObjByIdRef.current.get(layerId);
       const canvas = fabricCanvasRef.current;
       if (!obj || !canvas) return;
-      const isRect = obj.type === 'rect';
-      if (!isRect) return;
-      pushHistory();
-      try {
-        const next: any = {};
-        if (typeof patch.fill === 'string') next.fill = patch.fill;
-        if (typeof patch.stroke === 'string') next.stroke = patch.stroke;
-        if (patch.strokeWidth !== undefined && Number.isFinite(Number(patch.strokeWidth))) {
-          next.strokeWidth = Math.max(0, Number(patch.strokeWidth));
+      const shape = String(obj?.data?.shape || '');
+
+      // Rectangles: keep the existing direct manipulation behavior.
+      if (shape === 'rect' && obj.type === 'rect') {
+        pushHistory();
+        try {
+          const next: any = {};
+          if (typeof patch.fill === 'string') next.fill = patch.fill;
+          if (typeof patch.stroke === 'string') next.stroke = patch.stroke;
+          if (patch.strokeWidth !== undefined && Number.isFinite(Number(patch.strokeWidth))) {
+            next.strokeWidth = Math.max(0, Number(patch.strokeWidth));
+          }
+          if (patch.cornerRadius !== undefined && Number.isFinite(Number(patch.cornerRadius))) {
+            const desired = Math.max(0, Math.round(Number(patch.cornerRadius)));
+            const w = typeof obj.getScaledWidth === 'function' ? obj.getScaledWidth() : (obj.width || 0) * (obj.scaleX || 1);
+            const h = typeof obj.getScaledHeight === 'function' ? obj.getScaledHeight() : (obj.height || 0) * (obj.scaleY || 1);
+            const maxR = Math.max(0, Math.floor(Math.min(w, h) / 2));
+            const r = Math.min(desired, maxR);
+            next.rx = r;
+            next.ry = r;
+          }
+          obj.set?.(next);
+          obj.setCoords?.();
+          canvas.requestRenderAll?.();
+        } catch {
+          // ignore
         }
-        if (patch.cornerRadius !== undefined && Number.isFinite(Number(patch.cornerRadius))) {
-          const desired = Math.max(0, Math.round(Number(patch.cornerRadius)));
-          const w = typeof obj.getScaledWidth === 'function' ? obj.getScaledWidth() : (obj.width || 0) * (obj.scaleX || 1);
-          const h = typeof obj.getScaledHeight === 'function' ? obj.getScaledHeight() : (obj.height || 0) * (obj.scaleY || 1);
-          const maxR = Math.max(0, Math.floor(Math.min(w, h) / 2));
-          const r = Math.min(desired, maxR);
-          next.rx = r;
-          next.ry = r;
+        return;
+      }
+
+      // Arrows: update the persisted asset (including arrowHeadSizePct) and re-render for correct geometry.
+      if (shape === 'arrow_solid' || shape === 'arrow_line') {
+        pushHistory();
+        try {
+          const def = clone(defRef.current);
+          const slide0 = def.slides?.find((s) => s.slideIndex === 0) || def.slides?.[0] || defaultSlide0();
+          if (!def.slides || def.slides.length === 0) def.slides = [slide0];
+          const assets = Array.isArray(slide0.assets) ? (slide0.assets as any[]) : [];
+          const idx = assets.findIndex((a: any) => a && String(a.id) === String(layerId) && a.type === 'shape');
+          if (idx === -1) return;
+
+          const cur = assets[idx] as any;
+          const nextStyle: any = { ...(cur.style || {}) };
+          if (typeof patch.fill === 'string') nextStyle.fill = patch.fill;
+          if (typeof patch.stroke === 'string') nextStyle.stroke = patch.stroke;
+          if (patch.strokeWidth !== undefined && Number.isFinite(Number(patch.strokeWidth))) {
+            nextStyle.strokeWidth = Math.max(0, Number(patch.strokeWidth));
+          }
+          const w = Math.max(1, Number(cur?.rect?.width) || 1);
+          const maxHeadPx = Math.max(8, w - 8);
+          const nextArrowHeadSizePx =
+            patch.arrowHeadSizePx !== undefined && Number.isFinite(Number(patch.arrowHeadSizePx))
+              ? clamp(Number(patch.arrowHeadSizePx), 8, maxHeadPx)
+              : (Number(cur.arrowHeadSizePx) || getArrowHeadLenPx(cur));
+
+          // Prefer the absolute field going forward; keep legacy % only if already present and px wasn't set before.
+          assets[idx] = {
+            ...cur,
+            style: nextStyle,
+            arrowHeadSizePx: nextArrowHeadSizePx,
+            ...(patch.arrowHeadSizePx !== undefined ? { arrowHeadSizePct: undefined } : null),
+          };
+          slide0.assets = assets as any;
+          def.slides = [slide0];
+          defRef.current = clone(def);
+          renderFromDefinition(defRef.current);
+          selectLayerOnCanvas(layerId);
+        } catch {
+          // ignore
         }
-        obj.set?.(next);
-        obj.setCoords?.();
-        canvas.requestRenderAll?.();
-      } catch {
-        // ignore
       }
     };
 
@@ -644,7 +893,16 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
     const ensureContentRegion = (fabric: any, canvas: any, r: TemplateRect) => {
       const existing = contentRegionObjRef.current;
       if (existing) {
-        existing.set({ left: r.x, top: r.y, width: r.width, height: r.height });
+        // IMPORTANT: normalize scale so repeated re-renders don't compound prior user scaling.
+        // ContentRegion should be fully described by {left,top,width,height} in template pixels.
+        existing.set({
+          left: r.x,
+          top: r.y,
+          width: r.width,
+          height: r.height,
+          scaleX: 1,
+          scaleY: 1,
+        });
         existing.setCoords?.();
         return existing;
       }
@@ -814,26 +1072,111 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
           void setSrc();
         } else if (a.type === 'shape') {
           const s = a as TemplateShapeAsset;
-          const r = Number.isFinite(Number(s.cornerRadius)) ? Math.max(0, Math.round(Number(s.cornerRadius))) : 0;
-          const obj = new fabric.Rect({
-            left: s.rect.x,
-            top: s.rect.y,
-            width: Math.max(1, s.rect.width),
-            height: Math.max(1, s.rect.height),
+          const shape = String((s as any).shape || 'rect');
+          if (shape === 'rect') {
+            const r = Number.isFinite(Number(s.cornerRadius)) ? Math.max(0, Math.round(Number(s.cornerRadius))) : 0;
+            const obj = new fabric.Rect({
+              left: s.rect.x,
+              top: s.rect.y,
+              width: Math.max(1, s.rect.width),
+              height: Math.max(1, s.rect.height),
+              originX: 'left',
+              originY: 'top',
+              fill: s.style?.fill || '#111827',
+              stroke: s.style?.stroke || '#111827',
+              strokeWidth: Number(s.style?.strokeWidth || 0),
+              rx: r,
+              ry: r,
+              selectable: true,
+              evented: true,
+            });
+            (obj as any).data = { role: 'template-asset', assetId: s.id, assetType: 'shape', assetKind: s.kind, shape };
+            disableRotation(obj);
+            canvas.add(obj);
+            assetObjByIdRef.current.set(s.id, obj);
+          } else if (shape === 'arrow_solid') {
+            const w = Math.max(1, s.rect.width);
+            const h = Math.max(1, s.rect.height);
+            const headLenPx = getArrowHeadLenPx(s);
+            const pts = buildSolidArrowPoints(w, h, headLenPx);
+            const obj = new fabric.Polygon(pts, {
+              left: s.rect.x,
+              top: s.rect.y,
+              originX: 'left',
+              originY: 'top',
+              fill: s.style?.fill || '#111827',
+              stroke: s.style?.stroke || '#111827',
+              strokeWidth: Number(s.style?.strokeWidth || 0),
+              strokeLineJoin: 'round',
+              selectable: true,
+              evented: true,
+            });
+            (obj as any).data = { role: 'template-asset', assetId: s.id, assetType: 'shape', assetKind: s.kind, shape };
+            disableRotation(obj);
+            canvas.add(obj);
+            assetObjByIdRef.current.set(s.id, obj);
+          } else if (shape === 'arrow_line') {
+            const w = Math.max(1, s.rect.width);
+            const h = Math.max(1, s.rect.height);
+            const headLenPx = getArrowHeadLenPx(s);
+            const path = buildLineArrowPath(w, h, headLenPx);
+            const obj = new fabric.Path(path, {
+              left: s.rect.x,
+              top: s.rect.y,
+              originX: 'left',
+              originY: 'top',
+              fill: 'transparent',
+              stroke: s.style?.stroke || '#111827',
+              strokeWidth: Math.max(1, Number(s.style?.strokeWidth || 8)),
+              strokeLineCap: 'round',
+              strokeLineJoin: 'round',
+              selectable: true,
+              evented: true,
+            });
+            // Stroke scales with object transforms by default (strokeUniform=false).
+            (obj as any).data = { role: 'template-asset', assetId: s.id, assetType: 'shape', assetKind: s.kind, shape };
+            disableRotation(obj);
+            canvas.add(obj);
+            assetObjByIdRef.current.set(s.id, obj);
+          }
+        }
+      }
+
+      // Dev-only preview: show two arrows even before creation UI exists (Phase 2).
+      if (shouldShowArrowDevPreview()) {
+        try {
+          const w = 240;
+          const h = 120;
+          const solid = new fabric.Polygon(buildSolidArrowPoints(w, h, 84), {
+            left: 90,
+            top: 1060,
             originX: 'left',
             originY: 'top',
-            fill: s.style?.fill || '#111827',
-            stroke: s.style?.stroke || '#111827',
-            strokeWidth: Number(s.style?.strokeWidth || 0),
-            rx: r,
-            ry: r,
+            fill: '#111827',
+            stroke: '#111827',
+            strokeWidth: 0,
             selectable: true,
             evented: true,
           });
-          (obj as any).data = { role: 'template-asset', assetId: s.id, assetType: 'shape', assetKind: s.kind };
-          disableRotation(obj);
-          canvas.add(obj);
-          assetObjByIdRef.current.set(s.id, obj);
+          const line = new fabric.Path(buildLineArrowPath(w, h, 84), {
+            left: 360,
+            top: 1060,
+            originX: 'left',
+            originY: 'top',
+            fill: 'transparent',
+            stroke: '#111827',
+            strokeWidth: 10,
+            strokeLineCap: 'round',
+            strokeLineJoin: 'round',
+            selectable: true,
+            evented: true,
+          });
+          disableRotation(solid);
+          disableRotation(line);
+          canvas.add(solid);
+          canvas.add(line);
+        } catch {
+          // ignore
         }
       }
 
@@ -841,7 +1184,31 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       try {
         canvas.off?.('object:modified');
         canvas.off?.('text:changed');
-        canvas.on?.('object:modified', () => scheduleHistoryPush());
+        canvas.on?.('object:modified', (opt: any) => {
+          scheduleHistoryPush();
+
+          // Phase 3 (arrows): when resizing arrows, Fabric uses scaleX/scaleY transforms. If we persist
+          // without normalizing, repeated saves/exports can compound stroke scaling. So after a resize,
+          // we export (baking stroke scaling) and immediately re-render (resetting scale to 1).
+          const t = opt?.target;
+          const shape = String(t?.data?.shape || '');
+          if (shape !== 'arrow_solid' && shape !== 'arrow_line') return;
+          const sx = Math.abs(Number(t?.scaleX ?? 1) || 1);
+          const sy = Math.abs(Number(t?.scaleY ?? 1) || 1);
+          const needsBake = Math.abs(sx - 1) > 1e-3 || Math.abs(sy - 1) > 1e-3;
+          if (!needsBake) return;
+
+          const assetId = String(t?.data?.assetId || '');
+          if (!assetId) return;
+          try {
+            const next = exportFromCanvas();
+            defRef.current = clone(next);
+            renderFromDefinition(defRef.current);
+            selectLayerOnCanvas(assetId);
+          } catch {
+            // ignore
+          }
+        });
         canvas.on?.('text:changed', () => scheduleHistoryPush());
       } catch {
         // ignore
@@ -1070,6 +1437,8 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       reorderLayer: (layerId: string, direction: 'up' | 'down') => reorderLayerInDef(layerId, direction),
       addTextLayer: () => addTextLayerToDef(),
       addRectLayer: () => addRectLayerToDef(),
+      addArrowSolidLayer: () => addArrowSolidLayerToDef(),
+      addArrowLineLayer: () => addArrowLineLayerToDef(),
       renameLayer: (layerId: string, nextName: string) => renameLayerInDef(layerId, nextName),
       deleteLayer: (layerId: string) => deleteLayerInDef(layerId),
       undo: () => undoFromHistory(),

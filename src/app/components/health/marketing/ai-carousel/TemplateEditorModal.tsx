@@ -67,16 +67,19 @@ export default function TemplateEditorModal(props: {
   const [ctxFill, setCtxFill] = useState<string>('#111827');
 
   const [shapeMenu, setShapeMenu] = useState<null | { x: number; y: number; layerId: string }>(null);
+  const [shapeKind, setShapeKind] = useState<'rect' | 'arrow_solid' | 'arrow_line'>('rect');
   const [shapeCornerRadius, setShapeCornerRadius] = useState<number>(0);
   const [shapeFill, setShapeFill] = useState<string>('#111827');
   const [shapeStroke, setShapeStroke] = useState<string>('#111827');
   const [shapeStrokeWidth, setShapeStrokeWidth] = useState<number>(0);
+  const [shapeArrowHeadSizePx, setShapeArrowHeadSizePx] = useState<number>(120);
 
   const [imageMenu, setImageMenu] = useState<null | { x: number; y: number; layerId: string }>(null);
   const [imageMaskShape, setImageMaskShape] = useState<'none' | 'circle'>('none');
   const [imageCropEditingLayerId, setImageCropEditingLayerId] = useState<string | null>(null);
 
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [addShapeDropdownValue, setAddShapeDropdownValue] = useState<string>('');
 
   // Template text is edited directly on-canvas (layers), not via special form fields.
 
@@ -284,10 +287,13 @@ export default function TemplateEditorModal(props: {
     const style = canvasRef.current?.getShapeLayerStyle?.(layerId);
     if (!style) return;
 
+    const kind = (style.shape === 'arrow_solid' || style.shape === 'arrow_line') ? style.shape : 'rect';
+    setShapeKind(kind);
     setShapeCornerRadius(Number(style.cornerRadius || 0));
     setShapeFill(String(style.fill || '#111827'));
     setShapeStroke(String(style.stroke || '#111827'));
     setShapeStrokeWidth(Number(style.strokeWidth || 0));
+    setShapeArrowHeadSizePx(Number(style.arrowHeadSizePx ?? 120));
     setShapeMenu({ x: clientX, y: clientY, layerId });
   };
 
@@ -716,18 +722,28 @@ export default function TemplateEditorModal(props: {
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-medium text-black">Layers</div>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
+                    <select
+                      className="h-8 px-2 pr-8 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
                       disabled={saving || !editorUnlocked}
-                      onClick={() => {
-                        canvasRef.current?.addRectLayer?.();
+                      value={addShapeDropdownValue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        // Make it act like an action menu (auto-reset after selection).
+                        setAddShapeDropdownValue('');
+                        if (!v) return;
+                        if (v === 'rect') canvasRef.current?.addRectLayer?.();
+                        if (v === 'arrow_solid') canvasRef.current?.addArrowSolidLayer?.();
+                        if (v === 'arrow_line') canvasRef.current?.addArrowLineLayer?.();
                         const next = canvasRef.current?.exportDefinition() || definition;
                         setDefinition(next);
                       }}
+                      aria-label="Add shape"
                     >
-                      + Shape
-                    </button>
+                      <option value="">+ Shape</option>
+                      <option value="rect">Rectangle</option>
+                      <option value="arrow_solid">Arrow (solid)</option>
+                      <option value="arrow_line">Arrow (line)</option>
+                    </select>
                   <button
                     type="button"
                     className="px-3 py-1.5 bg-black text-white rounded text-xs font-medium disabled:bg-black/30 disabled:text-white"
@@ -1165,42 +1181,87 @@ export default function TemplateEditorModal(props: {
                   <div className="text-xs font-semibold text-black mb-2">Shape settings</div>
 
                   <div className="space-y-3">
-                    <div>
-                      <div className="text-[11px] font-semibold text-black/70 mb-1">Corner radius</div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="range"
-                          min={0}
-                          max={120}
-                          value={String(shapeCornerRadius ?? 0)}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            setShapeCornerRadius(v);
-                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { cornerRadius: v });
-                            const next = canvasRef.current?.exportDefinition() || definition;
-                            setDefinition(next);
-                          }}
-                          className="flex-1"
-                        />
-                        <input
-                          className="h-9 w-20 border border-gray-200 rounded px-2 text-sm text-black"
-                          value={String(shapeCornerRadius ?? 0)}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            setShapeCornerRadius(n);
-                          }}
-                          onBlur={() => {
-                            const n = Number(shapeCornerRadius);
-                            if (!Number.isFinite(n)) return;
-                            const v = Math.max(0, Math.round(n));
-                            setShapeCornerRadius(v);
-                            canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { cornerRadius: v });
-                            const next = canvasRef.current?.exportDefinition() || definition;
-                            setDefinition(next);
-                          }}
-                        />
-            </div>
-          </div>
+                    {shapeKind === 'rect' ? (
+                      <div>
+                        <div className="text-[11px] font-semibold text-black/70 mb-1">Corner radius</div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={0}
+                            max={120}
+                            value={String(shapeCornerRadius ?? 0)}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              setShapeCornerRadius(v);
+                              canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { cornerRadius: v });
+                              const next = canvasRef.current?.exportDefinition() || definition;
+                              setDefinition(next);
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            className="h-9 w-20 border border-gray-200 rounded px-2 text-sm text-black"
+                            value={String(shapeCornerRadius ?? 0)}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              setShapeCornerRadius(n);
+                            }}
+                            onBlur={() => {
+                              const n = Number(shapeCornerRadius);
+                              if (!Number.isFinite(n)) return;
+                              const v = Math.max(0, Math.round(n));
+                              setShapeCornerRadius(v);
+                              canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { cornerRadius: v });
+                              const next = canvasRef.current?.exportDefinition() || definition;
+                              setDefinition(next);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {shapeKind === 'arrow_solid' || shapeKind === 'arrow_line' ? (
+                      <div>
+                        <div className="text-[11px] font-semibold text-black/70 mb-1">Arrowhead size</div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={8}
+                            max={420}
+                            value={String(shapeArrowHeadSizePx ?? 120)}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              setShapeArrowHeadSizePx(v);
+                              canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { arrowHeadSizePx: v });
+                              const next = canvasRef.current?.exportDefinition() || definition;
+                              setDefinition(next);
+                            }}
+                            className="flex-1"
+                          />
+                          <input
+                            className="h-9 w-20 border border-gray-200 rounded px-2 text-sm text-black"
+                            value={String(shapeArrowHeadSizePx ?? 120)}
+                            onChange={(e) => {
+                              const n = Number(e.target.value);
+                              setShapeArrowHeadSizePx(n);
+                            }}
+                            onBlur={() => {
+                              const n = Number(shapeArrowHeadSizePx);
+                              if (!Number.isFinite(n)) return;
+                              const v = Math.max(8, Math.round(n));
+                              setShapeArrowHeadSizePx(v);
+                              canvasRef.current?.setShapeLayerStyle?.(shapeMenu.layerId, { arrowHeadSizePx: v });
+                              const next = canvasRef.current?.exportDefinition() || definition;
+                              setDefinition(next);
+                            }}
+                          />
+                          <div className="text-xs text-black/60">px</div>
+                        </div>
+                        <div className="mt-1 text-[11px] text-black/60">
+                          Absolute size (template pixels). Resizing the arrow won’t change this (unless the arrow becomes too narrow and clamps).
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -1217,6 +1278,11 @@ export default function TemplateEditorModal(props: {
                             setDefinition(next);
                           }}
                         />
+                        {shapeKind === 'arrow_line' ? (
+                          <div className="mt-1 text-[11px] text-black/60">
+                            Note: line arrows ignore fill (stroke only).
+                          </div>
+                        ) : null}
                       </div>
                       <div>
                         <div className="text-[11px] font-semibold text-black/70 mb-1">Stroke</div>

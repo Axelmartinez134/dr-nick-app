@@ -9,7 +9,9 @@ export type TemplateAssetKind =
   | 'handle'
   | 'cta_text'
   | 'other_text'
-  | 'shape_rect';
+  | 'shape_rect'
+  | 'shape_arrow_solid'
+  | 'shape_arrow_line';
 
 export interface TemplateRect {
   x: number;
@@ -75,10 +77,19 @@ export interface TemplateShapeStyle {
 
 export interface TemplateShapeAsset extends TemplateAssetBase {
   type: 'shape';
-  shape: 'rect';
+  shape: 'rect' | 'arrow_solid' | 'arrow_line';
   // Rounded corner radius in template-canvas pixels (1080x1440 coordinate space).
   cornerRadius?: number;
   style: TemplateShapeStyle;
+  // Arrow-only settings (ignored for non-arrow shapes).
+  // Head size can be expressed either as:
+  // - an absolute length in template pixels (preferred), or
+  // - a percentage (legacy; kept for backward compatibility with older saved templates).
+  //
+  // When both are present, renderers should prefer `arrowHeadSizePx`.
+  arrowHeadSizePx?: number;
+  // Legacy: head size expressed as a percentage (older templates).
+  arrowHeadSizePct?: number; // 0..100
 }
 
 export type TemplateAsset = TemplateImageAsset | TemplateTextAsset | TemplateShapeAsset;

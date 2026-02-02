@@ -247,6 +247,7 @@ export function EditorSlidesRow() {
                         backgroundEffectEnabled={projectBackgroundEffectEnabled}
                         backgroundEffectType={projectBackgroundEffectType}
                         enableTemplateImageMasks={true}
+                        enableTemplateArrowShapes={true}
                         templateSnapshot={snap}
                         hasHeadline={templateTypeId !== "regular"}
                         tightUserTextWidth={templateTypeId !== "regular"}
@@ -296,6 +297,7 @@ export function EditorSlidesRow() {
                     backgroundEffectEnabled={projectBackgroundEffectEnabled}
                     backgroundEffectType={projectBackgroundEffectType}
                     enableTemplateImageMasks={true}
+                    enableTemplateArrowShapes={true}
                     templateSnapshot={snap}
                     hasHeadline={templateTypeId !== "regular"}
                     tightUserTextWidth={templateTypeId !== "regular"}
@@ -411,6 +413,7 @@ export function EditorSlidesRow() {
                                 backgroundEffectEnabled={projectBackgroundEffectEnabled}
                                 backgroundEffectType={projectBackgroundEffectType}
                                 enableTemplateImageMasks={true}
+                                enableTemplateArrowShapes={true}
                                 templateSnapshot={snap}
                                 hasHeadline={templateTypeId !== "regular"}
                                 tightUserTextWidth={templateTypeId !== "regular"}
