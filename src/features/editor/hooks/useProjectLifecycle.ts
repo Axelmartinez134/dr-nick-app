@@ -42,6 +42,7 @@ export function useProjectLifecycle(params: {
   setReviewApproved: (next: boolean) => void;
   setReviewScheduled: (next: boolean) => void;
   setReviewComment: (next: string) => void;
+  setReviewSource: (next: string) => void;
 
   // Engine state setters
   setLayoutData: (v: any) => void;
@@ -88,6 +89,7 @@ export function useProjectLifecycle(params: {
     setReviewApproved,
     setReviewScheduled,
     setReviewComment,
+    setReviewSource,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -130,6 +132,7 @@ export function useProjectLifecycle(params: {
       setReviewApproved(!!(project as any)?.review_approved);
       setReviewScheduled(!!(project as any)?.review_scheduled);
       setReviewComment(String((project as any)?.review_comment || ''));
+      setReviewSource(String((project as any)?.review_source || ''));
 
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
@@ -241,6 +244,7 @@ export function useProjectLifecycle(params: {
       setReviewApproved(!!(project as any)?.review_approved);
       setReviewScheduled(!!(project as any)?.review_scheduled);
       setReviewComment(String((project as any)?.review_comment || ''));
+      setReviewSource(String((project as any)?.review_source || ''));
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
         const row = slidesRows.find((r: any) => r.slide_index === i);

@@ -4,6 +4,7 @@ import { resolveAccountIdFromReviewToken, serviceClient } from '../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 20;
+export const dynamic = 'force-dynamic';
 
 type Resp =
   | {
@@ -27,6 +28,7 @@ type Resp =
         review_approved: boolean;
         review_scheduled: boolean;
         review_comment: string;
+        review_source: string;
         slides: Array<{
           slide_index: number;
           headline: string;
@@ -47,12 +49,17 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
   if (!admin) {
     return NextResponse.json(
       { success: false, error: 'Server missing Supabase service role env (SUPABASE_SERVICE_ROLE_KEY)' } satisfies Resp,
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 
   const accountId = await resolveAccountIdFromReviewToken(admin, token);
-  if (!accountId) return NextResponse.json({ success: false, error: 'Not found' } satisfies Resp, { status: 404 });
+  if (!accountId) {
+    return NextResponse.json(
+      { success: false, error: 'Not found' } satisfies Resp,
+      { status: 404, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
 
   // Queue rule (MVP): Ready=true AND Posted=false (scheduled does NOT remove from queue).
   const { data: projRows, error: projErr } = await admin
@@ -77,6 +84,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
         'review_approved',
         'review_scheduled',
         'review_comment',
+        'review_source',
       ].join(', ')
     )
     .eq('account_id', accountId)
@@ -86,7 +94,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
     .order('updated_at', { ascending: false })
     .limit(40);
 
-  if (projErr) return NextResponse.json({ success: false, error: projErr.message } satisfies Resp, { status: 500 });
+  if (projErr) {
+    return NextResponse.json(
+      { success: false, error: projErr.message } satisfies Resp,
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
 
   const projectsRaw = Array.isArray(projRows) ? (projRows as any[]) : [];
   const projectIds = projectsRaw.map((p) => String(p?.id || '').trim()).filter(Boolean);
@@ -100,7 +113,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       .in('project_id', projectIds)
       .order('slide_index', { ascending: true });
 
-    if (slideErr) return NextResponse.json({ success: false, error: slideErr.message } satisfies Resp, { status: 500 });
+    if (slideErr) {
+      return NextResponse.json(
+        { success: false, error: slideErr.message } satisfies Resp,
+        { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     (slideRows || []).forEach((r: any) => {
       const pid = String(r?.project_id || '').trim();
@@ -128,7 +146,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       .select('id, definition')
       .in('id', uniqTemplateIds)
       .eq('account_id', accountId);
-    if (defErr) return NextResponse.json({ success: false, error: defErr.message } satisfies Resp, { status: 500 });
+    if (defErr) {
+      return NextResponse.json(
+        { success: false, error: defErr.message } satisfies Resp,
+        { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
     (defs || []).forEach((r: any) => {
       const id = String(r?.id || '').trim();
       if (!id) return;
@@ -172,10 +195,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       review_approved: !!p?.review_approved,
       review_scheduled: !!p?.review_scheduled,
       review_comment: String(p?.review_comment || ''),
+      review_source: String(p?.review_source || ''),
       slides,
     };
   });
 
-  return NextResponse.json({ success: true, projects, templateSnapshotsById } satisfies Resp);
+  return NextResponse.json(
+    { success: true, projects, templateSnapshotsById } satisfies Resp,
+    { headers: { 'Cache-Control': 'no-store' } }
+  );
 }
 

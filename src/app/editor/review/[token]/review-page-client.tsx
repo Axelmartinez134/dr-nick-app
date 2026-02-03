@@ -37,6 +37,7 @@ type ProjectDto = {
   review_approved: boolean;
   review_scheduled: boolean;
   review_comment: string;
+  review_source: string;
   slides: SlideDto[];
 };
 
@@ -57,6 +58,26 @@ function sanitizeFileName(name: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
+}
+
+function linkifyTextToNodes(text: string): Array<string | { href: string; label: string }> {
+  const s = String(text || "");
+  const re = /((https?:\/\/|www\.)[^\s]+)/gi;
+  const out: Array<string | { href: string; label: string }> = [];
+  let last = 0;
+  for (;;) {
+    const m = re.exec(s);
+    if (!m) break;
+    const start = m.index;
+    const raw = m[1] || "";
+    if (start > last) out.push(s.slice(last, start));
+    const trimmed = raw.replace(/[)\].,;!?]+$/g, "");
+    const href = trimmed.startsWith("www.") ? `https://${trimmed}` : trimmed;
+    out.push({ href, label: trimmed });
+    last = start + raw.length;
+  }
+  if (last < s.length) out.push(s.slice(last));
+  return out;
 }
 
 async function exportFabricCanvasPngBlob(handle: any, multiplier: number): Promise<Blob> {
@@ -160,7 +181,7 @@ export default function ReviewPageClient(props: { token: string }) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/editor/review-public/${encodeURIComponent(token)}`, { method: "GET" });
+        const res = await fetch(`/api/editor/review-public/${encodeURIComponent(token)}`, { method: "GET", cache: "no-store" });
         const j = (await res.json().catch(() => null)) as FeedResp | null;
         if (!res.ok || !j || (j as any).success !== true) {
           throw new Error(String((j as any)?.error || `Request failed (${res.status})`));
@@ -500,11 +521,32 @@ function ReviewProjectCard(props: {
     );
   }, [computeTemplateIdForSlide, project, templatesById, zipBusy]);
 
+  const sourceNodes = useMemo(() => linkifyTextToNodes(String(project.review_source || "")), [project.review_source]);
+
   return (
     <article className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-slate-900 truncate">{project.title || "Untitled Project"}</div>
+          {String(project.review_source || "").trim() ? (
+            <div className="mt-1 text-[12px] text-slate-700 whitespace-pre-wrap break-words">
+              {sourceNodes.map((n, idx) =>
+                typeof n === "string" ? (
+                  <span key={idx}>{n}</span>
+                ) : (
+                  <a
+                    key={idx}
+                    href={n.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline text-slate-900 hover:text-black"
+                  >
+                    {n.label}
+                  </a>
+                )
+              )}
+            </div>
+          ) : null}
           <div className="text-[11px] text-slate-500">Updated {project.updated_at ? new Date(project.updated_at).toLocaleString() : ""}</div>
         </div>
       </div>

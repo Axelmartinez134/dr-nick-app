@@ -130,6 +130,10 @@ export default function EditorShell() {
   const setReviewComment = useCallback((next: string) => {
     editorStore.setState({ reviewComment: String(next || "") } as any);
   }, [editorStore]);
+  const reviewSource = useEditorSelector((s: any) => String((s as any).reviewSource || ""));
+  const setReviewSource = useCallback((next: string) => {
+    editorStore.setState({ reviewSource: String(next || "") } as any);
+  }, [editorStore]);
 
   const shareCarouselsModalOpen = useEditorSelector((s: any) => !!(s as any).shareCarouselsModalOpen);
   const setShareCarouselsModalOpen = useCallback((next: boolean) => {
@@ -1493,10 +1497,14 @@ export default function EditorShell() {
   }, [editorStore, ensureShareCarouselsLink, isSuperadmin]);
 
   const toggleReviewForProject = useCallback(
-    async (args: { projectId: string; patch: { reviewReady?: boolean; reviewPosted?: boolean; reviewApproved?: boolean; reviewScheduled?: boolean } }) => {
+    async (args: {
+      projectId: string;
+      patch: { reviewReady?: boolean; reviewPosted?: boolean; reviewApproved?: boolean; reviewScheduled?: boolean; reviewSource?: string };
+    }) => {
       if (!isSuperadmin) return;
       const pid = String(args.projectId || '').trim();
       if (!pid) return;
+      let ok = false;
       const saving = new Set<string>((editorStore.getState() as any)?.shareCarouselsSavingIds || []);
       saving.add(pid);
       editorStore.setState({ shareCarouselsSavingIds: saving } as any);
@@ -1506,15 +1514,18 @@ export default function EditorShell() {
         if (typeof args.patch.reviewPosted === 'boolean') body.reviewPosted = args.patch.reviewPosted;
         if (typeof args.patch.reviewApproved === 'boolean') body.reviewApproved = args.patch.reviewApproved;
         if (typeof args.patch.reviewScheduled === 'boolean') body.reviewScheduled = args.patch.reviewScheduled;
+        if (typeof args.patch.reviewSource === 'string') body.reviewSource = args.patch.reviewSource;
         const j = await fetchJson('/api/editor/review/projects/update', { method: 'POST', body: JSON.stringify(body) });
         const updated = j?.project || null;
         if (updated?.id) {
+          ok = true;
           // Update current project review flags if needed.
           if (currentProjectId && String(updated.id) === String(currentProjectId)) {
             setReviewReady(!!updated.review_ready);
             setReviewPosted(!!updated.review_posted);
             setReviewApproved(!!updated.review_approved);
             setReviewScheduled(!!updated.review_scheduled);
+            if (updated.review_source !== undefined) setReviewSource(String(updated.review_source || ""));
           }
           // Patch modal list if it contains this project.
           try {
@@ -1549,6 +1560,7 @@ export default function EditorShell() {
         s2.delete(pid);
         editorStore.setState({ shareCarouselsSavingIds: s2 } as any);
       }
+      return ok;
     },
     [
       addLog,
@@ -1560,6 +1572,7 @@ export default function EditorShell() {
       setReviewPosted,
       setReviewReady,
       setReviewScheduled,
+      setReviewSource,
     ]
   );
   const { loadProject, createNewProject } = useProjectLifecycle({
@@ -1594,6 +1607,7 @@ export default function EditorShell() {
     setReviewApproved,
     setReviewScheduled,
     setReviewComment,
+    setReviewSource,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -5359,6 +5373,8 @@ export default function EditorShell() {
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewApproved: !!a?.next } }),
     onToggleProjectReviewScheduled: (a: any) =>
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewScheduled: !!a?.next } }),
+    onChangeProjectReviewSource: (a: any) =>
+      toggleReviewForProject({ projectId: a?.projectId, patch: { reviewSource: String(a?.next ?? "") } }),
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).

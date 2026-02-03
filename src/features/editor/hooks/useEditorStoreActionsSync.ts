@@ -139,10 +139,11 @@ type Args = {
   onCloseShareCarousels: () => void;
   onRefreshShareCarousels: () => Promise<void> | void;
   onClickCopyShareCarouselsLink: () => Promise<void> | void;
-  onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<void> | void;
-  onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<void> | void;
-  onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<void> | void;
-  onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onChangeProjectReviewSource: (args: { projectId: string; next: string }) => Promise<any> | void;
 
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
@@ -305,6 +306,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleProjectReviewPosted,
     onToggleProjectReviewApproved,
     onToggleProjectReviewScheduled,
+    onChangeProjectReviewSource,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -341,6 +343,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleProjectReviewPosted: (a: any) => onToggleProjectReviewPosted(a),
     onToggleProjectReviewApproved: (a: any) => onToggleProjectReviewApproved(a),
     onToggleProjectReviewScheduled: (a: any) => onToggleProjectReviewScheduled(a),
+    onChangeProjectReviewSource: (a: any) => onChangeProjectReviewSource(a),
 
     onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
       setNewProjectTemplateTypeId(next);
@@ -597,6 +600,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onToggleProjectReviewPosted: (a: any) => implRef.current?.onToggleProjectReviewPosted?.(a),
       onToggleProjectReviewApproved: (a: any) => implRef.current?.onToggleProjectReviewApproved?.(a),
       onToggleProjectReviewScheduled: (a: any) => implRef.current?.onToggleProjectReviewScheduled?.(a),
+      onChangeProjectReviewSource: (a: any) => implRef.current?.onChangeProjectReviewSource?.(a),
 
       onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") =>
         implRef.current?.onChangeNewProjectTemplateTypeId?.(next),

@@ -11,6 +11,7 @@ type Body = {
   reviewPosted?: boolean;
   reviewApproved?: boolean;
   reviewScheduled?: boolean;
+  reviewSource?: string | null;
 };
 
 type Resp =
@@ -24,9 +25,18 @@ type Resp =
         review_posted: boolean;
         review_approved: boolean;
         review_scheduled: boolean;
+        review_source: string | null;
       };
     }
   | { success: false; error: string };
+
+function cleanReviewSource(input: unknown): string | null {
+  const raw = typeof input === 'string' ? input : input == null ? '' : String(input);
+  // Allow notes + links, but keep it reasonably bounded.
+  const clipped = raw.length > 8000 ? raw.slice(0, 8000) : raw;
+  const trimmed = clipped.trim();
+  return trimmed ? trimmed : null;
+}
 
 export async function POST(req: NextRequest) {
   const authed = await getAuthedSupabase(req);
@@ -61,6 +71,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.reviewPosted === 'boolean') patch.review_posted = body.reviewPosted;
   if (typeof body.reviewApproved === 'boolean') patch.review_approved = body.reviewApproved;
   if (typeof body.reviewScheduled === 'boolean') patch.review_scheduled = body.reviewScheduled;
+  if (body.reviewSource !== undefined) patch.review_source = cleanReviewSource(body.reviewSource);
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ success: false, error: 'No fields to update' } satisfies Resp, { status: 400 });
@@ -72,7 +83,7 @@ export async function POST(req: NextRequest) {
     .eq('id', projectId)
     .eq('account_id', accountId)
     .is('archived_at', null)
-    .select('id, title, updated_at, review_ready, review_posted, review_approved, review_scheduled')
+    .select('id, title, updated_at, review_ready, review_posted, review_approved, review_scheduled, review_source')
     .single();
 
   if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });

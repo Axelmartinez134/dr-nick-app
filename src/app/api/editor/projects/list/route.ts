@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from('carousel_projects')
-    .select('id, title, template_type_id, caption, updated_at, created_at, review_ready, review_posted, review_approved, review_scheduled')
+    .select(
+      'id, title, template_type_id, caption, updated_at, created_at, review_ready, review_posted, review_approved, review_scheduled, review_source'
+    )
     .eq('account_id', accountId)
     .is('archived_at', null)
     .order('updated_at', { ascending: false });

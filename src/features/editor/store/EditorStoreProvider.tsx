@@ -67,6 +67,7 @@ const noopActions: EditorActions = {
   onToggleProjectReviewPosted: async () => {},
   onToggleProjectReviewApproved: async () => {},
   onToggleProjectReviewScheduled: async () => {},
+  onChangeProjectReviewSource: async () => {},
   setShowDebugPreview: () => {},
   setActiveSlideImageBgRemoval: () => {},
   deleteImageForActiveSlide: () => {},
@@ -135,6 +136,7 @@ const defaultState: EditorState = {
   reviewApproved: false,
   reviewScheduled: false,
   reviewComment: "",
+  reviewSource: "",
 
   shareCarouselsLinkPath: null,
   shareCarouselsLinkLoading: false,

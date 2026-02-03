@@ -98,10 +98,11 @@ export type EditorActions = {
   onCloseShareCarousels: () => void;
   onRefreshShareCarousels: () => Promise<void> | void;
   onClickCopyShareCarouselsLink: () => Promise<void> | void;
-  onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<void> | void;
-  onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<void> | void;
-  onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<void> | void;
-  onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
+  onChangeProjectReviewSource: (args: { projectId: string; next: string }) => Promise<boolean | void> | void;
 
   setShowDebugPreview: (next: boolean) => void;
 
@@ -524,6 +525,7 @@ export type EditorState = {
   reviewApproved: boolean;
   reviewScheduled: boolean;
   reviewComment: string;
+  reviewSource: string;
 
   // Share Carousels modal data (superadmin-only)
   shareCarouselsLinkPath: string | null;
