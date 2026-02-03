@@ -62,9 +62,28 @@ function sanitizeFileName(name: string): string {
 async function exportFabricCanvasPngBlob(handle: any, multiplier: number): Promise<Blob> {
   const fabricCanvas = (handle as any)?.canvas || handle || null;
   if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") throw new Error("Canvas not ready");
-  const dataUrl = fabricCanvas.toDataURL({ format: "png", multiplier });
-  const res = await fetch(dataUrl);
-  return await res.blob();
+  // IMPORTANT:
+  // `CarouselPreviewVision` sets a display zoom so the 1080×1440 canvas fits the UI.
+  // If we export while zoomed out, the PNG appears "smaller" inside the frame.
+  // Mirror `/editor` export behavior: temporarily set zoom=1 for export, then restore.
+  const currentZoom = (typeof fabricCanvas.getZoom === "function" ? fabricCanvas.getZoom() : 1) ?? 1;
+  try {
+    try {
+      fabricCanvas.discardActiveObject?.();
+    } catch {
+      // ignore
+    }
+    fabricCanvas.setZoom?.(1);
+    fabricCanvas.renderAll?.();
+    // Let Fabric settle (fonts/images) so the export matches the current render.
+    await new Promise((r) => setTimeout(r, 80));
+    const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 3.0, multiplier });
+    const res = await fetch(dataUrl);
+    return await res.blob();
+  } finally {
+    fabricCanvas.setZoom?.(currentZoom);
+    fabricCanvas.renderAll?.();
+  }
 }
 
 function IosToggle(props: { label: string; value: boolean; disabled?: boolean; onChange: (next: boolean) => void }) {
