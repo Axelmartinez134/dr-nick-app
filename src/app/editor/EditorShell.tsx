@@ -4252,7 +4252,7 @@ export default function EditorShell() {
   const goPrev = () => void switchToSlide(activeSlideIndex - 1);
   const goNext = () => void switchToSlide(activeSlideIndex + 1);
 
-  const { handleTopDownload, handleDownloadAll, handleShareAll, shareSingleSlide } = useCanvasExport({
+  const { handleTopDownload, handleDownloadAll, handleDownloadPdf, handleShareAll, shareSingleSlide } = useCanvasExport({
     slideCount,
     slideCanvasRefs,
     projectTitle,
@@ -5069,6 +5069,7 @@ export default function EditorShell() {
     createNewProject,
     currentProjectId,
     handleDownloadAll,
+    handleDownloadPdf,
     handleNewCarousel,
     handleShareAll,
     handleSignOut,

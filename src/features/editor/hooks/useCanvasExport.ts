@@ -45,6 +45,19 @@ export function useCanvasExport(params: {
     return handle?.canvas || handle || null;
   }, []);
 
+  const getFabricCanvasSize = useCallback(
+    (handle: any): { w: number; h: number } => {
+      const fabricCanvas = getFabricCanvasFromHandle(handle);
+      const w = Number(fabricCanvas?.getWidth?.() ?? fabricCanvas?.width ?? 0);
+      const h = Number(fabricCanvas?.getHeight?.() ?? fabricCanvas?.height ?? 0);
+      if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+        throw new Error("Canvas not ready");
+      }
+      return { w, h };
+    },
+    [getFabricCanvasFromHandle]
+  );
+
   const exportFabricCanvasPngBlob = useCallback(async (handle: any) => {
     const fabricCanvas = getFabricCanvasFromHandle(handle);
     if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") {
@@ -116,6 +129,68 @@ export function useCanvasExport(params: {
     [
       exportFabricCanvasPngBlob,
       getFabricCanvasFromHandle,
+      getNextBundleName,
+      projectTitle,
+      sanitizeFileName,
+      setTopExporting,
+      slideCanvasRefs,
+      slideCount,
+      topExporting,
+    ]
+  );
+
+  const handleDownloadPdf = useCallback(
+    async () => {
+      if (topExporting) return;
+      setTopExporting(true);
+      try {
+        const baseName = sanitizeFileName(projectTitle);
+        const bundleName = getNextBundleName(baseName);
+
+        // Ensure all slide canvases are mounted.
+        const handles = slideCanvasRefs.current.map((r) => r.current);
+        if (handles.some((h) => !getFabricCanvasFromHandle(h))) {
+          alert("Slides are still rendering. Please wait a moment and try again.");
+          return;
+        }
+
+        // Use the real canvas size for the PDF page size (full-bleed).
+        const { w: pageW, h: pageH } = getFabricCanvasSize(handles[0]);
+
+        // Lazy import to avoid SSR/bundle surprises.
+        const PdfLibMod = await import("pdf-lib");
+        const PDFDocument = (PdfLibMod as any)?.PDFDocument || (PdfLibMod as any)?.default?.PDFDocument;
+        if (!PDFDocument) throw new Error("PDF engine not available");
+
+        const pdfDoc = await PDFDocument.create();
+
+        for (let i = 0; i < slideCount; i++) {
+          const pngBlob = await exportFabricCanvasPngBlob(handles[i]);
+          const buf = await pngBlob.arrayBuffer();
+          const png = await pdfDoc.embedPng(buf);
+          const page = pdfDoc.addPage([pageW, pageH]);
+          page.drawImage(png, { x: 0, y: 0, width: pageW, height: pageH });
+        }
+
+        const pdfBytes = await pdfDoc.save();
+        const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(pdfBlob);
+        const link = document.createElement("a");
+        link.download = `${bundleName}.pdf`;
+        link.href = url;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } catch (e: any) {
+        console.error("[Editor] Download PDF failed:", e);
+        alert(e?.message || "Download failed. Please try again.");
+      } finally {
+        setTopExporting(false);
+      }
+    },
+    [
+      exportFabricCanvasPngBlob,
+      getFabricCanvasFromHandle,
+      getFabricCanvasSize,
       getNextBundleName,
       projectTitle,
       sanitizeFileName,
@@ -243,6 +318,6 @@ export function useCanvasExport(params: {
     void handleDownloadAll();
   }, [handleDownloadAll]);
 
-  return { handleTopDownload, handleDownloadAll, handleShareAll, shareSingleSlide };
+  return { handleTopDownload, handleDownloadAll, handleDownloadPdf, handleShareAll, shareSingleSlide };
 }
 

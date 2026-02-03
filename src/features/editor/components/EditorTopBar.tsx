@@ -293,14 +293,24 @@ export function EditorTopBar() {
         <ProjectStatusPill />
         <PromptStatusPill />
         {!isMobile ? (
-          <button
-            className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
-            onClick={actions.onDownloadAll}
-            disabled={topExporting}
-            title="Download all 6 slides as a ZIP"
-          >
-            {topExporting ? "Preparing..." : "Download All"}
-          </button>
+          <>
+            <button
+              className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
+              onClick={actions.onDownloadAll}
+              disabled={topExporting}
+              title="Download all 6 slides as a ZIP"
+            >
+              {topExporting ? "Preparing..." : "Download All"}
+            </button>
+            <button
+              className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
+              onClick={actions.onDownloadPdf}
+              disabled={topExporting}
+              title="Download all 6 slides as a PDF"
+            >
+              {topExporting ? "Preparing..." : "Download PDF"}
+            </button>
+          </>
         ) : (
           <button
             className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"

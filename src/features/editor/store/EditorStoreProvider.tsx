@@ -6,6 +6,7 @@ import type { EditorActions, EditorState, EditorStore } from "./types";
 const noopActions: EditorActions = {
   onChangeProjectTitle: () => {},
   onDownloadAll: () => {},
+  onDownloadPdf: () => {},
   onShareAll: () => {},
   onSignOut: () => {},
   onChangeNewProjectTemplateTypeId: () => {},

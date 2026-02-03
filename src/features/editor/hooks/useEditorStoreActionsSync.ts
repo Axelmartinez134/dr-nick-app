@@ -10,6 +10,7 @@ type Args = {
   createNewProject: (templateTypeId: "regular" | "enhanced") => Promise<void> | void;
   currentProjectId: string | null;
   handleDownloadAll: () => Promise<void> | void;
+  handleDownloadPdf: () => Promise<void> | void;
   handleNewCarousel: () => void;
   handleShareAll: () => Promise<void> | void;
   handleSignOut: () => Promise<void> | void;
@@ -185,6 +186,7 @@ export function useEditorStoreActionsSync(args: Args) {
     createNewProject,
     currentProjectId,
     handleDownloadAll,
+    handleDownloadPdf,
     handleNewCarousel,
     handleShareAll,
     handleSignOut,
@@ -306,6 +308,7 @@ export function useEditorStoreActionsSync(args: Args) {
       scheduleDebouncedProjectTitleSave({ projectId: currentProjectId, title: v, debounceMs: 600 });
     },
     onDownloadAll: () => void handleDownloadAll(),
+    onDownloadPdf: () => void handleDownloadPdf(),
     onShareAll: () => void handleShareAll(),
     onSignOut: () => void handleSignOut(),
 
@@ -552,6 +555,7 @@ export function useEditorStoreActionsSync(args: Args) {
     () => ({
       onChangeProjectTitle: (v: string) => implRef.current?.onChangeProjectTitle?.(v),
       onDownloadAll: () => implRef.current?.onDownloadAll?.(),
+      onDownloadPdf: () => implRef.current?.onDownloadPdf?.(),
       onShareAll: () => implRef.current?.onShareAll?.(),
       onSignOut: () => implRef.current?.onSignOut?.(),
 

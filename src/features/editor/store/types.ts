@@ -22,6 +22,7 @@ export type EditorActions = {
   // Top bar
   onChangeProjectTitle: (next: string) => void;
   onDownloadAll: () => void;
+  onDownloadPdf: () => void;
   onShareAll: () => void;
   onSignOut: () => void;
 
