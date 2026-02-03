@@ -707,6 +707,69 @@ All fields below live on `public.carousel_projects`:
 - **Template content region + default image placement**: `src/lib/templatePlacement.ts`
   - Used by both the editor (client) and AI-image persistence (server)
 
+## Review / Approval flow (Ready → Share → Public review link)
+
+This feature is **editor-owned** (no dependencies on Health/Marketing UI), but it adds:
+- Superadmin-only controls inside `/editor`
+- A **public, no-auth** review feed page under `/editor/review/<token>`
+
+### Data model
+- `public.carousel_projects` (project-level review flags)
+  - `review_ready` (superadmin toggle)
+  - `review_posted` (superadmin toggle; removes from queue)
+  - `review_approved` (public review toggle)
+  - `review_scheduled` (public review toggle; “VA step”)
+  - `review_comment` (public review text; single overwritable note)
+- `public.editor_account_settings`
+  - `review_share_token` (per-account permanent unguessable token)
+
+### Superadmin-only UI (inside `/editor`)
+- **Top bar button**: `src/features/editor/components/EditorTopBar.tsx`
+  - “Share carousels” button (superadmin-only)
+- **Share modal**: `src/features/editor/components/ShareCarouselsModal.tsx`
+  - Lists **Ready=true AND Posted=false** projects
+  - Copy link (token URL) + toggles
+  - Closes on backdrop click
+- **Canvas/workspace overlay**: `src/features/editor/components/ReviewStatusOverlay.tsx`
+  - Anchored to the dotted workspace container in `src/app/editor/EditorShell.tsx`
+
+### Superadmin-only APIs (authed)
+- `GET /api/editor/review/share-link` → `src/app/api/editor/review/share-link/route.ts`
+- `GET /api/editor/review/queue-preview` → `src/app/api/editor/review/queue-preview/route.ts`
+- `GET /api/editor/review/projects/list` → `src/app/api/editor/review/projects/list/route.ts`
+- `POST /api/editor/review/projects/update` → `src/app/api/editor/review/projects/update/route.ts`
+
+### Public review page + APIs (no auth; token-scoped)
+- **Route**: `src/app/editor/review/[token]/page.tsx`
+  - Client UI: `src/app/editor/review/[token]/review-page-client.tsx`
+- **Public feed API**
+  - `GET /api/editor/review-public/[token]` → `src/app/api/editor/review-public/[token]/route.ts`
+  - Includes `templateSnapshotsById` + project + slide snapshots for rendering
+- **Public mutation APIs**
+  - `POST /api/editor/review-public/[token]/projects/[projectId]/approve`
+  - `POST /api/editor/review-public/[token]/projects/[projectId]/schedule`
+  - `POST /api/editor/review-public/[token]/projects/[projectId]/comment`
+
+### Renderer note (important)
+- The public review page uses `CarouselPreviewVision` in a “deterministic” mode (no drifting image preservation):
+  - `onUserImageChange` is passed as a no-op
+  - `clampUserImageToContentRect={false}` is enforced to match `/editor`
+
+### Manual QA (Review / Approval)
+- Superadmin in `/editor`
+  - Overlay shows review toggles (Ready/Posted/Approved/Scheduled) at top-left of dotted workspace
+  - “Share carousels” opens modal; clicking outside closes it
+  - Modal list includes only `review_ready=true AND review_posted=false`
+  - Toggling Ready/Posted persists and changes modal inclusion immediately
+  - Copy link shows “Copied ✓” and copies `/editor/review/<token>`
+- Public review page (`/editor/review/<token>`, no auth)
+  - Shows only `review_ready=true AND review_posted=false` projects (max ~40)
+  - Slide navigation: swipe + dots + left/right buttons
+  - Approved toggle persists and gates the Download All (ZIP) button
+  - Scheduled toggle persists (“VA step: Scheduled”)
+  - Comment box autosaves (Saving… → Saved ✓) and persists on refresh
+  - Download All (ZIP) shows Preparing… and downloads 6 PNGs for that project
+
 ## Database (high level)
 Key tables used by `/editor`:
 - `public.editor_accounts` (tenant/workspace)

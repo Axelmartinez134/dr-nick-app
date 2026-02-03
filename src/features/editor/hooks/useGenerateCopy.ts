@@ -144,6 +144,18 @@ export function useGenerateCopy(params: {
         const m = String((data.poppyRoutingMeta as any)?.model || '');
         addLog(`🤖 Poppy routing used: board_id=${b || '-'} chat_id=${c || '-'} model=${m || '-'}`);
       }
+      if (data?.poppyPromptDebug && typeof data.poppyPromptDebug === 'object') {
+        const raw = String((data.poppyPromptDebug as any)?.promptRaw || '');
+        const sanitized = String((data.poppyPromptDebug as any)?.promptSanitized || '');
+        const body = (data.poppyPromptDebug as any)?.requestBody;
+        // Single log entry (multi-line) so the full prompt stays together.
+        addLog(
+          `🤖 Poppy prompt debug (exact send)\n` +
+            `requestBody=${JSON.stringify(body)}\n` +
+            `\nraw(before sanitizePrompt)=\n${raw}\n` +
+            `\nsanitized(sent to Poppy)=\n${sanitized}`
+        );
+      }
       const slidesOut = data.slides || [];
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();

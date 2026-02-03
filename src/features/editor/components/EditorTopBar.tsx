@@ -25,6 +25,16 @@ export function EditorTopBar() {
   const [accountsLoading, setAccountsLoading] = useState<boolean>(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState<boolean>(false);
 
+  // Keep the editor store's superadmin flag in sync with the top-bar auth context.
+  // Important: `actions` may be a noop object on first render, so this must re-run when `actions` updates.
+  useEffect(() => {
+    try {
+      actions?.setIsSuperadmin?.(!!isSuperadmin);
+    } catch {
+      // ignore
+    }
+  }, [actions, isSuperadmin]);
+
   useEffect(() => {
     if (!accountMenuOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -310,6 +320,16 @@ export function EditorTopBar() {
             >
               {topExporting ? "Preparing..." : "Download PDF"}
             </button>
+            {isSuperadmin ? (
+              <button
+                className="px-3 py-1.5 rounded-md bg-black text-white text-sm shadow-sm disabled:opacity-50"
+                onClick={actions.onOpenShareCarousels}
+                disabled={topExporting}
+                title="Share carousels for client review"
+              >
+                Share carousels
+              </button>
+            ) : null}
           </>
         ) : (
           <button

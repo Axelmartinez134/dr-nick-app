@@ -36,6 +36,13 @@ export function useProjectLifecycle(params: {
   setLastManualTextColor: (next: string | null) => void;
   setAiImageAutoRemoveBgEnabled: (next: boolean) => void;
 
+  // Review / Approval (project-level)
+  setReviewReady: (next: boolean) => void;
+  setReviewPosted: (next: boolean) => void;
+  setReviewApproved: (next: boolean) => void;
+  setReviewScheduled: (next: boolean) => void;
+  setReviewComment: (next: string) => void;
+
   // Engine state setters
   setLayoutData: (v: any) => void;
   setInputData: (v: any) => void;
@@ -76,6 +83,11 @@ export function useProjectLifecycle(params: {
     setLastManualBackgroundColor,
     setLastManualTextColor,
     setAiImageAutoRemoveBgEnabled,
+    setReviewReady,
+    setReviewPosted,
+    setReviewApproved,
+    setReviewScheduled,
+    setReviewComment,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -113,6 +125,11 @@ export function useProjectLifecycle(params: {
       setLastManualBackgroundColor(((project as any)?.last_manual_background_color as any) ?? null);
       setLastManualTextColor(((project as any)?.last_manual_text_color as any) ?? null);
       setAiImageAutoRemoveBgEnabled(((project as any)?.ai_image_autoremovebg_enabled as any) !== false);
+      setReviewReady(!!(project as any)?.review_ready);
+      setReviewPosted(!!(project as any)?.review_posted);
+      setReviewApproved(!!(project as any)?.review_approved);
+      setReviewScheduled(!!(project as any)?.review_scheduled);
+      setReviewComment(String((project as any)?.review_comment || ''));
 
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
@@ -219,6 +236,11 @@ export function useProjectLifecycle(params: {
       setLastManualBackgroundColor(((project as any)?.last_manual_background_color as any) ?? null);
       setLastManualTextColor(((project as any)?.last_manual_text_color as any) ?? null);
       setAiImageAutoRemoveBgEnabled(((project as any)?.ai_image_autoremovebg_enabled as any) !== false);
+      setReviewReady(!!(project as any)?.review_ready);
+      setReviewPosted(!!(project as any)?.review_posted);
+      setReviewApproved(!!(project as any)?.review_approved);
+      setReviewScheduled(!!(project as any)?.review_scheduled);
+      setReviewComment(String((project as any)?.review_comment || ''));
       const nextSlides: SlideState[] = Array.from({ length: slideCount }).map((_, i) => {
         const prev = slidesRef.current[i] || initSlide();
         const row = slidesRows.find((r: any) => r.slide_index === i);

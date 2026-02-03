@@ -24,6 +24,7 @@ export type EditorActions = {
   onDownloadAll: () => void;
   onDownloadPdf: () => void;
   onShareAll: () => void;
+  onOpenShareCarousels: () => void;
   onSignOut: () => void;
 
   // Project card
@@ -91,6 +92,16 @@ export type EditorActions = {
   onOpenBrandAlignmentModal: () => void;
   onCloseBrandAlignmentModal: () => void;
   onChangeBrandAlignmentPrompt: (next: string) => void;
+
+  // Review / Approval (Phase 2)
+  setIsSuperadmin: (next: boolean) => void;
+  onCloseShareCarousels: () => void;
+  onRefreshShareCarousels: () => Promise<void> | void;
+  onClickCopyShareCarouselsLink: () => Promise<void> | void;
+  onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<void> | void;
 
   setShowDebugPreview: (next: boolean) => void;
 
@@ -474,6 +485,7 @@ export type EditorState = {
   projectTitle: string;
   projectTitleDisabled: boolean;
   isMobile: boolean;
+  isSuperadmin: boolean;
   topExporting: boolean;
 
   engineSaveStatus: EngineSaveStatus;
@@ -504,6 +516,31 @@ export type EditorState = {
   createAccountModalOpen: boolean;
   deleteAccountModalOpen: boolean;
   brandAlignmentModalOpen: boolean;
+  shareCarouselsModalOpen: boolean;
+
+  // Review / Approval (project-level; for the currently loaded project)
+  reviewReady: boolean;
+  reviewPosted: boolean;
+  reviewApproved: boolean;
+  reviewScheduled: boolean;
+  reviewComment: string;
+
+  // Share Carousels modal data (superadmin-only)
+  shareCarouselsLinkPath: string | null;
+  shareCarouselsLinkLoading: boolean;
+  shareCarouselsLinkError: string | null;
+  shareCarouselsProjectsLoading: boolean;
+  shareCarouselsProjectsError: string | null;
+  shareCarouselsProjects: Array<{
+    id: string;
+    title: string;
+    updated_at: string;
+    review_ready: boolean;
+    review_posted: boolean;
+    review_approved: boolean;
+    review_scheduled: boolean;
+  }>;
+  shareCarouselsSavingIds: Set<string>;
 
   // Prompt values (template-type overrides)
   templateTypePrompt: string;

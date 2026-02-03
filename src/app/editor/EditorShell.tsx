@@ -20,13 +20,14 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
-import { BrandAlignmentModal, CreateAccountModal, DeleteAccountModal, IdeasModal } from "@/features/editor/components";
+import { BrandAlignmentModal, CreateAccountModal, DeleteAccountModal, IdeasModal, ShareCarouselsModal } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
 import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSlidesPanel";
 import { EditorSlidesRow } from "@/features/editor/components/EditorSlidesRow";
 import { EditorTopBar } from "@/features/editor/components/EditorTopBar";
+import { ReviewStatusOverlay } from "@/features/editor/components/ReviewStatusOverlay";
 import { EditorBottomPanel } from "@/features/editor/components/EditorBottomPanel";
 import { useEditorSelector, useEditorStore } from "@/features/editor/store";
 import { useProjects } from "@/features/editor/hooks/useProjects";
@@ -104,6 +105,36 @@ export default function EditorShell() {
   const { user, signOut } = useAuth();
   const editorStore = useEditorStore();
   const slideCount = 6;
+  const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const setIsSuperadmin = useCallback((next: boolean) => {
+    editorStore.setState({ isSuperadmin: !!next } as any);
+  }, [editorStore]);
+
+  const reviewReady = useEditorSelector((s: any) => !!(s as any).reviewReady);
+  const setReviewReady = useCallback((next: boolean) => {
+    editorStore.setState({ reviewReady: !!next } as any);
+  }, [editorStore]);
+  const reviewPosted = useEditorSelector((s: any) => !!(s as any).reviewPosted);
+  const setReviewPosted = useCallback((next: boolean) => {
+    editorStore.setState({ reviewPosted: !!next } as any);
+  }, [editorStore]);
+  const reviewApproved = useEditorSelector((s: any) => !!(s as any).reviewApproved);
+  const setReviewApproved = useCallback((next: boolean) => {
+    editorStore.setState({ reviewApproved: !!next } as any);
+  }, [editorStore]);
+  const reviewScheduled = useEditorSelector((s: any) => !!(s as any).reviewScheduled);
+  const setReviewScheduled = useCallback((next: boolean) => {
+    editorStore.setState({ reviewScheduled: !!next } as any);
+  }, [editorStore]);
+  const reviewComment = useEditorSelector((s: any) => String((s as any).reviewComment || ""));
+  const setReviewComment = useCallback((next: string) => {
+    editorStore.setState({ reviewComment: String(next || "") } as any);
+  }, [editorStore]);
+
+  const shareCarouselsModalOpen = useEditorSelector((s: any) => !!(s as any).shareCarouselsModalOpen);
+  const setShareCarouselsModalOpen = useCallback((next: boolean) => {
+    editorStore.setState({ shareCarouselsModalOpen: !!next } as any);
+  }, [editorStore]);
   // Phase 5A: store-owned identity + navigation
   const activeSlideIndex = useEditorSelector((s) => (Number.isFinite(s.activeSlideIndex as any) ? Number(s.activeSlideIndex) : 0));
   const setActiveSlideIndex = useCallback((next: number) => {
@@ -1404,6 +1435,133 @@ export default function EditorShell() {
   }
 
   const refreshProjectsListRef = useRef<null | (() => Promise<void>)>(null);
+
+  // Review / Approval (Phase 2): superadmin-only Share Carousels modal helpers.
+  const ensureShareCarouselsLink = useCallback(async () => {
+    if (!isSuperadmin) return;
+    editorStore.setState({ shareCarouselsLinkLoading: true, shareCarouselsLinkError: null } as any);
+    try {
+      const j = await fetchJson('/api/editor/review/share-link', { method: 'GET' });
+      const path = String(j?.path || '').trim();
+      if (!path) throw new Error('Missing review link');
+      editorStore.setState({ shareCarouselsLinkPath: path } as any);
+    } catch (e: any) {
+      editorStore.setState({ shareCarouselsLinkError: String(e?.message || e || 'Failed to load link') } as any);
+    } finally {
+      editorStore.setState({ shareCarouselsLinkLoading: false } as any);
+    }
+  }, [editorStore, fetchJson, isSuperadmin]);
+
+  const refreshShareCarouselsProjects = useCallback(async () => {
+    if (!isSuperadmin) return;
+    editorStore.setState({ shareCarouselsProjectsLoading: true, shareCarouselsProjectsError: null } as any);
+    try {
+      const j = await fetchJson('/api/editor/review/projects/list', { method: 'GET' });
+      const rows = Array.isArray(j?.projects) ? j.projects : [];
+      editorStore.setState({ shareCarouselsProjects: rows } as any);
+    } catch (e: any) {
+      editorStore.setState({
+        shareCarouselsProjectsError: String(e?.message || e || 'Failed to load projects'),
+      } as any);
+    } finally {
+      editorStore.setState({ shareCarouselsProjectsLoading: false } as any);
+    }
+  }, [editorStore, fetchJson, isSuperadmin]);
+
+  const openShareCarousels = useCallback(() => {
+    if (!isSuperadmin) return;
+    setShareCarouselsModalOpen(true);
+    // Fire-and-forget; modal shows loading states.
+    void ensureShareCarouselsLink();
+    void refreshShareCarouselsProjects();
+  }, [ensureShareCarouselsLink, isSuperadmin, refreshShareCarouselsProjects, setShareCarouselsModalOpen]);
+
+  const closeShareCarousels = useCallback(() => {
+    setShareCarouselsModalOpen(false);
+  }, [setShareCarouselsModalOpen]);
+
+  const copyShareCarouselsLink = useCallback(async () => {
+    if (!isSuperadmin) return;
+    const cur = String((editorStore.getState() as any)?.shareCarouselsLinkPath || '').trim();
+    if (!cur) {
+      await ensureShareCarouselsLink();
+    }
+    const path = String((editorStore.getState() as any)?.shareCarouselsLinkPath || '').trim();
+    if (!path) throw new Error('Missing review link');
+    const url = `${window.location.origin}${path}`;
+    await navigator.clipboard.writeText(url);
+  }, [editorStore, ensureShareCarouselsLink, isSuperadmin]);
+
+  const toggleReviewForProject = useCallback(
+    async (args: { projectId: string; patch: { reviewReady?: boolean; reviewPosted?: boolean; reviewApproved?: boolean; reviewScheduled?: boolean } }) => {
+      if (!isSuperadmin) return;
+      const pid = String(args.projectId || '').trim();
+      if (!pid) return;
+      const saving = new Set<string>((editorStore.getState() as any)?.shareCarouselsSavingIds || []);
+      saving.add(pid);
+      editorStore.setState({ shareCarouselsSavingIds: saving } as any);
+      try {
+        const body: any = { projectId: pid };
+        if (typeof args.patch.reviewReady === 'boolean') body.reviewReady = args.patch.reviewReady;
+        if (typeof args.patch.reviewPosted === 'boolean') body.reviewPosted = args.patch.reviewPosted;
+        if (typeof args.patch.reviewApproved === 'boolean') body.reviewApproved = args.patch.reviewApproved;
+        if (typeof args.patch.reviewScheduled === 'boolean') body.reviewScheduled = args.patch.reviewScheduled;
+        const j = await fetchJson('/api/editor/review/projects/update', { method: 'POST', body: JSON.stringify(body) });
+        const updated = j?.project || null;
+        if (updated?.id) {
+          // Update current project review flags if needed.
+          if (currentProjectId && String(updated.id) === String(currentProjectId)) {
+            setReviewReady(!!updated.review_ready);
+            setReviewPosted(!!updated.review_posted);
+            setReviewApproved(!!updated.review_approved);
+            setReviewScheduled(!!updated.review_scheduled);
+          }
+          // Patch modal list if it contains this project.
+          try {
+            const prev = Array.isArray((editorStore.getState() as any)?.shareCarouselsProjects)
+              ? ((editorStore.getState() as any).shareCarouselsProjects as any[])
+              : [];
+            const next = prev.map((p: any) =>
+              String(p?.id) !== String(updated.id)
+                ? p
+                : ({
+                    ...p,
+                    review_ready: !!updated.review_ready,
+                    review_posted: !!updated.review_posted,
+                    review_approved: !!updated.review_approved,
+                    review_scheduled: !!updated.review_scheduled,
+                    updated_at: String(updated.updated_at || p.updated_at || ''),
+                  } as any)
+            );
+            editorStore.setState({ shareCarouselsProjects: next } as any);
+          } catch {
+            // ignore
+          }
+        }
+      } catch (e: any) {
+        try {
+          addLog?.(`❌ Review status save failed: ${String(e?.message || e || 'unknown error')}`);
+        } catch {
+          // ignore
+        }
+      } finally {
+        const s2 = new Set<string>((editorStore.getState() as any)?.shareCarouselsSavingIds || []);
+        s2.delete(pid);
+        editorStore.setState({ shareCarouselsSavingIds: s2 } as any);
+      }
+    },
+    [
+      addLog,
+      currentProjectId,
+      editorStore,
+      fetchJson,
+      isSuperadmin,
+      setReviewApproved,
+      setReviewPosted,
+      setReviewReady,
+      setReviewScheduled,
+    ]
+  );
   const { loadProject, createNewProject } = useProjectLifecycle({
     fetchJson,
     slideCount,
@@ -1431,6 +1589,11 @@ export default function EditorShell() {
     setLastManualBackgroundColor,
     setLastManualTextColor,
     setAiImageAutoRemoveBgEnabled,
+    setReviewReady,
+    setReviewPosted,
+    setReviewApproved,
+    setReviewScheduled,
+    setReviewComment,
     setLayoutData,
     setInputData,
     setLayoutHistory,
@@ -5181,6 +5344,21 @@ export default function EditorShell() {
 
     // Logos (Phase 3E: insert cached logo)
     insertCachedLogoToActiveSlide,
+
+    // Review / Approval (Phase 2)
+    setIsSuperadmin,
+    onOpenShareCarousels: openShareCarousels,
+    onCloseShareCarousels: closeShareCarousels,
+    onRefreshShareCarousels: refreshShareCarouselsProjects,
+    onClickCopyShareCarouselsLink: copyShareCarouselsLink,
+    onToggleProjectReviewReady: (a: any) =>
+      toggleReviewForProject({ projectId: a?.projectId, patch: { reviewReady: !!a?.next } }),
+    onToggleProjectReviewPosted: (a: any) =>
+      toggleReviewForProject({ projectId: a?.projectId, patch: { reviewPosted: !!a?.next } }),
+    onToggleProjectReviewApproved: (a: any) =>
+      toggleReviewForProject({ projectId: a?.projectId, patch: { reviewApproved: !!a?.next } }),
+    onToggleProjectReviewScheduled: (a: any) =>
+      toggleReviewForProject({ projectId: a?.projectId, patch: { reviewScheduled: !!a?.next } }),
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).
@@ -5283,7 +5461,7 @@ export default function EditorShell() {
 
         {/* Workspace */}
         <main
-          className={`flex-1 min-w-0 overflow-y-auto ${styles.workspace}`}
+          className={`relative flex-1 min-w-0 overflow-y-auto ${styles.workspace}`}
           onPointerDown={(e) => {
             if (!isMobile) return;
             if (mobileDrawerOpen) return;
@@ -5326,6 +5504,9 @@ export default function EditorShell() {
             }
           }}
         >
+          {/* Review / Approval overlay (superadmin-only; anchored to the dotted workspace background). */}
+          <ReviewStatusOverlay projectId={currentProjectId} />
+
           {/* Mobile: manual left drawer */}
           {isMobile ? (
             <>
@@ -5423,6 +5604,8 @@ export default function EditorShell() {
       <CreateAccountModal />
 
       <DeleteAccountModal />
+
+      <ShareCarouselsModal />
     </div>
   );
 }

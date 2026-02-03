@@ -372,7 +372,8 @@ export async function POST(request: NextRequest) {
     { accountId, actorUserId: user.id },
     templateTypeId
   );
-  const prompt = sanitizePrompt(String(ttEffective?.prompt || ''));
+  const promptRaw = String(ttEffective?.prompt || '');
+  const prompt = sanitizePrompt(promptRaw);
   if (!prompt) {
     return NextResponse.json(
       { success: false, error: 'Template type prompt is empty' },
@@ -426,6 +427,15 @@ export async function POST(request: NextRequest) {
     // leave nulls; callPoppy will throw a clearer error
   }
 
+  // Debug payload: show exactly what we sent to Poppy (no api_key; that's only in the URL).
+  // NOTE: raw prompt is JSON-stringified for safe logging (control chars/newlines won't break logs).
+  const poppyRequestBody = poppyRoutingMeta.model ? { prompt, model: poppyRoutingMeta.model } : { prompt };
+  const poppyPromptDebug = {
+    promptRaw: JSON.stringify(promptRaw),
+    promptSanitized: prompt,
+    requestBody: poppyRequestBody,
+  };
+
   // Create + lock a job (unique partial index blocks concurrent jobs).
   const { data: job, error: jobErr } = await supabase
     .from('carousel_generation_jobs')
@@ -454,6 +464,15 @@ export async function POST(request: NextRequest) {
 
   try {
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:poppy' });
+    try {
+      console.log(
+        `[Generate Copy][Poppy] account=${accountId} project=${project.id} templateType=${templateTypeId} body=${JSON.stringify(
+          poppyRequestBody
+        )}\nraw=${poppyPromptDebug.promptRaw}\n\nsanitized=\n${prompt}`
+      );
+    } catch {
+      // ignore logging failures
+    }
     const poppy = await callPoppy(prompt, { poppyConversationUrl });
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
     const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
@@ -521,6 +540,7 @@ export async function POST(request: NextRequest) {
       jobId,
       templateTypeId,
       poppyRoutingMeta,
+      poppyPromptDebug,
       caption,
       slides: slides.map((s, idx) => ({
         headline: templateTypeId === 'enhanced' ? (s.headline || '') : null,

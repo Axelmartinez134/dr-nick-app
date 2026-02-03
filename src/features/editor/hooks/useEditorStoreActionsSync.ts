@@ -133,6 +133,17 @@ type Args = {
   setBrandAlignmentPrompt: (next: string) => void;
   runBrandAlignmentCheck: (args: { projectId: string }) => Promise<any>;
 
+  // Review / Approval (Phase 2)
+  setIsSuperadmin: (next: boolean) => void;
+  onOpenShareCarousels: () => void;
+  onCloseShareCarousels: () => void;
+  onRefreshShareCarousels: () => Promise<void> | void;
+  onClickCopyShareCarouselsLink: () => Promise<void> | void;
+  onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+  onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<void> | void;
+
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
     source: 'vectorlogozone' | 'lobe-icons' | 'developer-icons' | 'svgporn' | 'gilbarbara' | 'simple-icons';
@@ -285,6 +296,15 @@ export function useEditorStoreActionsSync(args: Args) {
     setBrandAlignmentModalOpen,
     setBrandAlignmentPrompt,
     runBrandAlignmentCheck,
+    setIsSuperadmin,
+    onOpenShareCarousels,
+    onCloseShareCarousels,
+    onRefreshShareCarousels,
+    onClickCopyShareCarouselsLink,
+    onToggleProjectReviewReady,
+    onToggleProjectReviewPosted,
+    onToggleProjectReviewApproved,
+    onToggleProjectReviewScheduled,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -311,6 +331,16 @@ export function useEditorStoreActionsSync(args: Args) {
     onDownloadPdf: () => void handleDownloadPdf(),
     onShareAll: () => void handleShareAll(),
     onSignOut: () => void handleSignOut(),
+
+    setIsSuperadmin: (next: boolean) => setIsSuperadmin(next),
+    onOpenShareCarousels: () => onOpenShareCarousels(),
+    onCloseShareCarousels: () => onCloseShareCarousels(),
+    onRefreshShareCarousels: () => onRefreshShareCarousels(),
+    onClickCopyShareCarouselsLink: () => onClickCopyShareCarouselsLink(),
+    onToggleProjectReviewReady: (a: any) => onToggleProjectReviewReady(a),
+    onToggleProjectReviewPosted: (a: any) => onToggleProjectReviewPosted(a),
+    onToggleProjectReviewApproved: (a: any) => onToggleProjectReviewApproved(a),
+    onToggleProjectReviewScheduled: (a: any) => onToggleProjectReviewScheduled(a),
 
     onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
       setNewProjectTemplateTypeId(next);
@@ -557,7 +587,16 @@ export function useEditorStoreActionsSync(args: Args) {
       onDownloadAll: () => implRef.current?.onDownloadAll?.(),
       onDownloadPdf: () => implRef.current?.onDownloadPdf?.(),
       onShareAll: () => implRef.current?.onShareAll?.(),
+      onOpenShareCarousels: () => implRef.current?.onOpenShareCarousels?.(),
       onSignOut: () => implRef.current?.onSignOut?.(),
+      setIsSuperadmin: (next: boolean) => implRef.current?.setIsSuperadmin?.(next),
+      onCloseShareCarousels: () => implRef.current?.onCloseShareCarousels?.(),
+      onRefreshShareCarousels: () => implRef.current?.onRefreshShareCarousels?.(),
+      onClickCopyShareCarouselsLink: () => implRef.current?.onClickCopyShareCarouselsLink?.(),
+      onToggleProjectReviewReady: (a: any) => implRef.current?.onToggleProjectReviewReady?.(a),
+      onToggleProjectReviewPosted: (a: any) => implRef.current?.onToggleProjectReviewPosted?.(a),
+      onToggleProjectReviewApproved: (a: any) => implRef.current?.onToggleProjectReviewApproved?.(a),
+      onToggleProjectReviewScheduled: (a: any) => implRef.current?.onToggleProjectReviewScheduled?.(a),
 
       onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") =>
         implRef.current?.onChangeNewProjectTemplateTypeId?.(next),

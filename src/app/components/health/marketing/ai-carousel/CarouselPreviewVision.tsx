@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from 'react';
+import { useEffect, useRef, forwardRef, useImperativeHandle, useState, type CSSProperties } from 'react';
 import { VisionLayoutDecision } from '@/lib/carousel-types';
 import type {
   CarouselTemplateDefinitionV1,
@@ -98,6 +98,10 @@ interface CarouselPreviewProps {
   // Avoid using parent CSS transforms for scaling; they break Fabric hit-testing.
   displayWidthPx?: number;  // default 540
   displayHeightPx?: number; // default 720
+
+  // Optional: override the default framed container styling (used by /editor review page).
+  // Defaults preserve existing look (rounded border + shadow).
+  frameStyle?: CSSProperties;
 }
 
 const INTERNAL_W = 1080;
@@ -145,6 +149,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       onOpenImageMenu,
       displayWidthPx,
       displayHeightPx,
+      frameStyle: frameStyleProp,
     },
     ref
   ) => {
@@ -2826,18 +2831,21 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       };
     }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
+    const defaultFrameStyle: CSSProperties = {
+      width: `${displayW}px`,
+      height: `${displayH}px`,
+      border: '2px solid #e5e7eb',
+      borderRadius: '8px',
+      overflow: 'hidden',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+      backgroundColor: '#f9fafb',
+    };
+    const frameStyle: CSSProperties = { ...defaultFrameStyle, ...(frameStyleProp || {}) };
+
     return (
       <div className="flex flex-col items-center space-y-4">
         <div 
-          style={{ 
-            width: `${displayW}px`,
-            height: `${displayH}px`,
-            border: '2px solid #e5e7eb',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-            backgroundColor: '#f9fafb'
-          }}
+          style={frameStyle}
         >
           <canvas 
             ref={canvasRef}

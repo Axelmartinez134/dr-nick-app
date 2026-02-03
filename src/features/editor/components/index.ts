@@ -19,6 +19,8 @@ export { CreateAccountModal } from './CreateAccountModal';
 
 export { DeleteAccountModal } from './DeleteAccountModal';
 
+export { ShareCarouselsModal } from './ShareCarouselsModal';
+
 export { BrandAlignmentModal } from './BrandAlignmentModal';
 
 export { DebugCard } from './DebugCard';
@@ -35,4 +37,6 @@ export { EditorSlidesRow } from './EditorSlidesRow';
 export { EditorTopBar } from './EditorTopBar';
 
 export { EditorBottomPanel } from './EditorBottomPanel';
+
+export { ReviewStatusOverlay } from './ReviewStatusOverlay';
 
