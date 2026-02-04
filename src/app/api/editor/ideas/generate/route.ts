@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type Body = {
   sourceTitle: string;
@@ -99,7 +99,7 @@ async function callPoppy(prompt: string, args: { poppyConversationUrl: string })
   const modelFromUrl = String(url.searchParams.get('model') || '').trim();
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 90_000);
   try {
     const res = await fetch(url.toString(), {
       method: 'POST',
@@ -145,7 +145,7 @@ Rules (HARD):
   const userText = `${schema}\n\nData to structure:\n${opts.rawToParse}`;
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 90_000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
