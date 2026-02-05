@@ -80,9 +80,29 @@ function linkifyTextToNodes(text: string): Array<string | { href: string; label:
   return out;
 }
 
+function getFabricCanvasFromHandle(handle: any): any | null {
+  const h = handle || null;
+  const c = (h as any)?.canvas || h;
+  if (!c || typeof c.toDataURL !== "function") return null;
+  return c;
+}
+
+function getFabricCanvasSize(handle: any): { w: number; h: number } {
+  const c = getFabricCanvasFromHandle(handle) || ((handle as any)?.canvas || handle || null);
+  const w =
+    (typeof c?.getWidth === "function" ? Number(c.getWidth()) : NaN) ||
+    (typeof c?.width === "number" ? Number(c.width) : NaN) ||
+    1080;
+  const h =
+    (typeof c?.getHeight === "function" ? Number(c.getHeight()) : NaN) ||
+    (typeof c?.height === "number" ? Number(c.height) : NaN) ||
+    1440;
+  return { w: Math.max(1, w), h: Math.max(1, h) };
+}
+
 async function exportFabricCanvasPngBlob(handle: any, multiplier: number): Promise<Blob> {
-  const fabricCanvas = (handle as any)?.canvas || handle || null;
-  if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") throw new Error("Canvas not ready");
+  const fabricCanvas = getFabricCanvasFromHandle(handle);
+  if (!fabricCanvas) throw new Error("Canvas not ready");
   // IMPORTANT:
   // `CarouselPreviewVision` sets a display zoom so the 1080×1440 canvas fits the UI.
   // If we export while zoomed out, the PNG appears "smaller" inside the frame.
@@ -426,6 +446,8 @@ function ReviewProjectCard(props: {
   }, [project.caption]);
 
   const zipRefs = useRef<Array<{ current: any }>>(Array.from({ length: 6 }).map(() => ({ current: null })));
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const exportBusy = zipBusy || pdfBusy;
 
   const getNextBundleName = useCallback((base: string): string => {
     try {
@@ -440,10 +462,26 @@ function ReviewProjectCard(props: {
     }
   }, [project.id]);
 
+  const getNextPdfBundleName = useCallback((base: string): string => {
+    try {
+      const key = `dn.review.pdf.counter.${project.id}`;
+      const raw = localStorage.getItem(key) || "0";
+      const n = Math.max(0, Math.min(99, Number(raw) || 0));
+      const next = n + 1;
+      localStorage.setItem(key, String(next));
+      return next <= 1 ? base : `${base}_${next - 1}`;
+    } catch {
+      return base;
+    }
+  }, [project.id]);
+
   const onDownloadZip = useCallback(async () => {
-    if (zipBusy) return;
+    if (exportBusy) return;
     setZipBusy(true);
     try {
+      // Clear any stale refs from previous exports/projects before mounting hidden canvases.
+      for (let i = 0; i < 6; i++) (zipRefs.current[i] as any).current = null;
+
       const JSZipMod = await import("jszip");
       const JSZip = (JSZipMod as any)?.default || (JSZipMod as any);
       const zip = new JSZip();
@@ -453,7 +491,7 @@ function ReviewProjectCard(props: {
       // Ensure hidden canvases exist (they mount only while zipBusy).
       const t0 = Date.now();
       while (Date.now() - t0 < 6000) {
-        const ok = zipRefs.current.every((r) => (r as any)?.current?.canvas || (r as any)?.current);
+        const ok = zipRefs.current.every((r) => !!getFabricCanvasFromHandle((r as any)?.current));
         if (ok) break;
         await new Promise((r) => setTimeout(r, 50));
       }
@@ -475,10 +513,60 @@ function ReviewProjectCard(props: {
     } finally {
       setZipBusy(false);
     }
-  }, [getNextBundleName, project.title, zipBusy]);
+  }, [exportBusy, getNextBundleName, project.title]);
+
+  const onDownloadPdf = useCallback(async () => {
+    if (exportBusy) return;
+    setPdfBusy(true);
+    try {
+      // Clear any stale refs from previous exports/projects before mounting hidden canvases.
+      for (let i = 0; i < 6; i++) (zipRefs.current[i] as any).current = null;
+
+      const PdfLibMod = await import("pdf-lib");
+      const PDFDocument = (PdfLibMod as any)?.PDFDocument || (PdfLibMod as any)?.default?.PDFDocument;
+      if (!PDFDocument) throw new Error("PDF engine not available");
+
+      const pdfDoc = await PDFDocument.create();
+      const base = sanitizeFileName(project.title);
+      const bundleName = getNextPdfBundleName(base);
+
+      // Ensure hidden canvases exist (they mount only while exporting).
+      const t0 = Date.now();
+      while (Date.now() - t0 < 6000) {
+        const ok = zipRefs.current.every((r) => !!getFabricCanvasFromHandle((r as any)?.current));
+        if (ok) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+
+      if (!zipRefs.current.every((r) => !!getFabricCanvasFromHandle((r as any)?.current))) {
+        throw new Error("Slides are still rendering. Please wait a moment and try again.");
+      }
+
+      const { w: pageW, h: pageH } = getFabricCanvasSize(zipRefs.current[0]?.current);
+
+      for (let i = 0; i < 6; i++) {
+        const pngBlob = await exportFabricCanvasPngBlob(zipRefs.current[i]?.current, 3);
+        const buf = await pngBlob.arrayBuffer();
+        const png = await pdfDoc.embedPng(buf);
+        const page = pdfDoc.addPage([pageW, pageH]);
+        page.drawImage(png, { x: 0, y: 0, width: pageW, height: pageH });
+      }
+
+      const pdfBytes = await pdfDoc.save();
+      const pdfBlob = new Blob([pdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${bundleName}.pdf`;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [exportBusy, getNextPdfBundleName, project.title]);
 
   const hiddenExportCanvases = useMemo(() => {
-    if (!zipBusy) return null;
+    if (!exportBusy) return null;
     return (
       <div style={{ position: "absolute", left: -100000, top: -100000, width: 1, height: 1, overflow: "hidden" }}>
         {Array.from({ length: 6 }).map((_, i) => {
@@ -519,7 +607,7 @@ function ReviewProjectCard(props: {
         })}
       </div>
     );
-  }, [computeTemplateIdForSlide, project, templatesById, zipBusy]);
+  }, [computeTemplateIdForSlide, exportBusy, project, templatesById]);
 
   const sourceNodes = useMemo(() => linkifyTextToNodes(String(project.review_source || "")), [project.review_source]);
 
@@ -648,15 +736,26 @@ function ReviewProjectCard(props: {
         </div>
 
         {project.review_approved ? (
-          <button
-            type="button"
-            className="mt-3 h-10 w-full rounded-xl bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-60"
-            onClick={() => void onDownloadZip()}
-            disabled={zipBusy}
-            title="Download all slides as a ZIP"
-          >
-            {zipBusy ? "Preparing…" : "Download All (ZIP)"}
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              className="h-10 flex-1 rounded-xl bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-60"
+              onClick={() => void onDownloadZip()}
+              disabled={exportBusy}
+              title="Download all slides as a ZIP"
+            >
+              {zipBusy ? "Preparing…" : "Download All (ZIP)"}
+            </button>
+            <button
+              type="button"
+              className="h-10 flex-1 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => void onDownloadPdf()}
+              disabled={exportBusy}
+              title="Download all slides as a PDF"
+            >
+              {pdfBusy ? "Preparing…" : "Download PDF"}
+            </button>
+          </div>
         ) : null}
 
         <div className="mt-4">
