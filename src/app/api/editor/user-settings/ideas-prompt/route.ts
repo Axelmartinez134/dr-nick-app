@@ -6,7 +6,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 10;
 
 type Body = {
-  ideasPromptOverride: string | null;
+  ideasPromptOverride?: string | null;
+  ideasPromptAudience?: string | null;
 };
 
 function sanitizePrompt(input: string): string {
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   // Phase E: per-account prompt override (shared within account).
   const { data: settingsRow } = await supabase
     .from('editor_account_settings')
-    .select('ideas_prompt_override')
+    .select('ideas_prompt_override, ideas_prompt_audience')
     .eq('account_id', accountId)
     .maybeSingle();
 
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     success: true,
     ideasPromptOverride: String((settingsRow as any)?.ideas_prompt_override ?? legacy ?? ''),
+    ideasPromptAudience: String((settingsRow as any)?.ideas_prompt_audience ?? ''),
   });
 }
 
@@ -76,19 +78,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
   }
 
-  const raw = (body as any)?.ideasPromptOverride;
-  const next = raw === null ? null : sanitizePrompt(String(raw ?? ''));
-  if (next !== null && next.length > 20_000) {
-    return NextResponse.json({ success: false, error: 'ideasPromptOverride too long' }, { status: 400 });
+  const rawOverride = (body as any)?.ideasPromptOverride;
+  const rawAudience = (body as any)?.ideasPromptAudience;
+
+  const hasOverride = rawOverride !== undefined;
+  const hasAudience = rawAudience !== undefined;
+  if (!hasOverride && !hasAudience) {
+    return NextResponse.json(
+      { success: false, error: 'ideasPromptOverride or ideasPromptAudience is required' },
+      { status: 400 }
+    );
   }
 
-  const { error: upErr } = await supabase
-    .from('editor_account_settings')
-    .upsert({ account_id: accountId, ideas_prompt_override: next }, { onConflict: 'account_id' });
+  const nextOverride = !hasOverride ? undefined : rawOverride === null ? null : sanitizePrompt(String(rawOverride ?? ''));
+  const nextAudience = !hasAudience ? undefined : rawAudience === null ? null : sanitizePrompt(String(rawAudience ?? ''));
+
+  if (nextOverride !== undefined && nextOverride !== null && nextOverride.length > 20_000) {
+    return NextResponse.json({ success: false, error: 'ideasPromptOverride too long' }, { status: 400 });
+  }
+  if (nextAudience !== undefined && nextAudience !== null && nextAudience.length > 20_000) {
+    return NextResponse.json({ success: false, error: 'ideasPromptAudience too long' }, { status: 400 });
+  }
+
+  const payload: any = { account_id: accountId };
+  if (nextOverride !== undefined) payload.ideas_prompt_override = nextOverride;
+  if (nextAudience !== undefined) payload.ideas_prompt_audience = nextAudience;
+
+  const { error: upErr } = await supabase.from('editor_account_settings').upsert(payload, { onConflict: 'account_id' });
   if (upErr) {
     return NextResponse.json({ success: false, error: upErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, ideasPromptOverride: next ?? '' });
+  return NextResponse.json({
+    success: true,
+    ideasPromptOverride: nextOverride === undefined ? undefined : nextOverride ?? '',
+    ideasPromptAudience: nextAudience === undefined ? undefined : nextAudience ?? '',
+  });
 }
 

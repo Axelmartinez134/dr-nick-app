@@ -689,6 +689,15 @@ All fields below live on `public.carousel_projects`:
 - `POST /api/editor/projects/slides/image/reprocess`
 - `GET/POST /api/editor/assets/recents` (Phase 2: Image Library → Recents)
 
+#### Poof RemoveBG upstream (2026-02-05)
+- **Endpoint**: `https://api.poof.bg/v1/remove`
+- **Multipart compatibility**: send the image under **both** `image_file` and `file` (Poof variants differ; this avoids 400 Bad Request).
+- **Touched server routes**:
+  - `src/app/api/editor/projects/slides/image/upload/route.ts`
+  - `src/app/api/editor/projects/slides/image/removebg/route.ts`
+  - `src/app/api/editor/projects/slides/image/reprocess/route.ts`
+  - `src/app/api/editor/projects/jobs/generate-ai-image/route.ts` (optional BG removal step for AI images)
+
 ### Jobs
 - `POST /api/editor/projects/jobs/start`
 - `GET  /api/editor/projects/jobs/status`

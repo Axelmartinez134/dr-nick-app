@@ -3921,6 +3921,12 @@ export default function EditorShell() {
     return String(j?.ideasPromptOverride || "");
   }, [fetchJson]);
 
+  const fetchIdeasPromptAudience = useCallback(async () => {
+    const j = await fetchJson("/api/editor/user-settings/ideas-prompt", { method: "GET" });
+    if (!j?.success) throw new Error(j?.error || "Failed to load ideas prompt");
+    return String(j?.ideasPromptAudience || "");
+  }, [fetchJson]);
+
   const saveIdeasPromptOverride = useCallback(
     async (next: string) => {
       const j = await fetchJson("/api/editor/user-settings/ideas-prompt", {
@@ -3929,6 +3935,18 @@ export default function EditorShell() {
       });
       if (!j?.success) throw new Error(j?.error || "Failed to save ideas prompt");
       return String(j?.ideasPromptOverride || "");
+    },
+    [fetchJson]
+  );
+
+  const saveIdeasPromptAudience = useCallback(
+    async (next: string) => {
+      const j = await fetchJson("/api/editor/user-settings/ideas-prompt", {
+        method: "POST",
+        body: JSON.stringify({ ideasPromptAudience: String(next || "") }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to save ideas prompt");
+      return String(j?.ideasPromptAudience || "");
     },
     [fetchJson]
   );
@@ -5338,6 +5356,8 @@ export default function EditorShell() {
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
+    fetchIdeasPromptAudience,
+    saveIdeasPromptAudience,
     runGenerateIdeas,
     updateIdea,
     deleteIdeaSource,

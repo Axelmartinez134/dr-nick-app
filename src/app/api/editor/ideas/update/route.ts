@@ -11,14 +11,11 @@ type Body =
   | { action: 'unapprove'; ideaId: string }
   | { action: 'reorderApproved'; ideaIds: string[] };
 
-async function getIdeaById(supabase: any, args: { accountId: string; userId: string; ideaId: string }) {
+async function getIdeaById(supabase: any, args: { ideaId: string }) {
   const { data, error } = await supabase
     .from('editor_ideas')
-    .select('id, owner_user_id, status, approved_sort_index')
+    .select('id, account_id, owner_user_id, status, approved_sort_index')
     .eq('id', args.ideaId)
-    // Phase G: account-scoped ideas (shared within account).
-    // Backwards-safe fallback for legacy rows.
-    .or(`account_id.eq.${args.accountId},and(account_id.is.null,owner_user_id.eq.${args.userId})`)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data || null;
@@ -49,15 +46,16 @@ export async function POST(request: NextRequest) {
     if (action === 'approve') {
       const ideaId = String((body as any)?.ideaId || '').trim();
       if (!ideaId) return NextResponse.json({ success: false, error: 'ideaId is required' }, { status: 400 });
-      const cur = await getIdeaById(supabase, { accountId, userId: user.id, ideaId });
+      const cur = await getIdeaById(supabase, { ideaId });
       if (!cur) return NextResponse.json({ success: false, error: 'Idea not found' }, { status: 404 });
 
       // Append to end of approved queue.
-      const { data: maxRow, error: maxErr } = await supabase
-        .from('editor_ideas')
-        .select('approved_sort_index')
-        .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
-        .eq('status', 'approved')
+      const curAccountId = String((cur as any)?.account_id || '').trim() || null;
+      let maxQ = supabase.from('editor_ideas').select('approved_sort_index').eq('status', 'approved');
+      // Avoid PostgREST `.or(...)` parsing issues on some environments; rely on RLS + simple filters.
+      // Queue should be scoped to the idea's account (or legacy null).
+      maxQ = curAccountId ? maxQ.eq('account_id', curAccountId) : maxQ.is('account_id', null);
+      const { data: maxRow, error: maxErr } = await maxQ
         .order('approved_sort_index', { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
@@ -70,7 +68,6 @@ export async function POST(request: NextRequest) {
         .from('editor_ideas')
         .update({ status: 'approved', approved_sort_index: nextIndex, updated_at: nowIso })
         .eq('id', ideaId)
-        .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
         .select('id, status, approved_sort_index')
         .single();
       if (error) throw new Error(error.message);
@@ -80,14 +77,13 @@ export async function POST(request: NextRequest) {
     if (action === 'dismiss') {
       const ideaId = String((body as any)?.ideaId || '').trim();
       if (!ideaId) return NextResponse.json({ success: false, error: 'ideaId is required' }, { status: 400 });
-      const cur = await getIdeaById(supabase, { accountId, userId: user.id, ideaId });
+      const cur = await getIdeaById(supabase, { ideaId });
       if (!cur) return NextResponse.json({ success: false, error: 'Idea not found' }, { status: 404 });
       const nowIso = new Date().toISOString();
       const { data: updated, error } = await supabase
         .from('editor_ideas')
         .update({ status: 'dismissed', approved_sort_index: null, updated_at: nowIso })
         .eq('id', ideaId)
-        .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
         .select('id, status, approved_sort_index')
         .single();
       if (error) throw new Error(error.message);
@@ -97,14 +93,13 @@ export async function POST(request: NextRequest) {
     if (action === 'unapprove') {
       const ideaId = String((body as any)?.ideaId || '').trim();
       if (!ideaId) return NextResponse.json({ success: false, error: 'ideaId is required' }, { status: 400 });
-      const cur = await getIdeaById(supabase, { accountId, userId: user.id, ideaId });
+      const cur = await getIdeaById(supabase, { ideaId });
       if (!cur) return NextResponse.json({ success: false, error: 'Idea not found' }, { status: 404 });
       const nowIso = new Date().toISOString();
       const { data: updated, error } = await supabase
         .from('editor_ideas')
         .update({ status: 'pending', approved_sort_index: null, updated_at: nowIso })
         .eq('id', ideaId)
-        .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
         .select('id, status, approved_sort_index')
         .single();
       if (error) throw new Error(error.message);
@@ -120,7 +115,6 @@ export async function POST(request: NextRequest) {
       const { data: rows, error } = await supabase
         .from('editor_ideas')
         .select('id, owner_user_id')
-        .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
         .in('id', ids);
       if (error) throw new Error(error.message);
       const found = new Set((rows || []).map((r: any) => String(r.id)));
@@ -134,8 +128,7 @@ export async function POST(request: NextRequest) {
         await supabase
           .from('editor_ideas')
           .update({ status: 'approved', approved_sort_index: i, updated_at: nowIso })
-          .eq('id', ids[i])
-          .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`);
+          .eq('id', ids[i]);
       }
       return NextResponse.json({ success: true, approvedCount: ids.length });
     }

@@ -150,6 +150,8 @@ export type EditorActions = {
   // Ideas (Phase 2)
   fetchIdeasPromptOverride: () => Promise<string>;
   saveIdeasPromptOverride: (next: string) => Promise<string>;
+  fetchIdeasPromptAudience: () => Promise<string>;
+  saveIdeasPromptAudience: (next: string) => Promise<string>;
   runGenerateIdeas: (args: { sourceTitle: string; sourceUrl: string; topicCount?: number }) => Promise<any>;
   updateIdea: (body:
     | { action: "approve"; ideaId: string }

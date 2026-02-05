@@ -205,16 +205,39 @@ export async function POST(req: NextRequest) {
         if (!apiKey) throw new Error('Server missing REMOVEBG_API_KEY');
 
         const upstream = new FormData();
-        upstream.append('image_file', file);
+        // Poof API compatibility: some variants expect `image_file` (remove.bg-style),
+        // others expect `file`. Send both with an explicit filename.
+        try {
+          const f = new File([buffer], `image.${ext}`, { type: contentType });
+          upstream.append('image_file', f);
+          upstream.append('file', f);
+        } catch {
+          const b = new Blob([buffer], { type: contentType });
+          upstream.append('image_file', b, `image.${ext}`);
+          upstream.append('file', b, `image.${ext}`);
+        }
         upstream.append('format', 'png');
 
-        const r = await fetch('https://removebgapi.com/api/v1/remove', {
+        const r = await fetch('https://api.poof.bg/v1/remove', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${apiKey}` },
+          headers: { 'X-API-Key': apiKey },
           body: upstream,
         });
+        try {
+          if (r.redirected || (r.status >= 300 && r.status < 400)) {
+            console.warn('[upload][removebg] upstream redirect/status', {
+              status: r.status,
+              redirected: r.redirected,
+              url: r.url,
+              location: r.headers.get('location'),
+            });
+          }
+        } catch {
+          // ignore
+        }
         if (!r.ok) {
-          throw new Error(`RemoveBG failed (${r.status})`);
+          const errText = await r.text().catch(() => '');
+          throw new Error(`RemoveBG failed (${r.status})${errText ? `: ${errText.slice(0, 300)}` : ''}`);
         }
 
         const ab = await r.arrayBuffer();

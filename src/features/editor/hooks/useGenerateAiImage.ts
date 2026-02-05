@@ -490,12 +490,17 @@ export function useGenerateAiImage(params: {
     const INTERVAL_MS = 500;
     let timer: number | null = null;
 
+    const stop = () => {
+      if (timer) window.clearInterval(timer);
+      timer = null;
+    };
+
     const attempt = async () => {
       try {
         if (cancelled) return;
         const token = await getAuthToken();
         if (!token) {
-          if (Date.now() - startedAtMs > MAX_RETRY_MS) return;
+          if (Date.now() - startedAtMs > MAX_RETRY_MS) stop();
           return;
         }
         const statusRes = await fetch(
@@ -508,27 +513,25 @@ export function useGenerateAiImage(params: {
         if (job && (job.status === 'pending' || job.status === 'running')) {
           void beginTrackingExistingJob({ projectId: pid, slideIndex, startedAt: job.started_at || null });
           // Once we attach tracking, stop retries.
-          if (timer) window.clearInterval(timer);
-          timer = null;
+          stop();
         } else {
           // No active job; no need to keep retrying.
-          if (timer) window.clearInterval(timer);
-          timer = null;
+          stop();
         }
       } catch {
-        // ignore
+        // If status checks keep failing, don't poll forever.
+        if (Date.now() - startedAtMs > MAX_RETRY_MS) stop();
       }
     };
 
-    void attempt();
     timer = window.setInterval(() => {
       void attempt();
     }, INTERVAL_MS);
+    void attempt();
 
     return () => {
       cancelled = true;
-      if (timer) window.clearInterval(timer);
-      timer = null;
+      stop();
     };
   }, [activeSlideIndex, beginTrackingExistingJob, currentProjectId, getAuthToken, templateTypeId]);
 

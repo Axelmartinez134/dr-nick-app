@@ -95,10 +95,19 @@ export async function POST(request: NextRequest) {
   // Load effective template-type settings (account-scoped).
   const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
 
+  // Per-account audience (used in injected prompt context JSON).
+  const { data: audienceRow, error: audienceErr } = await supabase
+    .from('editor_account_settings')
+    .select('ideas_prompt_audience')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (audienceErr) return NextResponse.json({ success: false, error: audienceErr.message }, { status: 500 });
+  const audience = String((audienceRow as any)?.ideas_prompt_audience ?? '');
+
   const topicTitle = String((idea as any).title || '').trim() || 'Untitled Topic';
   const promptRendered = buildInjectedPrompt({
     basePrompt: String((effective as any)?.prompt || ''),
-    audience: 'business owners',
+    audience,
     sourceTitle: String((source as any).source_title || ''),
     sourceUrl: String((source as any).source_url || ''),
     topicTitle,

@@ -359,13 +359,27 @@ export async function POST(req: NextRequest) {
           new Blob([originalBuffer], { type: 'image/png' }),
           'image.png'
         );
+        // Poof API compatibility: some variants expect `file`.
+        upstream.append('file', new Blob([originalBuffer], { type: 'image/png' }), 'image.png');
         upstream.append('format', 'png');
 
-        const removeBgRes = await fetch('https://removebgapi.com/api/v1/remove', {
+        const removeBgRes = await fetch('https://api.poof.bg/v1/remove', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${apiKey}` },
+          headers: { 'X-API-Key': apiKey },
           body: upstream,
         });
+        try {
+          if (removeBgRes.redirected || (removeBgRes.status >= 300 && removeBgRes.status < 400)) {
+            console.warn('[generate-ai-image][removebg] upstream redirect/status', {
+              status: removeBgRes.status,
+              redirected: removeBgRes.redirected,
+              url: removeBgRes.url,
+              location: removeBgRes.headers.get('location'),
+            });
+          }
+        } catch {
+          // ignore
+        }
 
         if (!removeBgRes.ok) {
           const errText = await removeBgRes.text().catch(() => '');

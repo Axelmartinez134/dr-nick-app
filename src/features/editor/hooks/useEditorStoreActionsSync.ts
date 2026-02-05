@@ -112,6 +112,8 @@ type Args = {
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<any[]>;
   fetchIdeasPromptOverride: () => Promise<string>;
   saveIdeasPromptOverride: (next: string) => Promise<string>;
+  fetchIdeasPromptAudience: () => Promise<string>;
+  saveIdeasPromptAudience: (next: string) => Promise<string>;
   runGenerateIdeas: (args: { sourceTitle: string; sourceUrl: string; topicCount?: number }) => Promise<any>;
   updateIdea: (body:
     | { action: "approve"; ideaId: string }
@@ -286,6 +288,8 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
+    fetchIdeasPromptAudience,
+    saveIdeasPromptAudience,
     runGenerateIdeas,
     updateIdea,
     deleteIdeaSource,
@@ -569,6 +573,8 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => fetchIdeaSourcesAndIdeas(includeDismissed),
     fetchIdeasPromptOverride: () => fetchIdeasPromptOverride(),
     saveIdeasPromptOverride: (next: string) => saveIdeasPromptOverride(next),
+    fetchIdeasPromptAudience: () => fetchIdeasPromptAudience(),
+    saveIdeasPromptAudience: (next: string) => saveIdeasPromptAudience(next),
     runGenerateIdeas: (a: any) => runGenerateIdeas(a),
     updateIdea: (b: any) => updateIdea(b),
     deleteIdeaSource: (sourceId: string) => deleteIdeaSource(sourceId),
@@ -681,6 +687,9 @@ export function useEditorStoreActionsSync(args: Args) {
         implRef.current?.fetchIdeaSourcesAndIdeas?.(includeDismissed) ?? Promise.resolve([]),
       fetchIdeasPromptOverride: () => implRef.current?.fetchIdeasPromptOverride?.() ?? Promise.resolve(""),
       saveIdeasPromptOverride: (next: string) => implRef.current?.saveIdeasPromptOverride?.(next) ?? Promise.resolve(String(next || "")),
+      fetchIdeasPromptAudience: () => implRef.current?.fetchIdeasPromptAudience?.() ?? Promise.resolve(""),
+      saveIdeasPromptAudience: (next: string) =>
+        implRef.current?.saveIdeasPromptAudience?.(next) ?? Promise.resolve(String(next || "")),
       runGenerateIdeas: (a: any) => implRef.current?.runGenerateIdeas?.(a) ?? Promise.resolve({}),
       updateIdea: (b: any) => implRef.current?.updateIdea?.(b) ?? Promise.resolve({}),
       deleteIdeaSource: (sourceId: string) => implRef.current?.deleteIdeaSource?.(sourceId) ?? Promise.resolve({}),

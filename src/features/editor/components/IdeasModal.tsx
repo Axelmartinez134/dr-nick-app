@@ -49,6 +49,12 @@ export function IdeasModal() {
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
 
+  const [audienceDraft, setAudienceDraft] = useState<string>("");
+  const [audienceStatus, setAudienceStatus] = useState<"idle" | "loading" | "saving" | "saved" | "error">("idle");
+  const [audienceError, setAudienceError] = useState<string | null>(null);
+  const audienceDirtyRef = useRef(false);
+  const audienceSaveTimeoutRef = useRef<number | null>(null);
+
   const [sourceTitleDraft, setSourceTitleDraft] = useState("");
   const [sourceUrlDraft, setSourceUrlDraft] = useState("");
   const [genBusy, setGenBusy] = useState(false);
@@ -252,6 +258,14 @@ export function IdeasModal() {
     // Reset dismissed filter + selection to newest group.
     setIncludeDismissed(false);
     setSelectedGroupTitle(null);
+
+    // Reset prompt/audience transient UI (drafts will be loaded immediately after open).
+    setPromptStatus("idle");
+    setPromptError(null);
+    promptDirtyRef.current = false;
+    setAudienceStatus("idle");
+    setAudienceError(null);
+    audienceDirtyRef.current = false;
   }, [open]);
 
   // Load prompt + last source when modal opens.
@@ -272,6 +286,39 @@ export function IdeasModal() {
         if (cancelled) return;
         setPromptError(String(e?.message || e || "Failed to load Ideas Prompt"));
         setPromptStatus("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally omit drafts from deps; this should run only on open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actions, open]);
+
+  // Load audience when modal opens (per-account).
+  useEffect(() => {
+    if (!open) return;
+    if (!actions?.fetchIdeasPromptAudience) {
+      setAudienceDraft("");
+      setAudienceStatus("idle");
+      setAudienceError(null);
+      audienceDirtyRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    setAudienceStatus("loading");
+    setAudienceError(null);
+    void (async () => {
+      try {
+        const v = await actions.fetchIdeasPromptAudience();
+        if (cancelled) return;
+        setAudienceDraft(String(v || ""));
+        audienceDirtyRef.current = false;
+        setAudienceStatus("idle");
+      } catch (e: any) {
+        if (cancelled) return;
+        setAudienceError(String(e?.message || e || "Failed to load Audience"));
+        setAudienceStatus("error");
       }
     })();
     return () => {
@@ -306,6 +353,32 @@ export function IdeasModal() {
       if (promptSaveTimeoutRef.current) window.clearTimeout(promptSaveTimeoutRef.current);
     };
   }, [actions, open, promptDraft]);
+
+  // Debounced autosave for Audience (per-account).
+  useEffect(() => {
+    if (!open) return;
+    if (!actions?.saveIdeasPromptAudience) return;
+    if (!audienceDirtyRef.current) return;
+    if (audienceSaveTimeoutRef.current) window.clearTimeout(audienceSaveTimeoutRef.current);
+    audienceSaveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        setAudienceError(null);
+        setAudienceStatus("saving");
+        const saved = await actions.saveIdeasPromptAudience(String(audienceDraft || ""));
+        setAudienceDraft(String(saved || ""));
+        setAudienceStatus("saved");
+        audienceDirtyRef.current = false;
+        window.setTimeout(() => setAudienceStatus("idle"), 1200);
+      } catch (e: any) {
+        setAudienceError(String(e?.message || e || "Failed to save Audience"));
+        setAudienceStatus("error");
+        window.setTimeout(() => setAudienceStatus("idle"), 2000);
+      }
+    }, 600);
+    return () => {
+      if (audienceSaveTimeoutRef.current) window.clearTimeout(audienceSaveTimeoutRef.current);
+    };
+  }, [actions, open, audienceDraft]);
 
   useEffect(() => {
     if (!open) return;
@@ -382,6 +455,28 @@ export function IdeasModal() {
                 {promptStatus === "saving" ? <span>Saving…</span> : null}
                 {promptStatus === "saved" ? <span className="text-emerald-700">Saved ✓</span> : null}
                 {promptStatus === "error" && promptError ? <span className="text-red-600">❌ {promptError}</span> : null}
+              </div>
+
+              <div className="mt-3">
+                <div className="text-xs font-semibold text-slate-700">Audience (saved for this account)</div>
+                <div className="mt-0.5 text-[11px] text-slate-500">
+                  Used to fill <span className="font-mono">{'{{audience}}'}</span> when generating ideas (can be empty).
+                </div>
+                <input
+                  className="mt-2 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                  value={audienceDraft}
+                  onChange={(e) => {
+                    audienceDirtyRef.current = true;
+                    setAudienceDraft(e.target.value);
+                  }}
+                  placeholder='e.g. "women over 30"'
+                />
+                <div className="mt-1 text-[11px] text-slate-500 flex items-center gap-3">
+                  {audienceStatus === "loading" ? <span>Loading…</span> : null}
+                  {audienceStatus === "saving" ? <span>Saving…</span> : null}
+                  {audienceStatus === "saved" ? <span className="text-emerald-700">Saved ✓</span> : null}
+                  {audienceStatus === "error" && audienceError ? <span className="text-red-600">❌ {audienceError}</span> : null}
+                </div>
               </div>
             </div>
 

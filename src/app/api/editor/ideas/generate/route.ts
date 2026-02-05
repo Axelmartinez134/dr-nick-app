@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
   // Phase E: per-account Poppy routing + Ideas prompt override.
   const { data: settingsRow, error: settingsErr } = await supabase
     .from('editor_account_settings')
-    .select('poppy_conversation_url, ideas_prompt_override')
+    .select('poppy_conversation_url, ideas_prompt_override, ideas_prompt_audience')
     .eq('account_id', accountId)
     .maybeSingle();
   if (settingsErr) return NextResponse.json({ success: false, error: settingsErr.message }, { status: 500 });
@@ -268,7 +268,7 @@ export async function POST(request: NextRequest) {
     sourceTitle,
     sourceUrl,
     topicCount: String(topicCount),
-    audience: 'business owners',
+    audience: String((settingsRow as any)?.ideas_prompt_audience ?? ''),
   });
 
   // Create or reuse Source group.

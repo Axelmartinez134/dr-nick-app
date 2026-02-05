@@ -163,16 +163,38 @@ export async function POST(req: NextRequest) {
     const upstream = new FormData();
     // Node 20 provides File.
     const f = new File([found.bytes], `image.${found.ext}`, { type: found.contentType });
+    // Poof API compatibility: send both `image_file` and `file`.
     upstream.append('image_file', f);
+    upstream.append('file', f);
     upstream.append('format', 'png');
 
-    const r = await fetch('https://removebgapi.com/api/v1/remove', {
+    const r = await fetch('https://api.poof.bg/v1/remove', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: { 'X-API-Key': apiKey },
       body: upstream,
     });
+    try {
+      if (r.redirected || (r.status >= 300 && r.status < 400)) {
+        console.warn('[reprocess][removebg] upstream redirect/status', {
+          status: r.status,
+          redirected: r.redirected,
+          url: r.url,
+          location: r.headers.get('location'),
+        });
+      }
+    } catch {
+      // ignore
+    }
     if (!r.ok) {
-      return NextResponse.json({ success: false, error: `RemoveBG failed (${r.status})`, statusCode: r.status } satisfies Resp, { status: 400 });
+      const errText = await r.text().catch(() => '');
+      return NextResponse.json(
+        {
+          success: false,
+          error: `RemoveBG failed (${r.status})${errText ? `: ${errText.slice(0, 300)}` : ''}`,
+          statusCode: r.status,
+        } satisfies Resp,
+        { status: 400 }
+      );
     }
     const ab = await r.arrayBuffer();
     processedBytes = new Uint8Array(ab);
