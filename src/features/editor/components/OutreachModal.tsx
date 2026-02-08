@@ -188,6 +188,23 @@ export function OutreachModal() {
     if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to apply template mappings (${res.status})`));
   }
 
+  async function apiUpdateProjectCaption(args: { projectId: string; caption: string }) {
+    const token = await getSessionToken();
+    const accountHeader = getActiveAccountHeader();
+    const res = await fetch("/api/editor/projects/update", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...accountHeader },
+      body: JSON.stringify({ projectId: args.projectId, caption: args.caption }),
+    });
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to set caption (${res.status})`));
+  }
+
+  function buildOutreachCaption(name: string) {
+    const safeName = String(name || "").trim() || "there";
+    return `Hey ${safeName}, made you this carousel from one of your recent posts about.\n\nThis same format grew @thefittestdoc from 50K to 240K in 6 months.\n\nWant the full version?`;
+  }
+
   async function apiPersistTarget(args: {
     instagramUrl: string;
     scraped: { fullName: string | null; username: string | null; profilePicUrlHD: string | null; raw: any } | null;
@@ -267,6 +284,7 @@ export function OutreachModal() {
         },
       });
       setCreatedTemplate({ id: out.templateId, name: out.templateName });
+      actions?.onRefreshTemplatesList?.();
     } catch (e: any) {
       setCreateError(String(e?.message || e || "Create template failed"));
     } finally {
@@ -316,6 +334,14 @@ export function OutreachModal() {
 
       setCreatedProjectId(projectId);
 
+      // Inject the outreach DM copy into the project's caption.
+      try {
+        const nameForCaption = String(scraped?.fullName || "").trim() || String(displayHandle || "").trim() || "there";
+        await apiUpdateProjectCaption({ projectId, caption: buildOutreachCaption(nameForCaption) });
+      } catch (e: any) {
+        setProjectError(String(e?.message || e || "Failed to set caption"));
+      }
+
       // 3) Persist outreach record (Phase 6) then load the newly created project.
       // If persistence fails, keep the modal open so user can retry "Save record" without creating another project.
       await persistTarget({ projectId });
@@ -354,6 +380,7 @@ export function OutreachModal() {
       const tpl = await apiCreateTemplate({ baseTemplateId, scraped: scrapedData });
       setCreatedTemplate({ id: tpl.templateId, name: tpl.templateName });
       setCreateBusy(false);
+      actions?.onRefreshTemplatesList?.();
 
       // 3) Create project + mappings
       setProjectBusy(true);
@@ -373,6 +400,15 @@ export function OutreachModal() {
       });
       setPersistedTargetId(persisted.id);
       setPersistBusy(false);
+
+      // 5) Inject the outreach DM copy into the project's caption (last step before loading).
+      setProjectBusy(true);
+      const nameForCaption =
+        String(scrapedData.fullName || "").trim() ||
+        (scrapedData.username ? `@${String(scrapedData.username || "").replace(/^@+/, "")}` : "") ||
+        "there";
+      await apiUpdateProjectCaption({ projectId, caption: buildOutreachCaption(nameForCaption) });
+      setProjectBusy(false);
 
       // 5) Load project + close modal
       actions?.onLoadProject?.(projectId);

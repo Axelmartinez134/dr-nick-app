@@ -35,6 +35,7 @@ export type EditorActions = {
   onOpenTemplateSettings: () => void;
   onCloseTemplateSettings: () => void;
   onOpenTemplateEditor: () => void;
+  onRefreshTemplatesList: () => void;
 
   onOpenPromptModal: (section: PromptSection) => void;
   onClosePromptsModal: () => void;

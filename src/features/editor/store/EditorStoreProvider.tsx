@@ -15,6 +15,7 @@ const noopActions: EditorActions = {
   onOpenTemplateSettings: () => {},
   onCloseTemplateSettings: () => {},
   onOpenTemplateEditor: () => {},
+  onRefreshTemplatesList: () => {},
   onOpenPromptModal: () => {},
   onClosePromptsModal: () => {},
   onChangeTemplateTypePrompt: () => {},

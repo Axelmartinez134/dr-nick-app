@@ -50,6 +50,7 @@ type Args = {
   setPromptModalOpen: (next: boolean) => void;
   setPromptModalSection: (next: "prompt" | "emphasis" | "image" | "caption") => void;
   setTemplateEditorOpen: (next: boolean) => void;
+  loadTemplatesList: () => Promise<void> | void;
   promptDirtyRef: any;
   setTemplateTypePrompt: (next: string) => void;
   setTemplateTypeEmphasisPrompt: (next: string) => void;
@@ -373,6 +374,13 @@ export function useEditorStoreActionsSync(args: Args) {
       editorStore.setState({ templateSettingsOpen: false, promptModalOpen: false } as any);
       setTemplateEditorOpen(true);
     },
+    onRefreshTemplatesList: () => {
+      try {
+        void args.loadTemplatesList?.();
+      } catch {
+        // ignore
+      }
+    },
 
     onOpenPromptModal: (section: "prompt" | "emphasis" | "image" | "caption") => {
       setPromptModalSection(section);
@@ -621,6 +629,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onOpenTemplateSettings: () => implRef.current?.onOpenTemplateSettings?.(),
       onCloseTemplateSettings: () => implRef.current?.onCloseTemplateSettings?.(),
       onOpenTemplateEditor: () => implRef.current?.onOpenTemplateEditor?.(),
+      onRefreshTemplatesList: () => implRef.current?.onRefreshTemplatesList?.(),
 
       onOpenPromptModal: (section: "prompt" | "emphasis" | "image" | "caption") => implRef.current?.onOpenPromptModal?.(section),
       onClosePromptsModal: () => implRef.current?.onClosePromptsModal?.(),

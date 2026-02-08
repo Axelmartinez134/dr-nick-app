@@ -5295,6 +5295,7 @@ export default function EditorShell() {
     setPromptModalOpen,
     setPromptModalSection,
     setTemplateEditorOpen,
+    loadTemplatesList,
     promptDirtyRef,
     setTemplateTypePrompt,
     setTemplateTypeEmphasisPrompt,
