@@ -20,7 +20,7 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
-import { BrandAlignmentModal, CreateAccountModal, DeleteAccountModal, IdeasModal, ShareCarouselsModal } from "@/features/editor/components";
+import { BrandAlignmentModal, CreateAccountModal, DeleteAccountModal, IdeasModal, OutreachModal, ShareCarouselsModal } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -5640,6 +5640,8 @@ export default function EditorShell() {
       <CreateAccountModal />
 
       <DeleteAccountModal />
+
+      <OutreachModal />
 
       <ShareCarouselsModal />
     </div>

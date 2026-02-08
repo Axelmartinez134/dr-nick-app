@@ -123,6 +123,9 @@ export type EditorActions = {
   onCloseCreateAccountModal: () => void;
   onOpenDeleteAccountModal: () => void;
   onCloseDeleteAccountModal: () => void;
+  // Outreach (Phase 1: UI shell only; superadmin-only)
+  onOpenOutreachModal: () => void;
+  onCloseOutreachModal: () => void;
   // Brand Alignment (Phase 1)
   onClickRunBrandAlignmentCheck: () => void;
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<
@@ -518,6 +521,7 @@ export type EditorState = {
   ideasModalOpen: boolean;
   createAccountModalOpen: boolean;
   deleteAccountModalOpen: boolean;
+  outreachModalOpen: boolean;
   brandAlignmentModalOpen: boolean;
   shareCarouselsModalOpen: boolean;
 

@@ -779,6 +779,55 @@ This feature is **editor-owned** (no dependencies on Health/Marketing UI), but i
   - Comment box autosaves (Saving… → Saved ✓) and persists on refresh
   - Download All (ZIP) shows Preparing… and downloads 6 PNGs for that project
 
+## Outreach (Instagram → Template → Project)
+Superadmin-only workflow to speed up outreach setup for creators. Input an Instagram URL, scrape profile data via Apify, then one-click create a customized template + a new project.
+
+### Superadmin-only UI (inside `/editor`)
+- **Top bar button**: `src/features/editor/components/EditorTopBar.tsx`
+  - “Outreach” (superadmin-only)
+- **Modal**: `src/features/editor/components/OutreachModal.tsx`
+  - Base template dropdown (defaults to template named **“Outreach Template”** when present)
+  - Scrape (Apify) → shows prioritized fields:
+    - `profilePicUrlHD` (clamped to 2 lines so it can’t expand the modal)
+    - `fullName`
+    - `@username`
+    - plus full raw JSON
+  - “Run outreach” (one-click): **Scrape → Create template → Create project → Save record → Load project**
+  - “Create Templates”: duplicates the selected base template and replaces layers by **`kind` OR `name`**:
+    - image: `avatar`
+    - text: `display_name`
+    - text: `handle`
+  - “Create Project”: creates a **Regular** project titled by scraped identity and applies template mappings for **all slides (1, 2–5, and 6)** to the newly created template
+  - “Save record”: persists a row into `editor_outreach_targets` (mini CRM)
+  - Reset/Close in the header; buttons are disabled while busy; errors are shown in a single banner
+
+### Superadmin-only APIs (authed)
+- `POST /api/editor/outreach/apify-probe` → `src/app/api/editor/outreach/apify-probe/route.ts`
+  - Returns `{ fullName, username, profilePicUrlHD, raw }`
+- `POST /api/editor/outreach/create-template` → `src/app/api/editor/outreach/create-template/route.ts`
+  - Duplicates base template, downloads `profilePicUrlHD` server-side (avoids CORS), overwrites avatar asset, updates text assets, and renames template
+  - Includes robust name collision handling (adds `(@handle)` and/or numeric suffixes)
+- `POST /api/editor/outreach/persist-target` → `src/app/api/editor/outreach/persist-target/route.ts`
+  - Inserts a row into `editor_outreach_targets` (superadmin-only)
+
+### Data model
+- **Migration**: `supabase/migrations/20260208_000001_add_editor_outreach_targets.sql`
+- **Table**: `public.editor_outreach_targets`
+  - `account_id` is **nullable metadata** (hybrid; not used for access control)
+  - Stores scrape fields + `base_template_id` + `created_template_id` + `created_project_id`
+
+### Manual QA (Outreach)
+- As superadmin, “Outreach” button appears; non-superadmin doesn’t see it
+- Modal defaults base template to “Outreach Template” (if present)
+- Scrape valid IG URL shows prioritized fields + raw JSON; invalid URL shows a clear error
+- “Run outreach” creates:
+  - new template with updated avatar/name/handle
+  - new Regular project titled by scraped identity
+  - slide 1, 2–5, and 6 mappings updated to the new template
+  - outreach record persisted
+  - editor loads the new project
+- Reset clears all modal state and allows a fresh run
+
 ## Database (high level)
 Key tables used by `/editor`:
 - `public.editor_accounts` (tenant/workspace)

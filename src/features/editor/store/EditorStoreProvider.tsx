@@ -80,6 +80,8 @@ const noopActions: EditorActions = {
   onCloseCreateAccountModal: () => {},
   onOpenDeleteAccountModal: () => {},
   onCloseDeleteAccountModal: () => {},
+  onOpenOutreachModal: () => {},
+  onCloseOutreachModal: () => {},
   fetchIdeaSourcesAndIdeas: async () => [],
   fetchIdeasPromptOverride: async () => "",
   saveIdeasPromptOverride: async (next: string) => String(next || ""),
@@ -130,6 +132,7 @@ const defaultState: EditorState = {
   ideasModalOpen: false,
   createAccountModalOpen: false,
   deleteAccountModalOpen: false,
+  outreachModalOpen: false,
   brandAlignmentModalOpen: false,
   shareCarouselsModalOpen: false,
 

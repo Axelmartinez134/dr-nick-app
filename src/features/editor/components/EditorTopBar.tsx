@@ -214,6 +214,16 @@ export function EditorTopBar() {
         </div>
       </div>
       <div className="flex items-center gap-2 min-w-0">
+        {isSuperadmin ? (
+          <button
+            onClick={actions?.onOpenOutreachModal}
+            className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
+            title="Outreach (superadmin)"
+            type="button"
+          >
+            Outreach
+          </button>
+        ) : null}
         {isSuperadmin && accounts.length > 0 ? (
           <div className="flex items-center gap-2 relative">
             <div className="text-xs font-semibold text-slate-600 whitespace-nowrap">Account</div>

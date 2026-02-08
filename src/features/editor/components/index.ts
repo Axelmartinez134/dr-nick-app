@@ -21,6 +21,8 @@ export { DeleteAccountModal } from './DeleteAccountModal';
 
 export { ShareCarouselsModal } from './ShareCarouselsModal';
 
+export { OutreachModal } from './OutreachModal';
+
 export { BrandAlignmentModal } from './BrandAlignmentModal';
 
 export { DebugCard } from './DebugCard';

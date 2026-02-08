@@ -554,6 +554,12 @@ export function useEditorStoreActionsSync(args: Args) {
       setDeleteAccountModalOpen(false);
       editorStore.setState({ deleteAccountModalOpen: false } as any);
     },
+    onOpenOutreachModal: () => {
+      editorStore.setState({ outreachModalOpen: true } as any);
+    },
+    onCloseOutreachModal: () => {
+      editorStore.setState({ outreachModalOpen: false } as any);
+    },
     onOpenBrandAlignmentModal: () => {
       setBrandAlignmentModalOpen(true);
       editorStore.setState({ brandAlignmentModalOpen: true } as any);
@@ -683,6 +689,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseCreateAccountModal: () => implRef.current?.onCloseCreateAccountModal?.(),
       onOpenDeleteAccountModal: () => implRef.current?.onOpenDeleteAccountModal?.(),
       onCloseDeleteAccountModal: () => implRef.current?.onCloseDeleteAccountModal?.(),
+      onOpenOutreachModal: () => implRef.current?.onOpenOutreachModal?.(),
+      onCloseOutreachModal: () => implRef.current?.onCloseOutreachModal?.(),
       fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) =>
         implRef.current?.fetchIdeaSourcesAndIdeas?.(includeDismissed) ?? Promise.resolve([]),
       fetchIdeasPromptOverride: () => implRef.current?.fetchIdeasPromptOverride?.() ?? Promise.resolve(""),
