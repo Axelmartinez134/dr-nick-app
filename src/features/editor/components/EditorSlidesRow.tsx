@@ -311,6 +311,8 @@ export function EditorSlidesRow() {
                     clampUserImageToContentRect={false}
                     pushTextOutOfUserImage={templateTypeId !== "regular"}
                     lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
+                    onUserImageChange={noop as any}
+                    onUserExtraImageChange={noop as any}
                   />
                 );
               })}
@@ -440,8 +442,10 @@ export function EditorSlidesRow() {
                                     ? (templateTypeId === "regular" ? onUserTextChangeRegular : onUserTextChangeEnhanced)
                                     : undefined
                                 }
-                                onUserImageChange={i === activeSlideIndex ? handleUserImageChange : undefined}
-                                onUserExtraImageChange={i === activeSlideIndex ? handleUserExtraImageChange : undefined}
+                                // IMPORTANT: For non-active slides we still must treat image geometry as layout-driven.
+                                // Passing a noop avoids "preserve Fabric position" behavior across project switches.
+                                onUserImageChange={i === activeSlideIndex ? handleUserImageChange : (noop as any)}
+                                onUserExtraImageChange={i === activeSlideIndex ? handleUserExtraImageChange : (noop as any)}
                                 onOpenImageMenu={i === activeSlideIndex ? openImageMenu : undefined}
                               />
                             );

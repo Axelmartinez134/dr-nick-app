@@ -201,9 +201,17 @@ export function useImageOps(params: {
         // Phase 1: allow caller to decide whether BG removal runs at insert time.
         fd.append('bgRemovalEnabled', bgRemovalEnabledAtInsert ? '1' : '0');
 
+        const activeAccountId = (() => {
+          try {
+            return typeof localStorage !== 'undefined' ? String(localStorage.getItem('editor.activeAccountId') || '').trim() : '';
+          } catch {
+            return '';
+          }
+        })();
+
         const res = await fetch('/api/editor/projects/slides/image/upload', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, ...(activeAccountId ? { 'x-account-id': activeAccountId } : {}) },
           body: fd,
         });
         const j = await res.json().catch(() => ({}));

@@ -100,6 +100,87 @@ function getFabricCanvasSize(handle: any): { w: number; h: number } {
   return { w: Math.max(1, w), h: Math.max(1, h) };
 }
 
+const preloadCache = new Map<string, Promise<void>>();
+
+function preloadImage(url: string): Promise<void> {
+  const u = String(url || "").trim();
+  if (!u) return Promise.resolve();
+  const existing = preloadCache.get(u);
+  if (existing) return existing;
+  const p = new Promise<void>((resolve) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve();
+      img.onerror = () => resolve(); // best-effort; export will still wait on Fabric objects
+      img.src = u;
+      // If already cached, load can be synchronous in some browsers; treat it as loaded.
+      if (img.complete && (img.naturalWidth || 0) > 0) resolve();
+    } catch {
+      resolve();
+    }
+  });
+  preloadCache.set(u, p);
+  return p;
+}
+
+function getFabricImageElement(obj: any): any | null {
+  try {
+    const el = (typeof obj?.getElement === "function" ? obj.getElement() : null) || obj?._element || obj?._originalElement || null;
+    return el || null;
+  } catch {
+    return null;
+  }
+}
+
+function isFabricImageLoaded(obj: any): boolean {
+  const el: any = getFabricImageElement(obj);
+  if (!el) return false;
+  const complete = typeof el?.complete === "boolean" ? !!el.complete : true;
+  const w = Number(el?.naturalWidth || el?.width || 0);
+  const h = Number(el?.naturalHeight || el?.height || 0);
+  return complete && w > 0 && h > 0;
+}
+
+async function waitForFabricAssetsReady(args: {
+  handle: any;
+  expectedPrimary: boolean;
+  expectedStickers: number;
+  timeoutMs: number;
+}): Promise<boolean> {
+  const { handle, expectedPrimary, expectedStickers, timeoutMs } = args;
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    const canvas = getFabricCanvasFromHandle(handle);
+    if (!canvas) {
+      await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+    const objs: any[] = (typeof canvas.getObjects === "function" ? canvas.getObjects() : []) || [];
+    const imageObjs = objs.filter((o) => String(o?.type || "").toLowerCase() === "image");
+    const primaryCount = objs.filter((o) => String(o?.data?.role || "") === "user-image").length;
+    const stickerCount = objs.filter((o) => String(o?.data?.role || "") === "user-image-sticker").length;
+
+    // If the layout expects images, ensure the corresponding Fabric objects exist before exporting.
+    if (expectedPrimary && primaryCount < 1) {
+      await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+    if (expectedStickers > 0 && stickerCount < expectedStickers) {
+      await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+
+    // Ensure every Fabric image object has a fully loaded <img> element.
+    if (!imageObjs.every(isFabricImageLoaded)) {
+      await new Promise((r) => setTimeout(r, 50));
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 async function exportFabricCanvasPngBlob(handle: any, multiplier: number): Promise<Blob> {
   const fabricCanvas = getFabricCanvasFromHandle(handle);
   if (!fabricCanvas) throw new Error("Canvas not ready");
@@ -338,6 +419,26 @@ function ReviewProjectCard(props: {
   const goPrev = useCallback(() => setActiveSlide((v) => Math.max(0, v - 1)), []);
   const goNext = useCallback(() => setActiveSlide((v) => Math.min(5, v + 1)), []);
 
+  // Best-effort preload all slide images for snappier UX and more reliable exports.
+  useEffect(() => {
+    try {
+      const urls: string[] = [];
+      for (let i = 0; i < 6; i++) {
+        const lay = (project.slides?.[i]?.layout_snapshot as any) || null;
+        const u = String(lay?.image?.url || "").trim();
+        if (u) urls.push(u);
+        const extras = Array.isArray(lay?.extraImages) ? (lay.extraImages as any[]) : [];
+        extras.forEach((x) => {
+          const eu = String(x?.url || "").trim();
+          if (eu) urls.push(eu);
+        });
+      }
+      urls.forEach((u) => void preloadImage(u));
+    } catch {
+      // ignore
+    }
+  }, [project.id, project.slides]);
+
   const swipeRef = useRef<{ down: boolean; startX: number; lastX: number }>({ down: false, startX: 0, lastX: 0 });
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e as any).pointerType && (e as any).pointerType === "mouse" && (e as any).button !== 0) return;
@@ -496,6 +597,22 @@ function ReviewProjectCard(props: {
         await new Promise((r) => setTimeout(r, 50));
       }
 
+      // Wait for images/assets to finish loading into Fabric before export.
+      for (let i = 0; i < 6; i++) {
+        const lay = project.slides?.[i]?.layout_snapshot ?? EMPTY_LAYOUT;
+        const expectedPrimary = !!String((lay as any)?.image?.url || "").trim();
+        const expectedStickers = Array.isArray((lay as any)?.extraImages)
+          ? (lay as any).extraImages.filter((x: any) => !!String(x?.url || "").trim()).length
+          : 0;
+        const ok = await waitForFabricAssetsReady({
+          handle: (zipRefs.current[i] as any)?.current,
+          expectedPrimary,
+          expectedStickers,
+          timeoutMs: 15_000,
+        });
+        if (!ok) throw new Error("Slides are still loading images. Please wait a moment and try again.");
+      }
+
       for (let i = 0; i < 6; i++) {
         const blob = await exportFabricCanvasPngBlob(zipRefs.current[i]?.current, 3);
         const ab = await blob.arrayBuffer();
@@ -513,7 +630,7 @@ function ReviewProjectCard(props: {
     } finally {
       setZipBusy(false);
     }
-  }, [exportBusy, getNextBundleName, project.title]);
+  }, [exportBusy, getNextBundleName, project.slides, project.title]);
 
   const onDownloadPdf = useCallback(async () => {
     if (exportBusy) return;
@@ -542,6 +659,22 @@ function ReviewProjectCard(props: {
         throw new Error("Slides are still rendering. Please wait a moment and try again.");
       }
 
+      // Wait for images/assets to finish loading into Fabric before export.
+      for (let i = 0; i < 6; i++) {
+        const lay = project.slides?.[i]?.layout_snapshot ?? EMPTY_LAYOUT;
+        const expectedPrimary = !!String((lay as any)?.image?.url || "").trim();
+        const expectedStickers = Array.isArray((lay as any)?.extraImages)
+          ? (lay as any).extraImages.filter((x: any) => !!String(x?.url || "").trim()).length
+          : 0;
+        const ok = await waitForFabricAssetsReady({
+          handle: (zipRefs.current[i] as any)?.current,
+          expectedPrimary,
+          expectedStickers,
+          timeoutMs: 15_000,
+        });
+        if (!ok) throw new Error("Slides are still loading images. Please wait a moment and try again.");
+      }
+
       const { w: pageW, h: pageH } = getFabricCanvasSize(zipRefs.current[0]?.current);
 
       for (let i = 0; i < 6; i++) {
@@ -563,7 +696,7 @@ function ReviewProjectCard(props: {
     } finally {
       setPdfBusy(false);
     }
-  }, [exportBusy, getNextPdfBundleName, project.title]);
+  }, [exportBusy, getNextPdfBundleName, project.slides, project.title]);
 
   const hiddenExportCanvases = useMemo(() => {
     if (!exportBusy) return null;
@@ -607,7 +740,7 @@ function ReviewProjectCard(props: {
         })}
       </div>
     );
-  }, [computeTemplateIdForSlide, exportBusy, project, templatesById]);
+  }, [computeTemplateIdForSlide, exportBusy, noopUserImageChange, project, templatesById]);
 
   const sourceNodes = useMemo(() => linkifyTextToNodes(String(project.review_source || "")), [project.review_source]);
 
