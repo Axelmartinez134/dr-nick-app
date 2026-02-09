@@ -124,6 +124,32 @@ function preloadImage(url: string): Promise<void> {
   return p;
 }
 
+function extractLayoutImageUrls(layoutSnapshot: any): string[] {
+  try {
+    const lay = layoutSnapshot || null;
+    const out: string[] = [];
+    const primary = String(lay?.image?.url || "").trim();
+    if (primary) out.push(primary);
+    const extrasRaw = lay?.extraImages;
+    const extras = Array.isArray(extrasRaw) ? (extrasRaw as any[]) : [];
+    for (const x of extras) {
+      const u = String(x?.url || "").trim();
+      if (u) out.push(u);
+    }
+    // Stable de-dupe while preserving order.
+    const seen = new Set<string>();
+    const uniq: string[] = [];
+    for (const u of out) {
+      if (seen.has(u)) continue;
+      seen.add(u);
+      uniq.push(u);
+    }
+    return uniq;
+  } catch {
+    return [];
+  }
+}
+
 function getFabricImageElement(obj: any): any | null {
   try {
     const el = (typeof obj?.getElement === "function" ? obj.getElement() : null) || obj?._element || obj?._originalElement || null;
@@ -276,6 +302,138 @@ export default function ReviewPageClient(props: { token: string }) {
 
   const { displayW, displayH } = useGlobalCanvasDisplaySize();
 
+  // Mobile performance: centralize image prefetch into ONE strict queue.
+  // - Background order: Project 1 slide 1→6, then Project 2, etc.
+  // - Priority bump: when a project card nears the viewport, bump that project's slide 1 images.
+  const projectCardElsRef = useRef<Record<string, HTMLDivElement | null>>({});
+  const setProjectCardEl = useCallback((projectId: string) => {
+    return (el: HTMLDivElement | null) => {
+      projectCardElsRef.current[projectId] = el;
+      if (el) {
+        try {
+          (el as any).dataset = (el as any).dataset || {};
+          (el as any).dataset.projectId = projectId;
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!projects.length) return;
+    let cancelled = false;
+
+    const isMobile = (() => {
+      try {
+        if (typeof window === "undefined") return true;
+        return window.matchMedia?.("(max-width: 768px)")?.matches ?? window.innerWidth < 768;
+      } catch {
+        return true;
+      }
+    })();
+    const concurrency = isMobile ? 2 : 4;
+
+    const projectById = new Map<string, ProjectDto>();
+    projects.forEach((p) => projectById.set(String(p.id), p));
+
+    // Strict background queue: top-to-bottom projects, slide 1→6 per project.
+    const backgroundQueue: string[] = [];
+    for (const p of projects) {
+      for (let i = 0; i < 6; i++) {
+        const lay = p.slides?.[i]?.layout_snapshot ?? null;
+        const urls = extractLayoutImageUrls(lay);
+        urls.forEach((u) => backgroundQueue.push(u));
+      }
+    }
+
+    const highPriorityQueue: string[] = [];
+    const queuedOrStarted = new Set<string>(Array.from(preloadCache.keys()));
+    const bumpedProjects = new Set<string>();
+
+    const enqueueHighPriorityFront = (urls: string[]) => {
+      if (!urls.length) return;
+      // Insert at front while preserving incoming order.
+      const toAdd: string[] = [];
+      for (const u of urls) {
+        const key = String(u || "").trim();
+        if (!key) continue;
+        if (queuedOrStarted.has(key)) continue;
+        queuedOrStarted.add(key);
+        toAdd.push(key);
+      }
+      if (!toAdd.length) return;
+      highPriorityQueue.unshift(...toAdd);
+    };
+
+    const activeCountRef = { current: 0 };
+    const pump = () => {
+      if (cancelled) return;
+      while (activeCountRef.current < concurrency) {
+        const next = highPriorityQueue.shift() || backgroundQueue.shift() || null;
+        if (!next) break;
+        activeCountRef.current += 1;
+        void preloadImage(next)
+          .catch(() => {
+            // ignore; best-effort cache warm
+          })
+          .finally(() => {
+            activeCountRef.current -= 1;
+            // Continue pumping until queues drain.
+            pump();
+          });
+      }
+    };
+
+    // Priority bump: when a project card approaches viewport, bump slide 1 urls.
+    let observer: IntersectionObserver | null = null;
+    try {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (cancelled) return;
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const el: any = entry.target as any;
+            const pid = String(el?.dataset?.projectId || "").trim();
+            if (!pid) continue;
+            if (bumpedProjects.has(pid)) continue;
+            bumpedProjects.add(pid);
+            const p = projectById.get(pid) || null;
+            if (!p) continue;
+            const lay0 = p.slides?.[0]?.layout_snapshot ?? null;
+            const urls0 = extractLayoutImageUrls(lay0);
+            enqueueHighPriorityFront(urls0);
+          }
+          pump();
+        },
+        // Start bumping when a card is near view, not only when fully visible.
+        { root: null, rootMargin: "400px 0px 400px 0px", threshold: 0.01 }
+      );
+    } catch {
+      observer = null;
+    }
+
+    if (observer) {
+      // Observe all mounted cards.
+      for (const p of projects) {
+        const el = projectCardElsRef.current[String(p.id)] || null;
+        if (el) observer.observe(el);
+      }
+    }
+
+    // Kick off strict background prefetch immediately.
+    pump();
+
+    return () => {
+      cancelled = true;
+      try {
+        observer?.disconnect();
+      } catch {
+        // ignore
+      }
+    };
+  }, [projects]);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -340,17 +498,18 @@ export default function ReviewPageClient(props: { token: string }) {
 
         <div className="mt-6 space-y-6">
           {projects.map((p) => (
-            <ReviewProjectCard
-              key={p.id}
-              token={token}
-              project={p}
-              templatesById={templatesById}
-              displayW={displayW}
-              displayH={displayH}
-              onLocalPatch={(patch) => {
-                setProjects((prev) => prev.map((x) => (x.id === p.id ? ({ ...x, ...patch } as any) : x)));
-              }}
-            />
+            <div key={p.id} ref={setProjectCardEl(p.id)} data-project-id={p.id}>
+              <ReviewProjectCard
+                token={token}
+                project={p}
+                templatesById={templatesById}
+                displayW={displayW}
+                displayH={displayH}
+                onLocalPatch={(patch) => {
+                  setProjects((prev) => prev.map((x) => (x.id === p.id ? ({ ...x, ...patch } as any) : x)));
+                }}
+              />
+            </div>
           ))}
           {projects.length === 0 ? (
             <div className="text-sm text-slate-600">No projects are marked Ready for approval.</div>
@@ -419,25 +578,7 @@ function ReviewProjectCard(props: {
   const goPrev = useCallback(() => setActiveSlide((v) => Math.max(0, v - 1)), []);
   const goNext = useCallback(() => setActiveSlide((v) => Math.min(5, v + 1)), []);
 
-  // Best-effort preload all slide images for snappier UX and more reliable exports.
-  useEffect(() => {
-    try {
-      const urls: string[] = [];
-      for (let i = 0; i < 6; i++) {
-        const lay = (project.slides?.[i]?.layout_snapshot as any) || null;
-        const u = String(lay?.image?.url || "").trim();
-        if (u) urls.push(u);
-        const extras = Array.isArray(lay?.extraImages) ? (lay.extraImages as any[]) : [];
-        extras.forEach((x) => {
-          const eu = String(x?.url || "").trim();
-          if (eu) urls.push(eu);
-        });
-      }
-      urls.forEach((u) => void preloadImage(u));
-    } catch {
-      // ignore
-    }
-  }, [project.id, project.slides]);
+  // NOTE: Image prefetch is now centralized at the page level to avoid mobile request stampedes.
 
   const swipeRef = useRef<{ down: boolean; startX: number; lastX: number }>({ down: false, startX: 0, lastX: 0 });
   const onPointerDown = useCallback((e: React.PointerEvent) => {
