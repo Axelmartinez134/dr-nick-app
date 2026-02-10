@@ -17,6 +17,7 @@ interface Patient {
   created_at: string
   patient_password: string
   client_status?: string
+  onboarding_complete?: boolean
 }
 
 export default function DrNickAdmin() {
@@ -326,6 +327,11 @@ export default function DrNickAdmin() {
                             <h4 className="font-medium text-gray-900">
                               {patient.full_name || 'No name'}
                             </h4>
+                            {patient.onboarding_complete === false ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200">
+                                Onboarding incomplete
+                              </span>
+                            ) : null}
                           </div>
                           <p className="text-sm text-gray-600 mb-1">
                             📧 {patient.email}

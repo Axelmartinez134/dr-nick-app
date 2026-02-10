@@ -111,25 +111,25 @@ export async function setupWeekZeroBaseline(userId: string, weekZeroData: WeekZe
 // Get all patients for Dr. Nick's dashboard
 export async function getAllPatients() {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(`
-        id,
-        email,
-        full_name,
-        client_status,
-        height,
-        weight_change_goal_percent,
-        created_at,
-        patient_password
-      `)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      return { patients: [], error: error.message }
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
+    if (!token) {
+      return { patients: [], error: 'Not authenticated' }
     }
 
-    return { patients: data || [], error: null }
+    const response = await fetch('/api/admin/patients', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+
+    const json = await response.json().catch(() => null)
+    if (!response.ok || !json?.success) {
+      return { patients: [], error: json?.error || 'Failed to fetch patients' }
+    }
+
+    return { patients: json.patients || [], error: null }
   } catch (err) {
     return { patients: [], error: `Error fetching patients: ${err}` }
   }

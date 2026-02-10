@@ -3,12 +3,17 @@
 
 'use client'
 
-import { useAuth } from './auth/AuthContext'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase, useAuth } from './auth/AuthContext'
 import DrNickPatientDashboard from './health/DrNickPatientDashboard'
 import PatientDashboard from './health/PatientDashboard'
 
 export default function Dashboard() {
   const { user, signOut, isDoctor, isPatient, loading } = useAuth()
+  const router = useRouter()
+  const [onboardingChecked, setOnboardingChecked] = useState(false)
+  const [onboardingComplete, setOnboardingComplete] = useState(true)
 
   // Get user's first name for greeting - try multiple sources
   const getFirstName = () => {
@@ -34,7 +39,68 @@ export default function Dashboard() {
     await signOut()
   }
 
+  useEffect(() => {
+    let cancelled = false
+
+    // Only gate real patients (never Dr. Nick, never editor users).
+    if (!user || loading || !isPatient) return
+
+    ;(async () => {
+      try {
+        setOnboardingChecked(false)
+        const { data: sessionData } = await supabase.auth.getSession()
+        const token = sessionData?.session?.access_token
+        if (!token) {
+          setOnboardingComplete(true)
+          setOnboardingChecked(true)
+          return
+        }
+
+        const res = await fetch('/api/auth/onboarding/status', {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const json = await res.json().catch(() => null)
+        if (cancelled) return
+        if (!res.ok || !json?.success) {
+          // If the gate check fails, do not hard-block the user (avoid lockouts).
+          setOnboardingComplete(true)
+          setOnboardingChecked(true)
+          return
+        }
+
+        const complete = Boolean(json.complete)
+        setOnboardingComplete(complete)
+        setOnboardingChecked(true)
+
+        if (!complete) {
+          router.replace('/onboarding')
+        }
+      } catch {
+        if (cancelled) return
+        // Fail-open to avoid blocking access if the API is temporarily down.
+        setOnboardingComplete(true)
+        setOnboardingChecked(true)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user, loading, isPatient, router])
+
   if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-gray-600">Loading...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // While we are checking the onboarding gate, show a small loading screen to avoid flashing the dashboard.
+  if (user && isPatient && !onboardingChecked) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -110,7 +176,7 @@ export default function Dashboard() {
 
       {/* Role-Based Dashboard */}
       {isDoctor && <DrNickPatientDashboard />}
-      {isPatient && <PatientDashboard />}
+      {isPatient && onboardingComplete && <PatientDashboard />}
 
       {/* Footer */}
       <footer className="bg-white border-t mt-12">
