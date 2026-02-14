@@ -66,6 +66,38 @@ export function useGenerateCopy(params: {
   const copyProgressState = copyUiCurrent.state;
   const copyProgressLabel = copyUiCurrent.label;
 
+  const setGenerateCopyUiForProject = useCallback(
+    (args: { projectId: string; state: CopyUiState; label?: string; error?: string | null }) => {
+      const pid = String(args.projectId || '').trim();
+      if (!pid) return;
+
+      // Bump run id so any pending resets/polls from older runs won't clobber this state.
+      const nextRunId = (copyRunIdByProjectRef.current[pid] || 0) + 1;
+      copyRunIdByProjectRef.current[pid] = nextRunId;
+
+      const prevPoll = copyPollRefsByProjectRef.current[pid];
+      if (prevPoll) window.clearInterval(prevPoll);
+      copyPollRefsByProjectRef.current[pid] = null;
+      const prevReset = copyResetRefsByProjectRef.current[pid];
+      if (prevReset) window.clearTimeout(prevReset);
+      copyResetRefsByProjectRef.current[pid] = null;
+
+      const labelRaw =
+        args.label !== undefined
+          ? args.label
+          : args.state === 'running'
+            ? 'Working…'
+            : '';
+
+      setCopyUi(pid, {
+        state: args.state,
+        label: String(labelRaw || ''),
+        error: args.error === undefined ? null : args.error,
+      });
+    },
+    [setCopyUi]
+  );
+
   const runGenerateCopy = useCallback(async () => {
     if (!currentProjectId) return;
     const projectIdAtStart = currentProjectId;
@@ -85,6 +117,8 @@ export function useGenerateCopy(params: {
     const stepLabelFor = (progressCode: string) => {
       const code = String(progressCode || '').toLowerCase();
       if (code.includes('poppy')) return 'Poppy is Cooking...';
+      if (code.includes('claude')) return 'Claude is cooking…';
+      if (code.includes('whisper')) return 'Transcribing… Copy will generate when ready.';
       if (code.includes('parse')) return 'Parsing output…';
       if (code.includes('emphasis')) return 'Generating emphasis styles…';
       if (code.includes('save')) return 'Saving…';
@@ -257,6 +291,7 @@ export function useGenerateCopy(params: {
 
   return {
     runGenerateCopy,
+    setGenerateCopyUiForProject,
     copyGenerating,
     copyError,
     copyProgressState,

@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
   const { data: override, error: overrideErr } = await supabase
     .from('carousel_template_type_overrides')
     .select(
-      'account_id, user_id, template_type_id, prompt_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
+      'account_id, user_id, template_type_id, prompt_override, best_practices_override, emphasis_prompt_override, image_gen_prompt_override, slide1_template_id_override, slide2_5_template_id_override, slide6_template_id_override, updated_at'
     )
     .eq('account_id', accountId)
     .eq('template_type_id', templateTypeId)

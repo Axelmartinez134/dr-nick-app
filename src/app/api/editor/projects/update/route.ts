@@ -5,12 +5,13 @@ import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 export const runtime = 'nodejs';
 export const maxDuration = 10;
 
-const PROJECT_SELECT = `id, title, caption, template_type_id, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, ai_image_autoremovebg_enabled, updated_at` as const;
+const PROJECT_SELECT = `id, title, caption, outreach_message, template_type_id, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, ai_image_autoremovebg_enabled, updated_at` as const;
 
 type Body = {
   projectId: string;
   title?: string;
   caption?: string | null;
+  outreachMessage?: string | null;
   backgroundEffectEnabled?: boolean;
   backgroundEffectType?: 'none' | 'dots_n8n';
   projectBackgroundColor?: string;
@@ -47,6 +48,7 @@ export async function POST(request: NextRequest) {
   const patch: any = {};
   if (typeof body.title === 'string') patch.title = body.title.trim() || 'Untitled Project';
   if (body.caption !== undefined) patch.caption = body.caption;
+  if (body.outreachMessage !== undefined) patch.outreach_message = body.outreachMessage;
   if (typeof body.backgroundEffectEnabled === 'boolean') patch.background_effect_enabled = body.backgroundEffectEnabled;
   if (body.backgroundEffectType !== undefined) {
     const t = body.backgroundEffectType;

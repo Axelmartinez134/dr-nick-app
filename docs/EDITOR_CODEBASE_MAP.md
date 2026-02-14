@@ -804,11 +804,39 @@ Superadmin-only workflow to speed up outreach setup for creators. Input an Insta
 ### Superadmin-only APIs (authed)
 - `POST /api/editor/outreach/apify-probe` → `src/app/api/editor/outreach/apify-probe/route.ts`
   - Returns `{ fullName, username, profilePicUrlHD, raw }`
+- `POST /api/editor/outreach/scrape-reel` → `src/app/api/editor/outreach/scrape-reel/route.ts`
+  - Runs `apify/instagram-reel-scraper` for a single Reel/Post URL
+  - Returns `{ reelUrl, shortcode, ownerUsername, ownerFullName, caption, transcript, raw }`
+- `POST /api/editor/outreach/reel-video` → `src/app/api/editor/outreach/reel-video/route.ts`
+  - Runs `apify/instagram-reel-scraper` with `includeDownloadedVideo`
+  - Downloads the MP4 server-side and uploads to Supabase Storage bucket `reels`
+  - Returns `{ bucket: "reels", path }`
+- `POST /api/editor/outreach/transcribe` → `src/app/api/editor/outreach/transcribe/route.ts`
+  - Downloads the reel MP4 from Supabase Storage bucket `reels`
+  - Transcribes via OpenAI Whisper using `OPENAI_API_KEY`
+  - Returns `{ transcript }`
+- `POST /api/editor/outreach/topic-line` → `src/app/api/editor/outreach/topic-line/route.ts`
+  - Generates a short topic label from reel caption/transcript via DeepSeek (`DEEPSEEK_API_KEY`)
+  - Returns `{ topicLine }`
+- `POST /api/editor/outreach/scrape-following` → `src/app/api/editor/outreach/scrape-following/route.ts`
+  - Runs Apify following actor with maxResults (best-effort) + maxSpendUsd cap
+  - Returns `{ seedUsername, items[] }` (normalized following prospects + raw)
+- `POST /api/editor/outreach/qualify-lite` → `src/app/api/editor/outreach/qualify-lite/route.ts`
+  - Batch-qualifies prospects via DeepSeek (lite scoring; strict JSON)
+- `POST /api/editor/outreach/persist-prospects` → `src/app/api/editor/outreach/persist-prospects/route.ts`
+  - Upserts “following” prospects into `editor_outreach_targets` (dedupe via unique index)
+- `POST /api/editor/outreach/enrich-prospects` → `src/app/api/editor/outreach/enrich-prospects/route.ts`
+  - Enriches saved prospects via Apify profile scraper and persists `enriched_*` fields + `profile_pic_url_hd`
+- `POST /api/editor/outreach/mark-created` → `src/app/api/editor/outreach/mark-created/route.ts`
+  - Updates the saved prospect row with `created_template_id` + `created_project_id` (and `project_created_at`)
 - `POST /api/editor/outreach/create-template` → `src/app/api/editor/outreach/create-template/route.ts`
   - Duplicates base template, downloads `profilePicUrlHD` server-side (avoids CORS), overwrites avatar asset, updates text assets, and renames template
   - Includes robust name collision handling (adds `(@handle)` and/or numeric suffixes)
 - `POST /api/editor/outreach/persist-target` → `src/app/api/editor/outreach/persist-target/route.ts`
   - Inserts a row into `editor_outreach_targets` (superadmin-only)
+- `POST /api/editor/outreach/update-target` → `src/app/api/editor/outreach/update-target/route.ts`
+  - Updates an existing `editor_outreach_targets` row (superadmin-only)
+  - Used to attach Whisper transcript + reel video storage path after the initial record is persisted
 
 ### Data model
 - **Migration**: `supabase/migrations/20260208_000001_add_editor_outreach_targets.sql`
@@ -866,6 +894,8 @@ Key tables used by `/editor`:
   - `input_snapshot` (text content + style ranges + editor flags under `input_snapshot.editor`)
 - `public.carousel_templates` (account-owned templates)
 - `public.carousel_template_type_overrides` (account-owned template-type settings)
+  - `prompt_override`: overrides the “Poppy Prompt” per account + template type
+  - `best_practices_override`: superadmin-only Best Practices per account + template type (used only for Reel/Post outreach copy generation)
 - `public.carousel_generation_jobs` (job tracking for AI)
 
 ## “Where do I change X?” (common tasks)
@@ -882,6 +912,9 @@ Key tables used by `/editor`:
   - Recents API: `src/app/api/editor/assets/recents/route.ts`
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
   - Per-account Poppy routing URL: `public.editor_account_settings.poppy_conversation_url`
+- **Outreach message (DM copy)**:
+  - Stored on project: `public.carousel_projects.outreach_message`
+  - Editor UI: shown superadmin-only above “¶ Body” in `src/features/editor/components/EditorBottomPanel.tsx`
 - **Generate Image Prompts**: `src/features/editor/hooks/useGenerateImagePrompts.ts`
 - **Generate AI Image**: `src/features/editor/hooks/useGenerateAiImage.ts`
   - Per-account image model: `public.editor_account_settings.ai_image_gen_model`

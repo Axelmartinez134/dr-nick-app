@@ -19,6 +19,7 @@ export function useProjectLifecycle(params: {
   setProjectTitle: (title: string) => void;
   setTemplateTypeId: (id: 'regular' | 'enhanced') => void;
   setCaptionDraft: (caption: string) => void;
+  setOutreachMessageDraft: (msg: string) => void;
   setProjectPromptSnapshot: (prompt: string) => void;
   setProjectMappingSlide1: (id: string | null) => void;
   setProjectMappingSlide2to5: (id: string | null) => void;
@@ -68,6 +69,7 @@ export function useProjectLifecycle(params: {
     setProjectTitle,
     setTemplateTypeId,
     setCaptionDraft,
+    setOutreachMessageDraft,
     setProjectPromptSnapshot,
     setProjectMappingSlide1,
     setProjectMappingSlide2to5,
@@ -108,6 +110,7 @@ export function useProjectLifecycle(params: {
       setProjectTitle(project.title || 'Untitled Project');
       setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
       setCaptionDraft(project.caption || '');
+      setOutreachMessageDraft(String((project as any)?.outreach_message || ''));
 
       // Apply snapshot mapping for render/layout to avoid morphing
       setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);

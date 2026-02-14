@@ -3,4 +3,5 @@
 
 export * as projectsApi from './projectsApi';
 export * as slidesApi from './slidesApi';
+export * as outreachApi from './outreachApi';
 

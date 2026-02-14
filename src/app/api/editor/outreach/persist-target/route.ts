@@ -16,6 +16,13 @@ type Body = {
   baseTemplateId: string | null;
   createdTemplateId: string | null;
   createdProjectId: string | null;
+  // Optional: Reel/Post source fields (Phase: Reel outreach)
+  sourcePostUrl?: string | null;
+  sourcePostShortcode?: string | null;
+  sourcePostCaption?: string | null;
+  sourcePostTranscript?: string | null;
+  sourcePostRawJson?: any;
+  sourcePostScrapedAt?: string | null;
 };
 
 type Resp =
@@ -97,6 +104,12 @@ export async function POST(request: NextRequest) {
     base_template_id: s(body?.baseTemplateId),
     created_template_id: createdTemplateId,
     created_project_id: createdProjectId,
+    source_post_url: s((body as any)?.sourcePostUrl),
+    source_post_shortcode: s((body as any)?.sourcePostShortcode),
+    source_post_caption: s((body as any)?.sourcePostCaption),
+    source_post_transcript: s((body as any)?.sourcePostTranscript),
+    source_post_raw_json: (body as any)?.sourcePostRawJson ?? null,
+    source_post_scraped_at: s((body as any)?.sourcePostScrapedAt),
   };
 
   const { data: inserted, error } = await svc.from('editor_outreach_targets').insert(row as any).select('id').single();

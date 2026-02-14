@@ -268,6 +268,17 @@ export default function EditorShell() {
     } as any);
   }, [editorStore]);
 
+  const templateTypeBestPractices = useEditorSelector((s: any) => String((s as any).templateTypeBestPractices || ""));
+  const setTemplateTypeBestPractices = useCallback(
+    (next: string) => {
+      editorStore.setState({
+        templateTypeBestPractices: next,
+        templateTypeBestPracticesPreviewLine: String(next || "").split("\n")[0] || "",
+      } as any);
+    },
+    [editorStore]
+  );
+
   const templateTypeEmphasisPrompt = useEditorSelector((s) => String(s.templateTypeEmphasisPrompt || ""));
   const setTemplateTypeEmphasisPrompt = useCallback((next: string) => {
     editorStore.setState({
@@ -968,6 +979,8 @@ export default function EditorShell() {
     aiImageAutoRemoveBgEnabled,
   ]);
   const [captionDraft, setCaptionDraft] = useState<string>("");
+  const [outreachMessageDraft, setOutreachMessageDraft] = useState<string>("");
+  const [outreachMessageCopyStatus, setOutreachMessageCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [captionRegenGenerating, setCaptionRegenGenerating] = useState(false);
   const [captionRegenError, setCaptionRegenError] = useState<string | null>(null);
@@ -1586,6 +1599,7 @@ export default function EditorShell() {
     setProjectTitle,
     setTemplateTypeId,
     setCaptionDraft,
+    setOutreachMessageDraft,
     setProjectPromptSnapshot,
     setProjectMappingSlide1,
     setProjectMappingSlide2to5,
@@ -1622,6 +1636,7 @@ export default function EditorShell() {
     saveProjectMetaForProject,
     scheduleDebouncedProjectTitleSave,
     scheduleDebouncedCaptionSave,
+    scheduleDebouncedOutreachMessageSave,
   } = useEditorPersistence({
     fetchJson,
     currentProjectId,
@@ -2757,6 +2772,7 @@ export default function EditorShell() {
     imagePromptGenerating,
     imagePromptError,
     runGenerateCopy,
+    setGenerateCopyUiForProject,
     copyGenerating,
     copyError,
     copyProgressState,
@@ -3212,13 +3228,14 @@ export default function EditorShell() {
     const data = await fetchJson(`/api/editor/template-types/effective?type=${type}`);
     const effective = data?.effective;
     setTemplateTypePrompt(effective?.prompt || '');
+    setTemplateTypeBestPractices(effective?.bestPractices || '');
     setTemplateTypeEmphasisPrompt(effective?.emphasisPrompt || '');
     setTemplateTypeImageGenPrompt(effective?.imageGenPrompt || '');
     setTemplateTypeMappingSlide1(effective?.slide1TemplateId ?? null);
     setTemplateTypeMappingSlide2to5(effective?.slide2to5TemplateId ?? null);
     setTemplateTypeMappingSlide6(effective?.slide6TemplateId ?? null);
     addLog(
-      `✅ Settings loaded: promptLen=${String(effective?.prompt || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}, imageGenLen=${String(effective?.imageGenPrompt || "").length}`
+      `✅ Settings loaded: promptLen=${String(effective?.prompt || "").length}, bestPracticesLen=${String(effective?.bestPractices || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}, imageGenLen=${String(effective?.imageGenPrompt || "").length}`
     );
     // Reset prompt status on type switch
     setPromptSaveStatus('idle');
@@ -3285,13 +3302,14 @@ export default function EditorShell() {
   async function savePromptSettings() {
     // Per-user customization is stored in `carousel_template_type_overrides`.
     addLog(
-      `💾 Saving per-user template-type settings: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
+      `💾 Saving per-user template-type settings: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} bestPracticesLen=${templateTypeBestPractices.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
     );
     await fetchJson('/api/editor/template-types/overrides/upsert', {
       method: 'POST',
       body: JSON.stringify({
         templateTypeId,
         promptOverride: templateTypePrompt,
+        bestPracticesOverride: templateTypeBestPractices,
         emphasisPromptOverride: templateTypeEmphasisPrompt,
         imageGenPromptOverride: templateTypeImageGenPrompt,
         slide1TemplateIdOverride: templateTypeMappingSlide1,
@@ -5101,6 +5119,13 @@ export default function EditorShell() {
   };
   const onClickGenerateAiImage = () => void runGenerateAiImage();
   const onClickGenerateCopy = () => void runGenerateCopy();
+  const onSetGenerateCopyUi = (args: { projectId: string; state: "idle" | "running" | "success" | "error"; label?: string; error?: string | null }) =>
+    void setGenerateCopyUiForProject({
+      projectId: args.projectId,
+      state: (args.state as any) || "idle",
+      label: args.label,
+      error: args.error === undefined ? null : args.error,
+    });
   const onClickRetry = () => void handleRetry();
   const onClickRealignText = () => runRealignTextForActiveSlide({ pushHistory: true });
   const onClickUndo = () => {
@@ -5158,6 +5183,11 @@ export default function EditorShell() {
     setCaptionCopyStatus(ok ? "copied" : "error");
     window.setTimeout(() => setCaptionCopyStatus("idle"), 1200);
   };
+  const onClickCopyOutreachMessage = async () => {
+    const ok = await copyToClipboard(outreachMessageDraft || "");
+    setOutreachMessageCopyStatus(ok ? "copied" : "error");
+    window.setTimeout(() => setOutreachMessageCopyStatus("idle"), 1200);
+  };
   const onChangeCaption = (v: string) => {
     setCaptionDraft(v);
     // Keep store in sync immediately so the textarea caret doesn't jump.
@@ -5165,6 +5195,13 @@ export default function EditorShell() {
       bottomPanelUi: prev?.bottomPanelUi ? { ...prev.bottomPanelUi, captionDraft: v } : prev?.bottomPanelUi,
     }));
     scheduleDebouncedCaptionSave({ projectId: currentProjectId, caption: v, debounceMs: 600 });
+  };
+  const onChangeOutreachMessage = (v: string) => {
+    setOutreachMessageDraft(v);
+    editorStore.setState((prev: any) => ({
+      bottomPanelUi: prev?.bottomPanelUi ? { ...prev.bottomPanelUi, outreachMessageDraft: v } : prev?.bottomPanelUi,
+    }));
+    scheduleDebouncedOutreachMessageSave({ projectId: currentProjectId, outreachMessage: v, debounceMs: 600 });
   };
 
   // Phase 5E6: bottom panel UI is updated directly by EditorShell (no bridging hook).
@@ -5209,6 +5246,8 @@ export default function EditorShell() {
         captionCopyStatus,
         captionRegenGenerating,
         captionRegenError,
+        outreachMessageDraft: outreachMessageDraft || "",
+        outreachMessageCopyStatus,
         debugScreenshot: debugScreenshot || null,
         showDebugPreview,
         debugLogs: Array.isArray(debugLogs) ? debugLogs : [],
@@ -5231,6 +5270,8 @@ export default function EditorShell() {
     captionDraft,
     captionRegenError,
     captionRegenGenerating,
+    outreachMessageCopyStatus,
+    outreachMessageDraft,
     copyError,
     copyGenerating,
     currentProjectId,
@@ -5298,6 +5339,7 @@ export default function EditorShell() {
     loadTemplatesList,
     promptDirtyRef,
     setTemplateTypePrompt,
+    setTemplateTypeBestPractices,
     setTemplateTypeEmphasisPrompt,
     setTemplateTypeImageGenPrompt,
     setCaptionRegenPrompt,
@@ -5335,6 +5377,7 @@ export default function EditorShell() {
     onToggleAiImageAutoRemoveBg,
     onClickGenerateAiImage,
     onClickGenerateCopy,
+    onSetGenerateCopyUi,
     onClickRetry,
     onClickRealignText,
     onClickUndo,
@@ -5342,6 +5385,8 @@ export default function EditorShell() {
     onClickCopyCaption,
     onClickRegenerateCaption,
     onChangeCaption,
+    onClickCopyOutreachMessage,
+    onChangeOutreachMessage,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,

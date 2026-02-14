@@ -13,10 +13,12 @@ export function PromptsModal(props: PromptsModalProps) {
   const { promptTextareaRef, emphasisTextareaRef, captionRegenTextareaRef } = props;
 
   const open = useEditorSelector((s) => s.promptModalOpen);
+  const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const section = useEditorSelector((s) => s.promptModalSection);
 
   const templateTypePrompt = useEditorSelector((s) => s.templateTypePrompt);
+  const templateTypeBestPractices = useEditorSelector((s: any) => String((s as any).templateTypeBestPractices || ""));
   const templateTypeEmphasisPrompt = useEditorSelector((s) => s.templateTypeEmphasisPrompt);
   const templateTypeImageGenPrompt = useEditorSelector((s) => s.templateTypeImageGenPrompt);
   const captionRegenPrompt = useEditorSelector((s: any) => String((s as any).captionRegenPrompt || ""));
@@ -102,6 +104,23 @@ export function PromptsModal(props: PromptsModalProps) {
                 placeholder="Enter the Poppy prompt for this template type..."
                 data-prompt-section="active"
               />
+
+              {isSuperadmin ? (
+                <div className="mt-4">
+                  <div className="text-sm font-semibold text-slate-900">Best Practices</div>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    Superadmin-only. Appended only for Reel/Post outreach copy generation (Claude-only path).
+                  </div>
+                  <textarea
+                    className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
+                    rows={10}
+                    value={templateTypeBestPractices}
+                    onChange={(e) => actions.onChangeTemplateTypeBestPractices(e.target.value)}
+                    placeholder="Enter Best Practices for this template type..."
+                    data-prompt-section="active"
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
 

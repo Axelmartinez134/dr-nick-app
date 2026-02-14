@@ -8,6 +8,7 @@ import { useEditorSelector } from "@/features/editor/store";
 
 export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
   const actions = useEditorSelector((s: any) => (s as any).actions);
   const aiSettingsPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -53,6 +54,10 @@ export function EditorBottomPanel() {
     aiImageAspectRatio,
     aiImageSize,
   } = ui;
+
+  const outreachMessageDraft = String((ui as any)?.outreachMessageDraft || "");
+  const outreachMessageCopyStatus = String((ui as any)?.outreachMessageCopyStatus || "idle");
+  const showOutreachMessage = isSuperadmin && !!outreachMessageDraft.trim();
 
   return (
     <section className="bg-white border-t border-slate-200">
@@ -150,6 +155,42 @@ export function EditorBottomPanel() {
                     </div>
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+
+            {/* Outreach message (superadmin-only; Outreach-created projects only) */}
+            {showOutreachMessage ? (
+              <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-sm flex items-center justify-center">💬</span>
+                    <span className="text-sm font-semibold text-slate-900">Outreach message</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {outreachMessageCopyStatus === "copied" ? (
+                      <span className="text-xs text-emerald-700 font-medium">Copied!</span>
+                    ) : outreachMessageCopyStatus === "error" ? (
+                      <span className="text-xs text-red-600 font-medium">Copy failed</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      onClick={actions.onClickCopyOutreachMessage}
+                      disabled={copyGenerating}
+                      title="Copy outreach message to clipboard"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
+                  rows={4}
+                  placeholder="Write an outreach message..."
+                  value={outreachMessageDraft}
+                  onChange={(e) => actions.onChangeOutreachMessage?.(e.target.value)}
+                  disabled={copyGenerating}
+                />
               </div>
             ) : null}
 
@@ -428,7 +469,12 @@ export function EditorBottomPanel() {
               <span className="w-7 h-7 rounded-lg bg-slate-600 text-white text-sm flex items-center justify-center">⚙️</span>
               <span className="text-sm font-semibold text-slate-900">Controls</span>
               {copyGenerating ? (
-                <span className="ml-1 inline-flex items-center gap-2 text-xs text-slate-600">
+                <span
+                  className={[
+                    "ml-1 inline-flex items-center gap-2 text-xs",
+                    String(copyProgressLabel || "").toLowerCase().includes("transcrib") ? "text-red-600" : "text-slate-600",
+                  ].join(" ")}
+                >
                   <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
                   <span className="font-medium">{String(copyProgressLabel || "Working…")}</span>
                 </span>

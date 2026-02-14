@@ -65,7 +65,7 @@ export function useEditorJobs(params: {
     setSlides: params.setSlides,
   });
 
-  const { runGenerateCopy, copyGenerating, copyError, copyProgressState, copyProgressLabel } = useGenerateCopy({
+  const { runGenerateCopy, setGenerateCopyUiForProject, copyGenerating, copyError, copyProgressState, copyProgressLabel } = useGenerateCopy({
     currentProjectId: params.currentProjectId,
     currentProjectIdRef: params.currentProjectIdRef,
     templateTypeId: params.templateTypeId,
@@ -117,6 +117,7 @@ export function useEditorJobs(params: {
 
     // Copy
     runGenerateCopy,
+    setGenerateCopyUiForProject,
     copyGenerating,
     copyError,
     copyProgressState,

@@ -40,6 +40,7 @@ export type EditorActions = {
   onOpenPromptModal: (section: PromptSection) => void;
   onClosePromptsModal: () => void;
   onChangeTemplateTypePrompt: (next: string) => void;
+  onChangeTemplateTypeBestPractices: (next: string) => void;
   onChangeTemplateTypeEmphasisPrompt: (next: string) => void;
   onChangeTemplateTypeImageGenPrompt: (next: string) => void;
   onChangeCaptionRegenPrompt: (next: string) => void;
@@ -80,6 +81,7 @@ export type EditorActions = {
   onClickGenerateAiImage: () => void;
 
   onClickGenerateCopy: () => void;
+  onSetGenerateCopyUi: (args: { projectId: string; state: "idle" | "running" | "success" | "error"; label?: string; error?: string | null }) => void;
   onClickRetry: () => void;
   onClickRealignText: () => void;
   onClickUndo: () => void;
@@ -88,6 +90,8 @@ export type EditorActions = {
   onClickCopyCaption: () => void;
   onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
+  onClickCopyOutreachMessage: () => void;
+  onChangeOutreachMessage: (next: string) => void;
 
   // Brand Alignment (Phase 0)
   onOpenBrandAlignmentModal: () => void;
@@ -425,6 +429,12 @@ export type EditorBottomPanelState = {
   onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
 
+  // Outreach DM message (superadmin-only; project-scoped)
+  outreachMessageDraft?: string;
+  outreachMessageCopyStatus?: "idle" | "copied" | "error";
+  onClickCopyOutreachMessage?: () => void;
+  onChangeOutreachMessage?: (next: string) => void;
+
   // Debug card
   debugScreenshot: string | null;
   showDebugPreview: boolean;
@@ -510,6 +520,7 @@ export type EditorState = {
 
   // Template card previews
   templateTypePromptPreviewLine: string;
+  templateTypeBestPracticesPreviewLine: string;
   templateTypeEmphasisPromptPreviewLine: string;
   templateTypeImageGenPromptPreviewLine: string;
 
@@ -553,6 +564,7 @@ export type EditorState = {
 
   // Prompt values (template-type overrides)
   templateTypePrompt: string;
+  templateTypeBestPractices: string;
   templateTypeEmphasisPrompt: string;
   templateTypeImageGenPrompt: string;
   // Caption regen prompt (global per-user; stored on editor_users)

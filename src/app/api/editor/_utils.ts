@@ -173,6 +173,7 @@ export type TemplateTypeOverrideRow = {
   user_id: string;
   template_type_id: TemplateTypeId;
   prompt_override: string | null;
+  best_practices_override?: string | null;
   emphasis_prompt_override: string | null;
   image_gen_prompt_override: string | null;
   slide1_template_id_override: string | null;
@@ -189,6 +190,7 @@ export function mergeTemplateTypeDefaults(
     templateTypeId: defaults.id,
     label: defaults.label,
     prompt: (override?.prompt_override ?? '') || defaults.default_prompt || '',
+    bestPractices: String((override as any)?.best_practices_override ?? '').trim() || '',
     emphasisPrompt:
       (String(override?.emphasis_prompt_override ?? '').trim() ||
         (defaults.default_emphasis_prompt || '').trim()) ||

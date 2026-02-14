@@ -27,7 +27,7 @@ export function useEditorPersistence(params: {
   }, []);
 
   const saveProjectMetaForProject = useCallback(
-    async (projectId: string, patch: { title?: string; caption?: string | null }) => {
+    async (projectId: string, patch: { title?: string; caption?: string | null; outreachMessage?: string | null }) => {
       const pid = String(projectId || '').trim();
       if (!pid) return;
       clearIdleReset();
@@ -48,7 +48,7 @@ export function useEditorPersistence(params: {
   );
 
   const saveProjectMeta = useCallback(
-    async (patch: { title?: string; caption?: string | null }) => {
+    async (patch: { title?: string; caption?: string | null; outreachMessage?: string | null }) => {
       if (!currentProjectId) return;
       await saveProjectMetaForProject(currentProjectId, patch);
     },
@@ -81,11 +81,25 @@ export function useEditorPersistence(params: {
     [projectSaveTimeoutRef, saveProjectMetaForProject]
   );
 
+  const scheduleDebouncedOutreachMessageSave = useCallback(
+    (args: { projectId: string | null; outreachMessage: string; debounceMs: number }) => {
+      if (projectSaveTimeoutRef.current) window.clearTimeout(projectSaveTimeoutRef.current);
+      const projectIdAtSchedule = args.projectId;
+      const msgAtSchedule = args.outreachMessage;
+      projectSaveTimeoutRef.current = window.setTimeout(() => {
+        if (!projectIdAtSchedule) return;
+        void saveProjectMetaForProject(projectIdAtSchedule, { outreachMessage: msgAtSchedule });
+      }, args.debounceMs);
+    },
+    [projectSaveTimeoutRef, saveProjectMetaForProject]
+  );
+
   return {
     saveProjectMeta,
     saveProjectMetaForProject,
     scheduleDebouncedProjectTitleSave,
     scheduleDebouncedCaptionSave,
+    scheduleDebouncedOutreachMessageSave,
   };
 }
 

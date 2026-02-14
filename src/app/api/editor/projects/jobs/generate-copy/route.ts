@@ -317,6 +317,76 @@ RANGE RULES (HARD):
   }
 }
 
+async function callAnthropicGenerateFromReel(opts: {
+  templateTypeId: 'regular' | 'enhanced';
+  poppyPromptRaw: string;
+  bestPractices: string;
+  reelCaption: string;
+  reelTranscript: string;
+}) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('Missing env var: ANTHROPIC_API_KEY');
+
+  // Explicit model requested for this feature (match emphasis model).
+  const model = 'claude-sonnet-4-5-20250929';
+
+  const schema =
+    opts.templateTypeId === 'regular'
+      ? `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- body must be a string (can be empty)\n- caption must be a string`
+      : `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- headline/body must be strings (can be empty)\n- caption must be a string`;
+
+  const prompt = sanitizePrompt(String(opts.poppyPromptRaw || ''));
+  const best = sanitizePrompt(String(opts.bestPractices || ''));
+  const caption = sanitizePrompt(String(opts.reelCaption || ''));
+  const transcript = sanitizePrompt(String(opts.reelTranscript || ''));
+  if (!prompt) throw new Error('Template type prompt is empty');
+  if (!transcript) throw new Error('Missing reel transcript (Whisper required)');
+
+  const userText = [
+    `You are an expert Instagram carousel copywriter.`,
+    `You are given source material from an Instagram Reel (caption + transcript).`,
+    ``,
+    `PRIMARY INSTRUCTIONS (user-provided "Poppy Prompt"):\n${prompt}`,
+    best ? `\nBEST PRACTICES (superadmin-only):\n${best}` : ``,
+    ``,
+    `SOURCE MATERIAL:\nREEL_CAPTION:\n${caption || '(empty)'}\n\nREEL_TRANSCRIPT:\n${transcript}`,
+    ``,
+    schema,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 45_000);
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: userText }],
+      }),
+      signal: ac.signal,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg = json?.error?.message || JSON.stringify(json)?.slice(0, 500) || 'Unknown Anthropic error';
+      throw new Error(`Anthropic error (${res.status}): ${msg}`);
+    }
+    const content0 = json?.content?.[0];
+    const text = content0?.text || '';
+    return { rawText: text, model };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function POST(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
   if (!authed.ok) {
@@ -381,60 +451,76 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Phase E: per-account Poppy routing (board/chat/model) stored on editor_account_settings.
-  const { data: settingsRow, error: settingsErr } = await supabase
-    .from('editor_account_settings')
-    .select('poppy_conversation_url')
+  // Reel/Post outreach detection (superadmin-only table). If present, we bypass Poppy for copy generation.
+  const { data: outreachRow } = await supabase
+    .from('editor_outreach_targets')
+    .select('source_post_url, source_post_caption, source_post_transcript')
     .eq('account_id', accountId)
+    .eq('created_project_id', project.id)
     .maybeSingle();
-  if (settingsErr) {
-    return NextResponse.json({ success: false, error: settingsErr.message }, { status: 500 });
-  }
-  // Backwards-safe: legacy per-user source.
-  const { data: editorRow, error: editorErr } = await supabase
-    .from('editor_users')
-    .select('poppy_conversation_url')
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (editorErr) {
-    return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
-  }
-  const poppyConversationUrl =
-    String((settingsRow as any)?.poppy_conversation_url || '').trim() ||
-    String((editorRow as any)?.poppy_conversation_url || '').trim();
-  if (!poppyConversationUrl) {
-    return NextResponse.json(
-      { success: false, error: 'Missing poppy_conversation_url for this account' },
-      { status: 400 }
-    );
-  }
 
-  // Non-secret debug metadata (for the /editor Debug panel)
-  // Helps confirm which board/chat/model were used without exposing api_key.
+  const isReelOrigin = !!String((outreachRow as any)?.source_post_url || '').trim();
+  const reelCaption = String((outreachRow as any)?.source_post_caption || '').trim();
+  const reelTranscript = String((outreachRow as any)?.source_post_transcript || '').trim();
+  const bestPractices = String((ttEffective as any)?.bestPractices || '').trim();
+
+  // Poppy routing info (only required for non-reel generation).
+  let poppyConversationUrl = '';
   let poppyRoutingMeta: { boardId: string | null; chatId: string | null; model: string | null } = {
     boardId: null,
     chatId: null,
     model: null,
   };
-  try {
-    const u = new URL(poppyConversationUrl);
-    poppyRoutingMeta = {
-      boardId: String(u.searchParams.get('board_id') || '').trim() || null,
-      chatId: String(u.searchParams.get('chat_id') || '').trim() || null,
-      model: String(u.searchParams.get('model') || '').trim() || null,
-    };
-  } catch {
-    // leave nulls; callPoppy will throw a clearer error
-  }
+  let poppyPromptDebug: any = null;
+  let poppyRequestBody: any = null;
 
-  // Debug payload: show exactly what we sent to Poppy (no api_key; that's only in the URL).
-  // NOTE: raw prompt is JSON-stringified for safe logging (control chars/newlines won't break logs).
-  const poppyRequestBody = poppyRoutingMeta.model ? { prompt, model: poppyRoutingMeta.model } : { prompt };
-  const poppyPromptDebug = {
-    promptRaw: JSON.stringify(promptRaw),
-    promptSanitized: prompt,
-    requestBody: poppyRequestBody,
-  };
+  if (!isReelOrigin) {
+    // Phase E: per-account Poppy routing (board/chat/model) stored on editor_account_settings.
+    const { data: settingsRow, error: settingsErr } = await supabase
+      .from('editor_account_settings')
+      .select('poppy_conversation_url')
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (settingsErr) {
+      return NextResponse.json({ success: false, error: settingsErr.message }, { status: 500 });
+    }
+    // Backwards-safe: legacy per-user source.
+    const { data: editorRow, error: editorErr } = await supabase
+      .from('editor_users')
+      .select('poppy_conversation_url')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (editorErr) {
+      return NextResponse.json({ success: false, error: editorErr.message }, { status: 500 });
+    }
+    poppyConversationUrl =
+      String((settingsRow as any)?.poppy_conversation_url || '').trim() ||
+      String((editorRow as any)?.poppy_conversation_url || '').trim();
+    if (!poppyConversationUrl) {
+      return NextResponse.json(
+        { success: false, error: 'Missing poppy_conversation_url for this account' },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const u = new URL(poppyConversationUrl);
+      poppyRoutingMeta = {
+        boardId: String(u.searchParams.get('board_id') || '').trim() || null,
+        chatId: String(u.searchParams.get('chat_id') || '').trim() || null,
+        model: String(u.searchParams.get('model') || '').trim() || null,
+      };
+    } catch {
+      // leave nulls; callPoppy will throw a clearer error
+    }
+
+    poppyRequestBody = poppyRoutingMeta.model ? { prompt, model: poppyRoutingMeta.model } : { prompt };
+    poppyPromptDebug = {
+      promptRaw: JSON.stringify(promptRaw),
+      promptSanitized: prompt,
+      requestBody: poppyRequestBody,
+    };
+  }
 
   // Create + lock a job (unique partial index blocks concurrent jobs).
   const { data: job, error: jobErr } = await supabase
@@ -463,20 +549,38 @@ export async function POST(request: NextRequest) {
   const jobId = job.id as string;
 
   try {
-    await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:poppy' });
-    try {
-      console.log(
-        `[Generate Copy][Poppy] account=${accountId} project=${project.id} templateType=${templateTypeId} body=${JSON.stringify(
-          poppyRequestBody
-        )}\nraw=${poppyPromptDebug.promptRaw}\n\nsanitized=\n${prompt}`
-      );
-    } catch {
-      // ignore logging failures
+    let payload: any;
+
+    if (isReelOrigin) {
+      if (!reelTranscript) {
+        throw new Error('Missing reel transcript. Transcription must finish before generating copy.');
+      }
+      await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:claude' });
+      const generated = await callAnthropicGenerateFromReel({
+        templateTypeId,
+        poppyPromptRaw: promptRaw,
+        bestPractices,
+        reelCaption,
+        reelTranscript,
+      });
+      payload = extractJsonObject(generated.rawText);
+    } else {
+      await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:poppy' });
+      try {
+        console.log(
+          `[Generate Copy][Poppy] account=${accountId} project=${project.id} templateType=${templateTypeId} body=${JSON.stringify(
+            poppyRequestBody
+          )}\nraw=${poppyPromptDebug?.promptRaw}\n\nsanitized=\n${prompt}`
+        );
+      } catch {
+        // ignore logging failures
+      }
+      const poppy = await callPoppy(prompt, { poppyConversationUrl });
+      await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
+      const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
+      payload = extractJsonObject(parsed.rawText);
     }
-    const poppy = await callPoppy(prompt, { poppyConversationUrl });
-    await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
-    const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
-    const payload = extractJsonObject(parsed.rawText);
+
     assertValidPayload(payload, templateTypeId);
 
     const slides = payload.slides as Array<{ headline?: string; body: string }>;
@@ -540,7 +644,7 @@ export async function POST(request: NextRequest) {
       jobId,
       templateTypeId,
       poppyRoutingMeta,
-      poppyPromptDebug,
+      ...(poppyPromptDebug ? { poppyPromptDebug } : {}),
       caption,
       slides: slides.map((s, idx) => ({
         headline: templateTypeId === 'enhanced' ? (s.headline || '') : null,
@@ -555,7 +659,8 @@ export async function POST(request: NextRequest) {
       .from('carousel_generation_jobs')
       .update({ status: 'failed', finished_at: new Date().toISOString(), error: msg })
       .eq('id', jobId);
-    return NextResponse.json({ success: false, error: msg, jobId }, { status: 500 });
+    const status = msg.toLowerCase().includes('missing reel transcript') ? 400 : 500;
+    return NextResponse.json({ success: false, error: msg, jobId }, { status });
   }
 }
 

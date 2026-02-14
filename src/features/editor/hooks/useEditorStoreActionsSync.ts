@@ -53,6 +53,7 @@ type Args = {
   loadTemplatesList: () => Promise<void> | void;
   promptDirtyRef: any;
   setTemplateTypePrompt: (next: string) => void;
+  setTemplateTypeBestPractices: (next: string) => void;
   setTemplateTypeEmphasisPrompt: (next: string) => void;
   setTemplateTypeImageGenPrompt: (next: string) => void;
   setCaptionRegenPrompt: (next: string) => void;
@@ -90,6 +91,7 @@ type Args = {
   onToggleAiImageAutoRemoveBg: () => void;
   onClickGenerateAiImage: () => void;
   onClickGenerateCopy: () => void;
+  onSetGenerateCopyUi: (args: { projectId: string; state: "idle" | "running" | "success" | "error"; label?: string; error?: string | null }) => void;
   onClickRetry: () => void;
   onClickRealignText: () => void;
   onClickUndo: () => void;
@@ -97,6 +99,8 @@ type Args = {
   onClickCopyCaption: () => void;
   onClickRegenerateCaption: () => void;
   onChangeCaption: (next: string) => void;
+  onClickCopyOutreachMessage: () => void;
+  onChangeOutreachMessage: (next: string) => void;
   setShowDebugPreview: (next: boolean) => void;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
@@ -233,6 +237,7 @@ export function useEditorStoreActionsSync(args: Args) {
     setTemplateEditorOpen,
     promptDirtyRef,
     setTemplateTypePrompt,
+    setTemplateTypeBestPractices,
     setTemplateTypeEmphasisPrompt,
     setTemplateTypeImageGenPrompt,
     setCaptionRegenPrompt,
@@ -269,6 +274,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleAiImageAutoRemoveBg,
     onClickGenerateAiImage,
     onClickGenerateCopy,
+    onSetGenerateCopyUi,
     onClickRetry,
     onClickRealignText,
     onClickUndo,
@@ -276,6 +282,8 @@ export function useEditorStoreActionsSync(args: Args) {
     onClickCopyCaption,
     onClickRegenerateCaption,
     onChangeCaption,
+    onClickCopyOutreachMessage,
+    onChangeOutreachMessage,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
@@ -398,6 +406,14 @@ export function useEditorStoreActionsSync(args: Args) {
       editorStore.setState({
         templateTypePrompt: next,
         templateTypePromptPreviewLine: String(next || "").split("\n")[0] || "",
+      } as any);
+    },
+    onChangeTemplateTypeBestPractices: (next: string) => {
+      promptDirtyRef.current = true;
+      setTemplateTypeBestPractices(next);
+      editorStore.setState({
+        templateTypeBestPractices: next,
+        templateTypeBestPracticesPreviewLine: String(next || "").split("\n")[0] || "",
       } as any);
     },
     onChangeTemplateTypeEmphasisPrompt: (next: string) => {
@@ -523,6 +539,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleAiImageAutoRemoveBg: () => onToggleAiImageAutoRemoveBg(),
     onClickGenerateAiImage: () => onClickGenerateAiImage(),
     onClickGenerateCopy: () => onClickGenerateCopy(),
+    onSetGenerateCopyUi: (a: any) => onSetGenerateCopyUi(a),
     onClickRetry: () => onClickRetry(),
     onClickRealignText: () => onClickRealignText(),
     onClickUndo: () => onClickUndo(),
@@ -530,6 +547,8 @@ export function useEditorStoreActionsSync(args: Args) {
     onClickCopyCaption: () => onClickCopyCaption(),
     onClickRegenerateCaption: () => onClickRegenerateCaption(),
     onChangeCaption: (next: string) => onChangeCaption(next),
+    onClickCopyOutreachMessage: () => onClickCopyOutreachMessage(),
+    onChangeOutreachMessage: (next: string) => onChangeOutreachMessage(next),
     setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
     setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
     deleteImageForActiveSlide: (source: "menu" | "button") => deleteImageForActiveSlide(source),
@@ -634,6 +653,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onOpenPromptModal: (section: "prompt" | "emphasis" | "image" | "caption") => implRef.current?.onOpenPromptModal?.(section),
       onClosePromptsModal: () => implRef.current?.onClosePromptsModal?.(),
       onChangeTemplateTypePrompt: (next: string) => implRef.current?.onChangeTemplateTypePrompt?.(next),
+      onChangeTemplateTypeBestPractices: (next: string) => implRef.current?.onChangeTemplateTypeBestPractices?.(next),
       onChangeTemplateTypeEmphasisPrompt: (next: string) => implRef.current?.onChangeTemplateTypeEmphasisPrompt?.(next),
       onChangeTemplateTypeImageGenPrompt: (next: string) => implRef.current?.onChangeTemplateTypeImageGenPrompt?.(next),
       onChangeCaptionRegenPrompt: (next: string) => implRef.current?.onChangeCaptionRegenPrompt?.(next),
@@ -674,6 +694,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onToggleAiImageAutoRemoveBg: () => implRef.current?.onToggleAiImageAutoRemoveBg?.(),
       onClickGenerateAiImage: () => implRef.current?.onClickGenerateAiImage?.(),
       onClickGenerateCopy: () => implRef.current?.onClickGenerateCopy?.(),
+      onSetGenerateCopyUi: (a: any) => implRef.current?.onSetGenerateCopyUi?.(a),
       onClickRetry: () => implRef.current?.onClickRetry?.(),
       onClickRealignText: () => implRef.current?.onClickRealignText?.(),
       onClickUndo: () => implRef.current?.onClickUndo?.(),
@@ -681,6 +702,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onClickCopyCaption: () => implRef.current?.onClickCopyCaption?.(),
       onClickRegenerateCaption: () => implRef.current?.onClickRegenerateCaption?.(),
       onChangeCaption: (next: string) => implRef.current?.onChangeCaption?.(next),
+      onClickCopyOutreachMessage: () => implRef.current?.onClickCopyOutreachMessage?.(),
+      onChangeOutreachMessage: (next: string) => implRef.current?.onChangeOutreachMessage?.(next),
       onOpenBrandAlignmentModal: () => implRef.current?.onOpenBrandAlignmentModal?.(),
       onCloseBrandAlignmentModal: () => implRef.current?.onCloseBrandAlignmentModal?.(),
       onChangeBrandAlignmentPrompt: (next: string) => implRef.current?.onChangeBrandAlignmentPrompt?.(next),
