@@ -140,11 +140,10 @@ export async function POST(request: NextRequest) {
       .from('editor_outreach_targets')
       .update({ pipeline_stage: 'todo', pipeline_added_at: nowIso })
       .or(`prospect_username.eq.${uname},username.eq.${uname}`)
-      .is('pipeline_stage', null)
-      .select('id');
+      .is('pipeline_stage', null);
     if (scope === 'account') q = q.eq('account_id', accountId);
     else q = q.is('account_id', null).eq('created_by_user_id', user.id);
-    return await q;
+    return await q.select('id');
   };
 
   let d1: any[] | null = null;
