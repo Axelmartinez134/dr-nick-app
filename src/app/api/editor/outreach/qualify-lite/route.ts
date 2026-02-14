@@ -131,7 +131,6 @@ function buildPrompt(args: {
     `- Business coaches who teach marketing (they are the competition, not the client)`,
     `- Personal accounts with no business indicators`,
     `- Accounts with 500K+ followers (too large, different needs)`,
-    `- Accounts with under 5K followers (too small, unlikely to pay)`,
     ``,
     `SCORING CRITERIA (0-100):`,
     `- 0-20: Not a match (wrong niche, brand account, too small/large, no business signals)`,

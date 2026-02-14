@@ -1,11 +1,12 @@
 import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthedSupabase } from '../../_utils';
+import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 import { scrapeInstagramFollowingViaApify } from '../_apify';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Apify run waits up to 180s; keep route maxDuration >= that.
+export const maxDuration = 210;
 
 type Body = {
   seedInstagramUrl: string;
@@ -24,7 +25,7 @@ type Item = {
 };
 
 type Resp =
-  | { success: true; seedUsername: string; items: Item[] }
+  | { success: true; seedUsername: string; items: Item[]; sessionId?: string }
   | { success: false; error: string };
 
 async function requireSuperadmin(supabase: any, userId: string): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
@@ -36,6 +37,11 @@ async function requireSuperadmin(supabase: any, userId: string): Promise<{ ok: t
   if (saErr) return { ok: false, status: 500, error: saErr.message };
   if (!saRow?.user_id) return { ok: false, status: 403, error: 'Forbidden' };
   return { ok: true };
+}
+
+function s(v: any): string | null {
+  const out = typeof v === 'string' ? v.trim() : '';
+  return out ? out : null;
 }
 
 export async function POST(req: NextRequest) {
@@ -68,7 +74,33 @@ export async function POST(req: NextRequest) {
       maxSpendUsd: maxSpendUsdRaw,
     });
 
-    return NextResponse.json({ success: true, seedUsername: out.seedUsername, items: out.items } satisfies Resp);
+    // Auto-save scrape session so reopening modal restores the table.
+    let sessionId: string | null = null;
+    try {
+      const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
+      const accountId = acct.ok ? acct.accountId : null;
+      const row = {
+        created_by_user_id: user.id,
+        account_id: accountId,
+        kind: 'following',
+        seed_instagram_url: seedInstagramUrl,
+        seed_username: out.seedUsername,
+        max_results: Number.isFinite(maxResultsRaw as any) ? Number(maxResultsRaw) : null,
+        max_spend_usd: Number.isFinite(maxSpendUsdRaw as any) ? Number(maxSpendUsdRaw) : null,
+        actor_id: 'datavoyantlab/instagram-following-scraper',
+        items: out.items as any,
+      };
+      const { data: inserted, error: insErr } = await supabase
+        .from('editor_outreach_scrape_sessions')
+        .insert(row as any)
+        .select('id')
+        .single();
+      if (!insErr && inserted?.id) sessionId = String(inserted.id);
+    } catch {
+      // best-effort; scrape still returns results
+    }
+
+    return NextResponse.json({ success: true, seedUsername: out.seedUsername, items: out.items, sessionId: sessionId ?? undefined } satisfies Resp);
   } catch (e: any) {
     return NextResponse.json({ success: false, error: String(e?.message || e || 'Scrape failed') } satisfies Resp, { status: 500 });
   }

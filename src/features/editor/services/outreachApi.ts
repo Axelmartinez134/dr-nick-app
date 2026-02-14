@@ -16,6 +16,38 @@ export type LiteQualification = {
   credential: string | null;
 };
 
+export type EnrichQualifySaveSummary = {
+  attempted: number;
+  enrichedOk: number;
+  qualifiedOk: number;
+  savedOk: number;
+  qualifyFailed: number;
+  enrichFailed: number;
+};
+
+export type EnrichQualifySaveRow =
+  | {
+      username: string;
+      ok: true;
+      enriched: { ok: true; profilePicUrlHD: string | null; followerCount: number | null; followingCount: number | null };
+      qualified: { ok: true; data: LiteQualification; model: string };
+      saved: { ok: true };
+    }
+  | {
+      username: string;
+      ok: false;
+      enriched: { ok: boolean; error?: string; profilePicUrlHD?: string | null; followerCount?: number | null; followingCount?: number | null };
+      qualified: { ok: boolean; error?: string; model?: string; data?: LiteQualification };
+      saved: { ok: boolean; error?: string };
+    };
+
+export type EnrichQualifySaveStreamEvent =
+  | { type: 'stage'; stage: 'upsert' | 'enrich' | 'qualify' | 'done'; message: string; total?: number }
+  | { type: 'progress'; stage: 'enrich' | 'qualify'; done: number; total: number }
+  | { type: 'row'; stage: 'enrich' | 'qualify'; username: string; ok: boolean; error?: string }
+  | { type: 'final'; payload: { success: true; summary: EnrichQualifySaveSummary; results: EnrichQualifySaveRow[] } }
+  | { type: 'fatal'; error: string };
+
 export type ReelScrape = {
   reelUrl: string;
   shortcode: string | null;
@@ -183,7 +215,7 @@ export async function scrapeFollowing(args: {
   maxResults: number;
   maxSpendUsd: number;
   headers?: Record<string, string>;
-}): Promise<{ seedUsername: string; items: ScrapeFollowingItem[] }> {
+}): Promise<{ seedUsername: string; items: ScrapeFollowingItem[]; sessionId?: string }> {
   const token = String(args.token || '').trim();
   if (!token) throw new Error('Missing auth token');
 
@@ -209,6 +241,51 @@ export async function scrapeFollowing(args: {
   return {
     seedUsername: String(j?.seedUsername || '').trim(),
     items: items as ScrapeFollowingItem[],
+    sessionId: typeof j?.sessionId === 'string' ? String(j.sessionId || '').trim() || undefined : undefined,
+  };
+}
+
+export async function loadLatestFollowingScrapeSession(args: {
+  token: string;
+  headers?: Record<string, string>;
+}): Promise<{
+  session: null | {
+    id: string;
+    createdAt: string;
+    seedInstagramUrl: string | null;
+    seedUsername: string | null;
+    maxResults: number | null;
+    maxSpendUsd: number | null;
+    actorId: string | null;
+    items: ScrapeFollowingItem[];
+  };
+}> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+
+  const res = await fetch('/api/editor/outreach/following-session/latest', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Load session failed (${res.status})`));
+  const s = j?.session ?? null;
+  if (!s?.id) return { session: null };
+  return {
+    session: {
+      id: String(s.id),
+      createdAt: String(s.createdAt || ''),
+      seedInstagramUrl: typeof s.seedInstagramUrl === 'string' ? s.seedInstagramUrl : s.seedInstagramUrl ?? null,
+      seedUsername: typeof s.seedUsername === 'string' ? s.seedUsername : s.seedUsername ?? null,
+      maxResults: typeof s.maxResults === 'number' ? s.maxResults : s.maxResults ?? null,
+      maxSpendUsd: typeof s.maxSpendUsd === 'number' ? s.maxSpendUsd : s.maxSpendUsd ?? null,
+      actorId: typeof s.actorId === 'string' ? s.actorId : s.actorId ?? null,
+      items: Array.isArray(s.items) ? (s.items as any[]) : [],
+    } as any,
   };
 }
 
@@ -308,6 +385,332 @@ export async function enrichProspects(args: {
   const j = await res.json().catch(() => null);
   if (!res.ok || !j?.success) throw new Error(String(j?.error || `Enrich failed (${res.status})`));
   return Array.isArray(j?.results) ? (j.results as any[]) : [];
+}
+
+export async function enrichQualifySaveFollowing(args: {
+  token: string;
+  seedInstagramUrl: string;
+  seedUsername?: string | null;
+  baseTemplateId: string | null;
+  items: Array<Pick<ScrapeFollowingItem, 'username' | 'fullName' | 'profilePicUrl' | 'isVerified' | 'isPrivate' | 'raw'>>;
+  headers?: Record<string, string>;
+}): Promise<{ summary: EnrichQualifySaveSummary; results: EnrichQualifySaveRow[] }> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const seedInstagramUrl = String(args.seedInstagramUrl || '').trim();
+  if (!seedInstagramUrl) throw new Error('seedInstagramUrl is required');
+  const items = Array.isArray(args.items) ? args.items : [];
+  if (!items.length) throw new Error('items is required');
+
+  const res = await fetch('/api/editor/outreach/enrich-qualify-save', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({
+      seedInstagramUrl,
+      seedUsername: typeof args.seedUsername === 'string' ? args.seedUsername : args.seedUsername ?? null,
+      baseTemplateId: args.baseTemplateId ?? null,
+      items,
+    }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Enrich + Qualify + Save failed (${res.status})`));
+  return {
+    summary: j.summary as EnrichQualifySaveSummary,
+    results: Array.isArray(j.results) ? (j.results as any[]) : [],
+  };
+}
+
+export async function enrichQualifySaveFollowingStream(args: {
+  token: string;
+  seedInstagramUrl: string;
+  seedUsername?: string | null;
+  baseTemplateId: string | null;
+  items: Array<Pick<ScrapeFollowingItem, 'username' | 'fullName' | 'profilePicUrl' | 'isVerified' | 'isPrivate' | 'raw'>>;
+  headers?: Record<string, string>;
+  onEvent?: (evt: EnrichQualifySaveStreamEvent) => void;
+}): Promise<{ summary: EnrichQualifySaveSummary; results: EnrichQualifySaveRow[] }> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const seedInstagramUrl = String(args.seedInstagramUrl || '').trim();
+  if (!seedInstagramUrl) throw new Error('seedInstagramUrl is required');
+  const items = Array.isArray(args.items) ? args.items : [];
+  if (!items.length) throw new Error('items is required');
+
+  let res: Response;
+  try {
+    res = await fetch('/api/editor/outreach/enrich-qualify-save', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(args.headers || {}),
+      },
+      body: JSON.stringify({
+        stream: true,
+        seedInstagramUrl,
+        seedUsername: typeof args.seedUsername === 'string' ? args.seedUsername : args.seedUsername ?? null,
+        baseTemplateId: args.baseTemplateId ?? null,
+        items,
+      }),
+    });
+  } catch (e: any) {
+    const msg = String(e?.message || e || 'Failed to fetch');
+    throw new Error(
+      `Enrich + Qualify + Save failed to fetch (network). This usually means the server closed the connection or crashed before responding. Original: ${msg}`
+    );
+  }
+
+  if (!res.ok) {
+    const j = await res.json().catch(() => null);
+    throw new Error(String(j?.error || `Enrich + Qualify + Save failed (${res.status})`));
+  }
+  if (!res.body) throw new Error('Response stream missing');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let finalPayload: { summary: EnrichQualifySaveSummary; results: EnrichQualifySaveRow[] } | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+
+    // SSE frames are separated by blank lines.
+    const frames = buf.split('\n\n');
+    buf = frames.pop() || '';
+    for (const frame of frames) {
+      const line = frame
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l.startsWith('data:'));
+      if (!line) continue;
+      const raw = line.slice('data:'.length).trim();
+      if (!raw) continue;
+      let evt: any = null;
+      try {
+        evt = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (evt) args.onEvent?.(evt as EnrichQualifySaveStreamEvent);
+      if (evt?.type === 'fatal') throw new Error(String(evt?.error || 'Failed'));
+      if (evt?.type === 'final' && evt?.payload?.success) {
+        finalPayload = { summary: evt.payload.summary, results: evt.payload.results };
+      }
+    }
+  }
+
+  if (!finalPayload) throw new Error('Stream ended without final payload');
+  return finalPayload;
+}
+
+export async function getAlreadyEnrichedFollowingUsernames(args: {
+  token: string;
+  usernames: string[];
+  headers?: Record<string, string>;
+}): Promise<Set<string>> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const usernames = Array.isArray(args.usernames) ? args.usernames : [];
+  if (!usernames.length) return new Set();
+
+  const res = await fetch('/api/editor/outreach/enriched-status', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({ usernames }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Status failed (${res.status})`));
+  const arr = Array.isArray(j?.enrichedUsernames) ? (j.enrichedUsernames as any[]) : [];
+  return new Set(arr.map((u) => String(u || '').trim().toLowerCase()).filter(Boolean));
+}
+
+export async function hydrateFollowingFromDb(args: {
+  token: string;
+  usernames: string[];
+  headers?: Record<string, string>;
+}): Promise<
+  Array<{
+    username: string;
+    ai: null | {
+      score: number;
+      niche: string | null;
+      reason: string | null;
+      has_offer: boolean | null;
+      credential: string | null;
+      model: string | null;
+      mode: string | null;
+      scoredAt: string | null;
+    };
+    enriched: { ok: boolean; enrichedAt: string | null; profilePicUrlHD: string | null; followingCount: number | null };
+  }>
+> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const usernames = Array.isArray(args.usernames) ? args.usernames : [];
+  if (!usernames.length) return [];
+
+  const res = await fetch('/api/editor/outreach/following-hydrate', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({ usernames }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Hydrate failed (${res.status})`));
+  return Array.isArray(j?.rows) ? (j.rows as any[]) : [];
+}
+
+export type PipelineStage = 'todo' | 'dm_sent' | 'responded_needs_followup' | 'booked' | 'sent_contract' | 'closed';
+
+export type PipelineLead = {
+  id: string;
+  username: string;
+  fullName: string | null;
+  profilePicUrl: string | null;
+  profilePicUrlHD: string | null;
+  aiScore: number | null;
+  aiNiche: string | null;
+  aiReason: string | null;
+  aiHasOffer: boolean | null;
+  aiCredential: string | null;
+  enrichedAt: string | null;
+  followingCount: number | null;
+  pipelineStage: PipelineStage;
+  pipelineAddedAt: string | null;
+  lastContactDate: string | null; // YYYY-MM-DD
+  sourcePostUrl: string | null;
+  createdProjectId: string | null;
+  createdTemplateId: string | null;
+};
+
+export async function pipelineBackfill(args: { token: string; headers?: Record<string, string> }): Promise<{ updated: number }> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const res = await fetch('/api/editor/outreach/pipeline/backfill', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({}),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Backfill failed (${res.status})`));
+  return { updated: Number(j?.updated || 0) };
+}
+
+export async function pipelineList(args: {
+  token: string;
+  q?: string | null;
+  stage?: PipelineStage | null;
+  headers?: Record<string, string>;
+}): Promise<{ rows: PipelineLead[] }> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const qp = new URLSearchParams();
+  if (args.q) qp.set('q', String(args.q));
+  if (args.stage) qp.set('stage', String(args.stage));
+  const url = `/api/editor/outreach/pipeline/list${qp.toString() ? `?${qp.toString()}` : ''}`;
+
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `List failed (${res.status})`));
+  return { rows: Array.isArray(j?.rows) ? (j.rows as any[]) : [] };
+}
+
+export async function pipelineAdd(args: {
+  token: string;
+  seedInstagramUrl: string;
+  seedUsername: string;
+  baseTemplateId?: string | null;
+  row: {
+    username: string;
+    fullName?: string | null;
+    profilePicUrl?: string | null;
+    isVerified?: boolean | null;
+    isPrivate?: boolean | null;
+    raw?: any;
+  };
+  headers?: Record<string, string>;
+}): Promise<{ applied: boolean }> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const seedInstagramUrl = String(args.seedInstagramUrl || '').trim();
+  const seedUsername = String(args.seedUsername || '').trim();
+  if (!seedInstagramUrl) throw new Error('seedInstagramUrl is required');
+  if (!seedUsername) throw new Error('seedUsername is required');
+  const username = String(args.row?.username || '').trim();
+  if (!username) throw new Error('row.username is required');
+  const res = await fetch('/api/editor/outreach/pipeline/add', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({
+      seedInstagramUrl,
+      seedUsername,
+      baseTemplateId: args.baseTemplateId ?? null,
+      row: args.row,
+    }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Add failed (${res.status})`));
+  return { applied: !!j?.applied };
+}
+
+export async function pipelineUpdate(args: {
+  token: string;
+  username: string;
+  patch: {
+    pipelineStage?: PipelineStage | null;
+    lastContactDate?: string | null;
+    sourcePostUrl?: string | null;
+    createdProjectId?: string | null;
+    createdTemplateId?: string | null;
+    projectCreatedAt?: string | null;
+    baseTemplateId?: string | null;
+  };
+  headers?: Record<string, string>;
+}): Promise<void> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const username = String(args.username || '').trim();
+  if (!username) throw new Error('username is required');
+  const res = await fetch('/api/editor/outreach/pipeline/update', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({ username, patch: args.patch || {} }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Update failed (${res.status})`));
 }
 
 export async function markCreated(args: {

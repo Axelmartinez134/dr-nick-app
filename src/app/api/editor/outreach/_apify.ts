@@ -246,26 +246,89 @@ export async function scrapeInstagramFollowingViaApify(args: {
   const client = new ApifyClient({ token });
 
   // Actor: https://apify.com/datavoyantlab/instagram-following-scraper
-  // NOTE: This actor’s input schema only supports `usernames`.
+  // NOTE: This actor may require a paid Apify plan / access approval.
+  // Input schema requires `usernames`.
   const actorId = 'datavoyantlab/instagram-following-scraper';
   const input: any = { usernames: [seedUsername] };
 
-  const run = await client.actor(actorId).call(input, {
-    waitSecs: 180,
+  // IMPORTANT: this actor does NOT expose a "limit" input, so the only way to enforce
+  // "Max results (exact)" is to abort the run once the dataset has at least N items.
+  // This prevents the actor from continuing to scrape thousands beyond what the user requested.
+  const run = await (client.actor(actorId) as any).start(input, {
+    // Keep bounded so a stuck run doesn't run forever.
     timeout: 180,
     memory: 1024,
     // Platform-level safety rail: hard cap spend for the run.
-    // This is the real protection since the actor does not expose a `limit` input.
     maxTotalChargeUsd: maxSpendUsd,
-  } as any);
+  });
 
+  const runId = String((run as any)?.id || '').trim();
   const datasetId = (run as any)?.defaultDatasetId;
   if (!datasetId) {
     throw new Error('Apify run returned no dataset id');
   }
 
+  // Poll until we either:
+  // - have at least `maxResults` items (then abort), or
+  // - the run finishes / times out / fails, or
+  // - we hit our own wall-clock budget.
+  const pollUntilMs = Date.now() + 175_000; // keep under the 180s actor timeout
+  let lastStatus: string | null = null;
+  while (runId && Date.now() < pollUntilMs) {
+    // Efficient "have we reached N yet?" probe:
+    // try to read the (N-1)th item; if it exists, dataset has >= N items.
+    try {
+      const probe = await client.dataset(datasetId).listItems({ offset: Math.max(0, maxResults - 1), limit: 1 });
+      const hasNth = Array.isArray((probe as any)?.items) && (probe as any).items.length > 0;
+      if (hasNth) {
+        try {
+          await (client.run(runId) as any).abort();
+        } catch {
+          // ignore
+        }
+        lastStatus = 'ABORTED';
+        break;
+      }
+    } catch {
+      // ignore probe errors; we'll fall back to run status check
+    }
+
+    // If run already finished (success/fail/timeout), stop polling.
+    try {
+      const r = await (client.run(runId) as any).get();
+      const st = String((r as any)?.status || '').toUpperCase();
+      if (st) lastStatus = st;
+      if (st === 'SUCCEEDED' || st === 'FAILED' || st === 'TIMED-OUT' || st === 'ABORTED') break;
+    } catch {
+      // ignore
+    }
+
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+
+  // Always return up to maxResults of whatever we managed to collect.
   const { items } = await client.dataset(datasetId).listItems({ limit: maxResults });
   const rows = Array.isArray(items) ? items : [];
+
+  // If we got zero rows, surface a run error (if any) to the UI.
+  if (rows.length === 0) {
+    try {
+      if (runId) {
+        const r = await (client.run(runId) as any).get();
+        const st = String((r as any)?.status || '').toUpperCase();
+        const msg =
+          firstString((r as any)?.statusMessage) ||
+          firstString((r as any)?.errorMessage) ||
+          firstString((r as any)?.meta?.errorMessage) ||
+          (st ? `Apify actor run failed (status=${st})` : 'Apify actor run failed');
+        throw new Error(msg);
+      }
+    } catch (e: any) {
+      throw new Error(String(e?.message || e || 'Apify actor run failed'));
+    }
+    if (lastStatus) throw new Error(`Apify actor run returned no items (status=${lastStatus})`);
+    throw new Error('Apify dataset returned no items');
+  }
 
   const normalized: InstagramFollowingProspect[] = rows.map((raw: any) => {
     // Actor output can vary; prefer `following_user`, but fall back to other shapes.

@@ -164,10 +164,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'No items had a valid username' } satisfies Resp, { status: 400 });
   }
 
-  // Dedupe via unique partial index (Phase 1): (account_id, source_seed_username, prospect_username) where source_type='following'
+  // Dedupe via UNIQUE index that matches our upsert conflict target:
+  // (account_id, source_type, source_seed_username, prospect_username)
   const { data: inserted, error } = await svc
     .from('editor_outreach_targets')
-    .upsert(rows, { onConflict: 'account_id,source_seed_username,prospect_username', ignoreDuplicates: true })
+    .upsert(rows, { onConflict: 'account_id,source_type,source_seed_username,prospect_username', ignoreDuplicates: true })
     .select('id');
 
   if (error) {
