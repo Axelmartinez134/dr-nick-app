@@ -613,6 +613,9 @@ export default function EditorShell() {
   const [projectMappingSlide2to5, setProjectMappingSlide2to5] = useState<string | null>(null);
   const [projectMappingSlide6, setProjectMappingSlide6] = useState<string | null>(null);
   const [templateSnapshots, setTemplateSnapshots] = useState<Record<string, any>>({});
+  // Review overlay shortcut: open Template Editor targeting a specific template.
+  const [templateEditorInitialTemplateId, setTemplateEditorInitialTemplateId] = useState<string | null>(null);
+  const [templateEditorInitialSnapshot, setTemplateEditorInitialSnapshot] = useState<any | null>(null);
 
   const promptDirtyRef = useRef(false);
   const promptSaveTimeoutRef = useRef<number | null>(null);
@@ -980,6 +983,7 @@ export default function EditorShell() {
   ]);
   const [captionDraft, setCaptionDraft] = useState<string>("");
   const [outreachMessageDraft, setOutreachMessageDraft] = useState<string>("");
+  const [isOutreachProject, setIsOutreachProject] = useState<boolean>(false);
   const [outreachMessageCopyStatus, setOutreachMessageCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [captionCopyStatus, setCaptionCopyStatus] = useState<"idle" | "copied" | "error">("idle");
   const [captionRegenGenerating, setCaptionRegenGenerating] = useState(false);
@@ -1600,6 +1604,7 @@ export default function EditorShell() {
     setTemplateTypeId,
     setCaptionDraft,
     setOutreachMessageDraft,
+    setIsOutreachProject,
     setProjectPromptSnapshot,
     setProjectMappingSlide1,
     setProjectMappingSlide2to5,
@@ -5204,6 +5209,36 @@ export default function EditorShell() {
     scheduleDebouncedOutreachMessageSave({ projectId: currentProjectId, outreachMessage: v, debounceMs: 600 });
   };
 
+  const onClickEditSlide1Template = useCallback(() => {
+    const pid = currentProjectId ? String(currentProjectId) : "";
+    if (!pid) return;
+    const tid = projectMappingSlide1 ? String(projectMappingSlide1) : "";
+    if (!tid) {
+      // If the project doesn't have a snapshot mapping (unexpected), fall back to Template Settings.
+      setTemplateSettingsOpen(true);
+      editorStore.setState({ templateSettingsOpen: true } as any);
+      return;
+    }
+
+    // Close other modals (match existing Template Editor open behavior).
+    setTemplateSettingsOpen(false);
+    setPromptModalOpen(false);
+    editorStore.setState({ templateSettingsOpen: false, promptModalOpen: false } as any);
+
+    // Seed Template Editor's initial selection (and snapshot if cached).
+    setTemplateEditorInitialTemplateId(tid);
+    setTemplateEditorInitialSnapshot((templateSnapshots as any)?.[tid] || null);
+    setTemplateEditorOpen(true);
+  }, [
+    currentProjectId,
+    editorStore,
+    projectMappingSlide1,
+    setPromptModalOpen,
+    setTemplateEditorOpen,
+    setTemplateSettingsOpen,
+    templateSnapshots,
+  ]);
+
   // Phase 5E6: bottom panel UI is updated directly by EditorShell (no bridging hook).
   useLayoutEffect(() => {
     editorStore.setState({
@@ -5247,6 +5282,7 @@ export default function EditorShell() {
         captionRegenGenerating,
         captionRegenError,
         outreachMessageDraft: outreachMessageDraft || "",
+        isOutreachProject: !!isOutreachProject,
         outreachMessageCopyStatus,
         debugScreenshot: debugScreenshot || null,
         showDebugPreview,
@@ -5270,6 +5306,7 @@ export default function EditorShell() {
     captionDraft,
     captionRegenError,
     captionRegenGenerating,
+    isOutreachProject,
     outreachMessageCopyStatus,
     outreachMessageDraft,
     copyError,
@@ -5587,7 +5624,11 @@ export default function EditorShell() {
           }}
         >
           {/* Review / Approval overlay (superadmin-only; anchored to the dotted workspace background). */}
-          <ReviewStatusOverlay projectId={currentProjectId} />
+          <ReviewStatusOverlay
+            projectId={currentProjectId}
+            showEditTemplateButton={!!isOutreachProject}
+            onClickEditTemplate={onClickEditSlide1Template}
+          />
 
           {/* Mobile: manual left drawer */}
           {isMobile ? (
@@ -5651,12 +5692,16 @@ export default function EditorShell() {
 
       <TemplateEditorModal
         open={templateEditorOpen}
-        onClose={() => setTemplateEditorOpen(false)}
+        onClose={() => {
+          setTemplateEditorOpen(false);
+          setTemplateEditorInitialTemplateId(null);
+          setTemplateEditorInitialSnapshot(null);
+        }}
         templates={templates}
-        // In /editor we want Template Editor to default to "Select Template" each open.
-        // The mapped templates still render in the slide strip; this only affects the modal's initial selection.
-        currentTemplateId={null}
-        currentTemplateSnapshot={null}
+        // In /editor we want Template Editor to default to "Select Template" each open,
+        // unless opened via the Review overlay shortcut (seeded by `templateEditorInitialTemplateId`).
+        currentTemplateId={templateEditorInitialTemplateId}
+        currentTemplateSnapshot={templateEditorInitialSnapshot}
         onTemplateSaved={(templateId, nextDefinition) => {
           setSelectedTemplateId(templateId);
           setSelectedTemplateSnapshot(nextDefinition);

@@ -48,6 +48,7 @@ export default function TemplateEditorModal(props: {
 }) {
   const { open, onClose } = props;
   const canvasRef = useRef<TemplateEditorCanvasHandle | null>(null);
+  const didAutoLoadForTemplateIdRef = useRef<string | null>(null);
 
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(props.currentTemplateId);
   const [templateName, setTemplateName] = useState('');
@@ -381,6 +382,19 @@ export default function TemplateEditorModal(props: {
       setLoading(false);
     }
   };
+
+  // /editor shortcut: allow opening Template Editor with a preselected template id.
+  // If we weren't passed a snapshot (cache miss), auto-load the template by id.
+  useEffect(() => {
+    if (!open) return;
+    const tid = props.currentTemplateId;
+    if (!tid) return;
+    if (props.currentTemplateSnapshot) return;
+    if (didAutoLoadForTemplateIdRef.current === tid) return;
+    didAutoLoadForTemplateIdRef.current = tid;
+    void loadTemplateById(tid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, props.currentTemplateId, props.currentTemplateSnapshot]);
 
   const createTemplate = async () => {
     setSaving(true);

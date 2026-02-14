@@ -85,10 +85,32 @@ function extractInstagramShortcode(postOrReelUrl: string): string | null {
       .filter(Boolean);
     // Supports /p/<shortcode>/, /reel/<shortcode>/, /tv/<shortcode>/
     const kind = parts[0];
-    if (kind !== 'p' && kind !== 'reel' && kind !== 'tv') return null;
+    if (kind !== 'p' && kind !== 'reel' && kind !== 'tv' && kind !== 'reels') return null;
     return parts[1] || null;
   } catch {
     return null;
+  }
+}
+
+function canonicalizeInstagramPostOrReelUrl(input: string): string {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  if (!(raw.startsWith('http://') || raw.startsWith('https://'))) return raw;
+  try {
+    const u = new URL(raw);
+    // Drop query + hash to avoid accidental variants.
+    u.search = '';
+    u.hash = '';
+    const parts = String(u.pathname || '')
+      .split('/')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts[0] === 'reels') parts[0] = 'reel';
+    // Ensure trailing slash for consistency.
+    u.pathname = `/${parts.join('/')}${parts.length ? '/' : ''}`;
+    return u.toString();
+  } catch {
+    return raw;
   }
 }
 
@@ -150,11 +172,12 @@ export async function scrapeInstagramReelViaApify(args: {
   includeTranscript?: boolean;
   includeDownloadedVideo?: boolean;
 }): Promise<InstagramReelScrape> {
-  const reelUrl = String(args.reelUrl || '').trim();
-  if (!reelUrl) throw new Error('reelUrl is required');
-  if (!(reelUrl.startsWith('http://') || reelUrl.startsWith('https://'))) {
+  const reelUrlRaw = String(args.reelUrl || '').trim();
+  if (!reelUrlRaw) throw new Error('reelUrl is required');
+  if (!(reelUrlRaw.startsWith('http://') || reelUrlRaw.startsWith('https://'))) {
     throw new Error('reelUrl must be a full URL');
   }
+  const reelUrl = canonicalizeInstagramPostOrReelUrl(reelUrlRaw);
 
   const token = requireApifyToken();
   const client = new ApifyClient({ token });

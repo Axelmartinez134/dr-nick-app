@@ -34,8 +34,12 @@ function IosToggle(props: {
   );
 }
 
-export function ReviewStatusOverlay(props: { projectId: string | null }) {
-  const { projectId } = props;
+export function ReviewStatusOverlay(props: {
+  projectId: string | null;
+  showEditTemplateButton?: boolean;
+  onClickEditTemplate?: () => void;
+}) {
+  const { projectId, showEditTemplateButton, onClickEditTemplate } = props;
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
@@ -139,14 +143,28 @@ export function ReviewStatusOverlay(props: { projectId: string | null }) {
           {busy ? <div className="mt-2 text-[11px] text-slate-500">Saving…</div> : null}
       </div>
 
-      <input
-        className="h-9 w-[360px] rounded-xl border border-slate-200 bg-white/95 backdrop-blur px-3 text-[12px] text-slate-900 shadow-lg"
-        placeholder="Source material…"
-        value={draft}
-        onChange={(e) => onChangeDraft(e.target.value)}
-        onBlur={onBlur}
-        spellCheck={false}
-      />
+      <div className="flex items-center gap-2">
+        <input
+          className="h-9 w-[360px] rounded-xl border border-slate-200 bg-white/95 backdrop-blur px-3 text-[12px] text-slate-900 shadow-lg"
+          placeholder="Source material…"
+          value={draft}
+          onChange={(e) => onChangeDraft(e.target.value)}
+          onBlur={onBlur}
+          spellCheck={false}
+        />
+
+        {showEditTemplateButton && onClickEditTemplate ? (
+          <button
+            type="button"
+            className="h-9 px-3 rounded-xl border border-slate-200 bg-white/95 backdrop-blur text-[12px] font-semibold text-slate-800 shadow-lg hover:bg-white disabled:opacity-60"
+            onClick={onClickEditTemplate}
+            disabled={busy}
+            title="Edit the Slide 1 template for this project"
+          >
+            Edit Template
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

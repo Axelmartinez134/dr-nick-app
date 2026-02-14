@@ -1,9 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditorSelector, useEditorStore } from "@/features/editor/store";
 import { supabase } from "@/app/components/auth/AuthContext";
 import { outreachApi } from "@/features/editor/services";
+
+function canonicalizeInstagramPostOrReelUrlClient(input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  if (!(raw.startsWith("http://") || raw.startsWith("https://"))) return raw;
+  try {
+    const u = new URL(raw);
+    u.search = "";
+    u.hash = "";
+    const parts = String(u.pathname || "")
+      .split("/")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // Common paste variant: /reels/<shortcode>/ (plural) → /reel/<shortcode>/
+    if (parts[0] === "reels") parts[0] = "reel";
+    u.pathname = `/${parts.join("/")}${parts.length ? "/" : ""}`;
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
 
 function getActiveAccountHeader(): Record<string, string> {
   try {
@@ -38,6 +59,38 @@ export function OutreachModal() {
   const [reelUrl, setReelUrl] = useState("");
 
   const [instagramUrl, setInstagramUrl] = useState("");
+  const [scrapeElapsedSec, setScrapeElapsedSec] = useState<number>(0);
+  const scrapeAbortRef = useRef<AbortController | null>(null);
+
+  // Helper: wait until the created project is actually loaded in the editor store.
+  // This is important for "best-effort" post-create actions (Review flags, Generate Copy, etc.)
+  // because some store updates only apply to the currently loaded project.
+  const waitForProjectLoaded = async (pid: string) => {
+    const target = String(pid || "").trim();
+    if (!target) return false;
+    const start = Date.now();
+    while (Date.now() - start < 15_000) {
+      const cur = String((editorStore.getState() as any)?.currentProjectId || "").trim();
+      if (cur && cur === target) return true;
+      await new Promise((r) => window.setTimeout(r, 150));
+    }
+    return false;
+  };
+
+  const setReelReviewFieldsBestEffort = async (args: { projectId: string; reelUrl: string }) => {
+    const projectId = String(args.projectId || "").trim();
+    const reelUrl = String(args.reelUrl || "").trim();
+    if (!projectId || !reelUrl) return;
+    try {
+      await waitForProjectLoaded(projectId);
+      await actions?.onChangeProjectReviewSource?.({ projectId, next: reelUrl });
+      await actions?.onToggleProjectReviewReady?.({ projectId, next: true });
+      // Ensure the overlay reflects it immediately even if the action doesn't patch current state for some reason.
+      editorStore.setState({ reviewSource: reelUrl, reviewReady: true } as any);
+    } catch {
+      // ignore (best-effort)
+    }
+  };
   const [baseTemplateId, setBaseTemplateId] = useState<string>("");
   const [scrapeBusy, setScrapeBusy] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
@@ -218,17 +271,52 @@ export function OutreachModal() {
     return !!String(reelUrl || "").trim();
   }, [instagramUrl, reelUrl, singleMode]);
 
+  useEffect(() => {
+    // Scrape progress ticker (prevents "frozen UI" feel).
+    if (!scrapeBusy) {
+      setScrapeElapsedSec(0);
+      return;
+    }
+    const start = Date.now();
+    setScrapeElapsedSec(0);
+    const id = window.setInterval(() => {
+      const sec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+      setScrapeElapsedSec(sec);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [scrapeBusy]);
+
+  const scrapeProgressLabel = useMemo(() => {
+    if (!scrapeBusy) return null;
+    const m = Math.floor(scrapeElapsedSec / 60);
+    const s = String(scrapeElapsedSec % 60).padStart(2, "0");
+    const base = `Scraping… ${m}:${s}`;
+    if (scrapeElapsedSec >= 45) return `${base} (Instagram is slow right now)`;
+    return base;
+  }, [scrapeBusy, scrapeElapsedSec]);
+
   const busyLabel = useMemo(() => {
     if (enrichBusy) return "Enriching…";
     if (saveProspectsBusy) return "Saving prospects…";
     if (liteQualifyBusy) return "Qualifying…";
     if (followingBusy) return "Scraping following…";
-    if (scrapeBusy) return "Scraping…";
+    if (scrapeBusy) return singleMode === "reel" ? scrapeProgressLabel || "Scraping…" : "Scraping…";
     if (createBusy) return "Creating template…";
     if (projectBusy) return "Creating project…";
     if (persistBusy) return "Saving record…";
     return null;
-  }, [createBusy, enrichBusy, followingBusy, liteQualifyBusy, persistBusy, projectBusy, saveProspectsBusy, scrapeBusy]);
+  }, [
+    createBusy,
+    enrichBusy,
+    followingBusy,
+    liteQualifyBusy,
+    persistBusy,
+    projectBusy,
+    saveProspectsBusy,
+    scrapeBusy,
+    scrapeProgressLabel,
+    singleMode,
+  ]);
 
   const anyBusy = !!busyLabel;
 
@@ -658,12 +746,12 @@ export function OutreachModal() {
     };
   }
 
-  async function apiScrapeInstagramReel(args: { reelUrl: string }) {
+  async function apiScrapeInstagramReel(args: { reelUrl: string; signal?: AbortSignal }) {
     const token = await getSessionToken();
-    const reelUrl = String(args.reelUrl || "").trim();
+    const reelUrl = canonicalizeInstagramPostOrReelUrlClient(String(args.reelUrl || "").trim());
     if (!reelUrl) throw new Error("Reel/Post URL is required");
     const accountHeader = getActiveAccountHeader();
-    return await outreachApi.scrapeReel({ token, reelUrl, headers: accountHeader });
+    return await outreachApi.scrapeReel({ token, reelUrl, headers: accountHeader, signal: args.signal });
   }
 
   async function apiCreateTemplate(args: {
@@ -792,12 +880,19 @@ export function OutreachModal() {
         const data = await apiScrapeInstagramProfile({ instagramUrl });
         setScraped(data);
       } else {
-        const data = await apiScrapeInstagramReel({ reelUrl });
+        const controller = new AbortController();
+        scrapeAbortRef.current = controller;
+        const data = await apiScrapeInstagramReel({ reelUrl, signal: controller.signal });
         setReelScraped(data);
       }
     } catch (e: any) {
-      setScrapeError(String(e?.message || e || "Scrape failed"));
+      if (String(e?.name || "") === "AbortError") {
+        // User cancelled; no error toast needed.
+      } else {
+        setScrapeError(String(e?.message || e || "Scrape failed"));
+      }
     } finally {
+      scrapeAbortRef.current = null;
       setScrapeBusy(false);
     }
   };
@@ -998,16 +1093,11 @@ export function OutreachModal() {
       // If persistence fails, keep the modal open so user can retry "Save record" without creating another project.
       await persistTarget({ projectId });
 
-      // Reel/Post: set review fields.
-      if (singleMode === "reel" && reelScraped?.reelUrl) {
-        try {
-          await actions?.onChangeProjectReviewSource?.({ projectId, next: reelScraped.reelUrl });
-          await actions?.onToggleProjectReviewReady?.({ projectId, next: true });
-        } catch {
-          // ignore
-        }
-      }
       actions?.onLoadProject?.(projectId);
+      // Reel/Post: set review fields after project load (avoid race where UI doesn't reflect updates).
+      if (singleMode === "reel" && reelScraped?.reelUrl) {
+        void setReelReviewFieldsBestEffort({ projectId, reelUrl: reelScraped.reelUrl });
+      }
     } catch (e: any) {
       setProjectError(String(e?.message || e || "Create project failed"));
     } finally {
@@ -1163,12 +1253,7 @@ export function OutreachModal() {
 
         // Load project and set review flags (best-effort).
         actions?.onLoadProject?.(projectId);
-        try {
-          await actions?.onChangeProjectReviewSource?.({ projectId, next: reelData.reelUrl });
-          await actions?.onToggleProjectReviewReady?.({ projectId, next: true });
-        } catch {
-          // ignore
-        }
+        void setReelReviewFieldsBestEffort({ projectId, reelUrl: reelData.reelUrl });
 
         actions?.onCloseOutreachModal?.();
 
@@ -1176,18 +1261,6 @@ export function OutreachModal() {
         // - If transcript exists: trigger Generate Copy after project loads.
         // - If transcript missing: show "Transcribing…" in the Generate Copy status area (red),
         //   run Whisper, then trigger Generate Copy when transcript is ready.
-        const waitForProjectLoaded = async (pid: string) => {
-          const target = String(pid || "").trim();
-          if (!target) return false;
-          const start = Date.now();
-          while (Date.now() - start < 15_000) {
-            const cur = String((editorStore.getState() as any)?.currentProjectId || "").trim();
-            if (cur && cur === target) return true;
-            await new Promise((r) => window.setTimeout(r, 150));
-          }
-          return false;
-        };
-
         const hasTranscript = !!String(reelData.transcript || "").trim();
         if (hasTranscript) {
           void (async () => {
@@ -1441,6 +1514,11 @@ export function OutreachModal() {
                     className="h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
                     value={singleMode === "reel" ? reelUrl : instagramUrl}
                     onChange={(e) => (singleMode === "reel" ? setReelUrl(e.target.value) : setInstagramUrl(e.target.value))}
+                    onBlur={() => {
+                      if (singleMode !== "reel") return;
+                      const next = canonicalizeInstagramPostOrReelUrlClient(reelUrl);
+                      if (next && next !== reelUrl) setReelUrl(next);
+                    }}
                     placeholder={singleMode === "reel" ? "https://www.instagram.com/p/SHORTCODE/" : "https://www.instagram.com/username/"}
                     inputMode="url"
                     autoCapitalize="none"
@@ -1456,7 +1534,31 @@ export function OutreachModal() {
                   >
                     {scrapeBusy ? "Scraping…" : "Scrape"}
                   </button>
+                  {singleMode === "reel" && scrapeBusy ? (
+                    <button
+                      type="button"
+                      className="h-10 px-4 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                      onClick={() => {
+                        try {
+                          scrapeAbortRef.current?.abort();
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      title="Cancel the scrape request"
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
                 </div>
+                {singleMode === "reel" && scrapeBusy && scrapeProgressLabel ? (
+                  <div className="text-[11px] text-slate-600">{scrapeProgressLabel}</div>
+                ) : null}
+                {singleMode === "reel" && !scrapeBusy ? (
+                  <div className="text-[11px] text-slate-500">
+                    Tip: paste `/reel/SHORTCODE/` or `/p/SHORTCODE/`. If you paste `/reels/…`, we’ll auto-fix it.
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

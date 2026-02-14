@@ -20,6 +20,7 @@ export function useProjectLifecycle(params: {
   setTemplateTypeId: (id: 'regular' | 'enhanced') => void;
   setCaptionDraft: (caption: string) => void;
   setOutreachMessageDraft: (msg: string) => void;
+  setIsOutreachProject: (next: boolean) => void;
   setProjectPromptSnapshot: (prompt: string) => void;
   setProjectMappingSlide1: (id: string | null) => void;
   setProjectMappingSlide2to5: (id: string | null) => void;
@@ -70,6 +71,7 @@ export function useProjectLifecycle(params: {
     setTemplateTypeId,
     setCaptionDraft,
     setOutreachMessageDraft,
+    setIsOutreachProject,
     setProjectPromptSnapshot,
     setProjectMappingSlide1,
     setProjectMappingSlide2to5,
@@ -110,7 +112,10 @@ export function useProjectLifecycle(params: {
       setProjectTitle(project.title || 'Untitled Project');
       setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
       setCaptionDraft(project.caption || '');
-      setOutreachMessageDraft(String((project as any)?.outreach_message || ''));
+      const outreachMessageRaw = (project as any)?.outreach_message;
+      setOutreachMessageDraft(String(outreachMessageRaw || ''));
+      // Outreach-only UI should remain visible even if the message is cleared to an empty string.
+      setIsOutreachProject(outreachMessageRaw !== null && outreachMessageRaw !== undefined);
 
       // Apply snapshot mapping for render/layout to avoid morphing
       setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
@@ -225,6 +230,8 @@ export function useProjectLifecycle(params: {
       setProjectTitle(project.title || 'Untitled Project');
       setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
       setCaptionDraft(project.caption || '');
+      setOutreachMessageDraft(String((project as any)?.outreach_message || ''));
+      setIsOutreachProject(((project as any)?.outreach_message) !== null && ((project as any)?.outreach_message) !== undefined);
       setProjectPromptSnapshot(project.prompt_snapshot || '');
       setProjectMappingSlide1(project.slide1_template_id_snapshot ?? null);
       setProjectMappingSlide2to5(project.slide2_5_template_id_snapshot ?? null);

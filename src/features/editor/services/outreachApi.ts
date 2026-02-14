@@ -31,6 +31,7 @@ export async function scrapeReel(args: {
   token: string;
   reelUrl: string;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }): Promise<ReelScrape> {
   const token = String(args.token || '').trim();
   if (!token) throw new Error('Missing auth token');
@@ -45,6 +46,7 @@ export async function scrapeReel(args: {
       ...(args.headers || {}),
     },
     body: JSON.stringify({ reelUrl }),
+    signal: args.signal,
   });
   const j = await res.json().catch(() => null);
   if (!res.ok || !j?.success) throw new Error(String(j?.error || `Scrape failed (${res.status})`));
