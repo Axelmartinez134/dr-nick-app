@@ -141,7 +141,15 @@ export default function EditorShell() {
   }, [editorStore]);
   // Phase 5A: store-owned identity + navigation
   const activeSlideIndex = useEditorSelector((s) => (Number.isFinite(s.activeSlideIndex as any) ? Number(s.activeSlideIndex) : 0));
+  // Keep a ref in sync *immediately* to avoid race conditions where background jobs
+  // (e.g. live-layout after Generate Copy) read a stale slide index before the effect runs.
+  const activeSlideIndexRef = useRef<number>(activeSlideIndex);
+  useEffect(() => {
+    activeSlideIndexRef.current = activeSlideIndex;
+  }, [activeSlideIndex]);
   const setActiveSlideIndex = useCallback((next: number) => {
+    // Update ref synchronously (do not wait for the effect).
+    activeSlideIndexRef.current = next;
     editorStore.setState({ activeSlideIndex: next } as any);
   }, [editorStore]);
 
@@ -1054,10 +1062,6 @@ export default function EditorShell() {
   }, [slides]);
 
   // Debug helpers: track the *current* slide/project even inside stale closures.
-  const activeSlideIndexRef = useRef<number>(activeSlideIndex);
-  useEffect(() => {
-    activeSlideIndexRef.current = activeSlideIndex;
-  }, [activeSlideIndex]);
   const currentProjectIdRef = useRef<string | null>(currentProjectId);
   useEffect(() => {
     currentProjectIdRef.current = currentProjectId;

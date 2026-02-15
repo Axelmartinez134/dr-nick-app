@@ -185,7 +185,7 @@ export function useLiveLayoutQueue(params: {
           continue;
         }
 
-        const nextLayout =
+        const nextLayoutRaw =
           item.templateTypeId === "regular"
             ? computeRegular({
                 slideIndex,
@@ -210,7 +210,19 @@ export function useLiveLayoutQueue(params: {
                 headlineTextAlign,
                 bodyTextAlign,
               });
-        if (!nextLayout) continue;
+        if (!nextLayoutRaw) continue;
+
+        // IMPORTANT (Regular only): ensure a NEW layout object reference.
+        // Regular layout computation may reuse/mutate an existing layout object; if the reference
+        // doesn't change, the canvas renderer's `[layout]` effect won't fire and text won't appear
+        // until a slide switch forces a rerender.
+        const nextLayout =
+          item.templateTypeId === "regular" && typeof nextLayoutRaw === "object" && nextLayoutRaw
+            ? ({
+                ...(nextLayoutRaw as any),
+                textLines: Array.isArray((nextLayoutRaw as any).textLines) ? [...(nextLayoutRaw as any).textLines] : (nextLayoutRaw as any).textLines,
+              } as any)
+            : nextLayoutRaw;
 
         // Phase multi-image: Preserve the latest extraImages[] so debounced live-layout cannot clobber sticker geometry.
         // IMPORTANT: Use the *current* slide layout at process-time (not the queued snapshot), because users may have
@@ -301,6 +313,24 @@ export function useLiveLayoutQueue(params: {
 
         // Yield to the browser between slides to keep UI responsive.
         await new Promise((r) => setTimeout(r, 0));
+      }
+
+      // Safety sync: ensure the engine reflects the currently active slide's latest snapshots.
+      // This prevents edge cases where live-layout updates slide snapshots but the active canvas
+      // doesn't refresh until the user switches slides.
+      try {
+        const pidNow = String(currentProjectIdRef.current || "").trim();
+        if (pidNow) {
+          const si = Math.max(0, Math.min(slideCount - 1, Number(activeSlideIndexRef.current || 0)));
+          const sNow: any = slidesRef.current?.[si] || null;
+          if (sNow?.layoutData || sNow?.inputData) {
+            if (sNow.layoutData) setLayoutData(sNow.layoutData as any);
+            if (sNow.inputData) setInputData(sNow.inputData as any);
+            setLayoutHistory((h: any) => h || []);
+          }
+        }
+      } catch {
+        // ignore
       }
     } finally {
       liveLayoutRunningRef.current = false;

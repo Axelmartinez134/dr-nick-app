@@ -89,11 +89,7 @@ export function OutreachModal() {
     handle: 140,
     link: 70,
     followers: 120,
-    score: 90,
-    hd: 90,
-    verified: 90,
     action: 220,
-    raw: 90,
     reel: 260,
   };
   const pipelineColDefaults: Record<string, number> = {
@@ -116,7 +112,7 @@ export function OutreachModal() {
   const pipelineColWidthsRef = useRef<Record<string, number>>(pipelineColDefaults);
   const totalFollowingTableWidthPx = useMemo(() => {
     const w = followingColWidths || followingColDefaults;
-    const ids = ["row", "sel", "photo", "name", "handle", "link", "followers", "score", "hd", "verified", "action", "raw", "reel"];
+    const ids = ["row", "sel", "photo", "name", "handle", "link", "followers", "action", "reel"];
     return ids.reduce((sum, id) => sum + Math.max(40, Number((w as any)?.[id] || 0)), 0);
   }, [followingColDefaults, followingColWidths]);
   const totalPipelineTableWidthPx = useMemo(() => {
@@ -2194,8 +2190,8 @@ export function OutreachModal() {
     return !!String(reelUrl || "").trim() && !!String(baseTemplateId || "").trim();
   }, [baseTemplateId, instagramUrl, reelUrl, singleMode]);
 
-  const handleRunOutreach = async () => {
-    if (!canRunAll || anyBusy) return;
+  const handleRunOutreach = async (): Promise<boolean> => {
+    if (!canRunAll || anyBusy) return false;
 
     setScrapeError(null);
     setCreateError(null);
@@ -2258,6 +2254,7 @@ export function OutreachModal() {
 
       actions?.onLoadProject?.(projectId);
       actions?.onCloseOutreachModal?.();
+      return true;
       } else {
         // Reel/Post outreach (Phase 7): scrape reel → scrape owner profile → topic line → template → project → persist → review flags.
         setScrapeBusy(true);
@@ -2439,6 +2436,7 @@ export function OutreachModal() {
             }
           })();
         }
+        return true;
       }
     } catch (e: any) {
       // Ensure busy flags are cleared; keep modal open with error.
@@ -2449,6 +2447,7 @@ export function OutreachModal() {
       const msg = String(e?.message || e || "Outreach failed");
       // Put it in the top error bucket so user sees it immediately.
       setProjectError(msg);
+      return false;
     }
   };
 
@@ -3057,11 +3056,7 @@ export function OutreachModal() {
                         <col style={{ width: `${followingColWidths.handle}px` }} />
                         <col style={{ width: `${followingColWidths.link}px` }} />
                         <col style={{ width: `${followingColWidths.followers}px` }} />
-                        <col style={{ width: `${followingColWidths.score}px` }} />
-                        <col style={{ width: `${followingColWidths.hd}px` }} />
-                        <col style={{ width: `${followingColWidths.verified}px` }} />
                         <col style={{ width: `${followingColWidths.action}px` }} />
-                        <col style={{ width: `${followingColWidths.raw}px` }} />
                         <col style={{ width: `${followingColWidths.reel}px` }} />
                       </colgroup>
                       <thead className="sticky top-0 bg-white border-b border-slate-200">
@@ -3102,11 +3097,7 @@ export function OutreachModal() {
                           <ThResizable tableKey="following" colId="handle">Handle</ThResizable>
                           <ThResizable tableKey="following" colId="link">Link</ThResizable>
                           <ThResizable tableKey="following" colId="followers">Followers</ThResizable>
-                          <ThResizable tableKey="following" colId="score">Score</ThResizable>
-                          <ThResizable tableKey="following" colId="hd">HD</ThResizable>
-                          <ThResizable tableKey="following" colId="verified">Verified</ThResizable>
                           <ThResizable tableKey="following" colId="action">Action</ThResizable>
-                          <ThResizable tableKey="following" colId="raw">Raw</ThResizable>
                           <ThResizable tableKey="following" colId="reel">Reel URL</ThResizable>
                         </tr>
                       </thead>
@@ -3123,9 +3114,6 @@ export function OutreachModal() {
                           const alreadyEnriched = unameNorm ? !!enrichedOkByUsername[unameNorm] || !!dbEnrichedByUsername[unameNorm] : false;
                           const followersCountFallback = extractFollowerCountBestEffort(it?.raw);
                           const enriching = unameNorm ? enrichPendingUsernames.has(unameNorm) : false;
-                          const rowBusy = unameNorm ? createRowBusyUsernames.has(unameNorm) : false;
-                          const rowCreatedProjectId = unameNorm ? createdProjectIdByUsername[unameNorm] : null;
-                          const rowErr = unameNorm ? createRowErrorByUsername[unameNorm] : null;
                           const reelDraft = unameNorm ? (followingReelUrlDraftByUsername[unameNorm] ?? "") : "";
                           const reelSaveBusy = unameNorm ? !!followingReelUrlSaveBusyByUsername[unameNorm] : false;
                           const reelErr = unameNorm ? followingReelUrlErrorByUsername[unameNorm] : null;
@@ -3215,34 +3203,6 @@ export function OutreachModal() {
                                   <span className="text-slate-400">—</span>
                                 )}
                               </td>
-                              <td className="px-3 py-2 text-slate-900">
-                                {pending ? (
-                                  <span className="text-slate-500">…</span>
-                                ) : qual && typeof qual.score === "number" ? (
-                                  <span className="font-semibold">{qual.score}</span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-slate-900">
-                                {enriching ? (
-                                  <span className="text-slate-500">…</span>
-                                ) : hd ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-green-200 bg-green-50 text-green-800" title={hd}>
-                                    HD
-                                  </span>
-                                ) : alreadyEnriched ? (
-                                  <span
-                                    className="px-2 py-0.5 rounded-full text-[11px] font-semibold border border-slate-200 bg-slate-50 text-slate-700"
-                                    title="Already enriched (saved in DB)"
-                                  >
-                                    Enriched
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400">—</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-slate-800">{it?.isVerified === null ? "—" : it.isVerified ? "Yes" : "No"}</td>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-2">
                                   <button
@@ -3318,20 +3278,6 @@ export function OutreachModal() {
                                   >
                                     {pipelineAddBusyByUsername[unameNorm] ? 'Adding…' : pipelineAddedByUsername[unameNorm] ? 'Added' : 'Add'}
                                   </button>
-                                  <button
-                                    type="button"
-                                    className="h-8 px-3 rounded-xl bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-60"
-                                    disabled={anyBusy || !unameNorm || rowBusy}
-                                    onClick={() => void handleCreateFromRow({ username: unameNorm })}
-                                    title="Enrich if needed, then create template + project"
-                                  >
-                                    {rowBusy ? "Working…" : rowCreatedProjectId ? "Created" : "Create project"}
-                                  </button>
-                                  {rowErr ? (
-                                    <span className="text-[11px] text-red-700" title={rowErr}>
-                                      Error
-                                    </span>
-                                  ) : null}
                                   {pipelineAddErrorByUsername[unameNorm] ? (
                                     <span
                                       className="text-[11px] text-red-700 max-w-[240px] truncate"
@@ -3341,26 +3287,6 @@ export function OutreachModal() {
                                     </span>
                                   ) : null}
                                 </div>
-                              </td>
-                              <td className="px-3 py-2">
-                                <button
-                                  type="button"
-                                  className="h-8 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
-                                  disabled={!hasRaw}
-                                  title="View raw JSON (debug)"
-                                  onClick={() => {
-                                    try {
-                                      const txt = JSON.stringify(it?.raw ?? {}, null, 2);
-                                      // Use a simple browser dialog for now (fast debugging).
-                                      // Phase 9 polish can make this a proper expand/collapse panel.
-                                      window.prompt("Raw JSON (copy)", txt);
-                                    } catch {
-                                      // ignore
-                                    }
-                                  }}
-                                >
-                                  View
-                                </button>
                               </td>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-2">
@@ -3746,7 +3672,25 @@ export function OutreachModal() {
 
                                           setSingleMode('reel');
                                           setReelUrl(reelUrl);
-                                          await handleRunOutreach();
+                                          const ok = await handleRunOutreach();
+                                          if (!ok) return;
+
+                                          // After a successful create from Pipeline, set stage to dm_sent and last_contact_date to today.
+                                          try {
+                                            const token = await getSessionToken();
+                                            const accountHeader = getActiveAccountHeader();
+                                            const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+                                            await outreachApi.pipelineUpdate({
+                                              token,
+                                              username: uname,
+                                              patch: { pipelineStage: 'dm_sent', lastContactDate: today },
+                                              headers: accountHeader,
+                                            });
+                                            setPipelineStageDraftByUsername((p) => ({ ...(p || {}), [uname]: 'dm_sent' as any }));
+                                            setPipelineLastContactDraftByUsername((p) => ({ ...(p || {}), [uname]: today }));
+                                          } catch {
+                                            // non-fatal (project/template already created)
+                                          }
                                         } catch (err: any) {
                                           setPipelineRowErrorByUsername((p) => ({ ...(p || {}), [uname]: String(err?.message || err || 'Create failed') }));
                                         } finally {
