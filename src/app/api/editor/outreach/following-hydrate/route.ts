@@ -26,8 +26,10 @@ type RowOut = {
     ok: boolean;
     enrichedAt: string | null;
     profilePicUrlHD: string | null;
+    followerCount: number | null;
     followingCount: number | null;
   };
+  sourcePostUrl: string | null;
 };
 
 type Resp = { success: true; rows: RowOut[] } | { success: false; error: string };
@@ -68,6 +70,21 @@ function extractFollowingCountFromEnrichedRaw(raw: any): number | null {
       raw?.edgeFollow?.count,
       raw?.counts?.follows,
       raw?.counts?.following
+    ) ?? null
+  );
+}
+
+function extractFollowerCountFromEnrichedRaw(raw: any): number | null {
+  return (
+    pickFirstNumber(
+      raw?.followersCount,
+      raw?.followerCount,
+      raw?.followers,
+      raw?.followers_count,
+      raw?.edge_followed_by?.count,
+      raw?.edgeFollowedBy?.count,
+      raw?.counts?.followedBy,
+      raw?.counts?.followers
     ) ?? null
   );
 }
@@ -122,6 +139,7 @@ export async function POST(request: NextRequest) {
           'enriched_at',
           'enriched_profile_pic_url_hd',
           'enriched_raw_json',
+          'source_post_url',
         ].join(',')
       )
       .eq('account_id', accountId)
@@ -171,11 +189,14 @@ export async function POST(request: NextRequest) {
         ? r.enriched_profile_pic_url_hd
         : r?.enriched_profile_pic_url_hd ?? null;
     const followingCount = enrichedRaw ? extractFollowingCountFromEnrichedRaw(enrichedRaw) : null;
+    const followerCount = enrichedRaw ? extractFollowerCountFromEnrichedRaw(enrichedRaw) : null;
+    const sourcePostUrl = typeof r?.source_post_url === 'string' ? r.source_post_url : r?.source_post_url ?? null;
 
     return {
       username: u,
       ai,
-      enriched: { ok: enrichedOk, enrichedAt, profilePicUrlHD, followingCount },
+      enriched: { ok: enrichedOk, enrichedAt, profilePicUrlHD, followerCount, followingCount },
+      sourcePostUrl,
     };
   });
 

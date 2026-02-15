@@ -53,6 +53,217 @@ export function OutreachModal() {
 
   const [tab, setTab] = useState<"single" | "following" | "pipeline">("single");
 
+  // Column resizing (Scrape following + Pipeline tables)
+  const LS_KEY_FOLLOWING_COLS = "editor_outreach_following_col_widths_v4";
+  const LS_KEY_PIPELINE_COLS = "editor_outreach_pipeline_col_widths_v4";
+  const LS_KEY_FILTERS = "editor_outreach_filters_v1";
+  const readWidths = (key: string, defaults: Record<string, number>) => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return defaults;
+      const out: Record<string, number> = { ...defaults };
+      for (const [k, v] of Object.entries(parsed as any)) {
+        const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+        if (Number.isFinite(n) && n > 20) out[k] = Math.floor(n);
+      }
+      return out;
+    } catch {
+      return defaults;
+    }
+  };
+  const writeWidths = (key: string, widths: Record<string, number>) => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(widths));
+    } catch {
+      // ignore
+    }
+  };
+
+  const followingColDefaults: Record<string, number> = {
+    row: 56,
+    sel: 44,
+    photo: 56,
+    name: 220,
+    handle: 140,
+    link: 70,
+    followers: 120,
+    score: 90,
+    hd: 90,
+    verified: 90,
+    action: 220,
+    raw: 90,
+    reel: 260,
+  };
+  const pipelineColDefaults: Record<string, number> = {
+    row: 56,
+    photo: 64,
+    name: 220,
+    handle: 140,
+    link: 70,
+    score: 90,
+    following: 120,
+    stage: 220,
+    last: 170,
+    reel: 260,
+    action: 200,
+  };
+
+  const [followingColWidths, setFollowingColWidths] = useState<Record<string, number>>(() => followingColDefaults);
+  const [pipelineColWidths, setPipelineColWidths] = useState<Record<string, number>>(() => pipelineColDefaults);
+  const followingColWidthsRef = useRef<Record<string, number>>(followingColDefaults);
+  const pipelineColWidthsRef = useRef<Record<string, number>>(pipelineColDefaults);
+  const totalFollowingTableWidthPx = useMemo(() => {
+    const w = followingColWidths || followingColDefaults;
+    const ids = ["row", "sel", "photo", "name", "handle", "link", "followers", "score", "hd", "verified", "action", "raw", "reel"];
+    return ids.reduce((sum, id) => sum + Math.max(40, Number((w as any)?.[id] || 0)), 0);
+  }, [followingColDefaults, followingColWidths]);
+  const totalPipelineTableWidthPx = useMemo(() => {
+    const w = pipelineColWidths || pipelineColDefaults;
+    const ids = ["row", "photo", "name", "handle", "link", "score", "following", "stage", "last", "reel", "action"];
+    return ids.reduce((sum, id) => sum + Math.max(40, Number((w as any)?.[id] || 0)), 0);
+  }, [pipelineColDefaults, pipelineColWidths]);
+  useEffect(() => {
+    // Load persisted widths on mount (client-only).
+    setFollowingColWidths(readWidths(LS_KEY_FOLLOWING_COLS, followingColDefaults));
+    setPipelineColWidths(readWidths(LS_KEY_PIPELINE_COLS, pipelineColDefaults));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Persist + restore filter state across sessions.
+    try {
+      const raw = window.localStorage.getItem(LS_KEY_FILTERS);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+
+      const nextTab = String((parsed as any)?.tab || "").trim();
+      if (nextTab === "single" || nextTab === "following" || nextTab === "pipeline") setTab(nextTab as any);
+
+      const fs = String((parsed as any)?.followingSearch ?? "");
+      setFollowingSearch(fs);
+
+      const ms = (parsed as any)?.minScoreFilter;
+      if (ms === null || ms === undefined || ms === "") setMinScoreFilter(null);
+      else {
+        const n = typeof ms === "number" ? ms : Number(ms);
+        setMinScoreFilter(Number.isFinite(n) ? Math.max(0, Math.min(100, Math.floor(n))) : null);
+      }
+
+      const mf = (parsed as any)?.minFollowersFilter;
+      if (mf === null || mf === undefined || mf === "") setMinFollowersFilter(null);
+      else {
+        const n = typeof mf === "number" ? mf : Number(mf);
+        setMinFollowersFilter(Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null);
+      }
+
+      const af = String((parsed as any)?.addedFilter || "all");
+      if (af === "all" || af === "added" || af === "not_added") setAddedFilter(af as any);
+
+      const ps = String((parsed as any)?.pipelineSearch ?? "");
+      setPipelineSearch(ps);
+
+      const stage = String((parsed as any)?.pipelineStageFilter || "").trim();
+      const allowedStages = new Set(["todo", "dm_sent", "responded_needs_followup", "booked", "sent_contract", "closed"]);
+      setPipelineStageFilter(stage && allowedStages.has(stage) ? (stage as any) : "");
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    followingColWidthsRef.current = followingColWidths;
+  }, [followingColWidths]);
+  useEffect(() => {
+    pipelineColWidthsRef.current = pipelineColWidths;
+  }, [pipelineColWidths]);
+
+  const colResizeRef = useRef<null | { key: "following" | "pipeline"; colId: string; startX: number; startW: number }>(null);
+  const colResizePointerIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const cur = colResizeRef.current;
+      if (!cur) return;
+      const dx = e.clientX - cur.startX;
+      const nextW = Math.max(40, Math.floor(cur.startW + dx));
+      if (cur.key === "following") {
+        setFollowingColWidths((prev) => ({ ...(prev || {}), [cur.colId]: nextW }));
+      } else {
+        setPipelineColWidths((prev) => ({ ...(prev || {}), [cur.colId]: nextW }));
+      }
+    };
+    const onUp = (e?: PointerEvent) => {
+      const activePointer = colResizePointerIdRef.current;
+      if (activePointer !== null && e && e.pointerId !== activePointer) return;
+      const cur = colResizeRef.current;
+      if (!cur) return;
+      colResizeRef.current = null;
+      colResizePointerIdRef.current = null;
+      try {
+        document.body.style.cursor = "";
+      } catch {
+        // ignore
+      }
+      // Persist at end of drag.
+      if (cur.key === "following") writeWidths(LS_KEY_FOLLOWING_COLS, followingColWidthsRef.current);
+      else writeWidths(LS_KEY_PIPELINE_COLS, pipelineColWidthsRef.current);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, []);
+
+  const startResize = (key: "following" | "pipeline", colId: string, e: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const widths = key === "following" ? followingColWidths : pipelineColWidths;
+    const startW = Math.max(40, Number(widths?.[colId] || 120));
+    colResizeRef.current = { key, colId, startX: e.clientX, startW };
+    colResizePointerIdRef.current = typeof e?.pointerId === "number" ? e.pointerId : null;
+    try {
+      document.body.style.cursor = "col-resize";
+    } catch {
+      // ignore
+    }
+  };
+
+  const ThResizable = (props: {
+    tableKey: "following" | "pipeline";
+    colId: string;
+    children: any;
+    className?: string;
+  }) => {
+    return (
+      <th className={["relative px-3 py-2", props.className || ""].join(" ")}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 truncate">{props.children}</div>
+        </div>
+        <div
+          className="absolute right-0 top-0 h-full w-5 cursor-col-resize z-10 group touch-none"
+          title="Drag to resize"
+          onPointerDown={(e: any) => {
+            try {
+              (e.currentTarget as any)?.setPointerCapture?.(e.pointerId);
+            } catch {
+              // ignore
+            }
+            startResize(props.tableKey, props.colId, e);
+          }}
+        >
+          <div className="absolute right-2 top-0 h-full w-[2px] bg-slate-200 group-hover:bg-slate-400" />
+          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-slate-100/40" />
+        </div>
+      </th>
+    );
+  };
+
   // Phase 1 (Reel/Post outreach): introduce a mode toggle.
   // Default: Reel/Post (we wire scrape behavior in Phase 2+).
   const [singleMode, setSingleMode] = useState<"reel" | "profile">("reel");
@@ -134,6 +345,8 @@ export function OutreachModal() {
   const [liteQualifyPendingUsernames, setLiteQualifyPendingUsernames] = useState<Set<string>>(() => new Set());
   const [liteQualByUsername, setLiteQualByUsername] = useState<Record<string, outreachApi.LiteQualification>>({});
   const [minScoreFilter, setMinScoreFilter] = useState<number | null>(null);
+  const [minFollowersFilter, setMinFollowersFilter] = useState<number | null>(null);
+  const [addedFilter, setAddedFilter] = useState<"all" | "added" | "not_added">("all");
   const [saveProspectsBusy, setSaveProspectsBusy] = useState(false);
   const [saveProspectsError, setSaveProspectsError] = useState<string | null>(null);
   const [saveProspectsSummary, setSaveProspectsSummary] = useState<{ attempted: number; inserted: number } | null>(null);
@@ -149,6 +362,10 @@ export function OutreachModal() {
   const [dbCheckedByUsername, setDbCheckedByUsername] = useState<Record<string, true>>({});
   const [dbEnrichedByUsername, setDbEnrichedByUsername] = useState<Record<string, true>>({});
   const [followingCountByUsername, setFollowingCountByUsername] = useState<Record<string, number>>({});
+  const [followersCountByUsername, setFollowersCountByUsername] = useState<Record<string, number>>({});
+  const [followingReelUrlDraftByUsername, setFollowingReelUrlDraftByUsername] = useState<Record<string, string>>({});
+  const [followingReelUrlSaveBusyByUsername, setFollowingReelUrlSaveBusyByUsername] = useState<Record<string, true>>({});
+  const [followingReelUrlErrorByUsername, setFollowingReelUrlErrorByUsername] = useState<Record<string, string>>({});
   const [createRowBusyUsernames, setCreateRowBusyUsernames] = useState<Set<string>>(() => new Set());
   const [createRowErrorByUsername, setCreateRowErrorByUsername] = useState<Record<string, string>>({});
   const [createdProjectIdByUsername, setCreatedProjectIdByUsername] = useState<Record<string, string>>({});
@@ -176,6 +393,25 @@ export function OutreachModal() {
   const pipelineBusyRef = useRef(false);
   const pipelineSearchRef = useRef('');
   const pipelineStageFilterRef = useRef<outreachApi.PipelineStage | ''>('');
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        LS_KEY_FILTERS,
+        JSON.stringify({
+          tab,
+          followingSearch,
+          minScoreFilter,
+          minFollowersFilter,
+          addedFilter,
+          pipelineSearch,
+          pipelineStageFilter,
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }, [LS_KEY_FILTERS, addedFilter, followingSearch, minFollowersFilter, minScoreFilter, pipelineSearch, pipelineStageFilter, tab]);
 
   // Following tab: load latest persisted scrape session on open (Option A).
   const loadedFollowingSessionForOpenRef = useRef(false);
@@ -217,7 +453,6 @@ export function OutreachModal() {
     setFollowingError(null);
     setFollowingSeedUsername(null);
     setFollowingItems([]);
-    setFollowingSearch("");
     setFollowingVisibleCount(25);
     setFollowingSelectedKeys(new Set());
     setLiteQualifyBatchLimit(10);
@@ -227,6 +462,8 @@ export function OutreachModal() {
     setLiteQualifyPendingUsernames(new Set());
     setLiteQualByUsername({});
     setMinScoreFilter(null);
+    setMinFollowersFilter(null);
+    setAddedFilter("all");
     setSaveProspectsBusy(false);
     setSaveProspectsError(null);
     setSaveProspectsSummary(null);
@@ -242,6 +479,10 @@ export function OutreachModal() {
     setDbCheckedByUsername({});
     setDbEnrichedByUsername({});
     setFollowingCountByUsername({});
+    setFollowersCountByUsername({});
+    setFollowingReelUrlDraftByUsername({});
+    setFollowingReelUrlSaveBusyByUsername({});
+    setFollowingReelUrlErrorByUsername({});
     setCreateRowBusyUsernames(new Set());
     setCreateRowErrorByUsername({});
     setCreatedProjectIdByUsername({});
@@ -278,8 +519,42 @@ export function OutreachModal() {
         return score !== null && score >= min;
       });
     }
+
+    const minFollowers = minFollowersFilter;
+    if (typeof minFollowers === "number" && Number.isFinite(minFollowers)) {
+      out = out.filter((it) => {
+        const uname = String(it?.username || "").replace(/^@+/, "").trim().toLowerCase();
+        if (!uname) return false;
+        const n =
+          typeof followersCountByUsername[uname] === "number"
+            ? followersCountByUsername[uname]
+            : extractFollowerCountBestEffort(it?.raw);
+        // If unknown, exclude when filtering.
+        if (typeof n !== "number" || !Number.isFinite(n)) return false;
+        return n >= minFollowers;
+      });
+    }
+
+    const af = String(addedFilter || "all");
+    if (af === "added" || af === "not_added") {
+      out = out.filter((it) => {
+        const uname = String(it?.username || "").replace(/^@+/, "").trim().toLowerCase();
+        if (!uname) return false;
+        const isAdded = !!pipelineAddedByUsername[uname];
+        return af === "added" ? isAdded : !isAdded;
+      });
+    }
     return out;
-  }, [followingItems, followingSearch, liteQualByUsername, minScoreFilter]);
+  }, [
+    followingItems,
+    followingSearch,
+    liteQualByUsername,
+    minScoreFilter,
+    minFollowersFilter,
+    followersCountByUsername,
+    addedFilter,
+    pipelineAddedByUsername,
+  ]);
 
   const followingShown = useMemo(() => {
     const n = Math.max(0, Number(followingVisibleCount || 0));
@@ -353,6 +628,30 @@ export function OutreachModal() {
     return null;
   }
 
+  function extractFollowerCountBestEffort(raw: any): number | null {
+    const candidates = [
+      raw?.followerCount,
+      raw?.followersCount,
+      raw?.followers,
+      raw?.followers_count,
+      raw?.edge_followed_by?.count,
+      raw?.edgeFollowedBy?.count,
+      raw?.counts?.followedBy,
+      raw?.counts?.followers,
+      // common nested shapes from some "following" actors
+      raw?.following_user?.followersCount,
+      raw?.following_user?.followerCount,
+      raw?.following_user?.edge_followed_by?.count,
+      raw?.followingUser?.followersCount,
+      raw?.followingUser?.edge_followed_by?.count,
+    ];
+    for (const v of candidates) {
+      const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+      if (Number.isFinite(n)) return Math.max(0, Math.floor(n));
+    }
+    return null;
+  }
+
   // IMPORTANT: only run this once per modal-open.
   // Previously this effect depended on `resetAll`, which depended on busy flags.
   // That caused the effect to re-run during batch actions (enrich/qualify/save) and wipe the table.
@@ -404,7 +703,7 @@ export function OutreachModal() {
     setLiteQualifyError(null);
     setLiteQualifyPendingUsernames(new Set());
     setLiteQualByUsername({});
-    setMinScoreFilter(null);
+    // Keep filters (search/min score/min followers/added) across modal opens.
     setSaveProspectsError(null);
     setSaveProspectsSummary(null);
     setEnrichError(null);
@@ -418,6 +717,7 @@ export function OutreachModal() {
     setDbCheckedByUsername({});
     setDbEnrichedByUsername({});
     setFollowingCountByUsername({});
+    setFollowersCountByUsername({});
     setCreateRowBusyUsernames(new Set());
     setCreateRowErrorByUsername({});
     setCreatedProjectIdByUsername({});
@@ -489,6 +789,25 @@ export function OutreachModal() {
               }
               return next;
             });
+            setFollowersCountByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const r of rows) {
+                const u = String(r?.username || "").toLowerCase();
+                const n = (r as any)?.enriched?.followerCount;
+                if (u && typeof n === "number" && Number.isFinite(n)) next[u] = Math.floor(n);
+              }
+              return next;
+            });
+            setFollowingReelUrlDraftByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const r of rows) {
+                const u = String(r?.username || "").toLowerCase();
+                if (!u) continue;
+                const url = String((r as any)?.sourcePostUrl || "").trim();
+                if (url && next[u] === undefined) next[u] = url;
+              }
+              return next;
+            });
             setLiteQualByUsername((prev) => {
               const next = { ...(prev || {}) };
               for (const r of rows) {
@@ -506,6 +825,23 @@ export function OutreachModal() {
               }
               return next;
             });
+          }
+
+          // Also hydrate which usernames are already in Pipeline (so Add turns into green "Added" on reload).
+          try {
+            const CHUNK2 = 500;
+            for (let i = 0; i < usernames.length; i += CHUNK2) {
+              const chunk = usernames.slice(i, i + CHUNK2);
+              const inPipe = await outreachApi.pipelineStatus({ token, usernames: chunk, headers: accountHeader });
+              if (!inPipe.size) continue;
+              setPipelineAddedByUsername((prev) => {
+                const next = { ...(prev || {}) };
+                for (const u of inPipe) next[u] = true;
+                return next;
+              });
+            }
+          } catch {
+            // ignore (best-effort)
           }
         } catch {
           // ignore; best-effort UI hydration
@@ -1289,6 +1625,9 @@ export function OutreachModal() {
           setDbEnrichedByUsername((prev) => ({ ...(prev || {}), [uname]: true }));
           if (typeof enr?.followingCount === "number" && Number.isFinite(enr.followingCount)) {
             setFollowingCountByUsername((prev) => ({ ...(prev || {}), [uname]: Math.floor(enr.followingCount) }));
+          }
+          if (typeof enr?.followerCount === "number" && Number.isFinite(enr.followerCount)) {
+            setFollowersCountByUsername((prev) => ({ ...(prev || {}), [uname]: Math.floor(enr.followerCount) }));
           }
         }
         if (enr?.ok && enr?.profilePicUrlHD) nextHd[uname] = String(enr.profilePicUrlHD);
@@ -2131,15 +2470,20 @@ export function OutreachModal() {
     );
   };
 
-  const AvatarThumb = (props: { url: string | null }) => {
-    const url = String(props.url || "").trim();
+  const AvatarThumb = (props: { url: string | null; label?: string | null }) => {
+    // Intentionally do NOT load Instagram CDN images in the browser.
+    // They often error (CORP/CORS, 410 Gone) and spam the console when rendering large tables.
+    const label = String(props.label || "").trim();
+    const cleaned = label.replace(/^@+/, "").trim();
+    const initial = cleaned ? cleaned.slice(0, 1).toUpperCase() : "";
     return (
       <div
-        className="h-9 w-9 rounded-full border border-slate-200 bg-slate-100 shrink-0"
-        style={url ? { backgroundImage: `url(${url})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
-        title={url || ""}
+        className="h-9 w-9 rounded-full border border-slate-200 bg-slate-100 shrink-0 flex items-center justify-center text-[11px] font-semibold text-slate-600"
+        title={label || ""}
         aria-label="Profile photo"
-      />
+      >
+        {initial || ""}
+      </div>
     );
   };
 
@@ -2596,6 +2940,35 @@ export function OutreachModal() {
                       aria-label="Min score filter"
                       title="Filter to rows with score >= this value"
                     />
+                    <input
+                      className="h-9 w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-60"
+                      value={minFollowersFilter === null ? "" : String(minFollowersFilter)}
+                      onChange={(e) => {
+                        const raw = String(e.target.value || "").trim().replace(/,/g, "");
+                        if (!raw) return setMinFollowersFilter(null);
+                        const n = Number(raw);
+                        if (!Number.isFinite(n)) return;
+                        const clamped = Math.max(0, Math.floor(n));
+                        setMinFollowersFilter(clamped);
+                      }}
+                      placeholder="Min followers"
+                      disabled={anyBusy}
+                      inputMode="numeric"
+                      aria-label="Min followers filter"
+                      title="Filter to rows with followers >= this value"
+                    />
+                    <select
+                      className="h-9 w-[140px] rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-900 shadow-sm disabled:opacity-60"
+                      value={addedFilter}
+                      onChange={(e) => setAddedFilter(e.target.value as any)}
+                      disabled={anyBusy}
+                      aria-label="Added filter"
+                      title="Filter by whether the lead is already in Pipeline"
+                    >
+                      <option value="all">All</option>
+                      <option value="added">Added</option>
+                      <option value="not_added">Not added</option>
+                    </select>
                   </div>
                 </div>
 
@@ -2675,11 +3048,26 @@ export function OutreachModal() {
 
                 {followingFiltered.length ? (
                   <div className="mt-3 overflow-auto rounded-xl border border-slate-200 bg-white">
-                    <table className="min-w-full text-sm">
+                    <table className="min-w-max text-sm table-fixed" style={{ width: `${totalFollowingTableWidthPx}px` }}>
+                      <colgroup>
+                        <col style={{ width: `${followingColWidths.row}px` }} />
+                        <col style={{ width: `${followingColWidths.sel}px` }} />
+                        <col style={{ width: `${followingColWidths.photo}px` }} />
+                        <col style={{ width: `${followingColWidths.name}px` }} />
+                        <col style={{ width: `${followingColWidths.handle}px` }} />
+                        <col style={{ width: `${followingColWidths.link}px` }} />
+                        <col style={{ width: `${followingColWidths.followers}px` }} />
+                        <col style={{ width: `${followingColWidths.score}px` }} />
+                        <col style={{ width: `${followingColWidths.hd}px` }} />
+                        <col style={{ width: `${followingColWidths.verified}px` }} />
+                        <col style={{ width: `${followingColWidths.action}px` }} />
+                        <col style={{ width: `${followingColWidths.raw}px` }} />
+                        <col style={{ width: `${followingColWidths.reel}px` }} />
+                      </colgroup>
                       <thead className="sticky top-0 bg-white border-b border-slate-200">
                         <tr className="text-left text-[11px] font-semibold text-slate-600">
-                          <th className="px-3 py-2 w-[56px]">#</th>
-                          <th className="px-3 py-2 w-[44px]">
+                          <ThResizable tableKey="following" colId="row">#</ThResizable>
+                          <ThResizable tableKey="following" colId="sel">
                             <input
                               type="checkbox"
                               aria-label="Select all shown"
@@ -2708,18 +3096,18 @@ export function OutreachModal() {
                                 setFollowingSelectedKeys(next);
                               }}
                             />
-                          </th>
-                          <th className="px-3 py-2 w-[52px]">Photo</th>
-                          <th className="px-3 py-2">Name</th>
-                          <th className="px-3 py-2">Handle</th>
-                          <th className="px-3 py-2 w-[56px]">Link</th>
-                          <th className="px-3 py-2 w-[110px]">Following</th>
-                          <th className="px-3 py-2 w-[90px]">Score</th>
-                          <th className="px-3 py-2 w-[70px]">HD</th>
-                          <th className="px-3 py-2 w-[90px]">Verified</th>
-                          <th className="px-3 py-2 w-[90px]">Private</th>
-                          <th className="px-3 py-2 w-[160px]">Action</th>
-                          <th className="px-3 py-2 w-[70px]">Raw</th>
+                          </ThResizable>
+                          <ThResizable tableKey="following" colId="photo">Photo</ThResizable>
+                          <ThResizable tableKey="following" colId="name">Name</ThResizable>
+                          <ThResizable tableKey="following" colId="handle">Handle</ThResizable>
+                          <ThResizable tableKey="following" colId="link">Link</ThResizable>
+                          <ThResizable tableKey="following" colId="followers">Followers</ThResizable>
+                          <ThResizable tableKey="following" colId="score">Score</ThResizable>
+                          <ThResizable tableKey="following" colId="hd">HD</ThResizable>
+                          <ThResizable tableKey="following" colId="verified">Verified</ThResizable>
+                          <ThResizable tableKey="following" colId="action">Action</ThResizable>
+                          <ThResizable tableKey="following" colId="raw">Raw</ThResizable>
+                          <ThResizable tableKey="following" colId="reel">Reel URL</ThResizable>
                         </tr>
                       </thead>
                       <tbody>
@@ -2733,11 +3121,15 @@ export function OutreachModal() {
                           const pending = unameNorm ? liteQualifyPendingUsernames.has(unameNorm) : false;
                           const hd = unameNorm ? enrichedHdByUsername[unameNorm] : null;
                           const alreadyEnriched = unameNorm ? !!enrichedOkByUsername[unameNorm] || !!dbEnrichedByUsername[unameNorm] : false;
-                          const followingCountFallback = extractFollowingCountBestEffort(it?.raw);
+                          const followersCountFallback = extractFollowerCountBestEffort(it?.raw);
                           const enriching = unameNorm ? enrichPendingUsernames.has(unameNorm) : false;
                           const rowBusy = unameNorm ? createRowBusyUsernames.has(unameNorm) : false;
                           const rowCreatedProjectId = unameNorm ? createdProjectIdByUsername[unameNorm] : null;
                           const rowErr = unameNorm ? createRowErrorByUsername[unameNorm] : null;
+                          const reelDraft = unameNorm ? (followingReelUrlDraftByUsername[unameNorm] ?? "") : "";
+                          const reelSaveBusy = unameNorm ? !!followingReelUrlSaveBusyByUsername[unameNorm] : false;
+                          const reelErr = unameNorm ? followingReelUrlErrorByUsername[unameNorm] : null;
+                          const canEditReelUrl = !!unameNorm;
                           const hasRaw = !!it?.raw;
                           return (
                             <tr
@@ -2765,7 +3157,7 @@ export function OutreachModal() {
                                 />
                               </td>
                               <td className="px-3 py-2">
-                                <AvatarThumb url={it?.profilePicUrl ?? null} />
+                                <AvatarThumb url={it?.profilePicUrl ?? null} label={unameNorm ? `@${unameNorm}` : null} />
                               </td>
                               <td className="px-3 py-2 text-slate-900">{it?.fullName ? String(it.fullName) : <span className="text-slate-400">—</span>}</td>
                               <td className="px-3 py-2 font-mono text-[12px] text-slate-800">{handle}</td>
@@ -2815,10 +3207,10 @@ export function OutreachModal() {
                                 )}
                               </td>
                               <td className="px-3 py-2 text-slate-900">
-                                {unameNorm && typeof followingCountByUsername[unameNorm] === "number" ? (
-                                  <span className="font-semibold">{followingCountByUsername[unameNorm].toLocaleString()}</span>
-                                ) : followingCountFallback !== null ? (
-                                  <span className="text-slate-700">{followingCountFallback.toLocaleString()}</span>
+                                {unameNorm && typeof followersCountByUsername[unameNorm] === "number" ? (
+                                  <span className="font-semibold">{followersCountByUsername[unameNorm].toLocaleString()}</span>
+                                ) : followersCountFallback !== null ? (
+                                  <span className="text-slate-700">{followersCountFallback.toLocaleString()}</span>
                                 ) : (
                                   <span className="text-slate-400">—</span>
                                 )}
@@ -2851,12 +3243,16 @@ export function OutreachModal() {
                                 )}
                               </td>
                               <td className="px-3 py-2 text-slate-800">{it?.isVerified === null ? "—" : it.isVerified ? "Yes" : "No"}</td>
-                              <td className="px-3 py-2 text-slate-800">{it?.isPrivate === null ? "—" : it.isPrivate ? "Yes" : "No"}</td>
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    className="h-8 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                                    className={[
+                                      "h-8 px-3 rounded-xl text-sm font-semibold shadow-sm disabled:opacity-60",
+                                      pipelineAddedByUsername[unameNorm]
+                                        ? "bg-green-600 text-white"
+                                        : "border border-slate-200 bg-white text-slate-900 hover:bg-slate-50",
+                                    ].join(" ")}
                                     disabled={anyBusy || !unameNorm || !!pipelineAddBusyByUsername[unameNorm] || !!pipelineAddedByUsername[unameNorm]}
                                     title="Add this lead to Pipeline (stage: todo)"
                                     onClick={() => {
@@ -2966,6 +3362,74 @@ export function OutreachModal() {
                                   View
                                 </button>
                               </td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-60"
+                                    value={reelDraft}
+                                    disabled={anyBusy || reelSaveBusy}
+                                    placeholder="https://www.instagram.com/reel/…/"
+                                    onChange={(e) => {
+                                      if (!unameNorm) return;
+                                      setFollowingReelUrlDraftByUsername((p) => ({ ...(p || {}), [unameNorm]: e.target.value }));
+                                    }}
+                                    onBlur={() => {
+                                      if (!unameNorm) return;
+                                      if (!canEditReelUrl) return;
+                                      void (async () => {
+                                        try {
+                                          setFollowingReelUrlSaveBusyByUsername((p) => ({ ...(p || {}), [unameNorm]: true }));
+                                          setFollowingReelUrlErrorByUsername((p) => {
+                                            const n = { ...(p || {}) };
+                                            delete n[unameNorm];
+                                            return n;
+                                          });
+                                          const token = await getSessionToken();
+                                          const accountHeader = getActiveAccountHeader();
+                                          const raw = String((followingReelUrlDraftByUsername[unameNorm] ?? "")).trim();
+                                          const canon = raw ? canonicalizeInstagramPostOrReelUrlClient(raw) : "";
+                                          if (canon !== raw) {
+                                            setFollowingReelUrlDraftByUsername((p) => ({ ...(p || {}), [unameNorm]: canon }));
+                                          }
+                                          const seedInfo = getSeedInfoBestEffort();
+                                          await outreachApi.saveSourcePostUrlForUsername({
+                                            token,
+                                            username: unameNorm,
+                                            sourcePostUrl: canon || null,
+                                            seedInstagramUrl: seedInfo.seedInstagramUrl,
+                                            seedUsername: seedInfo.seedUsername,
+                                            baseTemplateId: baseTemplateId || null,
+                                            row: {
+                                              fullName: it?.fullName ?? null,
+                                              profilePicUrl: it?.profilePicUrl ?? null,
+                                              isVerified: it?.isVerified ?? null,
+                                              isPrivate: it?.isPrivate ?? null,
+                                              raw: it?.raw ?? null,
+                                            },
+                                            headers: accountHeader,
+                                          });
+                                        } catch (e: any) {
+                                          setFollowingReelUrlErrorByUsername((p) => ({ ...(p || {}), [unameNorm]: String(e?.message || e || "Save failed") }));
+                                        } finally {
+                                          setFollowingReelUrlSaveBusyByUsername((p) => {
+                                            const n = { ...(p || {}) };
+                                            delete n[unameNorm];
+                                            return n;
+                                          });
+                                        }
+                                      })();
+                                    }}
+                                  />
+                                  {reelSaveBusy ? (
+                                    <span className="text-[11px] text-slate-500">Saving…</span>
+                                  ) : null}
+                                </div>
+                                {reelErr ? (
+                                  <div className="mt-1 text-[11px] text-red-700 truncate" title={reelErr}>
+                                    {reelErr}
+                                  </div>
+                                ) : null}
+                              </td>
                             </tr>
                           );
                         })}
@@ -3048,20 +3512,33 @@ export function OutreachModal() {
 
                 {pipelineRows.length ? (
                   <div className="mt-3 overflow-auto rounded-xl border border-slate-200 bg-white">
-                    <table className="min-w-full text-sm">
+                    <table className="min-w-max text-sm table-fixed" style={{ width: `${totalPipelineTableWidthPx}px` }}>
+                      <colgroup>
+                        <col style={{ width: `${pipelineColWidths.row}px` }} />
+                        <col style={{ width: `${pipelineColWidths.photo}px` }} />
+                        <col style={{ width: `${pipelineColWidths.name}px` }} />
+                        <col style={{ width: `${pipelineColWidths.handle}px` }} />
+                        <col style={{ width: `${pipelineColWidths.link}px` }} />
+                        <col style={{ width: `${pipelineColWidths.score}px` }} />
+                        <col style={{ width: `${pipelineColWidths.following}px` }} />
+                        <col style={{ width: `${pipelineColWidths.stage}px` }} />
+                        <col style={{ width: `${pipelineColWidths.last}px` }} />
+                        <col style={{ width: `${pipelineColWidths.reel}px` }} />
+                        <col style={{ width: `${pipelineColWidths.action}px` }} />
+                      </colgroup>
                       <thead className="sticky top-0 bg-white border-b border-slate-200">
                         <tr className="text-left text-[11px] font-semibold text-slate-600">
-                          <th className="px-3 py-2 w-[56px]">#</th>
-                          <th className="px-3 py-2 w-[52px]">Photo</th>
-                          <th className="px-3 py-2">Name</th>
-                          <th className="px-3 py-2">Handle</th>
-                          <th className="px-3 py-2 w-[56px]">Link</th>
-                          <th className="px-3 py-2 w-[90px]">Score</th>
-                          <th className="px-3 py-2 w-[110px]">Following</th>
-                          <th className="px-3 py-2 w-[200px]">Stage</th>
-                          <th className="px-3 py-2 w-[140px]">Last contact</th>
-                          <th className="px-3 py-2 w-[320px]">Reel URL</th>
-                          <th className="px-3 py-2 w-[170px]">Action</th>
+                          <ThResizable tableKey="pipeline" colId="row">#</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="photo">Photo</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="name">Name</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="handle">Handle</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="link">Link</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="score">Score</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="following">Followers</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="stage">Stage</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="last">Last contact</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="reel">Reel URL</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="action">Action</ThResizable>
                         </tr>
                       </thead>
                       <tbody>
@@ -3089,7 +3566,7 @@ export function OutreachModal() {
                                   }}
                                   title="Right click for options"
                                 >
-                                  <AvatarThumb url={r?.profilePicUrl ?? null} />
+                                  <AvatarThumb url={r?.profilePicUrl ?? null} label={handle} />
                                 </div>
                               </td>
                               <td className="px-3 py-2 text-slate-900">{r?.fullName ? String(r.fullName) : <span className="text-slate-400">—</span>}</td>

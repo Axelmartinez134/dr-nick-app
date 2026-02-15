@@ -553,6 +553,7 @@ export async function hydrateFollowingFromDb(args: {
       scoredAt: string | null;
     };
     enriched: { ok: boolean; enrichedAt: string | null; profilePicUrlHD: string | null; followingCount: number | null };
+    sourcePostUrl?: string | null;
   }>
 > {
   const token = String(args.token || '').trim();
@@ -711,6 +712,70 @@ export async function pipelineUpdate(args: {
   });
   const j = await res.json().catch(() => null);
   if (!res.ok || !j?.success) throw new Error(String(j?.error || `Update failed (${res.status})`));
+}
+
+export async function pipelineStatus(args: {
+  token: string;
+  usernames: string[];
+  headers?: Record<string, string>;
+}): Promise<Set<string>> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const usernames = Array.isArray(args.usernames) ? args.usernames : [];
+  if (!usernames.length) return new Set();
+  const res = await fetch('/api/editor/outreach/pipeline/status', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({ usernames }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Status failed (${res.status})`));
+  const arr = Array.isArray(j?.usernamesInPipeline) ? (j.usernamesInPipeline as any[]) : [];
+  return new Set(arr.map((u) => String(u || '').trim().toLowerCase()).filter(Boolean));
+}
+
+export async function saveSourcePostUrlForUsername(args: {
+  token: string;
+  username: string;
+  sourcePostUrl: string | null;
+  seedInstagramUrl?: string | null;
+  seedUsername?: string | null;
+  baseTemplateId?: string | null;
+  row?: {
+    fullName?: string | null;
+    profilePicUrl?: string | null;
+    isVerified?: boolean | null;
+    isPrivate?: boolean | null;
+    raw?: any;
+  };
+  headers?: Record<string, string>;
+}): Promise<void> {
+  const token = String(args.token || '').trim();
+  if (!token) throw new Error('Missing auth token');
+  const username = String(args.username || '').trim();
+  if (!username) throw new Error('username is required');
+  const res = await fetch('/api/editor/outreach/source-post-url', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(args.headers || {}),
+    },
+    body: JSON.stringify({
+      username,
+      sourcePostUrl: typeof args.sourcePostUrl === 'string' ? args.sourcePostUrl : args.sourcePostUrl ?? null,
+      seedInstagramUrl: args.seedInstagramUrl ?? null,
+      seedUsername: args.seedUsername ?? null,
+      baseTemplateId: args.baseTemplateId ?? null,
+      row: args.row ?? null,
+    }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Save failed (${res.status})`));
 }
 
 export async function markCreated(args: {
