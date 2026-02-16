@@ -6,7 +6,8 @@ import { scrapeInstagramFollowingViaApify } from '../_apify';
 
 export const runtime = 'nodejs';
 // Apify run waits up to 180s; keep route maxDuration >= that.
-export const maxDuration = 210;
+// Aligned change (2026-02-16): increase budget for large follow lists.
+export const maxDuration = 840;
 
 type Body = {
   seedInstagramUrl: string;

@@ -350,6 +350,14 @@ export function OutreachModal() {
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [enrichPendingUsernames, setEnrichPendingUsernames] = useState<Set<string>>(() => new Set());
   const [enrichedHdByUsername, setEnrichedHdByUsername] = useState<Record<string, string>>({});
+  const [enrichAllRunning, setEnrichAllRunning] = useState(false);
+  const enrichAllCancelRef = useRef(false);
+  const [enrichAllPhase, setEnrichAllPhase] = useState<"idle" | "saving" | "enriching" | "done" | "cancelled">("idle");
+  const [enrichAllDone, setEnrichAllDone] = useState(0);
+  const [enrichAllTotal, setEnrichAllTotal] = useState(0);
+  const [enrichAllSkippedMissing, setEnrichAllSkippedMissing] = useState(0);
+  const [enrichAllFailed, setEnrichAllFailed] = useState(0);
+  const [enrichAllLastError, setEnrichAllLastError] = useState<string | null>(null);
   const [enrichQualifySaveBusy, setEnrichQualifySaveBusy] = useState(false);
   const [enrichQualifySaveError, setEnrichQualifySaveError] = useState<string | null>(null);
   const [enrichQualifySaveSummary, setEnrichQualifySaveSummary] = useState<outreachApi.EnrichQualifySaveSummary | null>(null);
@@ -467,6 +475,14 @@ export function OutreachModal() {
     setEnrichError(null);
     setEnrichPendingUsernames(new Set());
     setEnrichedHdByUsername({});
+    setEnrichAllRunning(false);
+    enrichAllCancelRef.current = false;
+    setEnrichAllPhase("idle");
+    setEnrichAllDone(0);
+    setEnrichAllTotal(0);
+    setEnrichAllSkippedMissing(0);
+    setEnrichAllFailed(0);
+    setEnrichAllLastError(null);
     setEnrichQualifySaveBusy(false);
     setEnrichQualifySaveError(null);
     setEnrichQualifySaveSummary(null);
@@ -540,7 +556,29 @@ export function OutreachModal() {
         return af === "added" ? isAdded : !isAdded;
       });
     }
-    return out;
+    // Aligned: always sort filtered results by *enriched* follower count (desc),
+    // tie-break by username A→Z, and treat missing counts as 0 (bottom).
+    //
+    // Live reordering is expected as `followersCountByUsername` is populated.
+    const sorted = out.slice().sort((a: any, b: any) => {
+      const ua = String(a?.username || "").replace(/^@+/, "").trim().toLowerCase();
+      const ub = String(b?.username || "").replace(/^@+/, "").trim().toLowerCase();
+      const fa =
+        ua && typeof followersCountByUsername[ua] === "number" && Number.isFinite(followersCountByUsername[ua])
+          ? Number(followersCountByUsername[ua])
+          : 0;
+      const fb =
+        ub && typeof followersCountByUsername[ub] === "number" && Number.isFinite(followersCountByUsername[ub])
+          ? Number(followersCountByUsername[ub])
+          : 0;
+      if (fa !== fb) return fb - fa;
+      // Missing usernames sort last.
+      if (!ua && ub) return 1;
+      if (ua && !ub) return -1;
+      if (!ua && !ub) return 0;
+      return ua.localeCompare(ub);
+    });
+    return sorted;
   }, [
     followingItems,
     followingSearch,
@@ -578,6 +616,26 @@ export function OutreachModal() {
     }
     return uniq;
   }, [followingSelectedKeys]);
+
+  const enrichAllPlan = useMemo(() => {
+    const rows = Array.isArray(followingItems) ? followingItems : [];
+    const seen = new Set<string>();
+    const usernames: string[] = [];
+    let skippedMissing = 0;
+    for (const it of rows) {
+      const unameNorm = String(it?.username || "").replace(/^@+/, "").trim().toLowerCase();
+      if (!unameNorm) {
+        skippedMissing += 1;
+        continue;
+      }
+      if (seen.has(unameNorm)) continue;
+      seen.add(unameNorm);
+      const alreadyEnriched = !!enrichedOkByUsername[unameNorm] || !!dbEnrichedByUsername[unameNorm];
+      if (alreadyEnriched) continue;
+      usernames.push(unameNorm);
+    }
+    return { usernames, skippedMissing };
+  }, [dbEnrichedByUsername, enrichedOkByUsername, followingItems]);
 
   function tryExtractInstagramUsernameFromProfileUrl(input: string): string | null {
     const raw = String(input || '').trim();
@@ -1129,6 +1187,212 @@ export function OutreachModal() {
       setEnrichBusy(false);
     }
   }, [anyBusy, enrichBatchLimit, enrichBusy, enrichPendingUsernames, enrichedHdByUsername, followingSeedUsername, selectedUsernames]);
+
+  const handleCancelEnrichAll = useCallback(() => {
+    if (!enrichAllRunning) return;
+    enrichAllCancelRef.current = true;
+    setEnrichAllPhase((p) => (p === "done" ? p : "cancelled"));
+  }, [enrichAllRunning]);
+
+  const handleEnrichAll = useCallback(async () => {
+    if (anyBusy || enrichBusy || enrichAllRunning) return;
+    const seedInfo = getSeedInfoBestEffort();
+    const seedU = String(seedInfo.seedUsername || "").trim();
+    const seedUrl = String(seedInfo.seedInstagramUrl || "").trim();
+    if (!seedU || !seedUrl) {
+      setEnrichError("Missing seed info. Run a scrape first.");
+      return;
+    }
+
+    const limit = Math.max(1, Math.min(25, Number(enrichBatchLimit || 5)));
+    const toEnrichInit = enrichAllPlan.usernames;
+    const skippedMissing = enrichAllPlan.skippedMissing;
+    if (!toEnrichInit.length) {
+      setEnrichError(skippedMissing ? `Nothing to enrich. Skipped ${skippedMissing} row(s) missing username.` : "Nothing to enrich.");
+      return;
+    }
+
+    // Init run state.
+    setEnrichAllRunning(true);
+    enrichAllCancelRef.current = false;
+    setEnrichAllPhase("saving");
+    setEnrichAllDone(0);
+    setEnrichAllTotal(toEnrichInit.length);
+    setEnrichAllSkippedMissing(skippedMissing);
+    setEnrichAllFailed(0);
+    setEnrichAllLastError(null);
+
+    setEnrichBusy(true);
+    setEnrichError(null);
+    setEnrichPendingUsernames(new Set());
+
+    try {
+      const token = await getSessionToken();
+      const accountHeader = getActiveAccountHeader();
+
+      // Ensure every row exists in DB so enrichment can update it (id lookup requires it).
+      // Chunk to respect server limit (max 200 per request).
+      const rows = Array.isArray(followingItems) ? followingItems : [];
+      const byUsername = new Map<string, (typeof rows)[number]>();
+      for (const it of rows) {
+        const u = String((it as any)?.username || "").replace(/^@+/, "").trim().toLowerCase();
+        if (!u) continue;
+        if (!byUsername.has(u)) byUsername.set(u, it);
+      }
+      const CHUNK_SAVE = 200;
+      for (let i = 0; i < toEnrichInit.length; i += CHUNK_SAVE) {
+        if (enrichAllCancelRef.current) break;
+        const chunkUsernames = toEnrichInit.slice(i, i + CHUNK_SAVE);
+        const items = chunkUsernames
+          .map((uname: string) => {
+            const it: any = byUsername.get(String(uname || "").trim().toLowerCase()) as any;
+            if (!it) return null;
+            const ai = liteQualByUsername?.[uname] ?? null;
+            return {
+              username: it?.username ?? uname,
+              fullName: it?.fullName ?? null,
+              profilePicUrl: it?.profilePicUrl ?? null,
+              isVerified: it?.isVerified ?? null,
+              isPrivate: it?.isPrivate ?? null,
+              raw: it?.raw ?? null,
+              ...(ai ? { ai: { ...ai, mode: "lite" } } : {}),
+            };
+          })
+          .filter(Boolean) as any[];
+        if (!items.length) continue;
+        await outreachApi.persistProspects({
+          token,
+          seedInstagramUrl: seedUrl,
+          seedUsername: seedU,
+          baseTemplateId: baseTemplateId || null,
+          items,
+          headers: accountHeader,
+        });
+      }
+
+      if (enrichAllCancelRef.current) {
+        setEnrichAllPhase("cancelled");
+        return;
+      }
+
+      setEnrichAllPhase("enriching");
+
+      // Enrich the usernames that were not enriched at start of run.
+      const queue = [...toEnrichInit];
+      for (let i = 0; i < queue.length; i += limit) {
+        if (enrichAllCancelRef.current) break;
+        const batch = queue.slice(i, i + limit);
+        if (!batch.length) break;
+        setEnrichPendingUsernames(new Set(batch));
+
+        let failedThisBatch = 0;
+        try {
+          const results = await outreachApi.enrichProspects({ token, seedUsername: seedU, usernames: batch, headers: accountHeader });
+          const okUsernames: string[] = [];
+          const hdUpdates: Record<string, string> = {};
+          for (const r of results || []) {
+            const uname = String((r as any)?.username || "").replace(/^@+/, "").trim().toLowerCase();
+            if (!uname) continue;
+            if ((r as any)?.ok) {
+              okUsernames.push(uname);
+              const hd = String((r as any)?.profilePicUrlHD || "").trim();
+              if (hd) hdUpdates[uname] = hd;
+            } else {
+              failedThisBatch += 1;
+              const msg = String((r as any)?.error || "Enrich failed");
+              setEnrichAllLastError(msg);
+            }
+          }
+          if (Object.keys(hdUpdates).length) {
+            setEnrichedHdByUsername((prev) => ({ ...(prev || {}), ...hdUpdates }));
+          }
+          if (okUsernames.length) {
+            setEnrichedOkByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const u of okUsernames) next[u] = true;
+              return next;
+            });
+          }
+        } catch (e: any) {
+          failedThisBatch = batch.length;
+          setEnrichAllLastError(String(e?.message || e || "Enrich failed"));
+        } finally {
+          setEnrichPendingUsernames(new Set());
+        }
+
+        // Hydrate from DB for this batch so follower counts + enriched flags update immediately.
+        try {
+          const rows = await outreachApi.hydrateFollowingFromDb({ token, usernames: batch, headers: accountHeader });
+          if (rows?.length) {
+            setDbCheckedByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const u of batch) next[u] = true;
+              return next;
+            });
+            setDbEnrichedByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const r of rows) if ((r as any)?.enriched?.ok) next[String((r as any)?.username || "").toLowerCase()] = true;
+              return next;
+            });
+            setFollowersCountByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const r of rows) {
+                const u = String((r as any)?.username || "").toLowerCase();
+                const n = (r as any)?.enriched?.followerCount;
+                if (u && typeof n === "number" && Number.isFinite(n)) next[u] = Math.floor(n);
+              }
+              return next;
+            });
+            setFollowingCountByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const r of rows) {
+                const u = String((r as any)?.username || "").toLowerCase();
+                const n = (r as any)?.enriched?.followingCount;
+                if (u && typeof n === "number" && Number.isFinite(n)) next[u] = Math.floor(n);
+              }
+              return next;
+            });
+            setEnrichedHdByUsername((prev) => {
+              const next = { ...(prev || {}) };
+              for (const r of rows) {
+                const u = String((r as any)?.username || "").toLowerCase();
+                const hd = String((r as any)?.enriched?.profilePicUrlHD || "").trim();
+                if (u && hd) next[u] = hd;
+              }
+              return next;
+            });
+          }
+        } catch {
+          // best-effort
+        }
+
+        setEnrichAllDone((n) => n + batch.length);
+        if (failedThisBatch) setEnrichAllFailed((n) => n + failedThisBatch);
+      }
+
+      setEnrichAllPhase(enrichAllCancelRef.current ? "cancelled" : "done");
+    } catch (e: any) {
+      setEnrichError(String(e?.message || e || "Enrich All failed"));
+      setEnrichAllLastError(String(e?.message || e || "Enrich All failed"));
+      setEnrichAllPhase("cancelled");
+    } finally {
+      setEnrichPendingUsernames(new Set());
+      setEnrichBusy(false);
+      setEnrichAllRunning(false);
+      enrichAllCancelRef.current = false;
+    }
+  }, [
+    anyBusy,
+    baseTemplateId,
+    dbEnrichedByUsername,
+    enrichAllPlan,
+    enrichAllRunning,
+    enrichBatchLimit,
+    enrichBusy,
+    enrichedOkByUsername,
+    followingItems,
+    liteQualByUsername,
+  ]);
 
   const handleEnrich80Plus = useCallback(async () => {
     if (anyBusy || enrichBusy) return;
@@ -2521,7 +2785,9 @@ export function OutreachModal() {
     const label = String(props.label || "").trim();
     if (!label) return null;
     return (
-      <div className="absolute inset-0 z-[2] flex items-center justify-center bg-white/30 backdrop-blur-[1px]">
+      // Non-interactive overlay: shows "busy" state without blocking clicks.
+      // We rely on `disabled={anyBusy}` to prevent actions, except for explicit Cancel buttons.
+      <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center bg-white/30 backdrop-blur-[1px]">
         <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl flex items-center gap-3">
           <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-900 animate-spin" />
           <div className="text-sm font-semibold text-slate-900">{label}</div>
@@ -2995,6 +3261,26 @@ export function OutreachModal() {
                     </button>
                     <button
                       type="button"
+                      className="h-9 px-3 rounded-xl bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-60"
+                      disabled={anyBusy || enrichAllPlan.usernames.length === 0}
+                      title="Enrich every row that is not enriched yet (profile scrape only). Runs in batches and persists to DB."
+                      onClick={() => void handleEnrichAll()}
+                    >
+                      {enrichAllRunning ? "Enriching all…" : "Enrich All"}
+                    </button>
+                    {enrichAllRunning ? (
+                      <button
+                        type="button"
+                        className="h-9 px-3 rounded-xl border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm hover:bg-red-50 disabled:opacity-60"
+                        disabled={!enrichAllRunning}
+                        title="Stop after the current batch finishes"
+                        onClick={() => handleCancelEnrichAll()}
+                      >
+                        Cancel enrichment
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
                       className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
                       disabled={anyBusy || followingSelectedCount === 0}
                       title="Clear selection"
@@ -3004,6 +3290,39 @@ export function OutreachModal() {
                     </button>
                   </div>
                 </div>
+
+                {enrichAllPhase !== "idle" ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="font-semibold">
+                        {enrichAllRunning
+                          ? enrichAllPhase === "saving"
+                            ? "Enrich All: preparing…"
+                            : enrichAllPhase === "cancelled"
+                              ? "Enrich All: cancelling…"
+                              : "Enrich All: running…"
+                          : enrichAllPhase === "done"
+                            ? "Enrich All: done."
+                            : "Enrich All: stopped."}
+                      </span>
+                      <span className="text-slate-500">
+                        Done: <span className="font-semibold">{enrichAllDone.toLocaleString()}</span> /{" "}
+                        <span className="font-semibold">{enrichAllTotal.toLocaleString()}</span>
+                      </span>
+                      <span className="text-slate-500">
+                        Skipped (missing username): <span className="font-semibold">{enrichAllSkippedMissing.toLocaleString()}</span>
+                      </span>
+                      <span className="text-slate-500">
+                        Failed: <span className="font-semibold">{enrichAllFailed.toLocaleString()}</span>
+                      </span>
+                    </div>
+                    {enrichAllLastError ? (
+                      <div className="mt-1 text-[11px] text-slate-600 truncate" title={enrichAllLastError}>
+                        Last error: {enrichAllLastError}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {enrichQualifySaveError ? (
                   <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

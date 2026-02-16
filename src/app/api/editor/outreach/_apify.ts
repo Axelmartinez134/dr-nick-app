@@ -256,7 +256,8 @@ export async function scrapeInstagramFollowingViaApify(args: {
   // This prevents the actor from continuing to scrape thousands beyond what the user requested.
   const run = await (client.actor(actorId) as any).start(input, {
     // Keep bounded so a stuck run doesn't run forever.
-    timeout: 180,
+    // Aligned change (2026-02-16): 4× previous budget for large follow lists.
+    timeout: 720,
     memory: 1024,
     // Platform-level safety rail: hard cap spend for the run.
     maxTotalChargeUsd: maxSpendUsd,
@@ -272,7 +273,7 @@ export async function scrapeInstagramFollowingViaApify(args: {
   // - have at least `maxResults` items (then abort), or
   // - the run finishes / times out / fails, or
   // - we hit our own wall-clock budget.
-  const pollUntilMs = Date.now() + 175_000; // keep under the 180s actor timeout
+  const pollUntilMs = Date.now() + 700_000; // keep under the 720s actor timeout
   let lastStatus: string | null = null;
   while (runId && Date.now() < pollUntilMs) {
     // Efficient "have we reached N yet?" probe:
@@ -307,8 +308,19 @@ export async function scrapeInstagramFollowingViaApify(args: {
   }
 
   // Always return up to maxResults of whatever we managed to collect.
-  const { items } = await client.dataset(datasetId).listItems({ limit: maxResults });
-  const rows = Array.isArray(items) ? items : [];
+  //
+  // IMPORTANT: dataset.listItems is paginated; a single call can under-return for large datasets.
+  // Fetch in pages until we hit maxResults or the dataset ends.
+  const rows: any[] = [];
+  const PAGE = 1000;
+  for (let offset = 0; offset < maxResults; offset += PAGE) {
+    const limit = Math.max(1, Math.min(PAGE, maxResults - offset));
+    const page = await client.dataset(datasetId).listItems({ offset, limit });
+    const items = Array.isArray((page as any)?.items) ? ((page as any).items as any[]) : [];
+    if (!items.length) break;
+    rows.push(...items);
+    if (items.length < limit) break; // reached end
+  }
 
   // If we got zero rows, surface a run error (if any) to the UI.
   if (rows.length === 0) {
