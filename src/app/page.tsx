@@ -60,9 +60,6 @@ export default function Home() {
           <h2 className="text-2xl font-semibold text-gray-900 mb-4">
             Sign In to Your Account
           </h2>
-          <p className="text-gray-600 mb-6">
-            Use the login credentials provided by Dr. Nick
-          </p>
         </div>
 
         {/* Show Login form only */}
@@ -117,25 +114,13 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Contact Info */}
-        <div className="mt-12 text-center">
-          <div className="bg-blue-50 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Need Account Access?
-            </h3>
-            <p className="text-gray-600">
-              Contact Dr. Nick to get your login credentials and start your health journey.
-            </p>
-          </div>
-        </div>
-
       </main>
 
       {/* Footer */}
       <footer className="bg-white border-t mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center text-gray-500">
-            <p>&copy; 2025 The Fittest You Health Tracker. Built with ❤️ for your health journey.</p>
+            <p>&copy; 2026 The Fittest You Health Tracker. Built with ❤️ for your health journey.</p>
           </div>
         </div>
       </footer>

@@ -316,11 +316,11 @@ export default function Login() {
 
         {/* Additional Info */}
         <div className="mt-4 text-center">
-          <p className="text-sm text-gray-600">
-            {mode === 'signin'
-              ? 'Login credentials provided by Dr. Nick'
-              : 'We’ll ask for baseline measurements after you confirm your email and sign in.'}
-          </p>
+          {mode === 'signup' ? (
+            <p className="text-sm text-gray-600">
+              We’ll ask for baseline measurements after you confirm your email and sign in.
+            </p>
+          ) : null}
         </div>
 
       </div>

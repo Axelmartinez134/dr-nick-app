@@ -522,6 +522,8 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
 
     if (isAoEWindowClosed) {
       try {
+        const maxSystemWeekAllowed = calendarCurrentWeek
+
         // Option 1: Backfill all missing weeks since last patient submission up to current AoE week
         // 1) Ensure patient weeks 1..maxPatientWeek are contiguous
         let isPatientContiguous = true
@@ -548,6 +550,8 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
           let createdBacklog = false
           for (let w = maxPatientWeek + 1; w <= backlogTargetWeek; w++) {
             if (w < 1 || existingWeeks.has(w)) continue
+            // Belt-and-suspenders guard: never auto-create a future week.
+            if (w > maxSystemWeekAllowed) continue
 
             // Pre-insert existence check
             const { data: precheckCurrent, error: preErr } = await supabase
@@ -583,42 +587,6 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
             } else {
               existingWeeks.add(w)
               createdBacklog = true
-            }
-          }
-
-          // 5) Fallback for imported-ahead timelines: if no backlog created and
-          // DB patient progression is ahead of AoE calendar, create exactly one next week
-          if (!createdBacklog && maxPatientWeek >= calendarCurrentWeek) {
-            const targetWeek = maxPatientWeek + 1
-            if (targetWeek >= 1 && !existingWeeks.has(targetWeek)) {
-              const { data: precheckOne, error: preErrOne } = await supabase
-                .from('health_data')
-                .select('id')
-                .eq('user_id', user.id)
-                .eq('week_number', targetWeek)
-                .limit(1)
-              if (preErrOne) {
-                console.warn('gapFillMissedWeeks: fallback pre-insert check failed', { week: targetWeek, error: preErrOne })
-              } else if (!precheckOne || precheckOne.length === 0) {
-                const aoeMondayIso = aoeMondayPlusWeeksIso(week1AoEMonday, targetWeek - 1)
-                const payload: any = {
-                  user_id: user.id,
-                  week_number: targetWeek,
-                  date: aoeMondayIso,
-                  data_entered_by: 'system',
-                  needs_review: true,
-                  nutrition_compliance_days: null,
-                  notes: `AUTO-CREATED: Missed check-in for week ${targetWeek}`
-                }
-                const { error: insErrOne } = await supabase
-                  .from('health_data')
-                  .insert(payload)
-                if (insErrOne) {
-                  console.warn('gapFillMissedWeeks: fallback insert failed', { week: targetWeek, error: insErrOne })
-                } else {
-                  existingWeeks.add(targetWeek)
-                }
-              }
             }
           }
         }

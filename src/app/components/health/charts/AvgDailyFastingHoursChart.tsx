@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { WeeklyCheckin } from '../healthService'
 import { calculateLinearRegression } from '../regressionUtils'
 import TrendPill from './common/TrendPill'
@@ -46,38 +46,54 @@ function minutesToHhmm(mins: number): string {
 }
 
 export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false }: AvgDailyFastingHoursChartProps) {
-  const raw = data
-    .filter(entry => {
-      const v: any = (entry as any).avg_daily_fasting_minutes
-      if (v === null || v === undefined || v === '') return false
-      const n = parseFloat(String(v))
-      return !Number.isNaN(n) && Number.isFinite(n)
-    })
-    .sort((a, b) => a.week_number - b.week_number)
-    .map(entry => {
-      const minutes = parseFloat(String((entry as any).avg_daily_fasting_minutes))
-      return ({
-        week: entry.week_number,
-        fastingMinutes: minutes,
-        fastingHours: minutes / 60,
-        date: entry.date
+  // Determine the displayed week range (ChartsDashboard already filters by the global range slider).
+  const weekBounds = useMemo(() => {
+    const weeks = (data || [])
+      .map(d => Number((d as any).week_number))
+      .filter(n => Number.isFinite(n))
+    if (weeks.length === 0) return { minWeek: 0, maxWeek: 0 }
+    return { minWeek: Math.min(...weeks), maxWeek: Math.max(...weeks) }
+  }, [data])
+
+  // Raw fasting points (only weeks with real values; missing weeks are represented as nulls later)
+  const raw = useMemo(() => {
+    return (data || [])
+      .filter(entry => {
+        const v: any = (entry as any).avg_daily_fasting_minutes
+        if (v === null || v === undefined || v === '') return false
+        const n = parseFloat(String(v))
+        return !Number.isNaN(n) && Number.isFinite(n)
       })
-    })
+      .sort((a, b) => a.week_number - b.week_number)
+      .map(entry => {
+        const minutes = parseFloat(String((entry as any).avg_daily_fasting_minutes))
+        return ({
+          week: entry.week_number,
+          fastingMinutes: minutes,
+          fastingHours: minutes / 60,
+          date: entry.date
+        })
+      })
+  }, [data])
 
   const enhancedChartData = useMemo(() => {
     if (raw.length === 0) return [] as Array<{ week: number; fastingHours: number | null; fastingMinutes: number | null; date?: string; trendLine: number | null }>
-    const minDataWeek = Math.min(...raw.map(d => d.week))
-    const maxWeek = Math.max(...raw.map(d => d.week))
-    const startWeek = Math.max(1, minDataWeek)
+    const startWeek = weekBounds.minWeek
+    const maxWeek = weekBounds.maxWeek
 
     const regressionInput = raw
       .filter(d => d.fastingHours !== null)
       .map(d => ({ week: d.week, value: d.fastingHours as number }))
     const r = calculateLinearRegression(regressionInput, startWeek, maxWeek)
 
+    const rawByWeek = new Map<number, { week: number; fastingHours: number; fastingMinutes: number; date?: string }>()
+    raw.forEach(d => {
+      rawByWeek.set(d.week, d)
+    })
+
     const series: Array<{ week: number; fastingHours: number | null; fastingMinutes: number | null; date?: string; trendLine: number | null }> = []
     for (let w = startWeek; w <= maxWeek; w++) {
-      const actual = raw.find(d => d.week === w)
+      const actual = rawByWeek.get(w)
       const tp = r.isValid ? r.trendPoints.find(t => t.week === w) : undefined
       series.push({
         week: w,
@@ -88,18 +104,29 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
       })
     }
     return series
-  }, [raw])
+  }, [raw, weekBounds])
 
   const regressionForPill = useMemo(() => {
     if (raw.length < 2) return { slope: 0, intercept: 0, count: raw.length }
-    const minDataWeek = Math.min(...raw.map(d => d.week))
-    const maxWeek = Math.max(...raw.map(d => d.week))
-    const startWeek = Math.max(1, minDataWeek)
+    const startWeek = weekBounds.minWeek
+    const maxWeek = weekBounds.maxWeek
     const regressionInput = raw
       .filter(d => typeof d.fastingHours === 'number' && Number.isFinite(d.fastingHours))
       .map(d => ({ week: d.week, value: d.fastingHours as number }))
     const r = calculateLinearRegression(regressionInput, startWeek, maxWeek)
     return { slope: r.slope || 0, intercept: r.intercept || 0, count: regressionInput.length }
+  }, [raw, weekBounds])
+
+  const averageLineResult = useMemo(() => {
+    if (raw.length < 1) return { isValid: false, averageMinutes: 0, averageHours: 0, pointsUsed: 0 }
+    const sumMinutes = raw.reduce((acc, d) => acc + Number(d.fastingMinutes || 0), 0)
+    const averageMinutes = sumMinutes / raw.length
+    return {
+      isValid: Number.isFinite(averageMinutes),
+      averageMinutes,
+      averageHours: averageMinutes / 60,
+      pointsUsed: raw.length
+    }
   }, [raw])
 
   const calculateYAxisDomain = () => {
@@ -126,6 +153,21 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
     for (let v = lo; v <= hi; v++) out.push(v)
     return out
   }, [yDomain])
+
+  // Custom label renderer for right-edge average text inside chart (match Plateau Prevention placement)
+  const AvgRightLabel = ({ viewBox, valueMinutes }: any) => {
+    const { x, y, width } = viewBox || {}
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof width !== 'number') return null
+    const minsRounded = Math.round(Number(valueMinutes))
+    if (!Number.isFinite(minsRounded)) return null
+    const labelX = x + width - 8 // padding from right edge
+    const labelY = y - 6 // small upward nudge
+    return (
+      <text x={labelX} y={labelY} textAnchor="end" fontSize={12} fontWeight={600} fill="#6b7280">
+        {`Avg: ${minutesToHhmm(minsRounded)}`}
+      </text>
+    )
+  }
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -220,6 +262,22 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
             name="Trend Line"
             connectNulls={true}
           />
+          {/* Horizontal average line (gray dashed) + right-edge label */}
+          {averageLineResult.isValid && (
+            <ReferenceLine
+              y={averageLineResult.averageHours}
+              stroke="#9ca3af"
+              strokeWidth={2}
+              strokeDasharray="4 4"
+            />
+          )}
+          {averageLineResult.isValid && (
+            <ReferenceLine
+              y={averageLineResult.averageHours}
+              strokeOpacity={0}
+              label={<AvgRightLabel valueMinutes={averageLineResult.averageMinutes} />}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
 
@@ -227,6 +285,7 @@ export default function AvgDailyFastingHoursChart({ data, hideTrendPill = false 
         <p>• This shows your weekly average daily fasting duration</p>
         <p>• Watch for consistency and a steady, repeatable pattern week-to-week</p>
         <p>• Dark black trend line shows your overall fasting consistency direction</p>
+        <p>• Gray dashed line shows your average fasting duration for the selected time range</p>
         <p>• Small, repeatable habits beat “all-or-nothing” weeks</p>
       </div>
     </div>
