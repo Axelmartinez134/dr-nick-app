@@ -18,6 +18,10 @@ export function PromptsModal(props: PromptsModalProps) {
   const section = useEditorSelector((s) => s.promptModalSection);
 
   const templateTypePrompt = useEditorSelector((s) => s.templateTypePrompt);
+  const poppyPromptSaveStatus = useEditorSelector(
+    (s: any) => (String((s as any).poppyPromptSaveStatus || "idle") as any) || "idle"
+  );
+  const poppyPromptSaveError = useEditorSelector((s: any) => ((s as any).poppyPromptSaveError as any) || null);
   const templateTypeBestPractices = useEditorSelector((s: any) => String((s as any).templateTypeBestPractices || ""));
   const templateTypeEmphasisPrompt = useEditorSelector((s) => s.templateTypeEmphasisPrompt);
   const templateTypeImageGenPrompt = useEditorSelector((s) => s.templateTypeImageGenPrompt);
@@ -91,7 +95,16 @@ export function PromptsModal(props: PromptsModalProps) {
           {/* Active tab content (single prompt at a time) */}
           {activeTab === "prompt" ? (
             <div>
-              <div className="text-sm font-semibold text-slate-900">Poppy Prompt</div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-slate-900">Poppy Prompt</div>
+                {poppyPromptSaveStatus === "saving" ? (
+                  <span className="text-xs text-slate-500">Saving...</span>
+                ) : poppyPromptSaveStatus === "saved" ? (
+                  <span className="text-xs text-emerald-600">Saved ✓</span>
+                ) : poppyPromptSaveStatus === "error" ? (
+                  <span className="text-xs text-red-600">Save failed</span>
+                ) : null}
+              </div>
               <div className="mt-0.5 text-xs text-slate-500">
                 Used for generating the 6-slide copy for this template type (saved per user).
               </div>
@@ -104,6 +117,9 @@ export function PromptsModal(props: PromptsModalProps) {
                 placeholder="Enter the Poppy prompt for this template type..."
                 data-prompt-section="active"
               />
+              {poppyPromptSaveStatus === "error" && poppyPromptSaveError ? (
+                <div className="mt-2 text-xs text-red-600">❌ {poppyPromptSaveError}</div>
+              ) : null}
 
               {isSuperadmin ? (
                 <div className="mt-4">

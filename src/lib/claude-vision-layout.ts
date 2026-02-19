@@ -2,6 +2,8 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 import { VisionLayoutDecision } from './carousel-types';
 
+const DEFAULT_ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+
 export async function decideVisionBasedLayout(
   headline: string,
   body: string,
@@ -166,7 +168,7 @@ RESPOND WITH ONLY THE JSON (no other text):
     try {
       console.log('[Claude Vision] 📡 Sending request to Claude Vision API...');
       const response = await client.messages.create({
-        model: 'claude-3-7-sonnet-20250219',
+        model: DEFAULT_ANTHROPIC_MODEL,
         max_tokens: 2048,
         system: 'You are a JSON-only API for social media carousel design. CRITICAL RULES: 1) Respond with ONLY valid JSON, no other text. 2) NEVER place text where it overlaps the image. 3) Calculate safe zones carefully by analyzing the image position. 4) All text must be in clear white space only.',
         messages: [
@@ -400,7 +402,7 @@ RESPOND WITH ONLY THIS JSON (no markdown, no explanation):
 
     try {
       const response = await client.messages.create({
-        model: 'claude-3-7-sonnet-20250219',
+        model: DEFAULT_ANTHROPIC_MODEL,
         max_tokens: 4096,
         system: [
           {

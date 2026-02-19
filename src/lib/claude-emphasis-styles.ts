@@ -18,6 +18,7 @@ export async function getEmphasisStylesForLinesClaude(
   const maxAttempts = options?.maxAttempts ?? 1;
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
   const numberedLines = lines.map((l, i) => `${i}: ${l.text}`).join('\n');
   const prompt = `You are a typography assistant.
@@ -58,7 +59,7 @@ Return ONLY valid JSON (no markdown):
     try {
       const response = await withTimeout(
         client.messages.create({
-          model: 'claude-3-7-sonnet-20250219',
+          model,
           max_tokens: 1024,
           messages: [{ role: 'user', content: prompt }],
         }),

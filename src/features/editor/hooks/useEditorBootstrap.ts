@@ -142,13 +142,14 @@ export function useEditorBootstrap(params: {
           }
         }
 
-        // Hydrate effective per-user template-type settings
+        // Hydrate effective template-type settings.
+        // IMPORTANT: Poppy Prompt is now backed by per-user saved prompts (active prompt),
+        // so we intentionally do NOT hydrate `setTemplateTypePrompt(...)` here.
         const effective = data?.templateType?.effective || null;
         // IMPORTANT: auto-loading a project can change templateTypeId while the request is in flight.
         // Only apply the initial-state effective settings if the current template type still matches
         // what we requested, otherwise we'd overwrite newer settings (and make reload look broken).
         if (effective && templateTypeIdRef.current === templateTypeIdAtRequest) {
-          setTemplateTypePrompt(String(effective.prompt || ''));
           setTemplateTypeEmphasisPrompt(String(effective.emphasisPrompt || ''));
           setTemplateTypeImageGenPrompt(String(effective.imageGenPrompt || ''));
           setTemplateTypeMappingSlide1(effective.slide1TemplateId ?? null);

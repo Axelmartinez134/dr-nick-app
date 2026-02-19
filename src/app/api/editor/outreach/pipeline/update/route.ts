@@ -13,6 +13,7 @@ type Body = {
   patch: {
     pipelineStage?: Stage | null;
     lastContactDate?: string | null; // YYYY-MM-DD
+    followupSentCount?: number | null; // 1..3 (null => unset)
     sourcePostUrl?: string | null;
     // allow storing created ids from "Create from reel"
     createdProjectId?: string | null;
@@ -56,6 +57,14 @@ function isDateString(v: any): boolean {
   return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
+function todayYmdUtc(): string {
+  const d = new Date();
+  const yyyy = String(d.getUTCFullYear());
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export async function POST(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
   if (!authed.ok) return NextResponse.json({ success: false, error: authed.error } satisfies Resp, { status: authed.status });
@@ -88,11 +97,23 @@ export async function POST(request: NextRequest) {
 
     // If stage becomes dm_sent, automatically set last_contact_date=today (unless explicitly provided).
     if (patch.pipeline_stage === 'dm_sent' && !('lastContactDate' in patchIn)) {
-      const d = new Date();
-      const yyyy = String(d.getUTCFullYear());
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(d.getUTCDate()).padStart(2, '0');
-      patch.last_contact_date = `${yyyy}-${mm}-${dd}`;
+      patch.last_contact_date = todayYmdUtc();
+    }
+  }
+
+  if ('followupSentCount' in patchIn) {
+    const n = patchIn.followupSentCount;
+    if (n === null) patch.followup_sent_count = null;
+    else {
+      const x = typeof n === 'number' ? n : typeof n === 'string' ? Number(n) : NaN;
+      if (!Number.isFinite(x)) return NextResponse.json({ success: false, error: 'followupSentCount invalid' } satisfies Resp, { status: 400 });
+      const clamped = Math.max(1, Math.min(3, Math.floor(x)));
+      patch.followup_sent_count = clamped;
+    }
+
+    // Any follow-up action should bump last_contact_date=today (unless explicitly provided).
+    if (!('lastContactDate' in patchIn)) {
+      patch.last_contact_date = todayYmdUtc();
     }
   }
 
@@ -116,7 +137,20 @@ export async function POST(request: NextRequest) {
   // Apply patch to all rows for this username (across seeds) to keep pipeline consistent.
   // Include both account-scoped rows AND legacy rows owned by the current user where account_id is null.
   const doUpdate = async (scope: 'account' | 'legacy') => {
-    let q = supabase.from('editor_outreach_targets').update(patch).or(`prospect_username.eq.${uname},username.eq.${uname}`);
+    const unameAt = `@${uname}`;
+    // Match common variants so actions like "Delete row" don't resurrect on refresh.
+    // Note: `ilike` gives case-insensitive exact match when no wildcards are used.
+    const userMatch = [
+      `prospect_username.eq.${uname}`,
+      `username.eq.${uname}`,
+      `prospect_username.eq.${unameAt}`,
+      `username.eq.${unameAt}`,
+      `prospect_username.ilike.${uname}`,
+      `username.ilike.${uname}`,
+      `prospect_username.ilike.${unameAt}`,
+      `username.ilike.${unameAt}`,
+    ].join(',');
+    let q = supabase.from('editor_outreach_targets').update(patch).or(userMatch);
     if (scope === 'account') q = q.eq('account_id', accountId);
     else q = q.is('account_id', null).eq('created_by_user_id', user.id);
     const { error } = await q;

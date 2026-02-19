@@ -101,6 +101,7 @@ export function OutreachModal() {
     score: 90,
     following: 120,
     stage: 220,
+    followups: 170,
     last: 170,
     reel: 260,
     action: 200,
@@ -117,7 +118,7 @@ export function OutreachModal() {
   }, [followingColDefaults, followingColWidths]);
   const totalPipelineTableWidthPx = useMemo(() => {
     const w = pipelineColWidths || pipelineColDefaults;
-    const ids = ["row", "photo", "name", "handle", "link", "score", "following", "stage", "last", "reel", "action"];
+    const ids = ["row", "photo", "name", "handle", "link", "score", "following", "stage", "followups", "last", "reel", "action"];
     return ids.reduce((sum, id) => sum + Math.max(40, Number((w as any)?.[id] || 0)), 0);
   }, [pipelineColDefaults, pipelineColWidths]);
   useEffect(() => {
@@ -380,6 +381,16 @@ export function OutreachModal() {
   const [pipelineRows, setPipelineRows] = useState<outreachApi.PipelineLead[]>([]);
   const [pipelineSearch, setPipelineSearch] = useState('');
   const [pipelineStageFilter, setPipelineStageFilter] = useState<outreachApi.PipelineStage | ''>('');
+  const [pipelineTotalCount, setPipelineTotalCount] = useState<number>(0);
+  const [pipelineStageCounts, setPipelineStageCounts] = useState<Record<outreachApi.PipelineStage, number>>(() => ({
+    todo: 0,
+    dm_sent: 0,
+    responded_needs_followup: 0,
+    booked: 0,
+    sent_contract: 0,
+    closed: 0,
+  }));
+  const [pipelineSortMode, setPipelineSortMode] = useState<'none' | 'last_contact_overdue_first'>('none');
   const [pipelineBackfilledForOpen, setPipelineBackfilledForOpen] = useState(false);
   const [pipelineReelUrlDraftByUsername, setPipelineReelUrlDraftByUsername] = useState<Record<string, string>>({});
   const [pipelineLastContactDraftByUsername, setPipelineLastContactDraftByUsername] = useState<Record<string, string>>({});
@@ -397,6 +408,106 @@ export function OutreachModal() {
   const pipelineBusyRef = useRef(false);
   const pipelineSearchRef = useRef('');
   const pipelineStageFilterRef = useRef<outreachApi.PipelineStage | ''>('');
+
+  const PIPELINE_STAGES = useMemo(
+    () => ['todo', 'dm_sent', 'responded_needs_followup', 'booked', 'sent_contract', 'closed'] as const,
+    []
+  );
+  const pipelineStageLabel = useMemo(() => {
+    return {
+      todo: 'To do',
+      dm_sent: 'DM sent',
+      responded_needs_followup: 'Needs follow-up',
+      booked: 'Booked',
+      sent_contract: 'Sent contract',
+      closed: 'Closed',
+    } satisfies Record<outreachApi.PipelineStage, string>;
+  }, []);
+
+  const showFollowupsColumn =
+    pipelineStageFilter === 'dm_sent' ||
+    pipelineStageFilter === 'responded_needs_followup' ||
+    pipelineStageFilter === 'booked' ||
+    pipelineStageFilter === 'sent_contract';
+
+  const pipelineFollowupsColWidthPx = Math.max(
+    40,
+    Number((pipelineColWidths as any)?.followups ?? (pipelineColDefaults as any)?.followups ?? 0)
+  );
+  const totalPipelineTableWidthEffectivePx = Math.max(
+    200,
+    totalPipelineTableWidthPx - (showFollowupsColumn ? 0 : pipelineFollowupsColWidthPx)
+  );
+
+  const isPipelineOverdue = useCallback((r: outreachApi.PipelineLead) => {
+    const stage = (r?.pipelineStage || '') as outreachApi.PipelineStage | '';
+    if (stage === 'todo' || stage === 'closed') return false;
+    // Overdue applies only to DM/Follow-up/Booked/Contract stages.
+    const overdueStages = new Set<outreachApi.PipelineStage>(['dm_sent', 'responded_needs_followup', 'booked', 'sent_contract']);
+    if (!overdueStages.has(stage as any)) return false;
+
+    const raw = String(r?.lastContactDate || '').trim(); // YYYY-MM-DD
+    if (!raw) return true; // null/empty => overdue (per spec)
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return true;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d) || mo < 1 || mo > 12 || d < 1 || d > 31) return true;
+
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const lastUtc = Date.UTC(y, mo - 1, d);
+    const diffDays = Math.floor((todayUtc - lastUtc) / (24 * 60 * 60 * 1000));
+    if (!Number.isFinite(diffDays)) return true;
+    if (diffDays < 0) return false;
+    return diffDays > 7; // strictly older than 7 days
+  }, []);
+
+  const parseYmdUtcMs = useCallback((rawYmd: string) => {
+    const raw = String(rawYmd || '').trim();
+    if (!raw) return null;
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d) || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const ms = Date.UTC(y, mo - 1, d);
+    return Number.isFinite(ms) ? ms : null;
+  }, []);
+
+  const pipelineRowsSorted = useMemo(() => {
+    const rows = Array.isArray(pipelineRows) ? pipelineRows : [];
+    if (pipelineSortMode !== 'last_contact_overdue_first' || rows.length <= 1) return rows;
+
+    // Stable sort: preserve original order for ties.
+    return rows
+      .map((r, idx) => ({ r, idx }))
+      .sort((a, b) => {
+        const ao = isPipelineOverdue(a.r) ? 1 : 0;
+        const bo = isPipelineOverdue(b.r) ? 1 : 0;
+        if (ao !== bo) return bo - ao; // overdue first
+
+        const aMs = parseYmdUtcMs(String(a.r?.lastContactDate || ''));
+        const bMs = parseYmdUtcMs(String(b.r?.lastContactDate || ''));
+
+        // Within overdue group: show oldest / missing first (most urgent).
+        if (ao === 1 && bo === 1) {
+          const ax = aMs === null ? -Infinity : aMs;
+          const bx = bMs === null ? -Infinity : bMs;
+          if (ax !== bx) return ax < bx ? -1 : 1;
+        } else {
+          // Within non-overdue group: show most recent first; missing last.
+          const ax = aMs === null ? Infinity : aMs;
+          const bx = bMs === null ? Infinity : bMs;
+          if (ax !== bx) return ax > bx ? -1 : 1;
+        }
+
+        return a.idx - b.idx;
+      })
+      .map((x) => x.r);
+  }, [isPipelineOverdue, parseYmdUtcMs, pipelineRows, pipelineSortMode]);
 
   useEffect(() => {
     try {
@@ -1982,13 +2093,42 @@ export function OutreachModal() {
     try {
       const token = await getSessionToken();
       const accountHeader = getActiveAccountHeader();
-      const out = await outreachApi.pipelineList({
+      const allOut = await outreachApi.pipelineList({
         token,
-        q: String(pipelineSearchRef.current || '').trim() || null,
-        stage: pipelineStageFilterRef.current ? (pipelineStageFilterRef.current as any) : null,
+        q: null,
+        stage: null,
         headers: accountHeader,
       });
-      const rows = Array.isArray(out?.rows) ? out.rows : [];
+      const allRows = Array.isArray(allOut?.rows) ? allOut.rows : [];
+      setPipelineTotalCount(allRows.length);
+      setPipelineStageCounts(() => {
+        const next: Record<outreachApi.PipelineStage, number> = {
+          todo: 0,
+          dm_sent: 0,
+          responded_needs_followup: 0,
+          booked: 0,
+          sent_contract: 0,
+          closed: 0,
+        };
+        for (const r of allRows) {
+          const s = String((r as any)?.pipelineStage || '').trim() as outreachApi.PipelineStage;
+          if (s && (next as any)[s] !== undefined) next[s] = (next[s] || 0) + 1;
+        }
+        return next;
+      });
+
+      const qTrim = String(pipelineSearchRef.current || '').trim();
+      const stageTrim = pipelineStageFilterRef.current ? String(pipelineStageFilterRef.current).trim() : '';
+      let rows = allRows;
+      if (qTrim || stageTrim) {
+        const out = await outreachApi.pipelineList({
+          token,
+          q: qTrim || null,
+          stage: stageTrim ? (stageTrim as any) : null,
+          headers: accountHeader,
+        });
+        rows = Array.isArray(out?.rows) ? out.rows : [];
+      }
       setPipelineRows(rows);
       // Seed drafts so inputs stay stable while typing.
       setPipelineReelUrlDraftByUsername((prev) => {
@@ -2024,6 +2164,82 @@ export function OutreachModal() {
       setPipelineBusy(false);
     }
   }, []);
+
+  const handlePipelineFollowupAdvance = useCallback(
+    (args: { username: string; next: 1 | 2 | 3 }) => {
+      const uname = String(args.username || '').trim().toLowerCase();
+      if (!uname) return;
+      if (anyBusy) return;
+
+      // Derive current from the currently loaded row (best-effort).
+      const row = (Array.isArray(pipelineRows) ? pipelineRows : []).find((r) => String(r?.username || '').toLowerCase() === uname) as
+        | outreachApi.PipelineLead
+        | undefined;
+      const curRaw = row?.followupSentCount;
+      const cur = typeof curRaw === 'number' && Number.isFinite(curRaw) ? Math.max(1, Math.min(3, Math.floor(curRaw))) : 0;
+      const clicked = args.next;
+      const desired = clicked === cur ? cur - 1 : clicked === cur + 1 ? clicked : null;
+      if (desired === null) return; // enforce: only toggle current down 1, or advance by 1
+      const nextForApi = desired <= 0 ? null : (desired as 1 | 2 | 3);
+
+      const today = (() => {
+        const d = new Date();
+        const yyyy = String(d.getUTCFullYear());
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+      })();
+
+      void (async () => {
+        try {
+          const token = await getSessionToken();
+          const accountHeader = getActiveAccountHeader();
+          setPipelineEditBusyByUsername((p) => ({ ...(p || {}), [uname]: true }));
+          setPipelineRowErrorByUsername((p) => {
+            const n = { ...(p || {}) };
+            delete n[uname];
+            return n;
+          });
+
+          await outreachApi.pipelineUpdate({
+            token,
+            username: uname,
+            patch: { followupSentCount: nextForApi, lastContactDate: today },
+            headers: accountHeader,
+          });
+
+          // Optimistic local update so row highlight/sort respond immediately.
+          setPipelineRows((prev) =>
+            (Array.isArray(prev) ? prev : []).map((r) => {
+              const ru = String(r?.username || '').toLowerCase();
+              if (ru !== uname) return r;
+              return { ...(r as any), followupSentCount: nextForApi, lastContactDate: today } as any;
+            })
+          );
+          setPipelineLastContactDraftByUsername((p) => ({ ...(p || {}), [uname]: today }));
+        } catch (err: any) {
+          setPipelineRowErrorByUsername((p) => ({ ...(p || {}), [uname]: String(err?.message || err || 'Update failed') }));
+        } finally {
+          setPipelineEditBusyByUsername((p) => {
+            const n = { ...(p || {}) };
+            delete n[uname];
+            return n;
+          });
+        }
+      })();
+    },
+    [anyBusy, handlePipelineRefresh, pipelineRows]
+  );
+
+  const handlePipelineSelectStage = useCallback(
+    (nextStage: outreachApi.PipelineStage | '') => {
+      // Keep refs in sync so refresh uses the new stage immediately (no waiting for effects).
+      pipelineStageFilterRef.current = nextStage;
+      setPipelineStageFilter(nextStage);
+      void handlePipelineRefresh();
+    },
+    [handlePipelineRefresh]
+  );
 
   const handlePipelineBackfillOnce = useCallback(async () => {
     if (pipelineBackfilledForOpen) return;
@@ -3716,38 +3932,71 @@ export function OutreachModal() {
                     <div className="text-xs font-semibold text-slate-700">Pipeline</div>
                     <div className="text-[11px] text-slate-500">Leads with a pipeline stage (deduped by @handle).</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      className="h-9 w-full sm:w-64 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-                      value={pipelineSearch}
-                      onChange={(e) => setPipelineSearch(e.target.value)}
-                      placeholder="Search name or @handle…"
-                      disabled={anyBusy}
-                      aria-label="Search pipeline"
-                    />
-                    <select
-                      className="h-9 rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-900 shadow-sm disabled:opacity-60"
-                      value={pipelineStageFilter}
-                      onChange={(e) => setPipelineStageFilter(e.target.value as any)}
-                      disabled={anyBusy}
-                      aria-label="Stage filter"
-                    >
-                      <option value="">All stages</option>
-                      {(['todo', 'dm_sent', 'responded_needs_followup', 'booked', 'sent_contract', 'closed'] as const).map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
-                      disabled={anyBusy}
-                      onClick={() => void handlePipelineRefresh()}
-                      title="Refresh pipeline"
-                    >
-                      Refresh
-                    </button>
+                  <div className="flex flex-col gap-2 sm:items-end">
+                    <div className="flex items-center gap-2">
+                      <input
+                        className="h-9 w-full sm:w-64 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                        value={pipelineSearch}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          pipelineSearchRef.current = v; // keep in sync so stage clicks immediately use the latest search
+                          setPipelineSearch(v);
+                        }}
+                        placeholder="Search name or @handle…"
+                        disabled={anyBusy}
+                        aria-label="Search pipeline"
+                      />
+                      <button
+                        type="button"
+                        className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                        disabled={anyBusy}
+                        onClick={() => void handlePipelineRefresh()}
+                        title="Refresh pipeline"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
+                      <button
+                        type="button"
+                        className={`h-9 px-3 rounded-xl border text-sm font-semibold shadow-sm transition-colors disabled:opacity-60 whitespace-nowrap ${
+                          !pipelineStageFilter
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "bg-white text-slate-900 border-slate-200 hover:bg-slate-50"
+                        }`}
+                        disabled={anyBusy}
+                        onClick={() => handlePipelineSelectStage("")}
+                        aria-pressed={!pipelineStageFilter}
+                        title="Show all pipeline stages"
+                      >
+                        All{" "}
+                        <span className={!pipelineStageFilter ? "text-white/80" : "text-slate-500"}>
+                          ({pipelineTotalCount.toLocaleString()})
+                        </span>
+                      </button>
+                      {PIPELINE_STAGES.map((s) => {
+                        const active = pipelineStageFilter === s;
+                        const count = pipelineStageCounts[s] ?? 0;
+                        return (
+                          <button
+                            key={s}
+                            type="button"
+                            className={`h-9 px-3 rounded-xl border text-sm font-semibold shadow-sm transition-colors disabled:opacity-60 whitespace-nowrap ${
+                              active ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-900 border-slate-200 hover:bg-slate-50"
+                            }`}
+                            disabled={anyBusy}
+                            onClick={() => handlePipelineSelectStage(s)}
+                            aria-pressed={active}
+                            title={`Filter pipeline to: ${pipelineStageLabel[s]}`}
+                          >
+                            {pipelineStageLabel[s]}{" "}
+                            <span className={active ? "text-white/80" : "text-slate-500"}>
+                              ({Number(count || 0).toLocaleString()})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -3757,7 +4006,7 @@ export function OutreachModal() {
 
                 {pipelineRows.length ? (
                   <div className="mt-3 overflow-auto rounded-xl border border-slate-200 bg-white">
-                    <table className="min-w-max text-sm table-fixed" style={{ width: `${totalPipelineTableWidthPx}px` }}>
+                    <table className="min-w-max text-sm table-fixed" style={{ width: `${totalPipelineTableWidthEffectivePx}px` }}>
                       <colgroup>
                         <col style={{ width: `${pipelineColWidths.row}px` }} />
                         <col style={{ width: `${pipelineColWidths.photo}px` }} />
@@ -3767,6 +4016,7 @@ export function OutreachModal() {
                         <col style={{ width: `${pipelineColWidths.score}px` }} />
                         <col style={{ width: `${pipelineColWidths.following}px` }} />
                         <col style={{ width: `${pipelineColWidths.stage}px` }} />
+                        <col style={{ width: `${showFollowupsColumn ? pipelineColWidths.followups : 0}px` }} />
                         <col style={{ width: `${pipelineColWidths.last}px` }} />
                         <col style={{ width: `${pipelineColWidths.reel}px` }} />
                         <col style={{ width: `${pipelineColWidths.action}px` }} />
@@ -3781,13 +4031,36 @@ export function OutreachModal() {
                           <ThResizable tableKey="pipeline" colId="score">Score</ThResizable>
                           <ThResizable tableKey="pipeline" colId="following">Followers</ThResizable>
                           <ThResizable tableKey="pipeline" colId="stage">Stage</ThResizable>
-                          <ThResizable tableKey="pipeline" colId="last">Last contact</ThResizable>
+                          {showFollowupsColumn ? (
+                            <ThResizable tableKey="pipeline" colId="followups">
+                              Follow up sent
+                            </ThResizable>
+                          ) : null}
+                          <ThResizable tableKey="pipeline" colId="last">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1.5 text-left hover:text-slate-900"
+                              onClick={() =>
+                                setPipelineSortMode((m) => (m === 'last_contact_overdue_first' ? 'none' : 'last_contact_overdue_first'))
+                              }
+                              title={
+                                pipelineSortMode === 'last_contact_overdue_first'
+                                  ? 'Sorting: overdue first (click to clear)'
+                                  : 'Click to sort: overdue first'
+                              }
+                            >
+                              <span className="truncate">Last contact</span>
+                              <span className="text-[10px] font-bold">
+                                {pipelineSortMode === 'last_contact_overdue_first' ? '▲' : ''}
+                              </span>
+                            </button>
+                          </ThResizable>
                           <ThResizable tableKey="pipeline" colId="reel">Reel URL</ThResizable>
                           <ThResizable tableKey="pipeline" colId="action">Action</ThResizable>
                         </tr>
                       </thead>
                       <tbody>
-                        {pipelineRows.map((r, idx) => {
+                        {pipelineRowsSorted.map((r, idx) => {
                           const uname = String(r?.username || '').toLowerCase();
                           const handle = uname ? `@${uname}` : '—';
                           const editBusy = !!pipelineEditBusyByUsername[uname];
@@ -3797,9 +4070,17 @@ export function OutreachModal() {
                           const reelDraft = pipelineReelUrlDraftByUsername[uname] ?? String(r?.sourcePostUrl || '');
                           const lastContactDraft = pipelineLastContactDraftByUsername[uname] ?? String(r?.lastContactDate || '');
                           const stageDraft = pipelineStageDraftByUsername[uname] ?? (r?.pipelineStage as any);
+                          const overdue = isPipelineOverdue(r);
+                          const curFollowRaw = (r as any)?.followupSentCount;
+                          const curFollow =
+                            typeof curFollowRaw === 'number' && Number.isFinite(curFollowRaw) ? Math.max(1, Math.min(3, Math.floor(curFollowRaw))) : 0;
 
                           return (
-                            <tr key={uname || String(idx)} className="border-b border-slate-100 last:border-b-0">
+                            <tr
+                              key={uname || String(idx)}
+                              className={`border-b border-slate-100 last:border-b-0 ${overdue ? "bg-orange-50" : ""}`}
+                              title={overdue ? "Overdue: last contact was more than 7 days ago (or missing)" : undefined}
+                            >
                               <td className="px-3 py-2 text-slate-500 font-mono text-[12px]">{idx + 1}</td>
                               <td className="px-3 py-2">
                                 <div
@@ -3864,6 +4145,14 @@ export function OutreachModal() {
                                       try {
                                         const token = await getSessionToken();
                                         const accountHeader = getActiveAccountHeader();
+                                        const prevStage = String((r as any)?.pipelineStage || '').trim();
+                                        const today = (() => {
+                                          const d = new Date();
+                                          const yyyy = String(d.getUTCFullYear());
+                                          const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+                                          const dd = String(d.getUTCDate()).padStart(2, '0');
+                                          return `${yyyy}-${mm}-${dd}`;
+                                        })();
                                         setPipelineEditBusyByUsername((p) => ({ ...(p || {}), [uname]: true }));
                                         setPipelineRowErrorByUsername((p) => {
                                           const n = { ...(p || {}) };
@@ -3871,7 +4160,36 @@ export function OutreachModal() {
                                           return n;
                                         });
                                         await outreachApi.pipelineUpdate({ token, username: uname, patch: { pipelineStage: next }, headers: accountHeader });
-                                        await handlePipelineRefresh();
+
+                                        // Instant UX: update local row + counts without a full pipeline reload.
+                                        setPipelineStageCounts((prev) => {
+                                          const n = { ...(prev || {}) } as any;
+                                          if (prevStage && n[prevStage] !== undefined) n[prevStage] = Math.max(0, Number(n[prevStage] || 0) - 1);
+                                          if (next && n[next] !== undefined) n[next] = Math.max(0, Number(n[next] || 0) + 1);
+                                          return n as any;
+                                        });
+                                        setPipelineRows((prev) => {
+                                          const arr = Array.isArray(prev) ? prev : [];
+                                          const out = arr
+                                            .map((row) => {
+                                              const ru = String((row as any)?.username || '').toLowerCase();
+                                              if (ru !== uname) return row;
+                                              const base: any = { ...(row as any), pipelineStage: next };
+                                              // Server auto-sets last_contact_date=today when stage becomes dm_sent.
+                                              if (next === 'dm_sent') base.lastContactDate = today;
+                                              return base;
+                                            })
+                                            // If a stage filter is active, hide rows that no longer match it.
+                                            .filter((row) => {
+                                              const activeFilter = String(pipelineStageFilterRef.current || '').trim();
+                                              if (!activeFilter) return true;
+                                              return String((row as any)?.pipelineStage || '').trim() === activeFilter;
+                                            });
+                                          return out as any;
+                                        });
+                                        if (next === 'dm_sent') {
+                                          setPipelineLastContactDraftByUsername((p) => ({ ...(p || {}), [uname]: today }));
+                                        }
                                       } catch (err: any) {
                                         setPipelineRowErrorByUsername((p) => ({ ...(p || {}), [uname]: String(err?.message || err || 'Update failed') }));
                                       } finally {
@@ -3891,6 +4209,61 @@ export function OutreachModal() {
                                   ))}
                                 </select>
                               </td>
+                              {showFollowupsColumn ? (
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center gap-2">
+                                    {([1, 2, 3] as const).map((n) => {
+                                      const filled = curFollow > 0 && n <= curFollow;
+                                      const isCurrent = n === curFollow;
+                                      const canAdvance = n === curFollow + 1;
+                                      const canToggleDown = isCurrent && curFollow > 0;
+                                      const disabled =
+                                        anyBusy ||
+                                        editBusy ||
+                                        (n < curFollow) || // no backwards (except toggling current)
+                                        (n > curFollow + 1) || // enforce successive order
+                                        (isCurrent ? false : false); // keep current clickable for toggle-down
+
+                                      const className = [
+                                        "h-8 w-8 rounded-lg border text-sm font-extrabold shadow-sm transition-colors",
+                                        filled ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-900 border-slate-200",
+                                        !disabled && !filled ? "hover:bg-slate-50" : "",
+                                        disabled ? "cursor-not-allowed" : "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ");
+
+                                      const title = disabled
+                                        ? n < curFollow
+                                          ? "Cannot go backwards"
+                                          : "Send follow-ups in order"
+                                        : canToggleDown
+                                          ? `Undo follow-up ${n} (sets count to ${n - 1 || "none"}; also sets Last contact to today)`
+                                          : canAdvance
+                                            ? `Mark follow-up ${n} as sent (also sets Last contact to today)`
+                                            : isCurrent
+                                              ? "Already set"
+                                              : "";
+
+                                      return (
+                                        <button
+                                          key={n}
+                                          type="button"
+                                          className={className}
+                                          disabled={disabled}
+                                          title={title}
+                                          onClick={() => {
+                                            // Allow: advance by 1, or toggle the current value down by 1.
+                                            if (n === curFollow || n === curFollow + 1) handlePipelineFollowupAdvance({ username: uname, next: n });
+                                          }}
+                                        >
+                                          {n}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </td>
+                              ) : null}
                               <td className="px-3 py-2">
                                 <div className="flex items-center gap-2">
                                   <input

@@ -196,6 +196,33 @@ When enabled, you’ll see Debug panel entries prefixed with:
   - Calls `POST /api/editor/initial-state` and hydrates templates/projects/template-type effective settings
   - Handles auto-load most recent project or auto-create Enhanced project
 
+### Poppy Prompt (Saved Prompt Library — per user, per account, per template type)
+- **DB table (RLS, per-user private)**: `public.editor_poppy_saved_prompts`
+  - **Migration**: `supabase/migrations/20260219_000001_add_editor_poppy_saved_prompts.sql`
+  - Scope: `account_id + user_id + template_type_id`
+  - Enforces: **at most one active prompt** per scope (unique partial index)
+- **API routes** (Next.js):
+  - `POST /api/editor/user-settings/poppy-prompts/list` (includes first-use seeding + “ensure active” self-heal)
+  - `POST /api/editor/user-settings/poppy-prompts/create`
+  - `POST /api/editor/user-settings/poppy-prompts/update`
+  - `POST /api/editor/user-settings/poppy-prompts/duplicate`
+  - `POST /api/editor/user-settings/poppy-prompts/set-active`
+- **UI entry point**: `src/features/editor/components/EditorSidebar.tsx` (“Select” button next to Poppy Prompt)
+- **Library modal**: `src/features/editor/components/PoppyPromptsLibraryModal.tsx`
+  - Inline expand/collapse rows with debounced autosave + Duplicate + Make Active Prompt
+  - Active row pinned with “Active” badge
+- **Main prompt editor**: `src/features/editor/components/PromptsModal.tsx`
+  - Shows “Saving… / Saved ✓ / Save failed” for debounced autosave of the active prompt
+- **State + actions**:
+  - Types: `src/features/editor/store/types.ts`
+  - Wiring: `src/features/editor/hooks/useEditorStoreActionsSync.ts`
+  - Orchestration: `src/app/editor/EditorShell.tsx`
+    - Loads/hydrates the user’s active saved prompt on boot + template type changes
+    - Debounced autosave updates the active saved prompt row
+- **Server prompt source of truth (Phase 6)**
+  - `POST /api/editor/projects/jobs/generate-copy` uses **active saved prompt**, with safe fallback to effective prompt
+  - `POST /api/editor/ideas/create-carousel` injects **active saved prompt** as the base prompt, with safe fallback
+
 ### Projects
 - **UI**: `src/features/editor/components/SavedProjectsCard.tsx`
 - **Hook**: `src/features/editor/hooks/useProjects.ts`

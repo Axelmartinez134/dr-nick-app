@@ -20,7 +20,15 @@ import { AdvancedLayoutControls } from "./AdvancedLayoutControls";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { TemplateSettingsModal } from "@/features/editor/components/TemplateSettingsModal";
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
-import { BrandAlignmentModal, CreateAccountModal, DeleteAccountModal, IdeasModal, OutreachModal, ShareCarouselsModal } from "@/features/editor/components";
+import {
+  BrandAlignmentModal,
+  CreateAccountModal,
+  DeleteAccountModal,
+  IdeasModal,
+  OutreachModal,
+  ShareCarouselsModal,
+  PoppyPromptsLibraryModal,
+} from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -631,6 +639,21 @@ export default function EditorShell() {
   const setPromptSaveStatus = useCallback((next: "idle" | "saving" | "saved" | "error") => {
     editorStore.setState({ promptSaveStatus: next } as any);
   }, [editorStore]);
+
+  const poppyActivePromptId = useEditorSelector((s: any) => {
+    const id = String((s as any).poppyActivePromptId || "").trim();
+    return id || null;
+  });
+  const poppyPromptDirtyRef = useRef(false);
+  const poppyPromptSaveTimeoutRef = useRef<number | null>(null);
+  const poppyPromptSaveStatus = useEditorSelector((s: any) => (String((s as any).poppyPromptSaveStatus || "idle") as any) || "idle");
+  const setPoppyPromptSaveStatus = useCallback((next: "idle" | "saving" | "saved" | "error") => {
+    editorStore.setState({ poppyPromptSaveStatus: next } as any);
+  }, [editorStore]);
+  const setPoppyPromptSaveError = useCallback((next: string | null) => {
+    editorStore.setState({ poppyPromptSaveError: next } as any);
+  }, [editorStore]);
+  const lastLoadedPoppyPromptTypeRef = useRef<"regular" | "enhanced" | null>(null);
   // Long-running generation jobs are extracted into dedicated hooks (Section 7).
   const [aiImagePromptSaveStatus, setAiImagePromptSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   // Enhanced: per-user default image generation model (stored in public.editor_users.ai_image_gen_model).
@@ -3236,7 +3259,6 @@ export default function EditorShell() {
     addLog(`🧾 Loading template-type settings: ${type.toUpperCase()}`);
     const data = await fetchJson(`/api/editor/template-types/effective?type=${type}`);
     const effective = data?.effective;
-    setTemplateTypePrompt(effective?.prompt || '');
     setTemplateTypeBestPractices(effective?.bestPractices || '');
     setTemplateTypeEmphasisPrompt(effective?.emphasisPrompt || '');
     setTemplateTypeImageGenPrompt(effective?.imageGenPrompt || '');
@@ -3244,12 +3266,63 @@ export default function EditorShell() {
     setTemplateTypeMappingSlide2to5(effective?.slide2to5TemplateId ?? null);
     setTemplateTypeMappingSlide6(effective?.slide6TemplateId ?? null);
     addLog(
-      `✅ Settings loaded: promptLen=${String(effective?.prompt || "").length}, bestPracticesLen=${String(effective?.bestPractices || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}, imageGenLen=${String(effective?.imageGenPrompt || "").length}`
+      `✅ Settings loaded: bestPracticesLen=${String(effective?.bestPractices || "").length}, emphasisLen=${String(effective?.emphasisPrompt || "").length}, imageGenLen=${String(effective?.imageGenPrompt || "").length}`
     );
     // Reset prompt status on type switch
     setPromptSaveStatus('idle');
     promptDirtyRef.current = false;
+    setPoppyPromptSaveStatus("idle");
+    setPoppyPromptSaveError(null);
+    poppyPromptDirtyRef.current = false;
+
+    // Load the active saved Poppy prompt (per-user) for this template type.
+    try {
+      const rows = await fetchPoppyPromptsLibrary({ templateTypeId: type });
+      const active = rows.find((r: any) => !!r?.is_active) || rows[0] || null;
+      const nextId = String(active?.id || "").trim() || null;
+      const nextPrompt = String(active?.prompt || "");
+      poppyPromptDirtyRef.current = false;
+      lastLoadedPoppyPromptTypeRef.current = type;
+      editorStore.setState({
+        poppyActivePromptId: nextId,
+        templateTypePrompt: nextPrompt,
+        templateTypePromptPreviewLine: String(nextPrompt || "").split("\n")[0] || "",
+        poppyPromptSaveStatus: "idle",
+        poppyPromptSaveError: null,
+      } as any);
+    } catch (e: any) {
+      addLog(`⚠️ Failed to load saved Poppy prompts: ${String(e?.message || e || "unknown error")}`);
+    }
   }
+
+  // Ensure the active saved Poppy prompt is loaded reliably on boot and template-type switches.
+  // This intentionally overrides the initial-state effective prompt hydrate (account-level) once prompts are available.
+  useEffect(() => {
+    if (!user?.id) return;
+    const type = templateTypeId === "enhanced" ? "enhanced" : "regular";
+    if (poppyPromptDirtyRef.current) return;
+    if (lastLoadedPoppyPromptTypeRef.current === type) return;
+    lastLoadedPoppyPromptTypeRef.current = type;
+    void (async () => {
+      try {
+        const rows = await fetchPoppyPromptsLibrary({ templateTypeId: type });
+        const active = rows.find((r: any) => !!r?.is_active) || rows[0] || null;
+        const nextId = String(active?.id || "").trim() || null;
+        const nextPrompt = String(active?.prompt || "");
+        editorStore.setState({
+          poppyActivePromptId: nextId,
+          templateTypePrompt: nextPrompt,
+          templateTypePromptPreviewLine: String(nextPrompt || "").split("\n")[0] || "",
+          poppyPromptSaveStatus: "idle",
+          poppyPromptSaveError: null,
+        } as any);
+      } catch (e: any) {
+        // Keep whatever is currently shown; this is best-effort.
+        addLog(`⚠️ Saved Poppy prompt boot load failed: ${String(e?.message || e || "unknown error")}`);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, templateTypeId]);
 
   const archiveProjectById = async (projectId: string, titleForUi: string) => {
     const pid = String(projectId || '').trim();
@@ -3311,13 +3384,12 @@ export default function EditorShell() {
   async function savePromptSettings() {
     // Per-user customization is stored in `carousel_template_type_overrides`.
     addLog(
-      `💾 Saving per-user template-type settings: type=${templateTypeId.toUpperCase()} promptLen=${templateTypePrompt.length} bestPracticesLen=${templateTypeBestPractices.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
+      `💾 Saving template-type settings: type=${templateTypeId.toUpperCase()} bestPracticesLen=${templateTypeBestPractices.length} emphasisLen=${templateTypeEmphasisPrompt.length} imageGenLen=${templateTypeImageGenPrompt.length}`
     );
     await fetchJson('/api/editor/template-types/overrides/upsert', {
       method: 'POST',
       body: JSON.stringify({
         templateTypeId,
-        promptOverride: templateTypePrompt,
         bestPracticesOverride: templateTypeBestPractices,
         emphasisPromptOverride: templateTypeEmphasisPrompt,
         imageGenPromptOverride: templateTypeImageGenPrompt,
@@ -3328,6 +3400,38 @@ export default function EditorShell() {
     });
     addLog(`✅ Saved per-user template-type settings`);
   }
+
+  // Debounced autosave: active saved Poppy prompt (per-user) text
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!poppyPromptDirtyRef.current) return;
+    if (!poppyActivePromptId) return;
+    if (poppyPromptSaveTimeoutRef.current) window.clearTimeout(poppyPromptSaveTimeoutRef.current);
+    const promptAtSchedule = templateTypePrompt;
+    const idAtSchedule = poppyActivePromptId;
+    poppyPromptSaveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        setPoppyPromptSaveStatus("saving");
+        setPoppyPromptSaveError(null);
+        await updatePoppyPrompt({ id: idAtSchedule, prompt: promptAtSchedule });
+        // Only clear dirty if still current
+        if (poppyActivePromptId === idAtSchedule && templateTypePrompt === promptAtSchedule) {
+          poppyPromptDirtyRef.current = false;
+        }
+        setPoppyPromptSaveStatus("saved");
+        window.setTimeout(() => setPoppyPromptSaveStatus("idle"), 1200);
+      } catch (e: any) {
+        const msg = String(e?.message || "Failed to save prompt");
+        setPoppyPromptSaveError(msg);
+        setPoppyPromptSaveStatus("error");
+        window.setTimeout(() => setPoppyPromptSaveStatus("idle"), 2000);
+      }
+    }, 600);
+    return () => {
+      if (poppyPromptSaveTimeoutRef.current) window.clearTimeout(poppyPromptSaveTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateTypePrompt, poppyActivePromptId, user?.id]);
 
   // Project-scoped AI image prompt save (debounced callers capture pid).
   const saveSlideAiImagePromptForProject = async (projectId: string, slideIndex: number, prompt: string) => {
@@ -3938,6 +4042,112 @@ export default function EditorShell() {
       const j = await fetchJson(`/api/editor/ideas/sources?includeDismissed=${inc ? "1" : "0"}`, { method: "GET" });
       if (!j?.success) throw new Error(j?.error || "Failed to load idea sources");
       return Array.isArray(j?.sources) ? j.sources : [];
+    },
+    [fetchJson]
+  );
+
+  const fetchPoppyPromptsLibrary = useCallback(
+    async (args: { templateTypeId: "regular" | "enhanced" }) => {
+      const type = args?.templateTypeId === "enhanced" ? "enhanced" : "regular";
+      const j = await fetchJson(`/api/editor/user-settings/poppy-prompts/list?type=${encodeURIComponent(type)}`, { method: "GET" });
+      if (!j?.success) throw new Error(j?.error || "Failed to load saved prompts");
+      const rows = Array.isArray(j?.prompts) ? j.prompts : [];
+      return rows.map((p: any) => ({
+        id: String(p?.id || ""),
+        title: String(p?.title || ""),
+        prompt: String(p?.prompt || ""),
+        is_active: !!p?.is_active,
+        created_at: String(p?.created_at || ""),
+        updated_at: String(p?.updated_at || ""),
+      }));
+    },
+    [fetchJson]
+  );
+
+  const createPoppyPrompt = useCallback(
+    async (args: { templateTypeId: "regular" | "enhanced"; title?: string; prompt?: string }) => {
+      const j = await fetchJson("/api/editor/user-settings/poppy-prompts/create", {
+        method: "POST",
+        body: JSON.stringify({
+          templateTypeId: args.templateTypeId === "enhanced" ? "enhanced" : "regular",
+          title: args.title,
+          prompt: args.prompt,
+        }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to create prompt");
+      const p = j?.prompt || null;
+      return {
+        id: String(p?.id || ""),
+        title: String(p?.title || ""),
+        prompt: String(p?.prompt || ""),
+        is_active: !!p?.is_active,
+        created_at: String(p?.created_at || ""),
+        updated_at: String(p?.updated_at || ""),
+      };
+    },
+    [fetchJson]
+  );
+
+  const updatePoppyPrompt = useCallback(
+    async (args: { id: string; title?: string; prompt?: string }) => {
+      const j = await fetchJson("/api/editor/user-settings/poppy-prompts/update", {
+        method: "POST",
+        body: JSON.stringify({
+          id: String(args.id || ""),
+          ...(args.title !== undefined ? { title: args.title } : {}),
+          ...(args.prompt !== undefined ? { prompt: args.prompt } : {}),
+        }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to save prompt");
+      const p = j?.prompt || null;
+      return {
+        id: String(p?.id || ""),
+        title: String(p?.title || ""),
+        prompt: String(p?.prompt || ""),
+        is_active: !!p?.is_active,
+        created_at: String(p?.created_at || ""),
+        updated_at: String(p?.updated_at || ""),
+      };
+    },
+    [fetchJson]
+  );
+
+  const duplicatePoppyPrompt = useCallback(
+    async (args: { id: string }) => {
+      const j = await fetchJson("/api/editor/user-settings/poppy-prompts/duplicate", {
+        method: "POST",
+        body: JSON.stringify({ id: String(args.id || "") }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to duplicate prompt");
+      const p = j?.prompt || null;
+      return {
+        id: String(p?.id || ""),
+        title: String(p?.title || ""),
+        prompt: String(p?.prompt || ""),
+        is_active: !!p?.is_active,
+        created_at: String(p?.created_at || ""),
+        updated_at: String(p?.updated_at || ""),
+      };
+    },
+    [fetchJson]
+  );
+
+  const setActivePoppyPrompt = useCallback(
+    async (args: { id: string }) => {
+      const j = await fetchJson("/api/editor/user-settings/poppy-prompts/set-active", {
+        method: "POST",
+        body: JSON.stringify({ id: String(args.id || "") }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to set active prompt");
+      const p = j?.prompt || null;
+      return {
+        id: String(p?.id || ""),
+        title: String(p?.title || ""),
+        prompt: String(p?.prompt || ""),
+        is_active: !!p?.is_active,
+        created_at: String(p?.created_at || ""),
+        updated_at: String(p?.updated_at || ""),
+      };
     },
     [fetchJson]
   );
@@ -5379,6 +5589,7 @@ export default function EditorShell() {
     setTemplateEditorOpen,
     loadTemplatesList,
     promptDirtyRef,
+    poppyPromptDirtyRef,
     setTemplateTypePrompt,
     setTemplateTypeBestPractices,
     setTemplateTypeEmphasisPrompt,
@@ -5440,6 +5651,11 @@ export default function EditorShell() {
     setCreateAccountModalOpen,
     setDeleteAccountModalOpen,
     setBrandAlignmentModalOpen,
+    fetchPoppyPromptsLibrary,
+    createPoppyPrompt,
+    updatePoppyPrompt,
+    duplicatePoppyPrompt,
+    setActivePoppyPrompt,
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
@@ -5725,6 +5941,8 @@ export default function EditorShell() {
         emphasisTextareaRef={emphasisTextareaRef}
         captionRegenTextareaRef={captionRegenTextareaRef}
       />
+
+      <PoppyPromptsLibraryModal />
 
       <BrandAlignmentModal />
 

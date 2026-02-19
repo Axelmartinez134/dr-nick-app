@@ -182,7 +182,7 @@ async function callAnthropicParse(opts: {
   rawToParse: string;
 }) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const model = process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-20250219';
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
   if (!apiKey) throw new Error('Missing env var: ANTHROPIC_API_KEY');
 
   const schema =
@@ -387,6 +387,66 @@ async function callAnthropicGenerateFromReel(opts: {
   }
 }
 
+async function loadUserActivePoppyPrompt(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  templateTypeId: 'regular' | 'enhanced';
+}) {
+  const { supabase, accountId, userId, templateTypeId } = args;
+
+  // Prefer the active saved prompt; fall back to the most recently updated saved prompt
+  // (hardening against any unexpected "no active" states).
+  //
+  // Also harden against environments where the table/migration may not exist yet
+  // by gracefully falling back to effective prompt.
+  const { data: bestRow, error: bestErr } = await supabase
+    .from('editor_poppy_saved_prompts')
+    .select('id, prompt, is_active, updated_at, created_at')
+    .eq('account_id', accountId)
+    .eq('user_id', userId)
+    .eq('template_type_id', templateTypeId)
+    .order('is_active', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!bestErr && bestRow) {
+    const bestPromptRaw = String((bestRow as any)?.prompt || '');
+    const bestPrompt = sanitizePrompt(bestPromptRaw);
+    if (bestPrompt) {
+      const savedPromptId = String((bestRow as any)?.id || '').trim() || null;
+      const isActive = !!(bestRow as any)?.is_active;
+      const source: 'saved_active' | 'saved_latest' = isActive ? 'saved_active' : 'saved_latest';
+      return {
+        source,
+        promptRaw: bestPromptRaw,
+        prompt: bestPrompt,
+        savedPromptId,
+      };
+    }
+  }
+
+  // Fallback: account-level effective prompt (defaults + account overrides).
+  const { effective } = await loadEffectiveTemplateTypeSettings(
+    supabase,
+    { accountId, actorUserId: userId },
+    templateTypeId
+  );
+  const effectiveRaw = String((effective as any)?.prompt || '');
+  const effectivePrompt = sanitizePrompt(effectiveRaw);
+  const source: 'effective_fallback' | 'effective_fallback_saved_error' = bestErr
+    ? 'effective_fallback_saved_error'
+    : 'effective_fallback';
+  return {
+    source,
+    promptRaw: effectiveRaw,
+    prompt: effectivePrompt,
+    savedPromptId: null,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
   if (!authed.ok) {
@@ -435,15 +495,11 @@ export async function POST(request: NextRequest) {
 
   const templateTypeId = project.template_type_id === 'enhanced' ? 'enhanced' : 'regular';
 
-  // IMPORTANT: Generate Copy uses the *current* effective template-type prompt (account-scoped),
-  // not the project's saved prompt_snapshot. This makes prompt edits apply immediately to all projects.
-  const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
-    supabase,
-    { accountId, actorUserId: user.id },
-    templateTypeId
-  );
-  const promptRaw = String(ttEffective?.prompt || '');
-  const prompt = sanitizePrompt(promptRaw);
+  // Phase 6: Generate Copy uses the user's active saved Poppy prompt (per-account, per template type).
+  // Fallback to account-level effective prompt only if the saved prompt is missing/empty.
+  const loadedPrompt = await loadUserActivePoppyPrompt({ supabase, accountId, userId: user.id, templateTypeId });
+  const promptRaw = loadedPrompt.promptRaw;
+  const prompt = loadedPrompt.prompt;
   if (!prompt) {
     return NextResponse.json(
       { success: false, error: 'Template type prompt is empty' },
@@ -462,6 +518,12 @@ export async function POST(request: NextRequest) {
   const isReelOrigin = !!String((outreachRow as any)?.source_post_url || '').trim();
   const reelCaption = String((outreachRow as any)?.source_post_caption || '').trim();
   const reelTranscript = String((outreachRow as any)?.source_post_transcript || '').trim();
+  // Best practices remain account-scoped effective settings.
+  const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
+    supabase,
+    { accountId, actorUserId: user.id },
+    templateTypeId
+  );
   const bestPractices = String((ttEffective as any)?.bestPractices || '').trim();
 
   // Poppy routing info (only required for non-reel generation).
@@ -516,6 +578,8 @@ export async function POST(request: NextRequest) {
 
     poppyRequestBody = poppyRoutingMeta.model ? { prompt, model: poppyRoutingMeta.model } : { prompt };
     poppyPromptDebug = {
+      promptSource: loadedPrompt.source,
+      savedPromptId: loadedPrompt.savedPromptId,
       promptRaw: JSON.stringify(promptRaw),
       promptSanitized: prompt,
       requestBody: poppyRequestBody,

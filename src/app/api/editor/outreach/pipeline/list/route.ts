@@ -24,6 +24,7 @@ type RowOut = {
   pipelineStage: Stage;
   pipelineAddedAt: string | null;
   lastContactDate: string | null;
+  followupSentCount: number | null;
   sourcePostUrl: string | null;
   createdProjectId: string | null;
   createdTemplateId: string | null;
@@ -77,9 +78,17 @@ function pickFirstNumber(...vals: any[]): number | null {
   return null;
 }
 
-function extractFollowingCountFromEnrichedRaw(raw: any): number | null {
+function extractFollowersCountFromEnrichedRaw(raw: any): number | null {
   return (
     pickFirstNumber(
+      // Most common shapes for followers count.
+      raw?.followersCount,
+      raw?.followers,
+      raw?.followers_count,
+      raw?.edge_followed_by?.count,
+      raw?.edgeFollowedBy?.count,
+      raw?.counts?.followers,
+      // Fallbacks (some payloads only provide "following" counts).
       raw?.followingCount,
       raw?.followingsCount,
       raw?.following,
@@ -134,6 +143,7 @@ export async function GET(request: NextRequest) {
         'pipeline_stage',
         'pipeline_added_at',
         'last_contact_date',
+        'followup_sent_count',
         'source_post_url',
         'created_project_id',
         'created_template_id',
@@ -187,10 +197,16 @@ function dedupeAndFilter(rows: any[], args: { search: string; stageFilter: Stage
       aiHasOffer: typeof r?.ai_has_offer === 'boolean' ? r.ai_has_offer : r?.ai_has_offer ?? null,
       aiCredential: s(r?.ai_credential),
       enrichedAt: typeof r?.enriched_at === 'string' ? r.enriched_at : r?.enriched_at ?? null,
-      followingCount: enrichedRaw ? extractFollowingCountFromEnrichedRaw(enrichedRaw) : null,
+      followingCount: enrichedRaw ? extractFollowersCountFromEnrichedRaw(enrichedRaw) : null,
       pipelineStage: stage as Stage,
       pipelineAddedAt: typeof r?.pipeline_added_at === 'string' ? r.pipeline_added_at : r?.pipeline_added_at ?? null,
       lastContactDate: typeof r?.last_contact_date === 'string' ? r.last_contact_date : r?.last_contact_date ?? null,
+      followupSentCount:
+        typeof r?.followup_sent_count === 'number' && Number.isFinite(r.followup_sent_count)
+          ? Math.max(1, Math.min(3, Math.floor(r.followup_sent_count)))
+          : r?.followup_sent_count === null || r?.followup_sent_count === undefined
+            ? null
+            : null,
       sourcePostUrl: s(r?.source_post_url),
       createdProjectId: s(r?.created_project_id),
       createdTemplateId: s(r?.created_template_id),

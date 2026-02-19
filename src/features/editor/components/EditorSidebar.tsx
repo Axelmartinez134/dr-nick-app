@@ -80,15 +80,29 @@ export function EditorSidebar() {
           </button>
         </div>
         <div className="space-y-3">
-          <button
-            type="button"
-            className="w-full text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors"
-            onClick={() => actions.onOpenPromptModal("prompt")}
-            title="Edit Poppy Prompt"
-          >
-            <div className="text-xs font-semibold text-slate-700">Poppy Prompt</div>
-            <div className="mt-0.5 text-[11px] text-slate-500 truncate">{templateTypePromptPreviewLine || "Click to edit..."}</div>
-          </button>
+          <div className="flex w-full items-stretch gap-2">
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left rounded-lg border border-slate-200 bg-white shadow-sm px-3 py-2 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              onClick={() => actions.onOpenPromptModal("prompt")}
+              disabled={switchingSlides}
+              title="Edit Poppy Prompt"
+            >
+              <div className="text-xs font-semibold text-slate-700">Poppy Prompt</div>
+              <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                {templateTypePromptPreviewLine || "Click to edit..."}
+              </div>
+            </button>
+            <button
+              type="button"
+              className="shrink-0 h-auto px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+              onClick={() => actions.onOpenPoppyPromptsLibrary()}
+              disabled={switchingSlides}
+              title="Select a saved Poppy prompt"
+            >
+              Select
+            </button>
+          </div>
 
           <button
             type="button"

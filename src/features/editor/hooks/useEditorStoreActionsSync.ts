@@ -52,6 +52,7 @@ type Args = {
   setTemplateEditorOpen: (next: boolean) => void;
   loadTemplatesList: () => Promise<void> | void;
   promptDirtyRef: any;
+  poppyPromptDirtyRef: { current: boolean };
   setTemplateTypePrompt: (next: string) => void;
   setTemplateTypeBestPractices: (next: string) => void;
   setTemplateTypeEmphasisPrompt: (next: string) => void;
@@ -114,6 +115,21 @@ type Args = {
 
   // Ideas modal (Phase 1)
   setIdeasModalOpen: (next: boolean) => void;
+  // Saved Poppy prompts library (Phase 3: UI shell only)
+  fetchPoppyPromptsLibrary: (args: { templateTypeId: "regular" | "enhanced" }) => Promise<
+    Array<{
+      id: string;
+      title: string;
+      prompt: string;
+      is_active: boolean;
+      created_at: string;
+      updated_at: string;
+    }>
+  >;
+  createPoppyPrompt: (args: { templateTypeId: "regular" | "enhanced"; title?: string; prompt?: string }) => Promise<any>;
+  updatePoppyPrompt: (args: { id: string; title?: string; prompt?: string }) => Promise<any>;
+  duplicatePoppyPrompt: (args: { id: string }) => Promise<any>;
+  setActivePoppyPrompt: (args: { id: string }) => Promise<any>;
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<any[]>;
   fetchIdeasPromptOverride: () => Promise<string>;
   saveIdeasPromptOverride: (next: string) => Promise<string>;
@@ -236,6 +252,7 @@ export function useEditorStoreActionsSync(args: Args) {
     setPromptModalSection,
     setTemplateEditorOpen,
     promptDirtyRef,
+    poppyPromptDirtyRef,
     setTemplateTypePrompt,
     setTemplateTypeBestPractices,
     setTemplateTypeEmphasisPrompt,
@@ -294,6 +311,11 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchRecentAssets,
     onInsertRecentImage,
     setIdeasModalOpen,
+    fetchPoppyPromptsLibrary,
+    createPoppyPrompt,
+    updatePoppyPrompt,
+    duplicatePoppyPrompt,
+    setActivePoppyPrompt,
     fetchIdeaSourcesAndIdeas,
     fetchIdeasPromptOverride,
     saveIdeasPromptOverride,
@@ -400,12 +422,14 @@ export function useEditorStoreActionsSync(args: Args) {
       editorStore.setState({ promptModalOpen: false } as any);
     },
     onChangeTemplateTypePrompt: (next: string) => {
-      promptDirtyRef.current = true;
+      poppyPromptDirtyRef.current = true;
       setTemplateTypePrompt(next);
       // Keep store in sync immediately so the textarea caret doesn't jump.
       editorStore.setState({
         templateTypePrompt: next,
         templateTypePromptPreviewLine: String(next || "").split("\n")[0] || "",
+        poppyPromptSaveStatus: "idle",
+        poppyPromptSaveError: null,
       } as any);
     },
     onChangeTemplateTypeBestPractices: (next: string) => {
@@ -587,6 +611,37 @@ export function useEditorStoreActionsSync(args: Args) {
     onCloseOutreachModal: () => {
       editorStore.setState({ outreachModalOpen: false } as any);
     },
+    onOpenPoppyPromptsLibrary: () => {
+      editorStore.setState({ poppyPromptsLibraryOpen: true } as any);
+    },
+    onClosePoppyPromptsLibrary: () => {
+      editorStore.setState({ poppyPromptsLibraryOpen: false } as any);
+    },
+    hydrateActivePoppyPrompt: (args: { id: string | null; prompt: string }) => {
+      const id = String(args?.id || "").trim() || null;
+      const prompt = String(args?.prompt || "");
+      // This hydration is used when switching the active saved prompt. It should NOT mark dirty.
+      poppyPromptDirtyRef.current = false;
+      editorStore.setState({
+        poppyActivePromptId: id,
+        templateTypePrompt: prompt,
+        templateTypePromptPreviewLine: String(prompt || "").split("\n")[0] || "",
+        poppyPromptSaveStatus: "idle",
+        poppyPromptSaveError: null,
+      } as any);
+    },
+    setPoppyPromptsLibraryUi: (next: { status: any; error: any; prompts: any[] }) => {
+      editorStore.setState({
+        poppyPromptsLibraryStatus: String(next?.status || "idle"),
+        poppyPromptsLibraryError: next?.error ? String(next.error) : null,
+        poppyPromptsLibraryPrompts: Array.isArray(next?.prompts) ? next.prompts : [],
+      } as any);
+    },
+    fetchPoppyPromptsLibrary: (a: any) => fetchPoppyPromptsLibrary(a),
+    createPoppyPrompt: (a: any) => createPoppyPrompt(a),
+    updatePoppyPrompt: (a: any) => updatePoppyPrompt(a),
+    duplicatePoppyPrompt: (a: any) => duplicatePoppyPrompt(a),
+    setActivePoppyPrompt: (a: any) => setActivePoppyPrompt(a),
     onOpenBrandAlignmentModal: () => {
       setBrandAlignmentModalOpen(true);
       editorStore.setState({ brandAlignmentModalOpen: true } as any);
@@ -723,6 +778,15 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseDeleteAccountModal: () => implRef.current?.onCloseDeleteAccountModal?.(),
       onOpenOutreachModal: () => implRef.current?.onOpenOutreachModal?.(),
       onCloseOutreachModal: () => implRef.current?.onCloseOutreachModal?.(),
+      onOpenPoppyPromptsLibrary: () => implRef.current?.onOpenPoppyPromptsLibrary?.(),
+      onClosePoppyPromptsLibrary: () => implRef.current?.onClosePoppyPromptsLibrary?.(),
+      hydrateActivePoppyPrompt: (args: any) => implRef.current?.hydrateActivePoppyPrompt?.(args),
+      setPoppyPromptsLibraryUi: (next: any) => implRef.current?.setPoppyPromptsLibraryUi?.(next),
+      fetchPoppyPromptsLibrary: (args: any) => implRef.current?.fetchPoppyPromptsLibrary?.(args) ?? Promise.resolve([]),
+      createPoppyPrompt: (args: any) => implRef.current?.createPoppyPrompt?.(args),
+      updatePoppyPrompt: (args: any) => implRef.current?.updatePoppyPrompt?.(args),
+      duplicatePoppyPrompt: (args: any) => implRef.current?.duplicatePoppyPrompt?.(args),
+      setActivePoppyPrompt: (args: any) => implRef.current?.setActivePoppyPrompt?.(args),
       fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) =>
         implRef.current?.fetchIdeaSourcesAndIdeas?.(includeDismissed) ?? Promise.resolve([]),
       fetchIdeasPromptOverride: () => implRef.current?.fetchIdeasPromptOverride?.() ?? Promise.resolve(""),

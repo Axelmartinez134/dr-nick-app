@@ -42,3 +42,5 @@ export { EditorBottomPanel } from './EditorBottomPanel';
 
 export { ReviewStatusOverlay } from './ReviewStatusOverlay';
 
+export { PoppyPromptsLibraryModal } from './PoppyPromptsLibraryModal';
+

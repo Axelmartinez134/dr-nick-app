@@ -45,6 +45,65 @@ export type EditorActions = {
   onChangeTemplateTypeImageGenPrompt: (next: string) => void;
   onChangeCaptionRegenPrompt: (next: string) => void;
 
+  // Saved Poppy prompts library (Phase 3: UI shell only)
+  onOpenPoppyPromptsLibrary: () => void;
+  onClosePoppyPromptsLibrary: () => void;
+  hydrateActivePoppyPrompt: (args: { id: string | null; prompt: string }) => void;
+  setPoppyPromptsLibraryUi: (next: {
+    status: "idle" | "loading" | "done" | "error";
+    error: string | null;
+    prompts: Array<{
+      id: string;
+      title: string;
+      prompt: string;
+      is_active: boolean;
+      created_at: string;
+      updated_at: string;
+    }>;
+  }) => void;
+  fetchPoppyPromptsLibrary: (args: { templateTypeId: TemplateTypeId }) => Promise<
+    Array<{
+      id: string;
+      title: string;
+      prompt: string;
+      is_active: boolean;
+      created_at: string;
+      updated_at: string;
+    }>
+  >;
+  createPoppyPrompt: (args: { templateTypeId: TemplateTypeId; title?: string; prompt?: string }) => Promise<{
+    id: string;
+    title: string;
+    prompt: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+  updatePoppyPrompt: (args: { id: string; title?: string; prompt?: string }) => Promise<{
+    id: string;
+    title: string;
+    prompt: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+  duplicatePoppyPrompt: (args: { id: string }) => Promise<{
+    id: string;
+    title: string;
+    prompt: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+  setActivePoppyPrompt: (args: { id: string }) => Promise<{
+    id: string;
+    title: string;
+    prompt: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+
   // Typography/colors
   onChangeHeadlineFontKey: (nextKey: string) => void;
   onChangeBodyFontKey: (nextKey: string) => void;
@@ -528,6 +587,7 @@ export type EditorState = {
   templateSettingsOpen: boolean;
   promptModalOpen: boolean;
   promptModalSection: PromptSection;
+  poppyPromptsLibraryOpen: boolean;
   imageLibraryModalOpen: boolean;
   imageLibraryBgRemovalEnabledAtInsert: boolean;
   ideasModalOpen: boolean;
@@ -536,6 +596,18 @@ export type EditorState = {
   outreachModalOpen: boolean;
   brandAlignmentModalOpen: boolean;
   shareCarouselsModalOpen: boolean;
+
+  // Saved Poppy prompts library (Phase 3: UI shell only)
+  poppyPromptsLibraryStatus: "idle" | "loading" | "done" | "error";
+  poppyPromptsLibraryError: string | null;
+  poppyPromptsLibraryPrompts: Array<{
+    id: string;
+    title: string;
+    prompt: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
 
   // Review / Approval (project-level; for the currently loaded project)
   reviewReady: boolean;
@@ -587,6 +659,11 @@ export type EditorState = {
   templateTypeMappingSlide1: string | null;
   templateTypeMappingSlide2to5: string | null;
   templateTypeMappingSlide6: string | null;
+
+  // Active saved Poppy prompt (per-user, per-account, per template type)
+  poppyActivePromptId: string | null;
+  poppyPromptSaveStatus: PromptSaveStatus;
+  poppyPromptSaveError: string | null;
 
   // Templates list (for modals)
   loadingTemplates: boolean;

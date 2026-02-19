@@ -15,6 +15,7 @@ export async function decideTextLayout(
   const client = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
   console.log('[Claude] 🔑 API key configured:', !!process.env.ANTHROPIC_API_KEY);
 
@@ -98,7 +99,7 @@ Return ONLY valid JSON (no markdown, no explanation, no code blocks):
     try {
       console.log('[Claude] 📡 Sending request to Claude API...');
       const response = await client.messages.create({
-        model: 'claude-3-7-sonnet-20250219',
+        model,
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
       });

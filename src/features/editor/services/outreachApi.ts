@@ -593,6 +593,7 @@ export type PipelineLead = {
   pipelineStage: PipelineStage;
   pipelineAddedAt: string | null;
   lastContactDate: string | null; // YYYY-MM-DD
+  followupSentCount: number | null; // 1..3 (null => none)
   sourcePostUrl: string | null;
   createdProjectId: string | null;
   createdTemplateId: string | null;
@@ -689,6 +690,7 @@ export async function pipelineUpdate(args: {
   patch: {
     pipelineStage?: PipelineStage | null;
     lastContactDate?: string | null;
+    followupSentCount?: number | null;
     sourcePostUrl?: string | null;
     createdProjectId?: string | null;
     createdTemplateId?: string | null;

@@ -119,7 +119,7 @@ async function callPoppy(prompt: string, args: { poppyConversationUrl: string })
 
 async function callAnthropicParseIdeas(opts: { rawToParse: string; topicCount: number }) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const model = process.env.ANTHROPIC_MODEL || 'claude-3-7-sonnet-20250219';
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
   if (!apiKey) throw new Error('Missing env var: ANTHROPIC_API_KEY');
 
   const schema = `Return ONLY valid JSON in this exact shape:

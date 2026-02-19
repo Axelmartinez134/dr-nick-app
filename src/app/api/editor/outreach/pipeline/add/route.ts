@@ -136,10 +136,21 @@ export async function POST(request: NextRequest) {
 
   // Update all rows for this username (across seeds) but only if pipeline_stage is null.
   const applyUpdate = async (scope: 'account' | 'legacy') => {
+    const unameAt = `@${uname}`;
+    const userMatch = [
+      `prospect_username.eq.${uname}`,
+      `username.eq.${uname}`,
+      `prospect_username.eq.${unameAt}`,
+      `username.eq.${unameAt}`,
+      `prospect_username.ilike.${uname}`,
+      `username.ilike.${uname}`,
+      `prospect_username.ilike.${unameAt}`,
+      `username.ilike.${unameAt}`,
+    ].join(',');
     let q = supabase
       .from('editor_outreach_targets')
       .update({ pipeline_stage: 'todo', pipeline_added_at: nowIso })
-      .or(`prospect_username.eq.${uname},username.eq.${uname}`)
+      .or(userMatch)
       .is('pipeline_stage', null);
     if (scope === 'account') q = q.eq('account_id', accountId);
     else q = q.is('account_id', null).eq('created_by_user_id', user.id);

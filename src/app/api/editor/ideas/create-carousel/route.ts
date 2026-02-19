@@ -45,6 +45,35 @@ INSTRUCTIONS:
   return sanitizePrompt(injected);
 }
 
+async function loadUserActivePoppyPromptForIdeas(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  templateTypeId: 'regular' | 'enhanced';
+}) {
+  const { supabase, accountId, userId, templateTypeId } = args;
+
+  const { data: bestRow, error: bestErr } = await supabase
+    .from('editor_poppy_saved_prompts')
+    .select('prompt, is_active, updated_at, created_at')
+    .eq('account_id', accountId)
+    .eq('user_id', userId)
+    .eq('template_type_id', templateTypeId)
+    .order('is_active', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!bestErr && bestRow) {
+    const best = sanitizePrompt(String((bestRow as any)?.prompt || ''));
+    if (best) return best;
+  }
+
+  const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: userId }, templateTypeId);
+  return sanitizePrompt(String((effective as any)?.prompt || ''));
+}
+
 export async function POST(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
   if (!authed.ok) {
@@ -92,7 +121,7 @@ export async function POST(request: NextRequest) {
   if (sourceErr) return NextResponse.json({ success: false, error: sourceErr.message }, { status: 500 });
   if (!source) return NextResponse.json({ success: false, error: 'Source not found' }, { status: 404 });
 
-  // Load effective template-type settings (account-scoped).
+  // Load effective template-type settings (account-scoped) for template IDs.
   const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
 
   // Per-account audience (used in injected prompt context JSON).
@@ -105,8 +134,9 @@ export async function POST(request: NextRequest) {
   const audience = String((audienceRow as any)?.ideas_prompt_audience ?? '');
 
   const topicTitle = String((idea as any).title || '').trim() || 'Untitled Topic';
+  const basePrompt = await loadUserActivePoppyPromptForIdeas({ supabase, accountId, userId: user.id, templateTypeId });
   const promptRendered = buildInjectedPrompt({
-    basePrompt: String((effective as any)?.prompt || ''),
+    basePrompt,
     audience,
     sourceTitle: String((source as any).source_title || ''),
     sourceUrl: String((source as any).source_url || ''),
