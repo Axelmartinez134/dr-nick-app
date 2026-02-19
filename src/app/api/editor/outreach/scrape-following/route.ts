@@ -7,7 +7,8 @@ import { scrapeInstagramFollowingViaApify } from '../_apify';
 export const runtime = 'nodejs';
 // Apify run waits up to 180s; keep route maxDuration >= that.
 // Aligned change (2026-02-16): increase budget for large follow lists.
-export const maxDuration = 840;
+// Vercel Pro serverless maxDuration limit is 800s.
+export const maxDuration = 800;
 
 type Body = {
   seedInstagramUrl: string;
