@@ -237,7 +237,19 @@ export function EditorBottomPanel() {
                       })}
                     </div>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      onClick={() => actions?.onOpenBodyRegenModal?.()}
+                      disabled={!currentProjectId || copyGenerating || switchingSlides}
+                      title={!currentProjectId ? "Create or load a project first" : "Regenerate body for this slide (Regular only)"}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="relative">
                 <RichTextInput

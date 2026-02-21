@@ -152,6 +152,21 @@ export type EditorActions = {
   onClickCopyOutreachMessage: () => void;
   onChangeOutreachMessage: (next: string) => void;
 
+  // Body Regenerate (Regular only)
+  onOpenBodyRegenModal: () => void;
+  onCloseBodyRegenModal: () => void;
+  fetchBodyRegenAttempts: (args: { projectId: string; slideIndex: number; limit?: number }) => Promise<
+    Array<{
+      id: string;
+      createdAt: string | null;
+      guidanceText: string | null;
+      body: string;
+      bodyStyleRanges: any[];
+    }>
+  >;
+  onRunBodyRegen: (args: { guidanceText: string | null }) => Promise<{ body: string; bodyStyleRanges: any[] }>;
+  onRestoreBodyRegenAttempt: (args: { body: string; bodyStyleRanges: any[] }) => Promise<void> | void;
+
   // Brand Alignment (Phase 0)
   onOpenBrandAlignmentModal: () => void;
   onCloseBrandAlignmentModal: () => void;
@@ -596,6 +611,9 @@ export type EditorState = {
   outreachModalOpen: boolean;
   brandAlignmentModalOpen: boolean;
   shareCarouselsModalOpen: boolean;
+  bodyRegenModalOpen: boolean;
+  bodyRegenTargetProjectId: string | null;
+  bodyRegenTargetSlideIndex: number | null;
 
   // Saved Poppy prompts library (Phase 3: UI shell only)
   poppyPromptsLibraryStatus: "idle" | "loading" | "done" | "error";

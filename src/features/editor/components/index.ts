@@ -44,3 +44,5 @@ export { ReviewStatusOverlay } from './ReviewStatusOverlay';
 
 export { PoppyPromptsLibraryModal } from './PoppyPromptsLibraryModal';
 
+export { BodyRegenModal } from './BodyRegenModal';
+

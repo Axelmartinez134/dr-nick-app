@@ -22,6 +22,7 @@ import { TemplateSettingsModal } from "@/features/editor/components/TemplateSett
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
 import {
   BrandAlignmentModal,
+  BodyRegenModal,
   CreateAccountModal,
   DeleteAccountModal,
   IdeasModal,
@@ -252,6 +253,37 @@ export default function EditorShell() {
     if (!imageLibraryModalOpen) return;
     setImageLibraryBgRemovalEnabledAtInsert(!imageLibraryBgRemovalEnabledAtInsert);
   }, [imageLibraryBgRemovalEnabledAtInsert, imageLibraryModalOpen, setImageLibraryBgRemovalEnabledAtInsert]);
+
+  // Body Regen modal (Regular only): store-owned modal state
+  const setBodyRegenModalOpen = useCallback(
+    (next: boolean) => {
+      editorStore.setState({ bodyRegenModalOpen: !!next } as any);
+    },
+    [editorStore]
+  );
+  const setBodyRegenTarget = useCallback(
+    (args: { projectId: string | null; slideIndex: number | null }) => {
+      editorStore.setState(
+        {
+          bodyRegenTargetProjectId: args.projectId ? String(args.projectId) : null,
+          bodyRegenTargetSlideIndex: Number.isInteger(args.slideIndex as any) ? Number(args.slideIndex) : null,
+        } as any
+      );
+    },
+    [editorStore]
+  );
+  const onOpenBodyRegenModal = useCallback(() => {
+    const st: any = editorStore.getState?.() || {};
+    const pid = String(st.currentProjectId || "").trim();
+    const siRaw = Number.isInteger(st.activeSlideIndex as any) ? Number(st.activeSlideIndex) : 0;
+    const si = Math.max(0, Math.min(5, Math.floor(siRaw)));
+    if (!pid) return;
+    setBodyRegenTarget({ projectId: pid, slideIndex: si });
+    setBodyRegenModalOpen(true);
+  }, [editorStore, setBodyRegenModalOpen, setBodyRegenTarget]);
+  const onCloseBodyRegenModal = useCallback(() => {
+    setBodyRegenModalOpen(false);
+  }, [setBodyRegenModalOpen]);
 
   // Phase 6B (Ideas): store-owned modal state (Phase 1)
   const ideasModalOpen = useEditorSelector((s: any) => !!(s as any).ideasModalOpen);
@@ -4194,6 +4226,23 @@ export default function EditorShell() {
     return String(j?.captionRegenPromptOverride || "");
   }, [fetchJson]);
 
+  const fetchBodyRegenAttempts = useCallback(
+    async (args: { projectId: string; slideIndex: number; limit?: number }) => {
+      const pid = String(args?.projectId || "").trim();
+      const si = Number(args?.slideIndex);
+      const n = Number.isFinite(Number(args?.limit)) ? Math.max(1, Math.min(20, Math.floor(Number(args?.limit)))) : 20;
+      if (!pid) throw new Error("projectId is required");
+      if (!Number.isInteger(si) || si < 0 || si > 5) throw new Error("slideIndex must be 0..5");
+      const j = await fetchJson(
+        `/api/editor/projects/body-regen-attempts?projectId=${encodeURIComponent(pid)}&slideIndex=${encodeURIComponent(String(si))}&limit=${encodeURIComponent(String(n))}`,
+        { method: "GET" }
+      );
+      if (!j?.success) throw new Error(j?.error || "Failed to load body regen attempts");
+      return Array.isArray(j?.attempts) ? j.attempts : [];
+    },
+    [fetchJson]
+  );
+
   const fetchBrandAlignmentPromptOverride = useCallback(async () => {
     const j = await fetchJson("/api/editor/user-settings/brand-alignment-prompt", { method: "GET" });
     if (!j?.success) throw new Error(j?.error || "Failed to load brand alignment prompt");
@@ -5397,6 +5446,91 @@ export default function EditorShell() {
       setCaptionRegenGenerating(false);
     }
   };
+
+  const onRunBodyRegen = useCallback(
+    async (args: { guidanceText: string | null }) => {
+      const st: any = editorStore.getState?.() || {};
+      const pid = String(st.bodyRegenTargetProjectId || "").trim();
+      const slideIndexRaw = st.bodyRegenTargetSlideIndex;
+      const slideIndex =
+        Number.isInteger(slideIndexRaw as any) ? Math.max(0, Math.min(5, Math.floor(Number(slideIndexRaw)))) : null;
+      if (!pid || slideIndex === null) throw new Error("Missing body regen target. Close and reopen the modal.");
+      if (templateTypeId !== "regular") throw new Error("Body Regenerate is only available for Regular projects.");
+      if (copyGenerating || switchingSlides) throw new Error("Please wait until the editor is idle.");
+
+      const guidanceText = args?.guidanceText === null ? null : String(args?.guidanceText || "").trim() || null;
+
+      addLog?.(`📝 Regenerating slide ${slideIndex + 1} body (Regular)...`);
+      const j = await fetchJson("/api/editor/projects/jobs/regenerate-body", {
+        method: "POST",
+        body: JSON.stringify({ projectId: pid, slideIndex, guidanceText }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to regenerate body");
+
+      const nextBody = String(j?.body || "");
+      const nextRanges = Array.isArray(j?.bodyStyleRanges) ? j.bodyStyleRanges : [];
+
+      // Update in-memory slide state for that slide (even if it's not currently active).
+      setSlides((prev: any[]) =>
+        prev.map((s: any, i: number) =>
+          i !== slideIndex ? s : ({ ...s, draftBody: nextBody, draftBodyRanges: nextRanges } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndex ? s : ({ ...s, draftBody: nextBody, draftBodyRanges: nextRanges } as any)
+      );
+
+      // Persist the slide text immediately so refresh/devices see it (even if not the active slide).
+      await saveSlidePatchForProject(pid, slideIndex, { headline: null, body: nextBody });
+
+      // Queue live layout so layout_snapshot/input_snapshot (including bodyStyleRanges) stays consistent with the new body.
+      enqueueLiveLayoutForProject(pid, [slideIndex]);
+
+      addLog?.(`✅ Body regenerated (slide ${slideIndex + 1})`);
+      return { body: nextBody, bodyStyleRanges: nextRanges };
+    },
+    [
+      addLog,
+      copyGenerating,
+      editorStore,
+      enqueueLiveLayoutForProject,
+      fetchJson,
+      saveSlidePatchForProject,
+      setSlides,
+      slidesRef,
+      switchingSlides,
+      templateTypeId,
+    ]
+  );
+
+  const onRestoreBodyRegenAttempt = useCallback(
+    async (args: { body: string; bodyStyleRanges: any[] }) => {
+      const st: any = editorStore.getState?.() || {};
+      const pid = String(st.bodyRegenTargetProjectId || "").trim();
+      const slideIndexRaw = st.bodyRegenTargetSlideIndex;
+      const slideIndex =
+        Number.isInteger(slideIndexRaw as any) ? Math.max(0, Math.min(5, Math.floor(Number(slideIndexRaw)))) : null;
+      if (!pid || slideIndex === null) throw new Error("Missing body regen target. Close and reopen the modal.");
+      if (templateTypeId !== "regular") throw new Error("Body Regenerate is only available for Regular projects.");
+
+      const nextBody = String(args?.body || "");
+      const nextRanges = Array.isArray(args?.bodyStyleRanges) ? args.bodyStyleRanges : [];
+
+      setSlides((prev: any[]) =>
+        prev.map((s: any, i: number) =>
+          i !== slideIndex ? s : ({ ...s, draftBody: nextBody, draftBodyRanges: nextRanges } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndex ? s : ({ ...s, draftBody: nextBody, draftBodyRanges: nextRanges } as any)
+      );
+
+      await saveSlidePatchForProject(pid, slideIndex, { headline: null, body: nextBody });
+      enqueueLiveLayoutForProject(pid, [slideIndex]);
+      addLog?.(`↩️ Restored body attempt (slide ${slideIndex + 1})`);
+    },
+    [addLog, editorStore, enqueueLiveLayoutForProject, saveSlidePatchForProject, setSlides, slidesRef, templateTypeId]
+  );
   const onClickCopyCaption = async () => {
     const ok = await copyToClipboard(captionDraft || "");
     setCaptionCopyStatus(ok ? "copied" : "error");
@@ -5639,6 +5773,11 @@ export default function EditorShell() {
     onChangeCaption,
     onClickCopyOutreachMessage,
     onChangeOutreachMessage,
+    onOpenBodyRegenModal,
+    onCloseBodyRegenModal,
+    fetchBodyRegenAttempts,
+    onRunBodyRegen,
+    onRestoreBodyRegenAttempt,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
@@ -5949,6 +6088,8 @@ export default function EditorShell() {
       <IdeasModal />
 
       <ImageLibraryModal />
+
+      <BodyRegenModal />
 
       <CreateAccountModal />
 

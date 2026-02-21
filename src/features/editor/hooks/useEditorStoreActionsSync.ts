@@ -106,6 +106,13 @@ type Args = {
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
 
+  // Body Regenerate (Regular only)
+  onOpenBodyRegenModal: () => void;
+  onCloseBodyRegenModal: () => void;
+  fetchBodyRegenAttempts: (args: { projectId: string; slideIndex: number; limit?: number }) => Promise<any[]>;
+  onRunBodyRegen: (args: { guidanceText: string | null }) => Promise<{ body: string; bodyStyleRanges: any[] }>;
+  onRestoreBodyRegenAttempt: (args: { body: string; bodyStyleRanges: any[] }) => Promise<void> | void;
+
   // Image Library modal (Phase 1)
   onOpenImageLibraryModal: () => void;
   onCloseImageLibraryModal: () => void;
@@ -301,6 +308,11 @@ export function useEditorStoreActionsSync(args: Args) {
     onChangeCaption,
     onClickCopyOutreachMessage,
     onChangeOutreachMessage,
+    onOpenBodyRegenModal,
+    onCloseBodyRegenModal,
+    fetchBodyRegenAttempts,
+    onRunBodyRegen,
+    onRestoreBodyRegenAttempt,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
@@ -573,6 +585,11 @@ export function useEditorStoreActionsSync(args: Args) {
     onChangeCaption: (next: string) => onChangeCaption(next),
     onClickCopyOutreachMessage: () => onClickCopyOutreachMessage(),
     onChangeOutreachMessage: (next: string) => onChangeOutreachMessage(next),
+    onOpenBodyRegenModal: () => onOpenBodyRegenModal(),
+    onCloseBodyRegenModal: () => onCloseBodyRegenModal(),
+    fetchBodyRegenAttempts: (args: any) => fetchBodyRegenAttempts(args),
+    onRunBodyRegen: (args: any) => onRunBodyRegen(args),
+    onRestoreBodyRegenAttempt: (args: any) => onRestoreBodyRegenAttempt(args),
     setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
     setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
     deleteImageForActiveSlide: (source: "menu" | "button") => deleteImageForActiveSlide(source),
@@ -759,6 +776,11 @@ export function useEditorStoreActionsSync(args: Args) {
       onChangeCaption: (next: string) => implRef.current?.onChangeCaption?.(next),
       onClickCopyOutreachMessage: () => implRef.current?.onClickCopyOutreachMessage?.(),
       onChangeOutreachMessage: (next: string) => implRef.current?.onChangeOutreachMessage?.(next),
+      onOpenBodyRegenModal: () => implRef.current?.onOpenBodyRegenModal?.(),
+      onCloseBodyRegenModal: () => implRef.current?.onCloseBodyRegenModal?.(),
+      fetchBodyRegenAttempts: (args: any) => implRef.current?.fetchBodyRegenAttempts?.(args) ?? Promise.resolve([]),
+      onRunBodyRegen: (args: any) => implRef.current?.onRunBodyRegen?.(args),
+      onRestoreBodyRegenAttempt: (args: any) => implRef.current?.onRestoreBodyRegenAttempt?.(args),
       onOpenBrandAlignmentModal: () => implRef.current?.onOpenBrandAlignmentModal?.(),
       onCloseBrandAlignmentModal: () => implRef.current?.onCloseBrandAlignmentModal?.(),
       onChangeBrandAlignmentPrompt: (next: string) => implRef.current?.onChangeBrandAlignmentPrompt?.(next),

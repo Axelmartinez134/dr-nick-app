@@ -151,6 +151,7 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 - **Modals**:
   - `src/features/editor/components/TemplateSettingsModal.tsx` (reads store)
   - `src/features/editor/components/PromptsModal.tsx` (reads store; `EditorShell.tsx` still owns textarea refs for focus)
+  - `src/features/editor/components/BodyRegenModal.tsx` (Regular-only: regenerate Body for one slide; attempts + restore)
   - `src/features/editor/components/IdeasModal.tsx` (reads store; Generate Ideas + queue + create carousel)
   - `src/features/editor/components/CreateAccountModal.tsx` (reads store; superadmin-only onboarding flow)
   - `src/features/editor/components/DeleteAccountModal.tsx` (reads store; superadmin-only dangerous action)
@@ -948,6 +949,13 @@ Key tables used by `/editor`:
   - Per-project BG Removal default: `public.carousel_projects.ai_image_autoremovebg_enabled` (migration: `supabase/migrations/20260123_000001_add_ai_image_autoremovebg_enabled_to_carousel_projects.sql`)
   - Server route: `src/app/api/editor/projects/jobs/generate-ai-image/route.ts` (always stores PNG; mask always present)
 - **Realign button behavior**: `src/app/editor/EditorShell.tsx` (calls the existing live-layout pipeline)
+- **Body Regenerate (Regular-only)**:
+  - UI: `src/features/editor/components/EditorBottomPanel.tsx` (Regenerate button in ¶ Body card)
+  - Modal: `src/features/editor/components/BodyRegenModal.tsx` (guidance + previous attempts + restore)
+  - Actions/orchestration: `src/app/editor/EditorShell.tsx` (open/close, apply + persist)
+  - APIs:
+    - `POST /api/editor/projects/jobs/regenerate-body` → `src/app/api/editor/projects/jobs/regenerate-body/route.ts`
+    - `GET  /api/editor/projects/body-regen-attempts` → `src/app/api/editor/projects/body-regen-attempts/route.ts`
 - **Canvas selection/overlay issues**: `CarouselPreviewVision.tsx` (especially `contextTop` drawing and transforms)
 - **Smart Guides behavior**: `smartGuides.ts` + wiring in `CarouselPreviewVision.tsx`
 - **Template Settings mappings**: `EditorShell.tsx` + `POST /api/editor/projects/update-mappings`
