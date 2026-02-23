@@ -78,6 +78,7 @@ export default function TemplateEditorModal(props: {
   const [imageMenu, setImageMenu] = useState<null | { x: number; y: number; layerId: string }>(null);
   const [imageMaskShape, setImageMaskShape] = useState<'none' | 'circle'>('none');
   const [imageCropEditingLayerId, setImageCropEditingLayerId] = useState<string | null>(null);
+  const [replaceImageTargetLayerId, setReplaceImageTargetLayerId] = useState<string | null>(null);
 
   const [newTemplateName, setNewTemplateName] = useState('');
   const [addShapeDropdownValue, setAddShapeDropdownValue] = useState<string>('');
@@ -161,9 +162,20 @@ export default function TemplateEditorModal(props: {
       // Phase 3: lock all editing shortcuts until a template is selected.
       if (!hasSelectedTemplate) return;
 
+      // Never treat Backspace/Delete as "delete layer" while typing in any input-like element
+      // (including Fabric's hidden textarea during text editing).
+      const el = e.target as null | HTMLElement;
+      if (el) {
+        const tag = String(el.tagName || '').toUpperCase();
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (el as any).isContentEditable) return;
+      }
+
+      const isTextEditing = canvasRef.current?.isTextEditing?.() || false;
+
       // Undo (Cmd/Ctrl+Z)
       const isUndo = (e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey);
       if (isUndo) {
+        if (isTextEditing) return;
         e.preventDefault();
         if (editingLayerId) return;
         canvasRef.current?.undo?.();
@@ -177,6 +189,7 @@ export default function TemplateEditorModal(props: {
       // Delete selected layer
       const isDelete = e.key === 'Backspace' || e.key === 'Delete';
       if (isDelete) {
+        if (isTextEditing) return;
         if (editingLayerId) return;
         if (!selectedLayerId) return;
         if (selectedLayerId === '__content_region__') return;
@@ -251,6 +264,14 @@ export default function TemplateEditorModal(props: {
     next.slides = [slide0];
     setDefinition(next);
     canvasRef.current?.loadDefinition(next);
+  };
+
+  const getImageAssetByLayerId = (layerId: string) => {
+    const base = (canvasRef.current?.exportDefinition?.() as CarouselTemplateDefinitionV1 | undefined) || definition;
+    const slide0: any = getSlide0(base);
+    const assets = Array.isArray(slide0.assets) ? (slide0.assets as any[]) : [];
+    const asset = assets.find((a) => a && String(a.id) === String(layerId) && a.type === 'image');
+    return (asset || null) as TemplateImageAsset | null;
   };
 
   const openTextContextMenuForLayer = (layerId: string, clientX: number, clientY: number) => {
@@ -559,6 +580,58 @@ export default function TemplateEditorModal(props: {
     e.target.value = '';
   };
 
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
+  const onPickReplaceFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const layerId = replaceImageTargetLayerId;
+    e.target.value = '';
+    setReplaceImageTargetLayerId(null);
+    if (!file || !layerId) return;
+    if (!activeTemplateId) {
+      setError('Select a template first.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const existing = getImageAssetByLayerId(layerId);
+      if (!existing) throw new Error('Image layer not found');
+
+      const headers = await authHeaders();
+      const fd = new FormData();
+      fd.set('file', file);
+      fd.set('templateId', activeTemplateId);
+      fd.set('assetId', layerId);
+      if (existing?.src?.path) fd.set('prevPath', String(existing.src.path));
+      const res = await fetch('/api/marketing/carousel/templates/upload-asset', {
+        method: 'POST',
+        headers,
+        body: fd,
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Replace image failed');
+
+      const rawUrl = String(json.url || existing?.src?.url || '');
+      const cacheBustedUrl = rawUrl
+        ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${Date.now()}`
+        : rawUrl;
+
+      patchImageAsset(layerId, {
+        src: {
+          bucket: String(json.bucket || existing?.src?.bucket || 'carousel-templates'),
+          path: String(json.path || existing?.src?.path || ''),
+          url: cacheBustedUrl,
+          contentType: String(json.contentType || existing?.src?.contentType || 'image/png'),
+        },
+      } as any);
+    } catch (err: any) {
+      setError(err?.message || 'Replace image failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!open) return null;
 
   const editorUnlocked = hasSelectedTemplate && !loading && !saving;
@@ -709,6 +782,13 @@ export default function TemplateEditorModal(props: {
                       type="file"
                       accept="image/*"
                       onChange={onPickFile}
+                      className="hidden"
+                    />
+                    <input
+                      ref={replaceInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={onPickReplaceFile}
                       className="hidden"
                     />
                     <button
@@ -1348,6 +1428,20 @@ export default function TemplateEditorModal(props: {
                 >
                   <div className="text-xs font-semibold text-black mb-2">Image settings</div>
                   <div className="space-y-2">
+                    <button
+                      type="button"
+                      className="w-full h-9 rounded-md bg-black text-white text-sm font-semibold disabled:bg-black/30"
+                      disabled={!editorUnlocked || imageCropEditingLayerId !== null}
+                      onClick={() => {
+                        setReplaceImageTargetLayerId(imageMenu.layerId);
+                        closeImageMenu();
+                        canvasRef.current?.selectLayer?.(imageMenu.layerId);
+                        replaceInputRef.current?.click();
+                      }}
+                      title={imageCropEditingLayerId ? 'Finish current crop first' : 'Replace this image'}
+                    >
+                      Replace Image
+                    </button>
                     <div>
                       <div className="text-[11px] font-semibold text-black/70 mb-1">Mask</div>
                       <select

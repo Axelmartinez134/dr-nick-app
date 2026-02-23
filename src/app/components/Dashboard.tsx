@@ -99,16 +99,8 @@ export default function Dashboard() {
     )
   }
 
-  // While we are checking the onboarding gate, show a small loading screen to avoid flashing the dashboard.
-  if (user && isPatient && !onboardingChecked) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-gray-600">Loading...</div>
-        </div>
-      </div>
-    )
-  }
+  // IMPORTANT: Do not block-render a loading screen while checking onboarding.
+  // That would unmount the patient UI and wipe in-progress state (form drafts, slider range, etc.).
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden md:overflow-x-visible">

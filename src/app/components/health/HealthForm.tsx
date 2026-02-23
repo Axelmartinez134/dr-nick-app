@@ -1514,7 +1514,9 @@ export default function HealthForm() {
     )
   }
 
-  if (loading || isLoading || checkingSubmissionStatus) {
+  // Only block-render a loading screen on initial boot/auth/week resolution.
+  // When switching weeks (or background refreshes), keep the form visible and show a small hint instead.
+  if (loading || checkingSubmissionStatus) {
     return (
       <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
           <div className="text-center py-8">
@@ -1828,6 +1830,11 @@ export default function HealthForm() {
 
   return (
     <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+      {isLoading && (
+        <div className="mb-4 text-xs text-gray-500">
+          Refreshing saved data…
+        </div>
+      )}
       
       {/* Developer Mode Toggle (visible only for Test accounts) */}
       {isTestAccount && (

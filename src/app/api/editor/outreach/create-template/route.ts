@@ -464,8 +464,7 @@ export async function POST(request: NextRequest) {
 
   // Download profile image server-side (avoids browser CORP/CORS issues).
   // IG CDN links can be sensitive to headers and may expire; try a few candidates from `raw`.
-  let buf: Buffer;
-  let inferred: { ext: string; contentType: string };
+  let avatarApplied = false;
   try {
     const candidates = collectProfileImageCandidates({ primary: profilePicUrlHD, raw: (body as any)?.scraped?.raw ?? null });
     console.log('[outreach.create-template]', traceId, 'avatar_download_start', {
@@ -473,32 +472,26 @@ export async function POST(request: NextRequest) {
       candidates: candidates.slice(0, 5).map(safeUrlForLog),
     });
     const dl = await downloadImageBestEffort({ traceId, urls: candidates });
-    buf = dl.buf;
-    inferred = inferExtAndContentType({ contentType: dl.contentType, url: dl.urlUsed });
-  } catch (e: any) {
-    console.error('[outreach.create-template]', traceId, 'avatar_download_failed', { error: String(e?.message || e || 'Failed') });
-    return NextResponse.json({ success: false, error: `Failed to download profile image: ${String(e?.message || e || 'Failed')}` } satisfies Resp, {
-      status: 400,
-    });
-  }
-  const assetId = String((avatarAsset as any)?.id || '').trim();
-  if (!assetId) {
-    console.error('[outreach.create-template]', traceId, 'avatar_asset_missing_id', { destTemplateId });
-    return NextResponse.json({ success: false, error: 'Avatar asset is missing an id' } satisfies Resp, { status: 400 });
-  }
+    const buf = dl.buf;
+    const inferred = inferExtAndContentType({ contentType: dl.contentType, url: dl.urlUsed });
+    const assetId = String((avatarAsset as any)?.id || '').trim();
+    if (!assetId) throw new Error('Avatar asset is missing an id');
 
-  const objectPath = `${destTemplateId}/assets/${assetId}.${inferred.ext}`;
-  const { error: upErr } = await svc.storage.from(bucket).upload(objectPath, buf, { upsert: true, contentType: inferred.contentType });
-  if (upErr) {
-    console.error('[outreach.create-template]', traceId, 'avatar_upload_failed', { error: upErr.message, objectPath });
-    return NextResponse.json({ success: false, error: upErr.message } satisfies Resp, { status: 400 });
-  }
-  const { data: pub } = svc.storage.from(bucket).getPublicUrl(objectPath);
-  if ((avatarAsset as any).src && typeof (avatarAsset as any).src === 'object') {
-    (avatarAsset as any).src.bucket = bucket;
-    (avatarAsset as any).src.path = objectPath;
-    (avatarAsset as any).src.url = pub.publicUrl;
-    (avatarAsset as any).src.contentType = inferred.contentType;
+    const objectPath = `${destTemplateId}/assets/${assetId}.${inferred.ext}`;
+    const { error: upErr } = await svc.storage.from(bucket).upload(objectPath, buf, { upsert: true, contentType: inferred.contentType });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: pub } = svc.storage.from(bucket).getPublicUrl(objectPath);
+    if ((avatarAsset as any).src && typeof (avatarAsset as any).src === 'object') {
+      (avatarAsset as any).src.bucket = bucket;
+      (avatarAsset as any).src.path = objectPath;
+      (avatarAsset as any).src.url = pub.publicUrl;
+      (avatarAsset as any).src.contentType = inferred.contentType;
+    }
+    avatarApplied = true;
+  } catch (e: any) {
+    // Non-fatal: keep whatever avatar the base template already had (or copied storage asset).
+    console.warn('[outreach.create-template]', traceId, 'avatar_apply_skipped', { error: String(e?.message || e || 'Failed') });
   }
 
   // Persist updated definition + final name.
@@ -511,7 +504,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: updErr.message } satisfies Resp, { status: 400 });
   }
 
-  console.log('[outreach.create-template]', traceId, 'success', { destTemplateId, ms: Date.now() - startedAt });
+  console.log('[outreach.create-template]', traceId, 'success', { destTemplateId, ms: Date.now() - startedAt, avatarApplied });
   return NextResponse.json({ success: true, templateId: destTemplateId, templateName: finalName } satisfies Resp);
 }
 

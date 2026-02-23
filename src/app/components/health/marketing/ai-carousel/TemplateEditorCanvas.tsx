@@ -61,6 +61,7 @@ export interface TemplateEditorCanvasHandle {
   finishImageCropMode: () => void;
   resetImageCrop: (layerId: string) => void;
   getActiveImageCropLayerId: () => string | null;
+  isTextEditing: () => boolean;
 }
 
 function clone<T>(v: T): T {
@@ -890,6 +891,16 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
       }
     };
 
+    const isTextEditingOnCanvas = () => {
+      try {
+        const canvas = fabricCanvasRef.current;
+        const obj = canvas?.getActiveObject?.();
+        return !!obj && !!(obj as any).isEditing;
+      } catch {
+        return false;
+      }
+    };
+
     const ensureContentRegion = (fabric: any, canvas: any, r: TemplateRect) => {
       const existing = contentRegionObjRef.current;
       if (existing) {
@@ -1542,6 +1553,7 @@ export default forwardRef<TemplateEditorCanvasHandle, { initialDefinition?: Caro
         setCropForLayer(String(layerId), { scale: 1, offsetX: 0, offsetY: 0 });
       },
       getActiveImageCropLayerId: () => cropModeRef.current.layerId,
+      isTextEditing: () => isTextEditingOnCanvas(),
     }), [initialDefinition]);
 
     return (

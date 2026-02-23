@@ -1,14 +1,8 @@
 // src/app/components/health/grokService.ts
 // Grok AI analysis service for Dr. Nick's health tracker
 
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, poundsToKilograms, inchesToCentimeters } from './unitUtils'
-
-// Create supabase client directly (same pattern as API routes)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export interface GrokSettings {
   prompt: string

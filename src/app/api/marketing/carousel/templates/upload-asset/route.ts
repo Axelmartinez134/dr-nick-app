@@ -23,6 +23,7 @@ interface UploadTemplateAssetResponse {
   path?: string;
   url?: string;
   contentType?: string;
+  cleanupError?: string;
   error?: string;
 }
 
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest) {
   const file = form.get('file') as File | null;
   const templateId = String(form.get('templateId') || '');
   const assetId = String(form.get('assetId') || '');
+  const prevPathRaw = form.get('prevPath');
+  const prevPath = typeof prevPathRaw === 'string' ? prevPathRaw.trim() : '';
   if (!file || !templateId || !assetId) {
     return NextResponse.json({ success: false, error: 'Missing file, templateId, or assetId' } as UploadTemplateAssetResponse, { status: 400 });
   }
@@ -159,12 +162,34 @@ export async function POST(req: NextRequest) {
   }
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+  let cleanupError: string | undefined = undefined;
+  if (prevPath && prevPath !== objectPath) {
+    // Best-effort cleanup: if the extension changed, the old object path becomes orphaned.
+    // Only allow deleting the previous asset object for this same template+assetId.
+    const expectedPrefix = `${templateId}/assets/${assetId}.`;
+    const isSafe =
+      !prevPath.startsWith('/') &&
+      !prevPath.includes('..') &&
+      prevPath.startsWith(expectedPrefix);
+    if (isSafe) {
+      try {
+        const { error: rmErr } = await supabase.storage.from(bucket).remove([prevPath]);
+        if (rmErr) cleanupError = rmErr.message;
+      } catch (e: any) {
+        cleanupError = String(e?.message || e || 'cleanup failed');
+      }
+    } else {
+      cleanupError = 'Refused to delete prevPath (failed safety checks)';
+    }
+  }
+
   return NextResponse.json({
     success: true,
     bucket,
     path: objectPath,
     url: data.publicUrl,
     contentType,
+    ...(cleanupError ? { cleanupError } : null),
   } as UploadTemplateAssetResponse);
 }
 

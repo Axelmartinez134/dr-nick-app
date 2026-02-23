@@ -231,7 +231,7 @@ export async function saveWeeklyCheckin(data: CheckinFormData) {
       .eq('user_id', user.id)
       .eq('week_number', parseInt(data.week_number))
       .eq('data_entered_by', 'patient')
-      .single()
+      .maybeSingle()
 
     let result
 
@@ -293,7 +293,7 @@ export async function saveInitialSetup(data: InitialSetupData, patientUserId: st
       .select('id')
       .eq('user_id', patientUserId)
       .eq('week_number', 0)
-      .single()
+      .maybeSingle()
 
     let result
 
@@ -414,7 +414,7 @@ export async function getCheckinForWeek(weekNumber: number) {
       .eq('user_id', user.id)
       .eq('week_number', weekNumber)
       .eq('data_entered_by', 'patient')
-      .single()
+      .maybeSingle()
 
     return result
   } catch (error) {

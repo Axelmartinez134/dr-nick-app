@@ -97,18 +97,22 @@ export async function getPatientMetrics(userId?: string): Promise<MetricsData> {
     let weeklyWeightLossPercentage: number | null = null
     if (secondLatestWeek?.weight && latestWeek?.weight) {
       const weeklyLoss = secondLatestWeek.weight - latestWeek.weight
-      weeklyWeightLossPercentage = Math.round((weeklyLoss / secondLatestWeek.weight) * 100 * 10) / 10 // Round to 1 decimal
+      const weekGap = Math.max(1, (latestWeek.week_number || 0) - (secondLatestWeek.week_number || 0))
+      // Normalize over missing-week gaps so this represents average per-week change.
+      weeklyWeightLossPercentage = Math.round((((weeklyLoss / secondLatestWeek.weight) * 100) / weekGap) * 10) / 10 // Round to 1 decimal
     }
 
     const performanceMs = performance.now() - startTime
     
-    // Performance monitoring (log warnings based on thresholds)
-    if (performanceMs > PERFORMANCE_THRESHOLDS.RED_FLAG_MS) {
-      console.warn(`🚨 METRICS PERFORMANCE RED FLAG: ${performanceMs}ms (>${PERFORMANCE_THRESHOLDS.RED_FLAG_MS}ms). Database optimization needed.`)
-    } else if (performanceMs > PERFORMANCE_THRESHOLDS.YELLOW_FLAG_MS) {
-      console.warn(`⚠️ METRICS PERFORMANCE YELLOW FLAG: ${performanceMs}ms (>${PERFORMANCE_THRESHOLDS.YELLOW_FLAG_MS}ms). Monitor performance.`)
-    } else if (performanceMs <= PERFORMANCE_THRESHOLDS.SWEET_SPOT_MAX_MS) {
-      console.log(`✅ METRICS PERFORMANCE SWEET SPOT: ${performanceMs}ms`)
+    // Performance monitoring (dev-only; avoid console spam in production)
+    if (process.env.NODE_ENV !== 'production') {
+      if (performanceMs > PERFORMANCE_THRESHOLDS.RED_FLAG_MS) {
+        console.warn(`🚨 METRICS PERFORMANCE RED FLAG: ${performanceMs}ms (>${PERFORMANCE_THRESHOLDS.RED_FLAG_MS}ms). Database optimization needed.`)
+      } else if (performanceMs > PERFORMANCE_THRESHOLDS.YELLOW_FLAG_MS) {
+        console.warn(`⚠️ METRICS PERFORMANCE YELLOW FLAG: ${performanceMs}ms (>${PERFORMANCE_THRESHOLDS.YELLOW_FLAG_MS}ms). Monitor performance.`)
+      } else if (performanceMs <= PERFORMANCE_THRESHOLDS.SWEET_SPOT_MAX_MS) {
+        console.log(`✅ METRICS PERFORMANCE SWEET SPOT: ${performanceMs}ms`)
+      }
     }
 
     // Tighten hasEnoughData: Week 0 present AND at least one week >0 with a valid weight

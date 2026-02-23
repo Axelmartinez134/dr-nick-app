@@ -3,11 +3,11 @@
 
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { getWeeklyDataForCharts, updateHealthRecord, getHistoricalSubmissionDetails, createHealthRecordForPatient, type WeeklyCheckin } from './healthService'
 import { type QueueSubmission } from './DrNickQueue'
-import { getPatientMetrics, type MetricsData } from './metricsService'
+import { type MetricsData } from './metricsService'
 import { supabase } from '../auth/AuthContext'
 import { fetchUnitSystem, formatLength, formatWeight, getLengthUnitLabel, getWeightUnitLabel, UnitSystem } from './unitUtils'
 import BodyFatPercentageChart from './charts/BodyFatPercentageChart'
@@ -1769,9 +1769,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const rangeStartRef = useRef<number>(1)
   const rangeEndRef = useRef<number>(1)
   
-  // Metrics state (patient view only)
-  const [metrics, setMetrics] = useState<MetricsData | null>(null)
-  const [metricsLoading, setMetricsLoading] = useState(false)
+  // Hero goal value (do not refetch weekly data just to compute metrics)
+  const [heroWeightChangeGoalPercent, setHeroWeightChangeGoalPercent] = useState<number | null>(null)
   
   // Weight change goal editing (doctor view only)
   const [weightChangeGoal, setWeightChangeGoal] = useState('1.00')
@@ -1811,7 +1810,6 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   useEffect(() => {
     if (mounted) {
       loadChartData()
-       loadMetrics() // Load metrics for both Client and doctor views
       if (isDoctorView) {
         loadSubmissionData()
         loadPatientName()
@@ -1827,7 +1825,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           if (isDoctorView && patientId) {
             const { data } = await supabase
               .from('profiles')
-              .select('track_blood_pressure, track_body_composition, client_status')
+              .select('track_blood_pressure, track_body_composition, client_status, weight_change_goal_percent')
               .eq('id', patientId)
               .single()
             setTracksBP(Boolean(data?.track_blood_pressure))
@@ -1837,6 +1835,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             setIsTestAccount(false)
             setIsNutraceutical(status === 'Nutraceutical')
             setIsMaintenanceOnly(status === 'Maintenance')
+            const goal = (data as any)?.weight_change_goal_percent
+            setHeroWeightChangeGoalPercent(typeof goal === 'number' && Number.isFinite(goal) ? goal : 1.0)
           } else {
             // current user
             const { data: userData } = await supabase.auth.getUser()
@@ -1844,7 +1844,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             if (uid) {
               const { data } = await supabase
                 .from('profiles')
-                .select('track_blood_pressure, track_body_composition, client_status')
+                .select('track_blood_pressure, track_body_composition, client_status, weight_change_goal_percent')
                 .eq('id', uid)
                 .single()
               setTracksBP(Boolean(data?.track_blood_pressure))
@@ -1854,6 +1854,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
               setIsTestAccount(status === 'Test')
               setIsNutraceutical(status === 'Nutraceutical')
               setIsMaintenanceOnly(status === 'Maintenance')
+              const goal = (data as any)?.weight_change_goal_percent
+              setHeroWeightChangeGoalPercent(typeof goal === 'number' && Number.isFinite(goal) ? goal : 1.0)
             }
           }
         } catch {}
@@ -1935,29 +1937,65 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     setLoading(false)
   }
 
-  // Function to load metrics data (both Client and doctor views)
-  const loadMetrics = async () => {
-    setMetricsLoading(true)
+  // Compute hero metrics from already-loaded chart data (avoid redundant refetches).
+  const metrics: MetricsData = useMemo(() => {
+    const startTime = typeof performance !== 'undefined' ? performance.now() : 0
     try {
-      // For Client view, patientId is undefined, so getPatientMetrics will use current user from auth context
-      // For doctor view, patientId is passed to get metrics for the specific Client
-      const metricsData = await getPatientMetrics(patientId)
-      setMetrics(metricsData)
-    } catch (error) {
-      console.error('Error loading metrics:', error)
-      setMetrics({
+      if (!chartData || chartData.length === 0) {
+        return {
+          totalWeightLossPercentage: null,
+          weeklyWeightLossPercentage: null,
+          weightChangeGoalPercent: heroWeightChangeGoalPercent ?? 1.0,
+          hasEnoughData: false,
+          dataPoints: 0,
+          performanceMs: (typeof performance !== 'undefined' ? (performance.now() - startTime) : 0),
+          error: 'No health data found'
+        }
+      }
+
+      const sorted = [...chartData].sort((a, b) => a.week_number - b.week_number)
+      const weekZero = sorted.find(d => d.week_number === 0 && !!(d as any).weight)
+      const latest = [...sorted].reverse().find(d => !!(d as any).weight && d.week_number > 0)
+      const prev = [...sorted].reverse().find(d =>
+        !!(d as any).weight && d.week_number >= 0 && d.week_number < (latest?.week_number || 0)
+      )
+
+      let totalWeightLossPercentage: number | null = null
+      if (weekZero?.weight && latest?.weight) {
+        const weightLoss = weekZero.weight - latest.weight
+        totalWeightLossPercentage = Math.round((weightLoss / weekZero.weight) * 100 * 10) / 10
+      }
+
+      let weeklyWeightLossPercentage: number | null = null
+      if (prev?.weight && latest?.weight) {
+        const weeklyLoss = prev.weight - latest.weight
+        const weekGap = Math.max(1, (latest.week_number || 0) - (prev.week_number || 0))
+        weeklyWeightLossPercentage = Math.round((((weeklyLoss / prev.weight) * 100) / weekGap) * 10) / 10
+      }
+
+      const hasAtLeastOneWeightedWeek = sorted.some(d => d.week_number > 0 && !!(d as any).weight)
+
+      return {
+        totalWeightLossPercentage,
+        weeklyWeightLossPercentage,
+        weightChangeGoalPercent: heroWeightChangeGoalPercent ?? 1.0,
+        hasEnoughData: !!weekZero && hasAtLeastOneWeightedWeek,
+        dataPoints: sorted.length,
+        performanceMs: (typeof performance !== 'undefined' ? (performance.now() - startTime) : 0),
+        error: null
+      }
+    } catch (e: any) {
+      return {
         totalWeightLossPercentage: null,
         weeklyWeightLossPercentage: null,
-        weightChangeGoalPercent: null,
+        weightChangeGoalPercent: heroWeightChangeGoalPercent ?? 1.0,
         hasEnoughData: false,
-        dataPoints: 0,
-        performanceMs: 0,
-        error: 'Failed to load metrics data'
-      })
-    } finally {
-      setMetricsLoading(false)
+        dataPoints: chartData?.length || 0,
+        performanceMs: (typeof performance !== 'undefined' ? (performance.now() - startTime) : 0),
+        error: e?.message || 'Failed to compute metrics'
+      }
     }
-  }
+  }, [chartData, heroWeightChangeGoalPercent])
 
   // Function to load weight change goal and resistance training goal (doctor view only)
   // Load current goals data (exact copy of working DrNickSubmissionReview pattern)
@@ -1976,6 +2014,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         console.error('Error loading profile data:', profileError)
       } else {
         setWeightChangeGoal(profileData.weight_change_goal_percent || '1.00')
+        const goal = profileData.weight_change_goal_percent
+        setHeroWeightChangeGoalPercent(typeof goal === 'number' && Number.isFinite(goal) ? goal : 1.0)
         setResistanceTrainingGoal(profileData.resistance_training_days_goal || 0)
         setProteinGoalGrams(String((profileData as any)?.protein_goal_grams ?? 150))
       }
@@ -2136,6 +2176,114 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     stats.totalWeightLoss = Math.round((stats.initialWeight - stats.currentWeight) * 10) / 10
   }
 
+  // Range-aware "cards" calculations (ONLY used when slider is adjusted away from default full range)
+  const effectiveRangeStart = rangeStart ?? 0
+  const effectiveRangeEnd = rangeEnd ?? stats.currentWeek
+  const isDefaultFullRange =
+    rangeStart === null ||
+    rangeEnd === null ||
+    (effectiveRangeStart === 0 && effectiveRangeEnd === stats.currentWeek)
+  const isRangeAdjusted = rangeStart !== null && rangeEnd !== null && !isDefaultFullRange
+  const isRangeStartAdjusted = isRangeAdjusted && effectiveRangeStart !== 0
+  const isRangeEndAdjusted = isRangeAdjusted && effectiveRangeEnd !== stats.currentWeek
+  const rangeCopy = `From Week ${effectiveRangeStart} to Week ${effectiveRangeEnd}`
+
+  const rangedDataForCards: WeeklyCheckin[] =
+    (rangeStart !== null && rangeEnd !== null)
+      ? chartData.filter(d => d.week_number >= effectiveRangeStart && d.week_number <= effectiveRangeEnd)
+      : chartData
+
+  const getWeightValue = (d: WeeklyCheckin): number | null => {
+    const w = (d as any)?.weight
+    if (typeof w === 'number' && !Number.isNaN(w)) return w
+    // Treat Week 0 initial_weight as a valid weight baseline when Week 0 weight is missing
+    if (d.week_number === 0) {
+      const iw = (d as any)?.initial_weight
+      if (typeof iw === 'number' && !Number.isNaN(iw)) return iw
+    }
+    return null
+  }
+
+  const hasWeightAtWeek = (week: number) =>
+    rangedDataForCards.some(d => d.week_number === week && getWeightValue(d) !== null)
+
+  const sortedRangedAsc = [...rangedDataForCards].sort((a, b) => a.week_number - b.week_number)
+  const sortedRangedDesc = [...sortedRangedAsc].reverse()
+
+  const rangedStartRec = sortedRangedAsc.find(d => getWeightValue(d) !== null) ?? null
+  const rangedEndRec = sortedRangedDesc.find(d => getWeightValue(d) !== null) ?? null
+  const rangedStartWeight = rangedStartRec ? getWeightValue(rangedStartRec) : null
+  const rangedEndWeight = rangedEndRec ? getWeightValue(rangedEndRec) : null
+  const rangedStartWeekUsed = rangedStartRec?.week_number ?? null
+  const rangedEndWeekUsed = rangedEndRec?.week_number ?? null
+
+  const buildWeightFallbackNote = (requestedWeek: number, usedWeek: number) =>
+    `No weight recorded for Week ${requestedWeek}. Showing Week ${usedWeek} instead.`
+
+  const startWeightNote =
+    isRangeAdjusted && !hasWeightAtWeek(effectiveRangeStart) && rangedStartWeekUsed !== null
+      ? buildWeightFallbackNote(effectiveRangeStart, rangedStartWeekUsed)
+      : null
+
+  const endWeightNote =
+    isRangeAdjusted && !hasWeightAtWeek(effectiveRangeEnd) && rangedEndWeekUsed !== null
+      ? buildWeightFallbackNote(effectiveRangeEnd, rangedEndWeekUsed)
+      : null
+
+  const combinedRangeWeightNotes = [startWeightNote, endWeightNote].filter(Boolean).join(' ')
+
+  const rangedTotalLossLbs =
+    (rangedStartWeight !== null && rangedEndWeight !== null)
+      ? (Math.round((rangedStartWeight - rangedEndWeight) * 10) / 10)
+      : null
+
+  const rangedTotalWeightLossPercentage =
+    (rangedStartWeight !== null && rangedEndWeight !== null && rangedStartWeight !== 0)
+      ? (Math.round((((rangedStartWeight - rangedEndWeight) / rangedStartWeight) * 100) * 10) / 10)
+      : null
+
+  const getWeeklyProgressWeight = (d: WeeklyCheckin): number | null => {
+    const w = (d as any)?.weight
+    if (typeof w === 'number' && !Number.isNaN(w)) return w
+    return null
+  }
+
+  // Weekly Progress hero card:
+  // Use the last two RECORDED weights (do not treat missing as 0), normalized by the week gap.
+  // This avoids misleading "0" values while still producing a useful weekly-rate estimate when weeks are missing.
+  const weeklyProgressNotEnoughDataNote = 'Not enough data — need at least two weeks with weight entries.'
+
+  const computeGapNormalizedWeeklyProgress = (rows: WeeklyCheckin[]) => {
+    const sortedDesc = [...rows].sort((a, b) => b.week_number - a.week_number)
+    const latest = sortedDesc.find(d => getWeeklyProgressWeight(d) !== null && d.week_number > 0) ?? null
+    if (!latest) return { value: null as number | null, prevWeek: null as number | null, latestWeek: null as number | null, gapWeeks: null as number | null }
+
+    const prev = sortedDesc.find(d => getWeeklyProgressWeight(d) !== null && d.week_number >= 0 && d.week_number < latest.week_number) ?? null
+    if (!prev) return { value: null as number | null, prevWeek: null as number | null, latestWeek: latest.week_number, gapWeeks: null as number | null }
+
+    const latestW = getWeeklyProgressWeight(latest)
+    const prevW = getWeeklyProgressWeight(prev)
+    if (latestW === null || prevW === null || prevW === 0) {
+      return { value: null as number | null, prevWeek: prev.week_number, latestWeek: latest.week_number, gapWeeks: null as number | null }
+    }
+
+    const gapWeeks = Math.max(1, latest.week_number - prev.week_number)
+    const pctTotal = ((prevW - latestW) / prevW) * 100
+    const pctPerWeek = Math.round(((pctTotal / gapWeeks) * 10)) / 10
+    return { value: pctPerWeek, prevWeek: prev.week_number, latestWeek: latest.week_number, gapWeeks }
+  }
+
+  const weeklyProgressResult = computeGapNormalizedWeeklyProgress(isRangeAdjusted ? rangedDataForCards : chartData)
+
+  const heroTotalWeightLossValue =
+    isRangeAdjusted ? rangedTotalWeightLossPercentage : (metrics?.totalWeightLossPercentage ?? null)
+  const heroWeeklyProgressValue =
+    weeklyProgressResult.value
+
+  const summaryStartingWeightValue = isRangeAdjusted ? rangedStartWeight : stats.initialWeight
+  const summarySelectedWeightValue = isRangeAdjusted ? rangedEndWeight : stats.currentWeight
+  const summaryTotalLossValue = isRangeAdjusted ? rangedTotalLossLbs : stats.totalWeightLoss
+
   // Range helpers and effects MUST be declared before any early return to keep hooks order stable
   const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n))
   const handleStartChange = (val: number) => {
@@ -2173,7 +2321,25 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   // Load persisted range preferences (per account) - disabled when persistRangePrefs is false
   useEffect(() => {
     if (!mounted || rangePrefsLoaded || stats.currentWeek <= 0) return
-    if (!persistRangePrefs) { setRangePrefsLoaded(true); return }
+    // Session-only persistence: restore prior selection within this browser session.
+    if (!persistRangePrefs) {
+      try {
+        const key = `chartsDashboard:range:${patientId || 'self'}`
+        const saved = sessionStorage.getItem(key)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (parsed && typeof parsed.start === 'number' && typeof parsed.end === 'number') {
+            const maxW = stats.currentWeek || 0
+            const startClamped = clamp(Math.floor(parsed.start), 0, Math.max(0, Math.floor(parsed.end)))
+            const endClamped = clamp(Math.floor(parsed.end), startClamped, maxW)
+            setRangeStart(startClamped)
+            setRangeEnd(endClamped)
+          }
+        }
+      } catch {}
+      setRangePrefsLoaded(true)
+      return
+    }
     ;(async () => {
       try {
         const { data: auth } = await supabase.auth.getUser()
@@ -2233,6 +2399,16 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     })()
   }, [mounted, rangePrefsLoaded, stats.currentWeek, persistRangePrefs])
 
+  // Session-only persistence for time range (survives reloads in same session)
+  useEffect(() => {
+    if (!mounted) return
+    if (rangeStart === null || rangeEnd === null) return
+    try {
+      const key = `chartsDashboard:range:${patientId || 'self'}`
+      sessionStorage.setItem(key, JSON.stringify({ start: rangeStart, end: rangeEnd }))
+    } catch {}
+  }, [mounted, rangeStart, rangeEnd, patientId])
+
   // Debounced save of range preferences (disabled when persistRangePrefs is false)
   useEffect(() => {
     if (!mounted) return
@@ -2277,6 +2453,7 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     if (!isDoctorView) return
     setRangeStart(null)
     setRangeEnd(null)
+    setRangePrefsLoaded(false)
   }, [isDoctorView, patientId])
 
   // Don't render until mounted (avoids SSR mismatch)
@@ -2302,24 +2479,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     stats.totalWeightLoss = Math.round((stats.initialWeight - stats.currentWeight) * 10) / 10
   }
 
-  // Debug logging (temporary - remove after testing)
-  if (chartData.length > 0) {
-    console.log('ChartsDashboard Debug:', {
-      totalRecords: chartData.length,
-      initialWeight: stats.initialWeight,
-      currentWeight: stats.currentWeight,
-      totalWeightLoss: stats.totalWeightLoss,
-      hasWeek0: stats.hasWeek0,
-      sampleData: chartData.slice(0, 3).map(d => ({
-        week: d.week_number,
-        weight: d.weight,
-        initial_weight: d.initial_weight,
-        date: d.date
-      }))
-    });
-  }
+  // (Debug logging removed) — rendering can happen often and should not spam the console.
 
-  if (loading) {
+  // Only block-render a loading screen on the very first load.
+  // After initial data is present, keep the UI stable and refresh in the background.
+  if (loading && chartData.length === 0) {
     return (
       <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-md p-6">
@@ -2345,14 +2509,22 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
               <div className="text-xl md:text-2xl">🎯</div>
             </div>
             <div className="text-2xl md:text-3xl font-bold text-blue-800 mb-0.5 md:mb-1">
-              {metrics.totalWeightLossPercentage !== null 
-                ? `${metrics.totalWeightLossPercentage.toFixed(2)}%` 
+              {heroTotalWeightLossValue !== null 
+                ? `${heroTotalWeightLossValue.toFixed(2)}%` 
                 : '--'
               }
             </div>
             <p className="text-xs md:text-sm text-blue-600 leading-tight">
-              Since starting {isDoctorView ? 'their journey' : 'your journey'}
+              {isRangeAdjusted
+                ? rangeCopy
+                : `Since starting ${isDoctorView ? 'their journey' : 'your journey'}`
+              }
             </p>
+            {isRangeAdjusted && combinedRangeWeightNotes && (
+              <p className="mt-1 text-[11px] md:text-xs text-gray-600 leading-snug">
+                {combinedRangeWeightNotes}
+              </p>
+            )}
           </div>
 
           {/* Weekly Weight Loss % */}
@@ -2362,14 +2534,34 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
               <div className="text-xl md:text-2xl">📈</div>
             </div>
             <div className="text-2xl md:text-3xl font-bold text-green-800 mb-0.5 md:mb-1">
-              {metrics.weeklyWeightLossPercentage !== null 
-                ? `${metrics.weeklyWeightLossPercentage.toFixed(2)}%` 
+              {heroWeeklyProgressValue !== null 
+                ? `${heroWeeklyProgressValue.toFixed(2)}%` 
                 : '--'
               }
             </div>
             <p className="text-xs md:text-sm text-green-600 leading-tight">
-              Week-over-week change
+              {(() => {
+                // Default copy on page load (or when only the min slider changes)
+                if (!isRangeEndAdjusted) return 'Week-over-week change'
+                if (heroWeeklyProgressValue === null) return 'Week-over-week change'
+                const prevWeek = (weeklyProgressResult as any)?.prevWeek
+                const latestWeek = (weeklyProgressResult as any)?.latestWeek
+                if (typeof prevWeek === 'number' && typeof latestWeek === 'number') {
+                  return `From Week ${prevWeek} to Week ${latestWeek}`
+                }
+                return 'Week-over-week change'
+              })()}
             </p>
+            {heroWeeklyProgressValue === null && (
+              <p className="mt-1 text-[11px] md:text-xs text-gray-600 leading-snug">
+                {weeklyProgressNotEnoughDataNote}
+              </p>
+            )}
+            {isRangeAdjusted && endWeightNote && (
+              <p className="mt-1 text-[11px] md:text-xs text-gray-600 leading-snug">
+                {endWeightNote}
+              </p>
+            )}
           </div>
 
           {/* NEW: Weight Change Goal */}
@@ -2405,6 +2597,12 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             }
           </p>
         </div>
+
+        {loading && chartData.length > 0 && (
+          <div className="mb-4 text-xs text-gray-500">
+            Refreshing data…
+          </div>
+        )}
 
         {/* Dev Mode (Test accounts only; client view only) */}
         {!isDoctorView && isTestAccount && (
@@ -2470,21 +2668,40 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             </div>
             <div className="bg-purple-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-purple-600">
-                {stats.initialWeight ? (unitSystem === 'metric' ? `${(Math.round((stats.initialWeight * 0.45359237) * 100) / 100).toFixed(2)} kg` : `${stats.initialWeight.toFixed(2)} lbs`) : 'N/A'}
+                {summaryStartingWeightValue ? (unitSystem === 'metric' ? `${(Math.round((summaryStartingWeightValue * 0.45359237) * 100) / 100).toFixed(2)} kg` : `${summaryStartingWeightValue.toFixed(2)} lbs`) : 'N/A'}
               </div>
-              <div className="text-sm text-purple-800">Starting Weight</div>
+              <div className="text-sm text-purple-800">
+                {isRangeStartAdjusted ? `Week ${effectiveRangeStart} Baseline Weight` : 'Starting Weight'}
+              </div>
+              {isRangeAdjusted && startWeightNote && (
+                <div className="mt-1 text-xs text-gray-600 leading-snug">
+                  {startWeightNote}
+                </div>
+              )}
             </div>
             <div className="bg-indigo-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-indigo-600">
-                {stats.currentWeight ? (unitSystem === 'metric' ? `${(Math.round((stats.currentWeight * 0.45359237) * 100) / 100).toFixed(2)} kg` : `${stats.currentWeight.toFixed(2)} lbs`) : 'N/A'}
+                {summarySelectedWeightValue ? (unitSystem === 'metric' ? `${(Math.round((summarySelectedWeightValue * 0.45359237) * 100) / 100).toFixed(2)} kg` : `${summarySelectedWeightValue.toFixed(2)} lbs`) : 'N/A'}
               </div>
-              <div className="text-sm text-indigo-800">Current Weight</div>
+              <div className="text-sm text-indigo-800">
+                {isRangeEndAdjusted ? `Week ${effectiveRangeEnd} Ending Weight` : 'Current Weight'}
+              </div>
+              {isRangeAdjusted && endWeightNote && (
+                <div className="mt-1 text-xs text-gray-600 leading-snug">
+                  {endWeightNote}
+                </div>
+              )}
             </div>
             <div className="bg-orange-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-orange-600">
-                {stats.totalWeightLoss > 0 ? (unitSystem === 'metric' ? `-${(Math.round((stats.totalWeightLoss * 0.45359237) * 100) / 100).toFixed(2)} kg` : `-${stats.totalWeightLoss.toFixed(2)} lbs`) : 'N/A'}
+                {(summaryTotalLossValue !== null && summaryTotalLossValue > 0) ? (unitSystem === 'metric' ? `-${(Math.round((summaryTotalLossValue * 0.45359237) * 100) / 100).toFixed(2)} kg` : `-${summaryTotalLossValue.toFixed(2)} lbs`) : 'N/A'}
               </div>
               <div className="text-sm text-orange-800">Total Loss</div>
+              {isRangeAdjusted && combinedRangeWeightNotes && (
+                <div className="mt-1 text-xs text-gray-600 leading-snug">
+                  {combinedRangeWeightNotes}
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -2496,33 +2713,52 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
             </div>
             <div className="bg-purple-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-purple-600">
-                {stats.initialWeight
+                {summaryStartingWeightValue
                   ? (unitSystem === 'metric'
-                      ? `${(Math.round((stats.initialWeight * 0.45359237) * 100) / 100).toFixed(2)} kg`
-                      : `${stats.initialWeight.toFixed(2)} lbs`)
+                      ? `${(Math.round((summaryStartingWeightValue * 0.45359237) * 100) / 100).toFixed(2)} kg`
+                      : `${summaryStartingWeightValue.toFixed(2)} lbs`)
                   : 'N/A'}
               </div>
-              <div className="text-sm text-purple-800">Starting Weight</div>
+              <div className="text-sm text-purple-800">
+                {isRangeStartAdjusted ? `Week ${effectiveRangeStart} Baseline Weight` : 'Starting Weight'}
+              </div>
+              {isRangeAdjusted && startWeightNote && (
+                <div className="mt-1 text-xs text-gray-600 leading-snug">
+                  {startWeightNote}
+                </div>
+              )}
             </div>
             <div className="bg-indigo-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-indigo-600">
-                {stats.currentWeight
+                {summarySelectedWeightValue
                   ? (unitSystem === 'metric'
-                      ? `${(Math.round((stats.currentWeight * 0.45359237) * 100) / 100).toFixed(2)} kg`
-                      : `${stats.currentWeight.toFixed(2)} lbs`)
+                      ? `${(Math.round((summarySelectedWeightValue * 0.45359237) * 100) / 100).toFixed(2)} kg`
+                      : `${summarySelectedWeightValue.toFixed(2)} lbs`)
                   : 'N/A'}
               </div>
-              <div className="text-sm text-indigo-800">Current Weight</div>
+              <div className="text-sm text-indigo-800">
+                {isRangeEndAdjusted ? `Week ${effectiveRangeEnd} Ending Weight` : 'Current Weight'}
+              </div>
+              {isRangeAdjusted && endWeightNote && (
+                <div className="mt-1 text-xs text-gray-600 leading-snug">
+                  {endWeightNote}
+                </div>
+              )}
             </div>
             <div className="bg-orange-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-orange-600">
-                {stats.totalWeightLoss > 0
+                {(summaryTotalLossValue !== null && summaryTotalLossValue > 0)
                   ? (unitSystem === 'metric'
-                      ? `-${(Math.round((stats.totalWeightLoss * 0.45359237) * 100) / 100).toFixed(2)} kg`
-                      : `-${stats.totalWeightLoss.toFixed(2)} lbs`)
+                      ? `-${(Math.round((summaryTotalLossValue * 0.45359237) * 100) / 100).toFixed(2)} kg`
+                      : `-${summaryTotalLossValue.toFixed(2)} lbs`)
                   : 'N/A'}
               </div>
               <div className="text-sm text-orange-800">Total Loss</div>
+              {isRangeAdjusted && combinedRangeWeightNotes && (
+                <div className="mt-1 text-xs text-gray-600 leading-snug">
+                  {combinedRangeWeightNotes}
+                </div>
+              )}
             </div>
           </div>
         )}
