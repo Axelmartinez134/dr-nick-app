@@ -1768,6 +1768,8 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   const isDraggingRef = useRef<boolean>(false)
   const rangeStartRef = useRef<number>(1)
   const rangeEndRef = useRef<number>(1)
+  const timeRangeSectionRef = useRef<HTMLDivElement | null>(null)
+  const [showFloatingTimeRange, setShowFloatingTimeRange] = useState(false)
   
   // Hero goal value (do not refetch weekly data just to compute metrics)
   const [heroWeightChangeGoalPercent, setHeroWeightChangeGoalPercent] = useState<number | null>(null)
@@ -1805,6 +1807,27 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Show a floating Time Range control when the top Time Range section scrolls fully offscreen.
+  useEffect(() => {
+    if (!mounted) return
+    const el = timeRangeSectionRef.current
+    if (!el) return
+    if (typeof IntersectionObserver === 'undefined') return
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        // We only want the floating bar when the top control has scrolled above the viewport.
+        // (If it's below the viewport on first load, don't show the floating bar yet.)
+        const scrolledPastTop = entry.boundingClientRect.top < 0
+        setShowFloatingTimeRange(!entry.isIntersecting && scrolledPastTop)
+      },
+      { root: null, threshold: 0 }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [mounted, loading, chartData.length])
 
   // Load data on mount and when patientId changes
   useEffect(() => {
@@ -2301,6 +2324,172 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
     rangeEndRef.current = next
   }
 
+  const renderTimeRangeSlider = (wrapperClassName: string) => {
+    const maxW = stats.currentWeek || 0
+    const start = rangeStart ?? 0
+    const end = rangeEnd ?? maxW
+    const denom = Math.max(1, maxW)
+    const startPct = Math.max(0, Math.min(100, (start / denom) * 100))
+    const endPct = Math.max(0, Math.min(100, (end / denom) * 100))
+
+    return (
+      <div className={wrapperClassName}>
+        <div className="flex items-center gap-3">
+          {/* Start numeric input */}
+          <input
+            type="number"
+            className="w-20 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+            min={0}
+            max={end}
+            value={start}
+            onChange={(e) => handleStartChange(parseInt(e.target.value || '0', 10))}
+          />
+          {/* Combined slider */}
+          <div className="relative flex-1 h-8 select-none">
+            {/* Base track */}
+            <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded bg-gray-200"></div>
+            {/* Selected range fill */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded bg-blue-500"
+              style={{ left: `${startPct}%`, right: `${100 - endPct}%` }}
+            />
+            {/* Interaction layer: chooses nearest thumb, jumps on down, drags with capture */}
+            <div
+              className="absolute inset-0"
+              style={{ zIndex: 30, touchAction: 'none', cursor: 'pointer' }}
+              onPointerDown={(e) => {
+                const el = e.currentTarget as HTMLDivElement
+                const rect = el.getBoundingClientRect()
+                const x = e.clientX - rect.left
+                const width = Math.max(1, rect.width)
+                const pct = Math.max(0, Math.min(100, (x / width) * 100))
+                const maxW = stats.currentWeek || 0
+                const clickedWeek = maxW <= 0 ? 0 : Math.max(0, Math.min(maxW, Math.round((pct / 100) * maxW)))
+                const startPos = (startPct / 100) * width
+                const endPos = (endPct / 100) * width
+                const HIT = 14
+                let chosen: 'start' | 'end'
+                if (Math.abs(x - startPos) <= HIT) {
+                  chosen = 'start'
+                } else if (Math.abs(x - endPos) <= HIT) {
+                  chosen = 'end'
+                } else if (x < startPos) {
+                  chosen = 'start'
+                } else if (x > endPos) {
+                  chosen = 'end'
+                } else {
+                  const mid = (startPos + endPos) / 2
+                  chosen = x < mid ? 'start' : 'end'
+                }
+                setActiveThumb(chosen)
+                activeThumbRef.current = chosen
+                isDraggingRef.current = true
+                const startNow = rangeStartRef.current
+                const endNow = rangeEndRef.current
+                if (chosen === 'start') {
+                  const newStart = Math.max(0, Math.min(clickedWeek, endNow))
+                  handleStartChange(newStart)
+                } else {
+                  const newEnd = Math.max(startNow, Math.min(clickedWeek, maxW))
+                  handleEndChange(newEnd)
+                }
+                try { (el as any).setPointerCapture?.((e as any).pointerId) } catch {}
+              }}
+              onPointerMove={(e) => {
+                if (!isDraggingRef.current) return
+                e.preventDefault()
+                const chosen = activeThumbRef.current
+                if (!chosen) return
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                const x = e.clientX - rect.left
+                const width = Math.max(1, rect.width)
+                const pct = Math.max(0, Math.min(100, (x / width) * 100))
+                const maxW = stats.currentWeek || 0
+                const draggedWeek = maxW <= 0 ? 0 : Math.max(0, Math.min(maxW, Math.round((pct / 100) * maxW)))
+                const startNow = rangeStartRef.current
+                const endNow = rangeEndRef.current
+                if (chosen === 'start') {
+                  const newStart = Math.max(0, Math.min(draggedWeek, endNow))
+                  handleStartChange(newStart)
+                } else if (chosen === 'end') {
+                  const newEnd = Math.max(startNow, Math.min(draggedWeek, maxW))
+                  handleEndChange(newEnd)
+                }
+              }}
+              onPointerUp={(e) => {
+                try { (e.currentTarget as any).releasePointerCapture?.((e as any).pointerId) } catch {}
+                isDraggingRef.current = false
+                activeThumbRef.current = null
+                setActiveThumb(null)
+              }}
+              onPointerCancel={(e) => {
+                try { (e.currentTarget as any).releasePointerCapture?.((e as any).pointerId) } catch {}
+                isDraggingRef.current = false
+                activeThumbRef.current = null
+                setActiveThumb(null)
+              }}
+            />
+            {/* Start thumb (full width; gated by pointer-events) */}
+            <input
+              type="range"
+              min={0}
+              max={maxW}
+              step={1}
+              value={start}
+              onChange={(e) => handleStartChange(parseInt(e.target.value || '0', 10))}
+              onKeyDown={(e) => {
+                const key = e.key
+                const big = e.shiftKey || (e as any).metaKey
+                const step = big ? 5 : 1
+                if (key === 'ArrowLeft' || key === 'ArrowDown') {
+                  e.preventDefault()
+                  handleStartChange(start - step)
+                } else if (key === 'ArrowRight' || key === 'ArrowUp') {
+                  e.preventDefault()
+                  handleStartChange(start + step)
+                }
+              }}
+              className="absolute left-0 right-0 w-full h-8 appearance-none bg-transparent cursor-pointer"
+              style={{ WebkitAppearance: 'none' as any, zIndex: 10, pointerEvents: 'none' }}
+            />
+            {/* End thumb (full width; gated by pointer-events) */}
+            <input
+              type="range"
+              min={0}
+              max={maxW}
+              step={1}
+              value={end}
+              onChange={(e) => handleEndChange(parseInt(e.target.value || String(maxW), 10))}
+              onKeyDown={(e) => {
+                const key = e.key
+                const big = e.shiftKey || (e as any).metaKey
+                const step = big ? 5 : 1
+                if (key === 'ArrowLeft' || key === 'ArrowDown') {
+                  e.preventDefault()
+                  handleEndChange(end - step)
+                } else if (key === 'ArrowRight' || key === 'ArrowUp') {
+                  e.preventDefault()
+                  handleEndChange(end + step)
+                }
+              }}
+              className="absolute left-0 right-0 w-full h-8 appearance-none bg-transparent cursor-pointer"
+              style={{ WebkitAppearance: 'none' as any, zIndex: 20, pointerEvents: 'none' }}
+            />
+          </div>
+          {/* End numeric input */}
+          <input
+            type="number"
+            className="w-20 px-3 py-2 border border-gray-300 rounded-md text-gray-900"
+            min={start}
+            max={maxW}
+            value={end}
+            onChange={(e) => handleEndChange(parseInt(e.target.value || String(maxW), 10))}
+          />
+        </div>
+      </div>
+    )
+  }
+
   // Initialize range only AFTER persisted prefs have been attempted (prioritize persisted over default)
   useEffect(() => {
     if (!rangePrefsLoaded) return
@@ -2496,7 +2685,9 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
   }
 
   return (
-    <div className={`max-w-7xl mx-auto space-y-6 ${!isDoctorView ? 'client-view' : ''}`}>
+    <div
+      className={`max-w-7xl mx-auto space-y-6 ${!isDoctorView ? 'client-view' : ''} ${showFloatingTimeRange ? 'pb-28' : ''}`}
+    >
       
       {/* Metrics Hero Cards - Both Client and Doctor Views */}
       {metrics && metrics.hasEnoughData && (
@@ -2763,7 +2954,11 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
           </div>
         )}
         {/* Global Time Range (UI only in Step 5) */}
-        <div className="mt-6">
+        <div
+          ref={timeRangeSectionRef}
+          className="mt-6"
+          aria-hidden={showFloatingTimeRange}
+        >
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h3 className="text-md font-semibold text-gray-900">Time Range</h3>
@@ -3399,6 +3594,24 @@ export default function ChartsDashboard({ patientId, onSubmissionSelect, selecte
         patientId={patientId}
         patientName={undefined}
       />
+
+      {/* Sticky Time Range control (shows when top control is offscreen) */}
+      <div
+        className={[
+          'fixed inset-x-0 bottom-0 z-50',
+          'border-t border-gray-200 bg-white/95 backdrop-blur',
+          'shadow-[0_-6px_18px_-10px_rgba(0,0,0,0.25)]',
+          'transition-all duration-200 ease-out',
+          showFloatingTimeRange ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none',
+        ].join(' ')}
+        aria-hidden={!showFloatingTimeRange}
+      >
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          <div className="flex justify-center">
+            {renderTimeRangeSlider('w-full max-w-[520px]')}
+          </div>
+        </div>
+      </div>
 
     </div>
   )
