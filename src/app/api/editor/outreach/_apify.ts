@@ -147,7 +147,7 @@ export async function scrapeInstagramProfileViaApify(args: { instagramUrl: strin
   }
 
   const { items } = await client.dataset(datasetId).listItems({ limit: 1 });
-  const raw = Array.isArray(items) ? items[0] : null;
+  const raw: any = Array.isArray(items) ? (items as any[])[0] : null;
   if (!raw) throw new Error('Apify dataset returned no items');
 
   // Some profiles don't include HD; fall back to the best available image URL.
@@ -160,8 +160,20 @@ export async function scrapeInstagramProfileViaApify(args: { instagramUrl: strin
     null;
 
   return {
-    fullName: firstString(raw?.fullName),
-    username: firstString(raw?.username),
+    fullName:
+      firstString(raw?.fullName) ||
+      firstString(raw?.full_name) ||
+      firstString(raw?.user?.fullName) ||
+      firstString(raw?.user?.full_name) ||
+      null,
+    username:
+      firstString(raw?.username) ||
+      firstString(raw?.userName) ||
+      firstString(raw?.user_name) ||
+      firstString(raw?.user?.username) ||
+      firstString(raw?.user?.userName) ||
+      firstString(raw?.user?.user_name) ||
+      null,
     profilePicUrlHD,
     raw,
   };
@@ -204,7 +216,7 @@ export async function scrapeInstagramReelViaApify(args: {
   if (!datasetId) throw new Error('Apify run returned no dataset id');
 
   const { items } = await client.dataset(datasetId).listItems({ limit: 1 });
-  const raw = Array.isArray(items) ? items[0] : null;
+  const raw: any = Array.isArray(items) ? (items as any[])[0] : null;
   if (!raw) throw new Error('Apify dataset returned no items');
 
   const shortcode = firstString(raw?.shortCode ?? raw?.shortcode ?? raw?.short_code) || extractInstagramShortcode(reelUrl);
@@ -212,10 +224,19 @@ export async function scrapeInstagramReelViaApify(args: {
   return {
     reelUrl: firstString(raw?.url) || reelUrl,
     shortcode,
-    ownerUsername: firstString(raw?.ownerUsername ?? raw?.owner_username),
-    ownerFullName: firstString(raw?.ownerFullName ?? raw?.owner_full_name),
-    caption: firstString(raw?.caption),
-    transcript: firstString(raw?.transcript),
+    ownerUsername:
+      firstString(raw?.ownerUsername ?? raw?.owner_username) ||
+      firstString(raw?.owner?.username) ||
+      firstString(raw?.owner?.userName) ||
+      firstString(raw?.owner?.user_name) ||
+      null,
+    ownerFullName:
+      firstString(raw?.ownerFullName ?? raw?.owner_full_name) ||
+      firstString(raw?.owner?.fullName) ||
+      firstString(raw?.owner?.full_name) ||
+      null,
+    caption: firstString(raw?.caption) || firstString(raw?.caption?.text) || null,
+    transcript: firstString(raw?.transcript) || firstString(raw?.captions?.transcript) || null,
     downloadedVideoUrl: firstString(raw?.downloadedVideo ?? raw?.downloaded_video),
     raw,
   };

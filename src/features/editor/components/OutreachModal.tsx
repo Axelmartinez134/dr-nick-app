@@ -2305,7 +2305,24 @@ export function OutreachModal() {
       body: JSON.stringify({ baseTemplateId: args.baseTemplateId, scraped: args.scraped }),
     });
     const j = await res.json().catch(() => null);
-    if (!res.ok || !j?.success) throw new Error(String(j?.error || `Create template failed (${res.status})`));
+    if (!res.ok || !j?.success) {
+      try {
+        console.error("[outreach] create-template failed", {
+          status: res.status,
+          ok: res.ok,
+          body: j,
+          baseTemplateId: args.baseTemplateId,
+          scraped: {
+            fullName: args.scraped?.fullName ?? null,
+            username: args.scraped?.username ?? null,
+            profilePicUrlHD: typeof args.scraped?.profilePicUrlHD === "string" ? args.scraped.profilePicUrlHD : null,
+          },
+        });
+      } catch {
+        // ignore
+      }
+      throw new Error(String(j?.error || `Create template failed (${res.status})`));
+    }
     const templateId = String(j?.templateId || "").trim();
     const templateName = String(j?.templateName || "").trim();
     if (!templateId) throw new Error("Create template returned no templateId");
