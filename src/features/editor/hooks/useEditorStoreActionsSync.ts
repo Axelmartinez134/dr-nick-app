@@ -113,6 +113,18 @@ type Args = {
   onRunBodyRegen: (args: { guidanceText: string | null }) => Promise<{ body: string; bodyStyleRanges: any[] }>;
   onRestoreBodyRegenAttempt: (args: { body: string; bodyStyleRanges: any[] }) => Promise<void> | void;
 
+  // Body Emphasis Styles (Regular only; styles-only)
+  onOpenBodyEmphasisModal: () => void;
+  onCloseBodyEmphasisModal: () => void;
+  fetchBodyEmphasisAttempts: (args: { projectId: string; slideIndex: number; limit?: number }) => Promise<any[]>;
+  onRunBodyEmphasisRegen: (args: { guidanceText: string | null }) => Promise<{ bodyStyleRanges: any[] }>;
+  onRestoreBodyEmphasisAttempt: (args: { body: string; bodyStyleRanges: any[] }) => Promise<void> | void;
+
+  // Emphasis Styles (All slides; Regular only; styles-only)
+  onOpenEmphasisAllModal: () => void;
+  onCloseEmphasisAllModal: () => void;
+  onRunEmphasisAllRegen: (args: { guidanceText: string | null }) => Promise<void> | void;
+
   // Image Library modal (Phase 1)
   onOpenImageLibraryModal: () => void;
   onCloseImageLibraryModal: () => void;
@@ -313,6 +325,14 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchBodyRegenAttempts,
     onRunBodyRegen,
     onRestoreBodyRegenAttempt,
+    onOpenBodyEmphasisModal,
+    onCloseBodyEmphasisModal,
+    fetchBodyEmphasisAttempts,
+    onRunBodyEmphasisRegen,
+    onRestoreBodyEmphasisAttempt,
+    onOpenEmphasisAllModal,
+    onCloseEmphasisAllModal,
+    onRunEmphasisAllRegen,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
@@ -590,6 +610,14 @@ export function useEditorStoreActionsSync(args: Args) {
     fetchBodyRegenAttempts: (args: any) => fetchBodyRegenAttempts(args),
     onRunBodyRegen: (args: any) => onRunBodyRegen(args),
     onRestoreBodyRegenAttempt: (args: any) => onRestoreBodyRegenAttempt(args),
+    onOpenBodyEmphasisModal: () => onOpenBodyEmphasisModal(),
+    onCloseBodyEmphasisModal: () => onCloseBodyEmphasisModal(),
+    fetchBodyEmphasisAttempts: (args: any) => fetchBodyEmphasisAttempts(args),
+    onRunBodyEmphasisRegen: (args: any) => onRunBodyEmphasisRegen(args),
+    onRestoreBodyEmphasisAttempt: (args: any) => onRestoreBodyEmphasisAttempt(args),
+    onOpenEmphasisAllModal: () => onOpenEmphasisAllModal(),
+    onCloseEmphasisAllModal: () => onCloseEmphasisAllModal(),
+    onRunEmphasisAllRegen: (args: any) => onRunEmphasisAllRegen(args),
     setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
     setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
     deleteImageForActiveSlide: (source: "menu" | "button") => deleteImageForActiveSlide(source),
@@ -781,6 +809,14 @@ export function useEditorStoreActionsSync(args: Args) {
       fetchBodyRegenAttempts: (args: any) => implRef.current?.fetchBodyRegenAttempts?.(args) ?? Promise.resolve([]),
       onRunBodyRegen: (args: any) => implRef.current?.onRunBodyRegen?.(args),
       onRestoreBodyRegenAttempt: (args: any) => implRef.current?.onRestoreBodyRegenAttempt?.(args),
+      onOpenBodyEmphasisModal: () => implRef.current?.onOpenBodyEmphasisModal?.(),
+      onCloseBodyEmphasisModal: () => implRef.current?.onCloseBodyEmphasisModal?.(),
+      fetchBodyEmphasisAttempts: (args: any) => implRef.current?.fetchBodyEmphasisAttempts?.(args) ?? Promise.resolve([]),
+      onRunBodyEmphasisRegen: (args: any) => implRef.current?.onRunBodyEmphasisRegen?.(args),
+      onRestoreBodyEmphasisAttempt: (args: any) => implRef.current?.onRestoreBodyEmphasisAttempt?.(args),
+      onOpenEmphasisAllModal: () => implRef.current?.onOpenEmphasisAllModal?.(),
+      onCloseEmphasisAllModal: () => implRef.current?.onCloseEmphasisAllModal?.(),
+      onRunEmphasisAllRegen: (args: any) => implRef.current?.onRunEmphasisAllRegen?.(args),
       onOpenBrandAlignmentModal: () => implRef.current?.onOpenBrandAlignmentModal?.(),
       onCloseBrandAlignmentModal: () => implRef.current?.onCloseBrandAlignmentModal?.(),
       onChangeBrandAlignmentPrompt: (next: string) => implRef.current?.onChangeBrandAlignmentPrompt?.(next),

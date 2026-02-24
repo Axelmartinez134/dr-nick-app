@@ -22,9 +22,11 @@ import { TemplateSettingsModal } from "@/features/editor/components/TemplateSett
 import { PromptsModal } from "@/features/editor/components/PromptsModal";
 import {
   BrandAlignmentModal,
+  BodyEmphasisStylesModal,
   BodyRegenModal,
   CreateAccountModal,
   DeleteAccountModal,
+  EmphasisAllModal,
   IdeasModal,
   OutreachModal,
   ShareCarouselsModal,
@@ -284,6 +286,54 @@ export default function EditorShell() {
   const onCloseBodyRegenModal = useCallback(() => {
     setBodyRegenModalOpen(false);
   }, [setBodyRegenModalOpen]);
+
+  // Body Emphasis Styles modal (Regular only): store-owned modal state
+  const setBodyEmphasisModalOpen = useCallback(
+    (next: boolean) => {
+      editorStore.setState({ bodyEmphasisModalOpen: !!next } as any);
+    },
+    [editorStore]
+  );
+  const setBodyEmphasisTarget = useCallback(
+    (args: { projectId: string | null; slideIndex: number | null }) => {
+      editorStore.setState(
+        {
+          bodyEmphasisTargetProjectId: args.projectId ? String(args.projectId) : null,
+          bodyEmphasisTargetSlideIndex: Number.isInteger(args.slideIndex as any) ? Number(args.slideIndex) : null,
+        } as any
+      );
+    },
+    [editorStore]
+  );
+  const onOpenBodyEmphasisModal = useCallback(() => {
+    const st: any = editorStore.getState?.() || {};
+    const pid = String(st.currentProjectId || "").trim();
+    const siRaw = Number.isInteger(st.activeSlideIndex as any) ? Number(st.activeSlideIndex) : 0;
+    const si = Math.max(0, Math.min(5, Math.floor(siRaw)));
+    if (!pid) return;
+    setBodyEmphasisTarget({ projectId: pid, slideIndex: si });
+    setBodyEmphasisModalOpen(true);
+  }, [editorStore, setBodyEmphasisModalOpen, setBodyEmphasisTarget]);
+  const onCloseBodyEmphasisModal = useCallback(() => {
+    setBodyEmphasisModalOpen(false);
+  }, [setBodyEmphasisModalOpen]);
+
+  // Emphasis All modal (Regular only): store-owned modal state
+  const setEmphasisAllModalOpen = useCallback(
+    (next: boolean) => {
+      editorStore.setState({ emphasisAllModalOpen: !!next } as any);
+    },
+    [editorStore]
+  );
+  const onOpenEmphasisAllModal = useCallback(() => {
+    const st: any = editorStore.getState?.() || {};
+    const pid = String(st.currentProjectId || "").trim();
+    if (!pid) return;
+    setEmphasisAllModalOpen(true);
+  }, [editorStore, setEmphasisAllModalOpen]);
+  const onCloseEmphasisAllModal = useCallback(() => {
+    setEmphasisAllModalOpen(false);
+  }, [setEmphasisAllModalOpen]);
 
   // Phase 6B (Ideas): store-owned modal state (Phase 1)
   const ideasModalOpen = useEditorSelector((s: any) => !!(s as any).ideasModalOpen);
@@ -4243,6 +4293,43 @@ export default function EditorShell() {
     [fetchJson]
   );
 
+  const fetchBodyEmphasisAttempts = useCallback(
+    async (args: { projectId: string; slideIndex: number; limit?: number }) => {
+      const pid = String(args?.projectId || "").trim();
+      const si = Number(args?.slideIndex);
+      const n = Number.isFinite(Number(args?.limit)) ? Math.max(1, Math.min(20, Math.floor(Number(args?.limit)))) : 20;
+      if (!pid) throw new Error("projectId is required");
+      if (!Number.isInteger(si) || si < 0 || si > 5) throw new Error("slideIndex must be 0..5");
+      const j = await fetchJson(
+        `/api/editor/projects/body-emphasis-attempts?projectId=${encodeURIComponent(pid)}&slideIndex=${encodeURIComponent(
+          String(si)
+        )}&limit=${encodeURIComponent(String(n))}`,
+        { method: "GET" }
+      );
+      if (!j?.success) throw new Error(j?.error || "Failed to load emphasis attempts");
+      return Array.isArray(j?.attempts) ? j.attempts : [];
+    },
+    [fetchJson]
+  );
+
+  const fetchGenerateCopyHistoryCompletedOnce = useCallback(
+    async (projectId: string): Promise<boolean> => {
+      const pid = String(projectId || "").trim();
+      if (!pid) return false;
+      try {
+        const j = await fetchJson(
+          `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=${encodeURIComponent("generate-copy")}`,
+          { method: "GET" }
+        );
+        const jobs = Array.isArray(j?.recentJobs) ? j.recentJobs : [];
+        return jobs.some((x: any) => String(x?.status || "") === "completed");
+      } catch {
+        return false;
+      }
+    },
+    [fetchJson]
+  );
+
   const fetchBrandAlignmentPromptOverride = useCallback(async () => {
     const j = await fetchJson("/api/editor/user-settings/brand-alignment-prompt", { method: "GET" });
     if (!j?.success) throw new Error(j?.error || "Failed to load brand alignment prompt");
@@ -5400,6 +5487,23 @@ export default function EditorShell() {
     layoutDirtyRef.current = true;
     handleUndo();
   };
+
+  const [copyCompletedOnceByProjectId, setCopyCompletedOnceByProjectId] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const pid = String(currentProjectId || "").trim();
+    if (!pid) return;
+    // If we've already confirmed completion once, keep it.
+    if (copyCompletedOnceByProjectId[pid]) return;
+    let cancelled = false;
+    void (async () => {
+      const ok = await fetchGenerateCopyHistoryCompletedOnce(pid);
+      if (cancelled) return;
+      if (ok) setCopyCompletedOnceByProjectId((prev) => ({ ...prev, [pid]: true }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [copyCompletedOnceByProjectId, currentProjectId, fetchGenerateCopyHistoryCompletedOnce]);
   const onClickToggleOverlays = () => {
     const next = !showLayoutOverlays;
     setShowLayoutOverlays(next);
@@ -5531,6 +5635,125 @@ export default function EditorShell() {
     },
     [addLog, editorStore, enqueueLiveLayoutForProject, saveSlidePatchForProject, setSlides, slidesRef, templateTypeId]
   );
+
+  const onRunBodyEmphasisRegen = useCallback(
+    async (args: { guidanceText: string | null }) => {
+      const st: any = editorStore.getState?.() || {};
+      const pid = String(st.bodyEmphasisTargetProjectId || "").trim();
+      const slideIndexRaw = st.bodyEmphasisTargetSlideIndex;
+      const slideIndex =
+        Number.isInteger(slideIndexRaw as any) ? Math.max(0, Math.min(5, Math.floor(Number(slideIndexRaw)))) : null;
+      if (!pid || slideIndex === null) throw new Error("Missing emphasis target. Close and reopen the modal.");
+      if (templateTypeId !== "regular") throw new Error("Regenerate Emphasis Styles is only available for Regular projects.");
+      if (copyGenerating || switchingSlides) throw new Error("Please wait until the editor is idle.");
+
+      const guidanceText = args?.guidanceText === null ? null : String(args?.guidanceText || "").trim() || null;
+
+      addLog?.(`✨ Regenerating emphasis styles for slide ${slideIndex + 1} (Regular)...`);
+      const j = await fetchJson("/api/editor/projects/jobs/regenerate-body-emphasis-styles", {
+        method: "POST",
+        body: JSON.stringify({ projectId: pid, slideIndex, guidanceText }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to regenerate emphasis styles");
+
+      const nextRanges = Array.isArray(j?.bodyStyleRanges) ? j.bodyStyleRanges : [];
+
+      // IMPORTANT: styles-only. Never modify draftBody here.
+      setSlides((prev: any[]) =>
+        prev.map((s: any, i: number) => (i !== slideIndex ? s : ({ ...s, draftBodyRanges: nextRanges } as any)))
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndex ? s : ({ ...s, draftBodyRanges: nextRanges } as any)
+      );
+
+      // Recompute + persist layout/input snapshots so canvas reflects new styles and refresh keeps them.
+      enqueueLiveLayoutForProject(pid, [slideIndex]);
+
+      addLog?.(`✅ Emphasis styles updated (slide ${slideIndex + 1})`);
+      return { bodyStyleRanges: nextRanges };
+    },
+    [addLog, copyGenerating, editorStore, enqueueLiveLayoutForProject, fetchJson, setSlides, slidesRef, switchingSlides, templateTypeId]
+  );
+
+  const onRestoreBodyEmphasisAttempt = useCallback(
+    async (args: { body: string; bodyStyleRanges: any[] }) => {
+      const st: any = editorStore.getState?.() || {};
+      const pid = String(st.bodyEmphasisTargetProjectId || "").trim();
+      const slideIndexRaw = st.bodyEmphasisTargetSlideIndex;
+      const slideIndex =
+        Number.isInteger(slideIndexRaw as any) ? Math.max(0, Math.min(5, Math.floor(Number(slideIndexRaw)))) : null;
+      if (!pid || slideIndex === null) throw new Error("Missing emphasis target. Close and reopen the modal.");
+      if (templateTypeId !== "regular") throw new Error("Regenerate Emphasis Styles is only available for Regular projects.");
+
+      const attemptBody = String(args?.body || "");
+      const attemptRanges = Array.isArray(args?.bodyStyleRanges) ? (args.bodyStyleRanges as any[]) : [];
+
+      const curSlide = slidesRef.current?.[slideIndex] || initSlide();
+      const currentBody = String((curSlide as any)?.draftBody || "");
+
+      const nextRanges =
+        attemptBody === currentBody
+          ? attemptRanges
+          : remapRangesByDiff({ oldText: attemptBody, newText: currentBody, ranges: attemptRanges as any });
+
+      // IMPORTANT: styles-only. Never modify draftBody here.
+      setSlides((prev: any[]) =>
+        prev.map((s: any, i: number) => (i !== slideIndex ? s : ({ ...s, draftBodyRanges: nextRanges } as any)))
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndex ? s : ({ ...s, draftBodyRanges: nextRanges } as any)
+      );
+
+      enqueueLiveLayoutForProject(pid, [slideIndex]);
+      addLog?.(`↩️ Restored emphasis styles (slide ${slideIndex + 1})`);
+    },
+    [addLog, editorStore, enqueueLiveLayoutForProject, setSlides, slidesRef, templateTypeId]
+  );
+
+  const onRunEmphasisAllRegen = useCallback(
+    async (args: { guidanceText: string | null }) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) throw new Error("Create or load a project first.");
+      if (templateTypeId !== "regular") throw new Error("Regenerate Emphasis Styles is only available for Regular projects.");
+      if (copyGenerating || switchingSlides) throw new Error("Please wait until the editor is idle.");
+
+      const guidanceText = args?.guidanceText === null ? null : String(args?.guidanceText || "").trim() || null;
+
+      const curSlides = Array.isArray(slidesRef.current) ? slidesRef.current : [];
+      const eligibleIndices = curSlides
+        .map((s: any, i: number) => ({ i, body: String(s?.draftBody || "").trim() }))
+        .filter((x) => x.body.length > 0)
+        .map((x) => x.i);
+      if (eligibleIndices.length === 0) throw new Error("Add Body copy to at least one slide first.");
+
+      addLog?.(`✨ Regenerating emphasis styles for slides: ${eligibleIndices.map((i) => i + 1).join(", ")} (Regular)...`);
+      const j = await fetchJson("/api/editor/projects/jobs/regenerate-body-emphasis-styles-all", {
+        method: "POST",
+        body: JSON.stringify({ projectId: pid, guidanceText }),
+      });
+      if (!j?.success) throw new Error(j?.error || "Failed to regenerate emphasis styles");
+      const rangesBySlide = Array.isArray(j?.rangesBySlide) ? (j.rangesBySlide as any[]) : [];
+
+      setSlides((prev: any[]) =>
+        prev.map((s: any, i: number) => {
+          const body = String(s?.draftBody || "").trim();
+          if (!body) return s; // leave empty slides untouched
+          const nextRanges = Array.isArray(rangesBySlide?.[i]) ? rangesBySlide[i] : [];
+          return { ...s, draftBodyRanges: nextRanges } as any;
+        })
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => {
+        const body = String(s?.draftBody || "").trim();
+        if (!body) return s;
+        const nextRanges = Array.isArray(rangesBySlide?.[i]) ? rangesBySlide[i] : [];
+        return { ...s, draftBodyRanges: nextRanges } as any;
+      });
+
+      enqueueLiveLayoutForProject(pid, eligibleIndices);
+      addLog?.(`✅ Emphasis styles updated (slides ${eligibleIndices.map((i) => i + 1).join(", ")})`);
+    },
+    [addLog, copyGenerating, currentProjectIdRef, enqueueLiveLayoutForProject, fetchJson, setSlides, slidesRef, switchingSlides, templateTypeId]
+  );
   const onClickCopyCaption = async () => {
     const ok = await copyToClipboard(captionDraft || "");
     setCaptionCopyStatus(ok ? "copied" : "error");
@@ -5635,6 +5858,7 @@ export default function EditorShell() {
         debugScreenshot: debugScreenshot || null,
         showDebugPreview,
         debugLogs: Array.isArray(debugLogs) ? debugLogs : [],
+        hasGenerateCopyCompletedOnce: currentProjectId ? !!copyCompletedOnceByProjectId[String(currentProjectId) || ""] : false,
       } as any,
     } as any);
   }, [
@@ -5678,6 +5902,7 @@ export default function EditorShell() {
     slideCount,
     slides,
     switchingSlides,
+    copyCompletedOnceByProjectId,
   ]);
 
   useEditorStoreActionsSync({
@@ -5778,6 +6003,14 @@ export default function EditorShell() {
     fetchBodyRegenAttempts,
     onRunBodyRegen,
     onRestoreBodyRegenAttempt,
+    onOpenBodyEmphasisModal,
+    onCloseBodyEmphasisModal,
+    fetchBodyEmphasisAttempts,
+    onRunBodyEmphasisRegen,
+    onRestoreBodyEmphasisAttempt,
+    onOpenEmphasisAllModal,
+    onCloseEmphasisAllModal,
+    onRunEmphasisAllRegen,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
     deleteImageForActiveSlide,
@@ -6089,7 +6322,11 @@ export default function EditorShell() {
 
       <ImageLibraryModal />
 
+      <BodyEmphasisStylesModal />
+
       <BodyRegenModal />
+
+      <EmphasisAllModal />
 
       <CreateAccountModal />
 

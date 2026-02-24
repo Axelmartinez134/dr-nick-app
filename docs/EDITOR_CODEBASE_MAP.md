@@ -940,6 +940,12 @@ Key tables used by `/editor`:
   - Recents API: `src/app/api/editor/assets/recents/route.ts`
 - **Generate Copy**: `src/features/editor/hooks/useGenerateCopy.ts`
   - Per-account Poppy routing URL: `public.editor_account_settings.poppy_conversation_url`
+- **Regenerate Emphasis Styles (All slides; Regular-only; styles-only)**:
+  - UI: `src/features/editor/components/EditorBottomPanel.tsx` (button under Generate Copy in Controls card)
+  - Modal: `src/features/editor/components/EmphasisAllModal.tsx` (guidance only; no attempts/restore)
+  - Actions/orchestration: `src/app/editor/EditorShell.tsx` (apply + persist via live layout; never rewrites body)
+  - API:
+    - `POST /api/editor/projects/jobs/regenerate-body-emphasis-styles-all` → `src/app/api/editor/projects/jobs/regenerate-body-emphasis-styles-all/route.ts`
 - **Outreach message (DM copy)**:
   - Stored on project: `public.carousel_projects.outreach_message`
   - Editor UI: shown superadmin-only above “¶ Body” in `src/features/editor/components/EditorBottomPanel.tsx`
@@ -956,6 +962,13 @@ Key tables used by `/editor`:
   - APIs:
     - `POST /api/editor/projects/jobs/regenerate-body` → `src/app/api/editor/projects/jobs/regenerate-body/route.ts`
     - `GET  /api/editor/projects/body-regen-attempts` → `src/app/api/editor/projects/body-regen-attempts/route.ts`
+- **Regenerate Emphasis Styles (Regular-only; styles-only)**:
+  - UI: `src/features/editor/components/EditorBottomPanel.tsx` (button in ¶ Body card)
+  - Modal: `src/features/editor/components/BodyEmphasisStylesModal.tsx` (guidance + previous attempts + restore w/ remap)
+  - Actions/orchestration: `src/app/editor/EditorShell.tsx` (open/close, apply + persist; never rewrites body)
+  - APIs:
+    - `POST /api/editor/projects/jobs/regenerate-body-emphasis-styles` → `src/app/api/editor/projects/jobs/regenerate-body-emphasis-styles/route.ts`
+    - `GET  /api/editor/projects/body-emphasis-attempts` → `src/app/api/editor/projects/body-emphasis-attempts/route.ts`
 - **Canvas selection/overlay issues**: `CarouselPreviewVision.tsx` (especially `contextTop` drawing and transforms)
 - **Smart Guides behavior**: `smartGuides.ts` + wiring in `CarouselPreviewVision.tsx`
 - **Template Settings mappings**: `EditorShell.tsx` + `POST /api/editor/projects/update-mappings`

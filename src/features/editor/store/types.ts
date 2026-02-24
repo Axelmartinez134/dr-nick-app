@@ -167,6 +167,26 @@ export type EditorActions = {
   onRunBodyRegen: (args: { guidanceText: string | null }) => Promise<{ body: string; bodyStyleRanges: any[] }>;
   onRestoreBodyRegenAttempt: (args: { body: string; bodyStyleRanges: any[] }) => Promise<void> | void;
 
+  // Body Emphasis Styles (Regular only; styles-only)
+  onOpenBodyEmphasisModal: () => void;
+  onCloseBodyEmphasisModal: () => void;
+  fetchBodyEmphasisAttempts: (args: { projectId: string; slideIndex: number; limit?: number }) => Promise<
+    Array<{
+      id: string;
+      createdAt: string | null;
+      guidanceText: string | null;
+      body: string;
+      bodyStyleRanges: any[];
+    }>
+  >;
+  onRunBodyEmphasisRegen: (args: { guidanceText: string | null }) => Promise<{ bodyStyleRanges: any[] }>;
+  onRestoreBodyEmphasisAttempt: (args: { body: string; bodyStyleRanges: any[] }) => Promise<void> | void;
+
+  // Emphasis Styles (All slides; Regular only; styles-only)
+  onOpenEmphasisAllModal: () => void;
+  onCloseEmphasisAllModal: () => void;
+  onRunEmphasisAllRegen: (args: { guidanceText: string | null }) => Promise<void> | void;
+
   // Brand Alignment (Phase 0)
   onOpenBrandAlignmentModal: () => void;
   onCloseBrandAlignmentModal: () => void;
@@ -614,6 +634,10 @@ export type EditorState = {
   bodyRegenModalOpen: boolean;
   bodyRegenTargetProjectId: string | null;
   bodyRegenTargetSlideIndex: number | null;
+  bodyEmphasisModalOpen: boolean;
+  bodyEmphasisTargetProjectId: string | null;
+  bodyEmphasisTargetSlideIndex: number | null;
+  emphasisAllModalOpen: boolean;
 
   // Saved Poppy prompts library (Phase 3: UI shell only)
   poppyPromptsLibraryStatus: "idle" | "loading" | "done" | "error";

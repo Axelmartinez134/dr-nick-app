@@ -1,0 +1,54 @@
+-- Regular Body Emphasis Styles (per-slide attempts + guidance)
+--
+-- Stores a history of emphasis style ranges (bold/italic/underline) for a specific project+slide,
+-- without rewriting the body text. Used by /editor (Regular only).
+--
+-- IMPORTANT:
+-- - This is account-scoped (multi-tenant /editor).
+-- - Any account member can create attempts (so teams can use it).
+
+create table if not exists public.carousel_body_emphasis_attempts (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references public.editor_accounts(id) on delete cascade,
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  project_id uuid not null references public.carousel_projects(id) on delete cascade,
+  slide_index int not null check (slide_index >= 0 and slide_index <= 5),
+  guidance_text text null,
+  prompt_rendered text not null,
+  input_context jsonb not null default '{}'::jsonb,
+  output_body text not null,
+  output_body_style_ranges jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists carousel_body_emphasis_attempts_account_project_slide_created_idx
+  on public.carousel_body_emphasis_attempts (account_id, project_id, slide_index, created_at desc);
+
+alter table public.carousel_body_emphasis_attempts enable row level security;
+
+-- RLS: account members can read attempts for accounts they belong to.
+drop policy if exists "body_emphasis_attempts_select_member" on public.carousel_body_emphasis_attempts;
+create policy "body_emphasis_attempts_select_member"
+  on public.carousel_body_emphasis_attempts
+  for select
+  using (
+    exists (
+      select 1 from public.editor_account_memberships m
+      where m.account_id = carousel_body_emphasis_attempts.account_id
+        and m.user_id = auth.uid()
+    )
+  );
+
+-- RLS: account members can insert attempts (collaborative feature).
+drop policy if exists "body_emphasis_attempts_insert_member" on public.carousel_body_emphasis_attempts;
+create policy "body_emphasis_attempts_insert_member"
+  on public.carousel_body_emphasis_attempts
+  for insert
+  with check (
+    exists (
+      select 1 from public.editor_account_memberships m
+      where m.account_id = carousel_body_emphasis_attempts.account_id
+        and m.user_id = auth.uid()
+    )
+  );
+

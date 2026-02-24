@@ -242,6 +242,15 @@ export function EditorBottomPanel() {
                     <button
                       type="button"
                       className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      onClick={() => actions?.onOpenBodyEmphasisModal?.()}
+                      disabled={!currentProjectId || copyGenerating || switchingSlides}
+                      title={!currentProjectId ? "Create or load a project first" : "Regenerate emphasis styles for this slide (Regular only)"}
+                    >
+                      Regenerate Emphasis Styles
+                    </button>
+                    <button
+                      type="button"
+                      className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                       onClick={() => actions?.onOpenBodyRegenModal?.()}
                       disabled={!currentProjectId || copyGenerating || switchingSlides}
                       title={!currentProjectId ? "Create or load a project first" : "Regenerate body for this slide (Regular only)"}
@@ -501,6 +510,31 @@ export function EditorBottomPanel() {
               >
                 {copyGenerating ? "Generating Copy..." : "Generate Copy"}
               </button>
+
+              {templateTypeId === "regular" ? (
+                (() => {
+                  const bodies = Array.isArray(slides) ? slides.map((s: any) => String(s?.draftBody || "").trim()) : [];
+                  const allBodiesFilled = bodies.length === 6 && bodies.every((t: string) => !!t);
+                  const hasGenerateCopyCompletedOnce = !!(ui as any)?.hasGenerateCopyCompletedOnce;
+                  const eligible = allBodiesFilled || hasGenerateCopyCompletedOnce;
+                  const disabled = !currentProjectId || copyGenerating || switchingSlides || !eligible;
+                  const tooltip = !eligible
+                    ? "Add copy to the slides or press Generate Copy for this button to be available."
+                    : "Regenerate emphasis styles for all slides (Regular only).";
+                  return (
+                    <span title={tooltip} className="block">
+                      <button
+                        className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                        disabled={disabled}
+                        onClick={() => actions.onOpenEmphasisAllModal?.()}
+                      >
+                        Regenerate Emphasis Styles
+                      </button>
+                    </span>
+                  );
+                })()
+              ) : null}
+
               {!currentProjectId ? (
                 <div className="text-xs text-slate-500">
                   Create or select a project to enable Generate Copy.

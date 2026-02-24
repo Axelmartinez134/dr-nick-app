@@ -46,3 +46,7 @@ export { PoppyPromptsLibraryModal } from './PoppyPromptsLibraryModal';
 
 export { BodyRegenModal } from './BodyRegenModal';
 
+export { BodyEmphasisStylesModal } from './BodyEmphasisStylesModal';
+
+export { EmphasisAllModal } from './EmphasisAllModal';
+
