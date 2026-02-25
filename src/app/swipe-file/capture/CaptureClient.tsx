@@ -41,6 +41,15 @@ export default function CaptureClient() {
   const router = useRouter();
   const sp = useSearchParams();
 
+  const keyFromQuery = useMemo(() => {
+    const raw = sp?.get("k") || "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }, [sp]);
+
   const urlFromQuery = useMemo(() => {
     const raw = sp?.get("url") || "";
     try {
@@ -51,6 +60,7 @@ export default function CaptureClient() {
   }, [sp]);
 
   const [isSuperadmin, setIsSuperadmin] = useState<boolean | null>(null);
+  const publicMode = useMemo(() => !!String(keyFromQuery || "").trim(), [keyFromQuery]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string>("");
 
@@ -71,12 +81,13 @@ export default function CaptureClient() {
 
   useEffect(() => {
     if (loading) return;
-    if (!user) router.replace("/");
-  }, [loading, user, router]);
+    if (!user && !publicMode) router.replace("/");
+  }, [loading, user, router, publicMode]);
 
   useEffect(() => {
     if (loading) return;
     if (!user) return;
+    if (publicMode) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -98,11 +109,21 @@ export default function CaptureClient() {
     return () => {
       cancelled = true;
     };
-  }, [loading, user]);
+  }, [loading, user, publicMode]);
 
   const loadCategories = async () => {
     setError(null);
     try {
+      if (publicMode) {
+        const res = await fetch(`/api/swipe-file/public/categories?k=${encodeURIComponent(String(keyFromQuery || "").trim())}`, { method: "GET" });
+        const j = await res.json().catch(() => null);
+        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load categories (${res.status})`));
+        const rows: Category[] = Array.isArray(j.categories) ? j.categories.map((c: any) => ({ id: String(c.id), name: String(c.name || "") })) : [];
+        setCategories(rows);
+        if (!categoryId) setCategoryId(rows[0]?.id || "");
+        return;
+      }
+
       const token = await getToken();
       if (!token) throw new Error("Missing auth token");
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
@@ -118,10 +139,14 @@ export default function CaptureClient() {
   };
 
   useEffect(() => {
+    if (publicMode) {
+      void loadCategories();
+      return;
+    }
     if (isSuperadmin !== true) return;
     void loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperadmin]);
+  }, [isSuperadmin, publicMode]);
 
   const onAddCategory = async () => {
     const name = String(newCategory || "").trim();
@@ -129,6 +154,22 @@ export default function CaptureClient() {
     setBusy(true);
     setError(null);
     try {
+      if (publicMode) {
+        const res = await fetch("/api/swipe-file/public/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ k: String(keyFromQuery || "").trim(), name }),
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to add category (${res.status})`));
+        const rows: Category[] = Array.isArray(j.categories) ? j.categories.map((c: any) => ({ id: String(c.id), name: String(c.name || "") })) : [];
+        setCategories(rows);
+        const created = rows.find((c) => c.name.toLowerCase() === name.toLowerCase());
+        if (created?.id) setCategoryId(created.id);
+        setNewCategory("");
+        return;
+      }
+
       const token = await getToken();
       if (!token) throw new Error("Missing auth token");
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
@@ -152,22 +193,28 @@ export default function CaptureClient() {
     setError(null);
     setSuccess(false);
     try {
-      const token = await getToken();
-      if (!token) throw new Error("Missing auth token");
       if (!String(url || "").trim()) throw new Error("URL is required");
       if (!String(categoryId || "").trim()) throw new Error("Category is required");
 
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch("/api/swipe-file/items", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          url: String(url || "").trim(),
-          categoryId,
-          tags,
-          note: String(note || "").trim() || null,
-        }),
-      });
+      const payload = {
+        url: String(url || "").trim(),
+        categoryId,
+        tags,
+        note: String(note || "").trim() || null,
+      };
+
+      const res = publicMode
+        ? await fetch("/api/swipe-file/public/items", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ k: String(keyFromQuery || "").trim(), ...payload }),
+          })
+        : await (async () => {
+            const token = await getToken();
+            if (!token) throw new Error("Missing auth token");
+            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+            return await fetch("/api/swipe-file/items", { method: "POST", headers, body: JSON.stringify(payload) });
+          })();
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Save failed (${res.status})`));
       setSuccess(true);
@@ -186,7 +233,7 @@ export default function CaptureClient() {
     );
   }
 
-  if (!user) {
+  if (!user && !publicMode) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="text-sm text-gray-700">Redirecting…</div>
@@ -194,7 +241,7 @@ export default function CaptureClient() {
     );
   }
 
-  if (isSuperadmin === false) {
+  if (!publicMode && isSuperadmin === false) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="w-full max-w-md bg-white rounded-lg border border-slate-200 shadow-sm p-6">
@@ -205,7 +252,7 @@ export default function CaptureClient() {
     );
   }
 
-  if (isSuperadmin === null) {
+  if (!publicMode && isSuperadmin === null) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="text-sm text-gray-700">Checking access…</div>

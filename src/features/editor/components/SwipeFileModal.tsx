@@ -60,6 +60,8 @@ export function SwipeFileModal() {
   const [items, setItems] = useState<SwipeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captureKey, setCaptureKey] = useState<string | null>(null);
+  const [captureKeyPresent, setCaptureKeyPresent] = useState<boolean | null>(null);
 
   const [activeCategoryId, setActiveCategoryId] = useState<string>("all");
   const [q, setQ] = useState<string>("");
@@ -89,6 +91,46 @@ export function SwipeFileModal() {
       return "/swipe-file/capture?url=";
     }
   }, []);
+  const captureLinkNoLogin = useMemo(() => {
+    const base = captureLink.replace("/swipe-file/capture?url=", "/swipe-file/capture");
+    if (!captureKey) return null;
+    try {
+      const u = new URL(base, typeof window !== "undefined" ? window.location.origin : undefined);
+      u.searchParams.set("k", captureKey);
+      u.searchParams.set("url", "");
+      // `url=` should be last-ish, but it's fine.
+      return u.toString();
+    } catch {
+      return `${base}?k=${encodeURIComponent(captureKey)}&url=`;
+    }
+  }, [captureKey, captureLink]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isSuperadmin) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("Missing auth token");
+        const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+        const res = await fetch("/api/swipe-file/capture-key", { method: "GET", headers });
+        const j = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load capture key (${res.status})`));
+        setCaptureKeyPresent(!!j.keyPresent);
+        setCaptureKey(typeof j.key === "string" ? j.key : null);
+      } catch {
+        if (!cancelled) {
+          setCaptureKeyPresent(false);
+          setCaptureKey(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isSuperadmin]);
 
   const refresh = async () => {
     setLoading(true);
@@ -303,18 +345,22 @@ export function SwipeFileModal() {
               <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">iPhone Shortcut URL</div>
               <input
                 className="h-8 flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-800 shadow-sm"
-                value={captureLink}
+                value={captureLinkNoLogin || captureLink}
                 readOnly
                 onFocus={(e) => e.currentTarget.select()}
                 aria-label="Swipe File capture link base"
-                title="Use this as the base URL in your iPhone Shortcut (append URL-encoded shared link)."
+                title={
+                  captureLinkNoLogin
+                    ? "No-login capture link base (includes key). Append URL-encoded shared link after `url=`."
+                    : "Capture link base. If you want no-login capture, set SWIPE_CAPTURE_KEY env and reopen this modal."
+                }
               />
               <button
                 type="button"
                 className="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(captureLink);
+                    await navigator.clipboard.writeText(captureLinkNoLogin || captureLink);
                   } catch {
                     // ignore
                   }
@@ -324,6 +370,11 @@ export function SwipeFileModal() {
                 Copy
               </button>
             </div>
+            {captureKeyPresent === false ? (
+              <div className="mt-1 text-[11px] text-amber-700">
+                No-login capture key not configured yet. Set `SWIPE_CAPTURE_KEY` + `SWIPE_CAPTURE_OWNER_USER_ID` in env.
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <button
