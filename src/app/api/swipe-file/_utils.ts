@@ -85,10 +85,10 @@ export async function getAuthedSwipeContext(request: NextRequest) {
   const { supabase, user } = authed;
 
   const superadmin = await requireSuperadmin(supabase, user.id);
-  if (!superadmin.ok) return { ok: false as const, status: superadmin.status as const, error: superadmin.error };
+  if (!superadmin.ok) return { ok: false as const, status: superadmin.status, error: superadmin.error };
 
   const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
-  if (!acct.ok) return { ok: false as const, status: acct.status as const, error: acct.error };
+  if (!acct.ok) return { ok: false as const, status: acct.status, error: acct.error };
 
   return { ok: true as const, supabase, user, accountId: acct.accountId };
 }
