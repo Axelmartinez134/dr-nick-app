@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { formatDataForGrok, saveGrokAnalysisResponse, GrokDataPackage } from '../../../components/health/grokService'
+import { formatDataForGrok, GrokDataPackage } from '../../../lib/grok/format'
 import { computePlateauPreventionRateForWeek } from '../../../components/health/plateauUtils'
 
 // Type definition for health data record
@@ -444,20 +444,20 @@ ${JSON.stringify(dataPackage, null, 2)}
       }, { status: 500 })
     }
     
-    // Save the analysis response to database
-    console.log('Saving Grok analysis to database...')
-    await saveGrokAnalysisResponse(submissionId, analysis)
-    
-    // Save audit payload to database for debugging
-    console.log('Saving audit payload to database...')
+    // Save analysis + audit payload to database (server-authenticated client)
+    console.log('Saving Grok analysis + audit payload to database...')
     const { error: auditError } = await supabase
       .from('health_data')
-      .update({ grok_audit_payload: auditPayload })
+      .update({
+        grok_analysis_response: analysis,
+        grok_audit_payload: auditPayload,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', submissionId)
     
     if (auditError) {
       console.error('Failed to save audit payload:', auditError)
-      // Don't fail the entire request if audit save fails
+      // Don't fail the entire request if save fails (analysis is still returned to UI)
     }
     
     console.log('Grok analysis completed successfully')
