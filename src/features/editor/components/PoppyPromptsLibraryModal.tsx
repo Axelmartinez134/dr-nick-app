@@ -13,8 +13,17 @@ export function PoppyPromptsLibraryModal() {
     const id = String((s as any).poppyActivePromptId || "").trim();
     return id || null;
   });
+
+  // Brand voice (Alignment): stored per-account and reused as the canonical brand voice doc.
+  const brandAlignmentPrompt = useEditorSelector((s: any) => String((s as any).brandAlignmentPrompt || ""));
+  const brandAlignmentPromptSaveStatus = useEditorSelector(
+    (s: any) => (String((s as any).brandAlignmentPromptSaveStatus || "idle") as any) || "idle"
+  );
+  const brandAlignmentPromptSaveError = useEditorSelector((s: any) => ((s as any).brandAlignmentPromptSaveError as any) || null);
+
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
+  const [brandVoiceOpen, setBrandVoiceOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draftTitleById, setDraftTitleById] = useState<Record<string, string>>({});
   const [draftPromptById, setDraftPromptById] = useState<Record<string, string>>({});
@@ -85,6 +94,7 @@ export function PoppyPromptsLibraryModal() {
   useEffect(() => {
     if (!open) return;
     // Reset transient UI each time the modal opens (drafts will be rehydrated on expand).
+    setBrandVoiceOpen(false);
     setExpandedId(null);
     setDraftTitleById({});
     setDraftPromptById({});
@@ -157,6 +167,64 @@ export function PoppyPromptsLibraryModal() {
         </div>
 
         <div className="px-5 py-4 max-h-[80vh] overflow-y-auto">
+          {/* Sticky brand voice editor (Alignment) */}
+          <div className="sticky top-0 z-10 -mx-5 px-5 pt-0 pb-4 bg-white">
+            <div
+              className={[
+                "rounded-xl border p-4 shadow-sm cursor-pointer select-none",
+                brandVoiceOpen ? "border-blue-300 bg-blue-50" : "border-blue-200 bg-blue-50 hover:bg-blue-100/40",
+              ].join(" ")}
+              onClick={() => setBrandVoiceOpen((v) => !v)}
+              role="button"
+              tabIndex={0}
+              title={brandVoiceOpen ? "Click to collapse" : "Click to edit brand voice"}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-blue-900">Brand Voice</div>
+                  {!brandVoiceOpen ? (
+                    <div className="mt-0.5 text-[11px] text-blue-900/70 truncate">
+                      {String(brandAlignmentPrompt || "").split("\n")[0] || "Click to edit..."}
+                    </div>
+                  ) : (
+                    <div className="mt-0.5 text-xs text-blue-900/80">
+                      This sets the voice + rules used for all carousel copy generation for this client.
+                    </div>
+                  )}
+                </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  {brandAlignmentPromptSaveStatus === "saving" ? (
+                    <span className="text-xs text-blue-700">Saving...</span>
+                  ) : brandAlignmentPromptSaveStatus === "saved" ? (
+                    <span className="text-xs text-emerald-600">Saved ✓</span>
+                  ) : brandAlignmentPromptSaveStatus === "error" ? (
+                    <span className="text-xs text-red-600">Save failed</span>
+                  ) : null}
+                  <span className="text-xs text-blue-900/60">{brandVoiceOpen ? "▾" : "▸"}</span>
+                </div>
+              </div>
+
+              {brandVoiceOpen ? (
+                <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                  <textarea
+                    className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    rows={10}
+                    value={brandAlignmentPrompt}
+                    onChange={(e) => actions?.onChangeBrandAlignmentPrompt?.(e.target.value)}
+                    placeholder="Paste your brand voice + rules here..."
+                  />
+                  {brandAlignmentPromptSaveStatus === "error" && brandAlignmentPromptSaveError ? (
+                    <div className="mt-2 text-xs text-red-600">❌ {String(brandAlignmentPromptSaveError)}</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              <div className="text-sm font-semibold text-slate-900">Prompts</div>
+              <div className="mt-0.5 text-xs text-slate-600">Select and edit your style prompts below.</div>
+            </div>
+          </div>
+
           {status === "loading" ? (
             <div className="text-sm text-slate-600">Loading…</div>
           ) : status === "error" ? (

@@ -212,6 +212,7 @@ When enabled, you’ll see Debug panel entries prefixed with:
 - **Library modal**: `src/features/editor/components/PoppyPromptsLibraryModal.tsx`
   - Inline expand/collapse rows with debounced autosave + Duplicate + Make Active Prompt
   - Active row pinned with “Active” badge
+  - **Phase BV**: includes a sticky **Brand Voice (Alignment)** editor at the top (per-account), separate from the prompts list
 - **Main prompt editor**: `src/features/editor/components/PromptsModal.tsx`
   - Shows “Saving… / Saved ✓ / Save failed” for debounced autosave of the active prompt
 - **State + actions**:
@@ -220,9 +221,19 @@ When enabled, you’ll see Debug panel entries prefixed with:
   - Orchestration: `src/app/editor/EditorShell.tsx`
     - Loads/hydrates the user’s active saved prompt on boot + template type changes
     - Debounced autosave updates the active saved prompt row
-- **Server prompt source of truth (Phase 6)**
-  - `POST /api/editor/projects/jobs/generate-copy` uses **active saved prompt**, with safe fallback to effective prompt
-  - `POST /api/editor/ideas/create-carousel` injects **active saved prompt** as the base prompt, with safe fallback
+- **Server prompt source of truth (Phase 6 / Phase BV)**
+  - `POST /api/editor/projects/jobs/generate-copy` uses **brand voice + active saved prompt** (Option B labels), with safe fallback for the style prompt
+  - `POST /api/editor/ideas/create-carousel` injects **brand voice + active saved prompt** as the base prompt, with safe fallback
+
+#### Manual QA (Brand Voice injection)
+- [ ] Open `/editor`
+- [ ] Click 🎨 **Template** → **Select**
+- [ ] Confirm **Brand Voice (Alignment)** editor is sticky/pinned at top and styled blue
+- [ ] Type into Brand Voice textarea → confirm it shows “Saving…” then “Saved ✓”
+- [ ] Scroll the prompts list → confirm Brand Voice stays pinned while prompts scroll underneath
+- [ ] Select a different prompt and click **Make Active** → confirm modal closes and Poppy Prompt editor opens
+- [ ] Click **Generate Copy** → confirm Debug logs show the composed prompt with `BRAND_VOICE:` then `STYLE_PROMPT:`
+- [ ] Create carousel from an idea → confirm copy generation still works and uses the new composed base prompt
 
 ### Projects
 - **UI**: `src/features/editor/components/SavedProjectsCard.tsx`

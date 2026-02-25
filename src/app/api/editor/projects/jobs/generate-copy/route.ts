@@ -507,6 +507,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Brand voice (per-account): reuse the existing Brand Alignment prompt field as the canonical voice doc.
+  const { data: brandRow, error: brandErr } = await supabase
+    .from('editor_account_settings')
+    .select('brand_alignment_prompt_override')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (brandErr) {
+    return NextResponse.json({ success: false, error: brandErr.message }, { status: 500 });
+  }
+  const brandVoiceRaw = String((brandRow as any)?.brand_alignment_prompt_override ?? '');
+
+  // Phase BV: compose the final Poppy prompt at runtime (brand voice + selected style prompt).
+  // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
+  const composedPromptRaw = `BRAND_VOICE:\n${brandVoiceRaw}\n\nSTYLE_PROMPT:\n${promptRaw}`;
+  const composedPrompt = sanitizePrompt(composedPromptRaw);
+
   // Reel/Post outreach detection (superadmin-only table). If present, we bypass Poppy for copy generation.
   const { data: outreachRow } = await supabase
     .from('editor_outreach_targets')
@@ -576,12 +592,14 @@ export async function POST(request: NextRequest) {
       // leave nulls; callPoppy will throw a clearer error
     }
 
-    poppyRequestBody = poppyRoutingMeta.model ? { prompt, model: poppyRoutingMeta.model } : { prompt };
+    poppyRequestBody = poppyRoutingMeta.model
+      ? { prompt: composedPrompt, model: poppyRoutingMeta.model }
+      : { prompt: composedPrompt };
     poppyPromptDebug = {
       promptSource: loadedPrompt.source,
       savedPromptId: loadedPrompt.savedPromptId,
-      promptRaw: JSON.stringify(promptRaw),
-      promptSanitized: prompt,
+      promptRaw: JSON.stringify(composedPromptRaw),
+      promptSanitized: composedPrompt,
       requestBody: poppyRequestBody,
     };
   }
@@ -622,7 +640,7 @@ export async function POST(request: NextRequest) {
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:claude' });
       const generated = await callAnthropicGenerateFromReel({
         templateTypeId,
-        poppyPromptRaw: promptRaw,
+        poppyPromptRaw: composedPromptRaw,
         bestPractices,
         reelCaption,
         reelTranscript,
@@ -634,12 +652,12 @@ export async function POST(request: NextRequest) {
         console.log(
           `[Generate Copy][Poppy] account=${accountId} project=${project.id} templateType=${templateTypeId} body=${JSON.stringify(
             poppyRequestBody
-          )}\nraw=${poppyPromptDebug?.promptRaw}\n\nsanitized=\n${prompt}`
+          )}\nraw=${poppyPromptDebug?.promptRaw}\n\nsanitized=\n${composedPrompt}`
         );
       } catch {
         // ignore logging failures
       }
-      const poppy = await callPoppy(prompt, { poppyConversationUrl });
+      const poppy = await callPoppy(composedPrompt, { poppyConversationUrl });
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
       const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
       payload = extractJsonObject(parsed.rawText);

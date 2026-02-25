@@ -127,14 +127,16 @@ export async function POST(request: NextRequest) {
   // Per-account audience (used in injected prompt context JSON).
   const { data: audienceRow, error: audienceErr } = await supabase
     .from('editor_account_settings')
-    .select('ideas_prompt_audience')
+    .select('ideas_prompt_audience, brand_alignment_prompt_override')
     .eq('account_id', accountId)
     .maybeSingle();
   if (audienceErr) return NextResponse.json({ success: false, error: audienceErr.message }, { status: 500 });
   const audience = String((audienceRow as any)?.ideas_prompt_audience ?? '');
 
   const topicTitle = String((idea as any).title || '').trim() || 'Untitled Topic';
-  const basePrompt = await loadUserActivePoppyPromptForIdeas({ supabase, accountId, userId: user.id, templateTypeId });
+  const stylePrompt = await loadUserActivePoppyPromptForIdeas({ supabase, accountId, userId: user.id, templateTypeId });
+  const brandVoiceRaw = String((audienceRow as any)?.brand_alignment_prompt_override ?? '');
+  const basePrompt = sanitizePrompt(`BRAND_VOICE:\n${brandVoiceRaw}\n\nSTYLE_PROMPT:\n${stylePrompt}`);
   const promptRendered = buildInjectedPrompt({
     basePrompt,
     audience,

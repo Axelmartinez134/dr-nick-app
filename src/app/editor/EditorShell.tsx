@@ -5489,11 +5489,15 @@ export default function EditorShell() {
   };
 
   const [copyCompletedOnceByProjectId, setCopyCompletedOnceByProjectId] = useState<Record<string, boolean>>({});
+  const copyCompletedOnceCheckStartedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const pid = String(currentProjectId || "").trim();
     if (!pid) return;
     // If we've already confirmed completion once, keep it.
     if (copyCompletedOnceByProjectId[pid]) return;
+    // Avoid refiring the same network check on repeated renders.
+    if (copyCompletedOnceCheckStartedRef.current.has(pid)) return;
+    copyCompletedOnceCheckStartedRef.current.add(pid);
     let cancelled = false;
     void (async () => {
       const ok = await fetchGenerateCopyHistoryCompletedOnce(pid);

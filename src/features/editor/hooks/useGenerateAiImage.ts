@@ -66,6 +66,12 @@ export function useGenerateAiImage(params: {
     saveSlidePatchForProject,
   } = params;
 
+  // Avoid effect re-runs caused by unstable function identities from callers.
+  const getAuthTokenRef = useRef(params.getAuthToken);
+  useEffect(() => {
+    getAuthTokenRef.current = params.getAuthToken;
+  }, [params.getAuthToken]);
+
   const getActiveAccountHeader = () => {
     try {
       const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
@@ -173,6 +179,21 @@ export function useGenerateAiImage(params: {
             `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=generate-ai-image&slideIndex=${slideIndex}`,
             { method: 'GET', headers: { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() } }
           );
+          // If the project no longer exists / isn't in this account, stop polling immediately.
+          if (statusRes.status === 404) {
+            stopTrackingKey(key);
+            window.setTimeout(() => {
+              if (aiImageRunIdByKeyRef.current[key] !== runId) return;
+              setAiImageGeneratingKeys((prev) => {
+                const next = new Set(prev);
+                next.delete(key);
+                return next;
+              });
+              setAiImageProgressByKey((prev) => ({ ...prev, [key]: 0 }));
+              setAiImageStatusByKey((prev) => ({ ...prev, [key]: '' }));
+            }, 0);
+            return;
+          }
           const statusData = await statusRes.json().catch(() => ({}));
           const activeJob = statusData?.activeJob || null;
           const recentJobs = Array.isArray(statusData?.recentJobs) ? statusData.recentJobs : [];
@@ -279,12 +300,18 @@ export function useGenerateAiImage(params: {
       if (aiImagePollRefsByKeyRef.current[key]) window.clearInterval(aiImagePollRefsByKeyRef.current[key]!);
       const pollStatus = async () => {
         try {
-          const token = await getAuthToken();
+          const token = await getAuthTokenRef.current?.();
           if (!token) return;
           const statusRes = await fetch(
             `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(projectIdAtStart)}&jobType=generate-ai-image&slideIndex=${targetSlide}`,
             { method: 'GET', headers: { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() } }
           );
+          if (statusRes.status === 404) {
+            // Stale project selection (deleted/moved accounts). Stop polling.
+            if (aiImagePollRefsByKeyRef.current[key]) window.clearInterval(aiImagePollRefsByKeyRef.current[key]!);
+            aiImagePollRefsByKeyRef.current[key] = null;
+            return;
+          }
           const statusData = await statusRes.json().catch(() => ({}));
           const job = statusData?.activeJob || null;
           if (job && job.error && String(job.error).startsWith('progress:')) {
@@ -498,7 +525,7 @@ export function useGenerateAiImage(params: {
     const attempt = async () => {
       try {
         if (cancelled) return;
-        const token = await getAuthToken();
+        const token = await getAuthTokenRef.current?.();
         if (!token) {
           if (Date.now() - startedAtMs > MAX_RETRY_MS) stop();
           return;
@@ -507,6 +534,11 @@ export function useGenerateAiImage(params: {
           `/api/editor/projects/jobs/status?projectId=${encodeURIComponent(pid)}&jobType=generate-ai-image&slideIndex=${slideIndex}`,
           { method: 'GET', headers: { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() } }
         );
+        if (statusRes.status === 404) {
+          // Project not found (often stale account/project). Don't keep retrying.
+          stop();
+          return;
+        }
         const statusData = await statusRes.json().catch(() => ({}));
         if (cancelled) return;
         const job = statusData?.activeJob || null;
@@ -533,7 +565,7 @@ export function useGenerateAiImage(params: {
       cancelled = true;
       stop();
     };
-  }, [activeSlideIndex, beginTrackingExistingJob, currentProjectId, getAuthToken, templateTypeId]);
+  }, [activeSlideIndex, beginTrackingExistingJob, currentProjectId, templateTypeId]);
 
   return {
     runGenerateAiImage,
