@@ -225,6 +225,9 @@ export type EditorActions = {
   // Outreach (Phase 1: UI shell only; superadmin-only)
   onOpenOutreachModal: () => void;
   onCloseOutreachModal: () => void;
+  // Swipe File (Phase 1: superadmin-only)
+  onOpenSwipeFileModal: () => void;
+  onCloseSwipeFileModal: () => void;
   // Brand Alignment (Phase 1)
   onClickRunBrandAlignmentCheck: () => void;
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<
@@ -629,6 +632,7 @@ export type EditorState = {
   createAccountModalOpen: boolean;
   deleteAccountModalOpen: boolean;
   outreachModalOpen: boolean;
+  swipeFileModalOpen: boolean;
   brandAlignmentModalOpen: boolean;
   shareCarouselsModalOpen: boolean;
   bodyRegenModalOpen: boolean;

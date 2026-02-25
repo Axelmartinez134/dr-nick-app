@@ -33,6 +33,7 @@ import {
   PoppyPromptsLibraryModal,
 } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
+import { SwipeFileModal } from "@/features/editor/components/SwipeFileModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
 import { MobileSaveSlidesPanel } from "@/features/editor/components/MobileSaveSlidesPanel";
@@ -6335,6 +6336,8 @@ export default function EditorShell() {
       <CreateAccountModal />
 
       <DeleteAccountModal />
+
+      <SwipeFileModal />
 
       <OutreachModal />
 

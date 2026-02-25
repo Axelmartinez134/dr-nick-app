@@ -469,7 +469,7 @@ export async function POST(request: NextRequest) {
   // Load project (account-scoped)
   let { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
-    .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id')
+    .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot')
     .eq('id', body.projectId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -478,7 +478,7 @@ export async function POST(request: NextRequest) {
   if (!project?.id) {
     const legacy = await supabase
       .from('carousel_projects')
-      .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id')
+      .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot')
       .eq('id', body.projectId)
       .eq('owner_user_id', user.id)
       .is('account_id', null)
@@ -494,6 +494,10 @@ export async function POST(request: NextRequest) {
   }
 
   const templateTypeId = project.template_type_id === 'enhanced' ? 'enhanced' : 'regular';
+
+  // Swipe File origin marker: project created from a swipe item should bypass Poppy and generate from the saved transcript.
+  const swipeItemId = String((project as any)?.source_swipe_item_id || '').trim();
+  const swipeAngleSnapshot = String((project as any)?.source_swipe_angle_snapshot || '').trim();
 
   // Phase 6: Generate Copy uses the user's active saved Poppy prompt (per-account, per template type).
   // Fallback to account-level effective prompt only if the saved prompt is missing/empty.
@@ -518,22 +522,55 @@ export async function POST(request: NextRequest) {
   }
   const brandVoiceRaw = String((brandRow as any)?.brand_alignment_prompt_override ?? '');
 
-  // Phase BV: compose the final Poppy prompt at runtime (brand voice + selected style prompt).
+  // Phase BV: compose the final prompt at runtime.
+  // - Default: brand voice + selected style prompt (Poppy prompt)
+  // - Swipe-origin: brand voice + the project's stored prompt_snapshot + swipe angle notes
   // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
-  const composedPromptRaw = `BRAND_VOICE:\n${brandVoiceRaw}\n\nSTYLE_PROMPT:\n${promptRaw}`;
+  const stylePromptRaw = swipeItemId ? String((project as any)?.prompt_snapshot || '') : promptRaw;
+  const composedPromptRaw = swipeItemId
+    ? [
+        `BRAND_VOICE:\n${brandVoiceRaw}`,
+        ``,
+        `STYLE_PROMPT:\n${stylePromptRaw}`,
+        swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : `BRAND_VOICE:\n${brandVoiceRaw}\n\nSTYLE_PROMPT:\n${promptRaw}`;
   const composedPrompt = sanitizePrompt(composedPromptRaw);
 
-  // Reel/Post outreach detection (superadmin-only table). If present, we bypass Poppy for copy generation.
-  const { data: outreachRow } = await supabase
-    .from('editor_outreach_targets')
-    .select('source_post_url, source_post_caption, source_post_transcript')
-    .eq('account_id', accountId)
-    .eq('created_project_id', project.id)
-    .maybeSingle();
+  // Reel/Post detection (superadmin-only). If present, we bypass Poppy for copy generation.
+  //
+  // Sources:
+  // - Swipe File: carousel_projects.source_swipe_item_id -> swipe_file_items.caption/transcript
+  // - Outreach: editor_outreach_targets.source_post_* (existing behavior)
+  let swipeCaption = '';
+  let swipeTranscript = '';
+  if (swipeItemId) {
+    const { data: swipeRow } = await supabase
+      .from('swipe_file_items')
+      .select('caption, transcript')
+      .eq('account_id', accountId)
+      .eq('id', swipeItemId)
+      .maybeSingle();
+    swipeCaption = String((swipeRow as any)?.caption || '').trim();
+    swipeTranscript = String((swipeRow as any)?.transcript || '').trim();
+  }
 
-  const isReelOrigin = !!String((outreachRow as any)?.source_post_url || '').trim();
-  const reelCaption = String((outreachRow as any)?.source_post_caption || '').trim();
-  const reelTranscript = String((outreachRow as any)?.source_post_transcript || '').trim();
+  const { data: outreachRow } = swipeItemId
+    ? { data: null as any }
+    : await supabase
+        .from('editor_outreach_targets')
+        .select('source_post_url, source_post_caption, source_post_transcript')
+        .eq('account_id', accountId)
+        .eq('created_project_id', project.id)
+        .maybeSingle();
+
+  const isSwipeOrigin = !!swipeItemId;
+  const isOutreachReelOrigin = !!String((outreachRow as any)?.source_post_url || '').trim();
+  const isReelOrigin = isSwipeOrigin || isOutreachReelOrigin;
+  const reelCaption = isSwipeOrigin ? swipeCaption : String((outreachRow as any)?.source_post_caption || '').trim();
+  const reelTranscript = isSwipeOrigin ? swipeTranscript : String((outreachRow as any)?.source_post_transcript || '').trim();
   // Best practices remain account-scoped effective settings.
   const { effective: ttEffective } = await loadEffectiveTemplateTypeSettings(
     supabase,

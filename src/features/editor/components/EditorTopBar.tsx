@@ -224,6 +224,16 @@ export function EditorTopBar() {
             Outreach
           </button>
         ) : null}
+        {isSuperadmin ? (
+          <button
+            onClick={actions?.onOpenSwipeFileModal}
+            className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
+            title="Swipe File (superadmin)"
+            type="button"
+          >
+            Swipe File
+          </button>
+        ) : null}
         {isSuperadmin && accounts.length > 0 ? (
           <div className="flex items-center gap-2 relative">
             <div className="text-xs font-semibold text-slate-600 whitespace-nowrap">Account</div>

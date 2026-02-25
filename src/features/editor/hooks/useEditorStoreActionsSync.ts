@@ -656,6 +656,12 @@ export function useEditorStoreActionsSync(args: Args) {
     onCloseOutreachModal: () => {
       editorStore.setState({ outreachModalOpen: false } as any);
     },
+    onOpenSwipeFileModal: () => {
+      editorStore.setState({ swipeFileModalOpen: true } as any);
+    },
+    onCloseSwipeFileModal: () => {
+      editorStore.setState({ swipeFileModalOpen: false } as any);
+    },
     onOpenPoppyPromptsLibrary: () => {
       editorStore.setState({ poppyPromptsLibraryOpen: true } as any);
     },
@@ -836,6 +842,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseDeleteAccountModal: () => implRef.current?.onCloseDeleteAccountModal?.(),
       onOpenOutreachModal: () => implRef.current?.onOpenOutreachModal?.(),
       onCloseOutreachModal: () => implRef.current?.onCloseOutreachModal?.(),
+      onOpenSwipeFileModal: () => implRef.current?.onOpenSwipeFileModal?.(),
+      onCloseSwipeFileModal: () => implRef.current?.onCloseSwipeFileModal?.(),
       onOpenPoppyPromptsLibrary: () => implRef.current?.onOpenPoppyPromptsLibrary?.(),
       onClosePoppyPromptsLibrary: () => implRef.current?.onClosePoppyPromptsLibrary?.(),
       hydrateActivePoppyPrompt: (args: any) => implRef.current?.hydrateActivePoppyPrompt?.(args),
