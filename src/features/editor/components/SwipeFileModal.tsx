@@ -60,6 +60,8 @@ export function SwipeFileModal() {
   const [items, setItems] = useState<SwipeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [captureKey, setCaptureKey] = useState<string | null>(null);
   const [captureKeyPresent, setCaptureKeyPresent] = useState<boolean | null>(null);
 
@@ -132,8 +134,9 @@ export function SwipeFileModal() {
     };
   }, [open, isSuperadmin]);
 
-  const refresh = async () => {
-    setLoading(true);
+  const refresh = async (opts?: { setSpinner?: boolean }) => {
+    const setSpinner = opts?.setSpinner !== false;
+    if (setSpinner) setLoading(true);
     setError(null);
     try {
       const token = await getToken();
@@ -162,10 +165,12 @@ export function SwipeFileModal() {
         if (prev && nextItems.some((i) => i.id === prev)) return prev;
         return nextItems[0]?.id || null;
       });
+      return nextItems;
     } catch (e: any) {
       setError(String(e?.message || e || "Failed to load Swipe File"));
+      return null;
     } finally {
-      setLoading(false);
+      if (setSpinner) setLoading(false);
     }
   };
 
@@ -255,6 +260,8 @@ export function SwipeFileModal() {
     .map((it) => it.id);
 
   const runEnrichOne = async (itemId: string) => {
+    // eslint-disable-next-line no-console
+    console.log("[SwipeFile] enrich start", { itemId });
     const token = await getToken();
     if (!token) throw new Error("Missing auth token");
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
@@ -263,19 +270,60 @@ export function SwipeFileModal() {
     if (!res.ok || !j?.success) throw new Error(String(j?.error || `Enrich failed (${res.status})`));
   };
 
+  const runTranscribeOne = async (itemId: string) => {
+    // eslint-disable-next-line no-console
+    console.log("[SwipeFile] transcribe start", { itemId });
+    const token = await getToken();
+    if (!token) throw new Error("Missing auth token");
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+    const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/transcribe`, { method: "POST", headers });
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j?.success) throw new Error(String(j?.error || `Transcribe failed (${res.status})`));
+  };
+
   const onEnrichAll = async () => {
     if (loading) return;
     setLoading(true);
     setError(null);
+    setActionError(null);
     try {
-      for (const id of enrichableIds) {
-        // Refresh between runs so UI shows status changes.
-        await runEnrichOne(id);
-        await refresh();
+      const pendingItems = items
+        .filter((it) => String(it.platform || "").toLowerCase() === "instagram")
+        .filter((it) => {
+          const st = String(it.enrichStatus || "idle").toLowerCase();
+          return st !== "ok" && st !== "running";
+        });
+
+      const total = pendingItems.length;
+      let idx = 0;
+
+      for (const it of pendingItems) {
+        idx += 1;
+        const st = String(it.enrichStatus || "idle").toLowerCase();
+
+        if (st === "needs_transcript") {
+          setNotice(`Transcribing ${idx}/${total} (Whisper)…`);
+          await runTranscribeOne(it.id);
+          await refresh({ setSpinner: false });
+          continue;
+        }
+
+        setNotice(`Enriching ${idx}/${total} (Apify)…`);
+        await runEnrichOne(it.id);
+        const nextItems = await refresh({ setSpinner: false });
+        const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === it.id) : null;
+        if (String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+          setNotice(`Transcript missing — transcribing ${idx}/${total} (Whisper)…`);
+          await runTranscribeOne(it.id);
+          await refresh({ setSpinner: false });
+        }
       }
     } catch (e: any) {
-      setError(String(e?.message || e || "Enrich all failed"));
+      const msg = String(e?.message || e || "Enrich all failed");
+      setActionError(msg);
+      setError(msg);
     } finally {
+      setNotice(null);
       setLoading(false);
     }
   };
@@ -452,6 +500,7 @@ export function SwipeFileModal() {
                 }}
               />
               {error ? <div className="mt-2 text-xs text-red-600">❌ {error}</div> : null}
+              {notice ? <div className="mt-2 text-xs text-amber-700">{notice}</div> : null}
               {loading ? <div className="mt-2 text-xs text-slate-500">Loading…</div> : null}
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
@@ -551,11 +600,23 @@ export function SwipeFileModal() {
                       onClick={async () => {
                         try {
                           setLoading(true);
+                          setNotice("Enriching (Apify)…");
+                          setError(null);
+                          setActionError(null);
                           await runEnrichOne(selectedItem.id);
-                          await refresh();
+                          const nextItems = await refresh({ setSpinner: false });
+                          const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === selectedItem.id) : null;
+                          if (String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+                            setNotice("Transcript missing — transcribing (Whisper)…");
+                            await runTranscribeOne(selectedItem.id);
+                            await refresh({ setSpinner: false });
+                          }
                         } catch (e: any) {
-                          setError(String(e?.message || e || "Enrich failed"));
+                          const msg = String(e?.message || e || "Enrich failed");
+                          setActionError(msg);
+                          setError(msg);
                         } finally {
+                          setNotice(null);
                           setLoading(false);
                         }
                       }}
@@ -564,10 +625,12 @@ export function SwipeFileModal() {
                       Enrich
                     </button>
                   </div>
+                  {notice ? <div className="text-xs text-amber-700">{notice}</div> : null}
+                  {actionError ? <div className="text-xs text-red-600">❌ {actionError}</div> : null}
                   {selectedItem.enrichError ? <div className="text-xs text-red-600">❌ {selectedItem.enrichError}</div> : null}
                   {String(selectedItem.enrichStatus || "").toLowerCase() === "needs_transcript" ? (
                     <div className="text-xs text-amber-700">
-                      Transcript missing. Transcribe is V2 (Whisper).
+                      Transcript missing. If you click Enrich, it will auto-transcribe via Whisper.
                     </div>
                   ) : null}
                 </div>
