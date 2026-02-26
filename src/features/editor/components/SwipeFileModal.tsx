@@ -68,6 +68,8 @@ export function SwipeFileModal() {
   const [activeCategoryId, setActiveCategoryId] = useState<string>("all");
   const [q, setQ] = useState<string>("");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [rowMenu, setRowMenu] = useState<null | { x: number; y: number; itemId: string }>(null);
+  const [rowMenuBusy, setRowMenuBusy] = useState(false);
 
   const selectedItem = useMemo(() => items.find((it) => it.id === selectedItemId) || null, [items, selectedItemId]);
   const [noteDraft, setNoteDraft] = useState<string>("");
@@ -224,6 +226,14 @@ export function SwipeFileModal() {
   }, [open, isSuperadmin]);
 
   useEffect(() => {
+    if (!open) return;
+    if (!isSuperadmin) return;
+    // Category filter should apply immediately.
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategoryId]);
+
+  useEffect(() => {
     // Sync note draft when selection changes.
     setNoteDraft(String(selectedItem?.note || ""));
     setNoteSaveStatus("idle");
@@ -237,6 +247,20 @@ export function SwipeFileModal() {
     if (!isSuperadmin) return;
     void refreshPrompts(templateTypeId);
   }, [open, templateTypeId, isSuperadmin]);
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    const onDown = () => setRowMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRowMenu(null);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [rowMenu]);
 
   // Auto-run Generate Copy once the created project is actually loaded in the editor.
   useEffect(() => {
@@ -443,6 +467,31 @@ export function SwipeFileModal() {
     }
   };
 
+  const deleteItem = async (itemId: string) => {
+    const id = String(itemId || "").trim();
+    if (!id) return;
+    setRowMenuBusy(true);
+    setActionError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}`, { method: "DELETE", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Delete failed (${res.status})`));
+
+      setItems((prev) => (prev || []).filter((it) => String(it.id) !== id));
+      setSelectedItemId((prev) => (prev === id ? null : prev));
+      setRowMenu(null);
+    } catch (e: any) {
+      const msg = String(e?.message || e || "Delete failed");
+      setActionError(msg);
+      setError(msg);
+    } finally {
+      setRowMenuBusy(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-stretch justify-center bg-black/50 p-2 md:p-6"
@@ -587,6 +636,12 @@ export function SwipeFileModal() {
                           selected ? "bg-slate-50" : "bg-white",
                         ].join(" ")}
                         onClick={() => setSelectedItemId(it.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSelectedItemId(it.id);
+                          setRowMenu({ x: e.clientX, y: e.clientY, itemId: it.id });
+                        }}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -626,6 +681,34 @@ export function SwipeFileModal() {
               )}
             </div>
           </main>
+
+          {rowMenu ? (
+            <div
+              className="fixed inset-0 z-[130]"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) setRowMenu(null);
+              }}
+            >
+              <div
+                className="absolute w-44 rounded-lg border border-slate-200 bg-white shadow-xl overflow-hidden"
+                style={{ left: Math.max(8, rowMenu.x), top: Math.max(8, rowMenu.y) }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  disabled={rowMenuBusy}
+                  onClick={async () => {
+                    const ok = window.confirm("Delete this Swipe File item? This cannot be undone.");
+                    if (!ok) return;
+                    await deleteItem(rowMenu.itemId);
+                  }}
+                >
+                  {rowMenuBusy ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Right: detail */}
           <aside className="border-l border-slate-100 bg-white p-4 overflow-auto">

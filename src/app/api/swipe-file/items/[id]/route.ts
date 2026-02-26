@@ -104,3 +104,17 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
   return NextResponse.json({ success: true } satisfies Resp);
 }
 
+export async function DELETE(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const auth = await getAuthedSwipeContext(request);
+  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error } satisfies Resp, { status: auth.status });
+  const { supabase, accountId } = auth;
+
+  const { id } = await ctx.params;
+  const itemId = String(id || '').trim();
+  if (!itemId || !isUuid(itemId)) return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
+
+  const { error } = await supabase.from('swipe_file_items').delete().eq('id', itemId).eq('account_id', accountId);
+  if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });
+  return NextResponse.json({ success: true } satisfies Resp);
+}
+
