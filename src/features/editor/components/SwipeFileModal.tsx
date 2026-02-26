@@ -75,8 +75,27 @@ export function SwipeFileModal() {
     const server = selectedItem?.note ?? "";
     return String(noteDraft || "") !== String(server || "");
   }, [noteDraft, selectedItem?.note]);
+  const [noteSaveStatus, setNoteSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
+  const noteSaveTimeoutRef = useRef<number | null>(null);
 
-  const [templateTypeId, setTemplateTypeId] = useState<"enhanced" | "regular">("enhanced");
+  const [templateTypeId, setTemplateTypeId] = useState<"enhanced" | "regular">(() => {
+    try {
+      const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("swipeFile.templateTypeId") || "").trim() : "";
+      return raw === "regular" ? "regular" : "enhanced";
+    } catch {
+      return "enhanced";
+    }
+  });
+  const templateTypeIdRef = useRef<"enhanced" | "regular">(templateTypeId);
+  useEffect(() => {
+    templateTypeIdRef.current = templateTypeId;
+    try {
+      window.localStorage.setItem("swipeFile.templateTypeId", templateTypeId);
+    } catch {
+      // ignore
+    }
+  }, [templateTypeId]);
   const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
   const [savedPromptId, setSavedPromptId] = useState<string>("");
   const [promptsLoading, setPromptsLoading] = useState(false);
@@ -207,6 +226,10 @@ export function SwipeFileModal() {
   useEffect(() => {
     // Sync note draft when selection changes.
     setNoteDraft(String(selectedItem?.note || ""));
+    setNoteSaveStatus("idle");
+    setNoteSaveError(null);
+    if (noteSaveTimeoutRef.current) window.clearTimeout(noteSaveTimeoutRef.current);
+    noteSaveTimeoutRef.current = null;
   }, [selectedItem?.id, selectedItem?.note]);
 
   useEffect(() => {
@@ -279,6 +302,51 @@ export function SwipeFileModal() {
     const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/transcribe`, { method: "POST", headers });
     const j = await res.json().catch(() => null);
     if (!res.ok || !j?.success) throw new Error(String(j?.error || `Transcribe failed (${res.status})`));
+  };
+
+  const saveNoteNow = async (args: { itemId: string; note: string }) => {
+    const itemId = String(args.itemId || "").trim();
+    if (!itemId) return false;
+    const note = String(args.note ?? "");
+
+    setNoteSaveStatus("saving");
+    setNoteSaveError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ note: note.trim() ? note.trim() : null }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to save note (${res.status})`));
+
+      setItems((prev) =>
+        (prev || []).map((it) => (String(it.id) === itemId ? ({ ...it, note: note.trim() ? note.trim() : null } as any) : it))
+      );
+
+      setNoteSaveStatus("saved");
+      window.setTimeout(() => setNoteSaveStatus("idle"), 1200);
+      return true;
+    } catch (e: any) {
+      const msg = String(e?.message || e || "Failed to save note");
+      setNoteSaveStatus("error");
+      setNoteSaveError(msg);
+      window.setTimeout(() => setNoteSaveStatus("idle"), 2000);
+      return false;
+    }
+  };
+
+  const scheduleDebouncedNoteSave = (args: { itemId: string; note: string; debounceMs: number }) => {
+    if (noteSaveTimeoutRef.current) window.clearTimeout(noteSaveTimeoutRef.current);
+    const itemIdAtSchedule = String(args.itemId || "").trim();
+    const noteAtSchedule = String(args.note ?? "");
+    noteSaveTimeoutRef.current = window.setTimeout(() => {
+      noteSaveTimeoutRef.current = null;
+      void saveNoteNow({ itemId: itemIdAtSchedule, note: noteAtSchedule });
+    }, Math.max(200, Math.floor(args.debounceMs)));
   };
 
   const onEnrichAll = async () => {
@@ -355,7 +423,7 @@ export function SwipeFileModal() {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(selectedItem.id)}/create-project`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ templateTypeId, savedPromptId }),
+        body: JSON.stringify({ templateTypeId: templateTypeIdRef.current, savedPromptId }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Create project failed (${res.status})`));
@@ -532,10 +600,20 @@ export function SwipeFileModal() {
                                     : String(it.enrichStatus || "idle").toLowerCase()}
                               </span>
                             </div>
-                            <div className="mt-1 text-sm font-semibold text-slate-900 truncate">
+                            <div
+                              className="mt-1 text-sm font-semibold text-slate-900 overflow-hidden leading-snug"
+                              style={{
+                                display: "-webkit-box",
+                                WebkitBoxOrient: "vertical" as any,
+                                WebkitLineClamp: 2,
+                              }}
+                              title={it.title ? it.title : it.note ? it.note : it.url}
+                            >
                               {it.title ? it.title : it.note ? it.note : it.url}
                             </div>
-                            <div className="mt-0.5 text-[11px] text-slate-500 truncate">{it.url}</div>
+                            <div className="mt-0.5 text-[11px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap" title={it.url}>
+                              {it.url}
+                            </div>
                           </div>
                           <div className="text-[11px] text-slate-500 whitespace-nowrap">
                             {it.createdAt ? new Date(it.createdAt).toLocaleDateString() : ""}
@@ -563,7 +641,15 @@ export function SwipeFileModal() {
                         <span className="text-xs text-slate-600">@{String(selectedItem.authorHandle)}</span>
                       ) : null}
                     </div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900 break-words">
+                    <div
+                      className="mt-2 text-sm font-semibold text-slate-900 overflow-hidden break-words leading-snug"
+                      style={{
+                        display: "-webkit-box",
+                        WebkitBoxOrient: "vertical" as any,
+                        WebkitLineClamp: 3,
+                      }}
+                      title={selectedItem.title || selectedItem.note || "Swipe item"}
+                    >
                       {selectedItem.title || selectedItem.note || "Swipe item"}
                     </div>
                   </div>
@@ -642,11 +728,28 @@ export function SwipeFileModal() {
                     rows={4}
                     value={noteDraft}
                     onChange={(e) => {
-                      setNoteDraft(e.target.value);
+                      const next = e.target.value;
+                      setNoteDraft(next);
+                      if (!selectedItem?.id) return;
+                      scheduleDebouncedNoteSave({ itemId: selectedItem.id, note: next, debounceMs: 800 });
+                    }}
+                    onBlur={() => {
+                      try {
+                        if (!selectedItem?.id) return;
+                        if (!noteDirty) return;
+                        if (noteSaveTimeoutRef.current) window.clearTimeout(noteSaveTimeoutRef.current);
+                        noteSaveTimeoutRef.current = null;
+                        void saveNoteNow({ itemId: selectedItem.id, note: noteDraft });
+                      } catch {
+                        // ignore
+                      }
                     }}
                     placeholder="Optional: what do you like about this? what angle to use?"
                   />
-                  {noteDirty ? <div className="mt-2 text-[11px] text-amber-700">Unsaved changes (will save when you create project).</div> : null}
+                  {noteSaveStatus === "saving" ? <div className="mt-2 text-[11px] text-slate-500">Saving…</div> : null}
+                  {noteSaveStatus === "saved" ? <div className="mt-2 text-[11px] text-emerald-700">Saved</div> : null}
+                  {noteSaveStatus === "error" ? <div className="mt-2 text-[11px] text-red-600">❌ {noteSaveError || "Save failed"}</div> : null}
+                  {noteDirty && noteSaveStatus === "idle" ? <div className="mt-2 text-[11px] text-amber-700">Autosaving…</div> : null}
                 </div>
 
                 <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -657,7 +760,10 @@ export function SwipeFileModal() {
                       <select
                         className="mt-2 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
                         value={templateTypeId}
-                        onChange={(e) => setTemplateTypeId(e.target.value === "regular" ? "regular" : "enhanced")}
+                        onChange={(e) => {
+                          const next = e.target.value === "regular" ? "regular" : "enhanced";
+                          setTemplateTypeId(next);
+                        }}
                         disabled={createBusy}
                       >
                         <option value="enhanced">Enhanced</option>

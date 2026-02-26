@@ -274,15 +274,36 @@ export default function CaptureClient() {
 
           <div>
             <div className="text-xs font-semibold text-slate-700">URL</div>
-            <input
-              className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="Paste link…"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-            />
+            <div className="mt-2 relative">
+              <input
+                className="w-full h-11 rounded-lg border border-slate-200 bg-white pl-3 pr-20 text-sm text-slate-900 shadow-sm"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Paste link…"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                disabled={busy}
+                onClick={async () => {
+                  setError(null);
+                  try {
+                    const text = typeof navigator !== "undefined" && navigator.clipboard ? await navigator.clipboard.readText() : "";
+                    const next = String(text || "").trim();
+                    if (!next) throw new Error("Clipboard is empty");
+                    setUrl(next);
+                  } catch {
+                    setError("Couldn’t read clipboard. Try pasting manually, or allow clipboard access.");
+                  }
+                }}
+                title="Paste from clipboard"
+              >
+                Paste
+              </button>
+            </div>
             <div className="mt-1 text-[11px] text-slate-500">
               Platform detected: <span className="font-semibold text-slate-700">{platform}</span>
             </div>
