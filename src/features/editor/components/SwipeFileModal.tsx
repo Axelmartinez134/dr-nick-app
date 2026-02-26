@@ -517,7 +517,7 @@ export function SwipeFileModal() {
                 title={
                   captureLinkNoLogin
                     ? "No-login capture link base (includes key). Append URL-encoded shared link after `url=`."
-                    : "Capture link base. If you want no-login capture, set SWIPE_CAPTURE_KEY env and reopen this modal."
+                    : "Capture link base. No-login capture link will appear once your account capture key is loaded."
                 }
               />
               <button
@@ -536,9 +536,7 @@ export function SwipeFileModal() {
               </button>
             </div>
             {captureKeyPresent === false ? (
-              <div className="mt-1 text-[11px] text-amber-700">
-                No-login capture key not configured yet. Set `SWIPE_CAPTURE_KEY` + `SWIPE_CAPTURE_OWNER_USER_ID` in env.
-              </div>
+              <div className="mt-1 text-[11px] text-amber-700">Could not load capture key for this account.</div>
             ) : null}
           </div>
           <div className="flex items-center gap-2">

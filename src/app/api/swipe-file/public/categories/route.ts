@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { s } from '../../_utils';
-import { requireServiceClient, resolveCaptureAccountContext, validateCaptureKeyOrThrow } from '../_utils';
+import { requireCaptureKeyFromRequest, requireServiceClient, resolveCaptureAccountContextFromKey } from '../_utils';
 
 export const runtime = 'nodejs';
 
@@ -45,10 +45,10 @@ export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const k = url.searchParams.get('k') || '';
-    validateCaptureKeyOrThrow(k);
+    const captureKey = requireCaptureKeyFromRequest(k);
 
     const svc = requireServiceClient();
-    const { accountId } = await resolveCaptureAccountContext(svc);
+    const { accountId } = await resolveCaptureAccountContextFromKey(svc, captureKey);
 
     await ensureSeeded(svc, accountId);
     const rows = await listCategories(svc, accountId);
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const k = String(body?.k || '').trim();
-    validateCaptureKeyOrThrow(k);
+    const captureKey = requireCaptureKeyFromRequest(k);
 
     const name = String(s(body?.name) || '')
       .trim()
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     if (name.length > 80) throw new Error('name is too long');
 
     const svc = requireServiceClient();
-    const { accountId } = await resolveCaptureAccountContext(svc);
+    const { accountId } = await resolveCaptureAccountContextFromKey(svc, captureKey);
 
     await ensureSeeded(svc, accountId);
 

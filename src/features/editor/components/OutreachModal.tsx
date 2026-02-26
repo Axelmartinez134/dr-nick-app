@@ -299,7 +299,14 @@ export function OutreachModal() {
       // ignore (best-effort)
     }
   };
-  const [baseTemplateId, setBaseTemplateId] = useState<string>("");
+  const [baseTemplateId, setBaseTemplateId] = useState<string>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("outreach.baseTemplateId") || "").trim() : "";
+      return raw;
+    } catch {
+      return "";
+    }
+  });
   const [scrapeBusy, setScrapeBusy] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
   const [scraped, setScraped] = useState<{
@@ -1039,6 +1046,31 @@ export function OutreachModal() {
     const id = String(hit?.id || "").trim();
     if (id) setBaseTemplateId(id);
   }, [baseTemplateId, open, templates]);
+
+  useEffect(() => {
+    const id = String(baseTemplateId || "").trim();
+    if (!id) return;
+    try {
+      window.localStorage.setItem("outreach.baseTemplateId", id);
+    } catch {
+      // ignore
+    }
+  }, [baseTemplateId]);
+
+  useEffect(() => {
+    // If the saved template id doesn't exist anymore, clear it.
+    const id = String(baseTemplateId || "").trim();
+    if (!id) return;
+    const exists = Array.isArray(templates) && templates.some((t: any) => String(t?.id || "").trim() === id);
+    if (!exists) {
+      try {
+        window.localStorage.removeItem("outreach.baseTemplateId");
+      } catch {
+        // ignore
+      }
+      setBaseTemplateId("");
+    }
+  }, [templates]);
 
   useEffect(() => {
     if (!open) return;
@@ -2687,6 +2719,9 @@ export function OutreachModal() {
     return !!String(reelUrl || "").trim() && !!String(baseTemplateId || "").trim();
   }, [baseTemplateId, instagramUrl, reelUrl, singleMode]);
 
+  // Cmd+O automation: open modal → paste URL → run outreach
+  const pendingShortcutRunRef = useRef<null | { reelUrl: string; startedAtMs: number }>(null);
+
   const handleRunOutreach = async (): Promise<boolean> => {
     if (!canRunAll || anyBusy) return false;
 
@@ -2947,6 +2982,88 @@ export function OutreachModal() {
       return false;
     }
   };
+
+  useEffect(() => {
+    if (!open) return;
+    // If Cmd+O fired while the modal was closed, pick up the pending payload now.
+    const pending = (window as any)?.__outreachRunPending || null;
+    const ts = Number(pending?.ts || 0);
+    const raw = String(pending?.reelUrl || "").trim();
+    if (!raw) return;
+    if (!Number.isFinite(ts) || Date.now() - ts > 10_000) return;
+    try {
+      (window as any).__outreachRunPending = null;
+    } catch {
+      // ignore
+    }
+    const canon = canonicalizeInstagramPostOrReelUrlClient(raw);
+    if (!canon) return;
+    try {
+      setTab("single");
+      setSingleMode("reel");
+      setReelUrl(canon);
+      pendingShortcutRunRef.current = { reelUrl: canon, startedAtMs: Date.now() };
+    } catch {
+      // ignore
+    }
+  }, [open]);
+
+  useEffect(() => {
+    const onShortcut = (e: any) => {
+      const raw = String(e?.detail?.reelUrl || "").trim();
+      const canon = raw ? canonicalizeInstagramPostOrReelUrlClient(raw) : "";
+
+      // Ensure modal is open and in the right view.
+      try {
+        actions?.onOpenOutreachModal?.();
+      } catch {
+        // ignore
+      }
+      try {
+        setTab("single");
+        setSingleMode("reel");
+      } catch {
+        // ignore
+      }
+
+      if (!canon) {
+        setScrapeError("Clipboard is empty (Cmd+O). Copy an Instagram Reel/Post link first.");
+        return;
+      }
+
+      setScrapeError(null);
+      setCreateError(null);
+      setProjectError(null);
+      setPersistError(null);
+      setReelUrl(canon);
+
+      pendingShortcutRunRef.current = { reelUrl: canon, startedAtMs: Date.now() };
+    };
+
+    window.addEventListener("editor:outreach-run", onShortcut as any);
+    return () => window.removeEventListener("editor:outreach-run", onShortcut as any);
+  }, [actions]);
+
+  useEffect(() => {
+    const pending = pendingShortcutRunRef.current;
+    if (!pending) return;
+    if (!open) return;
+
+    // Wait until base template is selected + we have a URL, then run.
+    if (canRunAll && !anyBusy) {
+      pendingShortcutRunRef.current = null;
+      void handleRunOutreach();
+      return;
+    }
+
+    // If templates never load / no base template, surface the real blocker quickly.
+    if (Date.now() - pending.startedAtMs > 2500) {
+      if (!String(baseTemplateId || "").trim()) {
+        setScrapeError('Select a Base template to run outreach.');
+        pendingShortcutRunRef.current = null;
+      }
+    }
+  }, [open, canRunAll, anyBusy, baseTemplateId]);
 
   const TabButton = (props: { id: "single" | "following" | "pipeline"; label: string }) => {
     const active = tab === props.id;

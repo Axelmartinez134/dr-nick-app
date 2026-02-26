@@ -5,9 +5,9 @@ import { s } from '../../_utils';
 import {
   normalizeSwipeUrlForInsert,
   normalizeTags,
+  requireCaptureKeyFromRequest,
   requireServiceClient,
-  resolveCaptureAccountContext,
-  validateCaptureKeyOrThrow,
+  resolveCaptureAccountContextFromKey,
 } from '../_utils';
 
 export const runtime = 'nodejs';
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const k = String(body?.k || '').trim();
-    validateCaptureKeyOrThrow(k);
+    const captureKey = requireCaptureKeyFromRequest(k);
 
     const urlRaw = s(body?.url);
     const categoryId = s(body?.categoryId);
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     const note = noteIn && typeof noteIn === 'string' ? String(noteIn).trim() || null : null;
 
     const svc = requireServiceClient();
-    const { accountId, ownerUserId } = await resolveCaptureAccountContext(svc);
+    const { accountId, ownerUserId } = await resolveCaptureAccountContextFromKey(svc, captureKey);
 
     // Validate category belongs to capture account.
     const { data: catRow, error: catErr } = await svc

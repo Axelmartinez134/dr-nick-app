@@ -116,6 +116,7 @@ const CarouselPreviewVision = dynamic(
 export default function EditorShell() {
   const { user, signOut } = useAuth();
   const editorStore = useEditorStore();
+  const actions = useEditorSelector((s: any) => (s as any).actions);
   const slideCount = 6;
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const setIsSuperadmin = useCallback((next: boolean) => {
@@ -3599,6 +3600,54 @@ export default function EditorShell() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [promptModalOpen]);
+
+  // Shortcut: Cmd+O → open Outreach modal → paste clipboard URL → run outreach
+  useEffect(() => {
+    const onKeyDown = async (e: KeyboardEvent) => {
+      const key = String((e as any)?.key || "").toLowerCase();
+      if (!e.metaKey || e.ctrlKey || e.altKey) return;
+      if (key !== "o") return;
+
+      // Avoid hijacking when typing in inputs.
+      const t = e.target as any;
+      const tag = String(t?.tagName || "").toLowerCase();
+      const isTypingTarget =
+        tag === "input" || tag === "textarea" || tag === "select" || !!t?.isContentEditable || String(t?.getAttribute?.("contenteditable") || "") === "true";
+      if (isTypingTarget) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      let text = "";
+      try {
+        text = typeof navigator !== "undefined" && navigator.clipboard ? await navigator.clipboard.readText() : "";
+      } catch (err: any) {
+        addLog(`⚠️ Clipboard read failed for Cmd+O: ${String(err?.message || err || "unknown error")}`);
+        text = "";
+      }
+      const reelUrl = String(text || "").trim();
+      try {
+        actions?.onOpenOutreachModal?.();
+      } catch {
+        // ignore
+      }
+      try {
+        // Store a pending payload for OutreachModal to pick up on mount.
+        (window as any).__outreachRunPending = { reelUrl, ts: Date.now() };
+      } catch {
+        // ignore
+      }
+      try {
+        window.dispatchEvent(new CustomEvent("editor:outreach-run", { detail: { reelUrl } }));
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actions]);
 
   const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emphasisTextareaRef = useRef<HTMLTextAreaElement | null>(null);
