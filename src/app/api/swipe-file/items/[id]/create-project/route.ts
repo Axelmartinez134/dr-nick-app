@@ -10,6 +10,7 @@ export const maxDuration = 30;
 type Body = {
   templateTypeId: 'regular' | 'enhanced';
   savedPromptId: string;
+  ideaId?: string | null;
 };
 
 type Resp =
@@ -38,9 +39,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const templateTypeId = (body as any)?.templateTypeId === 'regular' ? 'regular' : (body as any)?.templateTypeId === 'enhanced' ? 'enhanced' : null;
   const savedPromptId = s((body as any)?.savedPromptId);
+  const ideaId = s((body as any)?.ideaId);
   if (!templateTypeId) return NextResponse.json({ success: false, error: 'templateTypeId is required' } satisfies Resp, { status: 400 });
   if (!savedPromptId || !isUuid(savedPromptId)) {
     return NextResponse.json({ success: false, error: 'savedPromptId is required' } satisfies Resp, { status: 400 });
+  }
+  if (ideaId && !isUuid(ideaId)) {
+    return NextResponse.json({ success: false, error: 'Invalid ideaId' } satisfies Resp, { status: 400 });
   }
 
   // Load swipe item (account scoped)
@@ -55,6 +60,25 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const platform = String((item as any)?.platform || 'unknown').trim() as SwipePlatform;
   const url = String((item as any)?.url || '').trim();
+
+  // Optional: load idea snapshot (must belong to this account+item)
+  let ideaSnapshot: { id: string; angleText: string } | null = null;
+  if (ideaId) {
+    const { data: ideaRow, error: ideaErr } = await supabase
+      .from('swipe_file_ideas')
+      .select('id, angle_text')
+      .eq('account_id', accountId)
+      .eq('swipe_item_id', itemId)
+      .eq('id', ideaId)
+      .maybeSingle();
+    if (ideaErr) return NextResponse.json({ success: false, error: ideaErr.message } satisfies Resp, { status: 500 });
+    const angleText = String((ideaRow as any)?.angle_text || '').trim();
+    const id = String((ideaRow as any)?.id || '').trim();
+    if (!id || !angleText) {
+      return NextResponse.json({ success: false, error: 'Idea not found' } satisfies Resp, { status: 404 });
+    }
+    ideaSnapshot = { id, angleText };
+  }
 
   // Load saved prompt for this user/account/template type.
   const { data: promptRow, error: promptErr } = await supabase
@@ -98,6 +122,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       // Swipe origin markers
       source_swipe_item_id: itemId,
       source_swipe_angle_snapshot: typeof (item as any)?.note === 'string' ? String((item as any).note || '').trim() || null : null,
+      source_swipe_idea_id: ideaSnapshot ? ideaSnapshot.id : null,
+      source_swipe_idea_snapshot: ideaSnapshot ? ideaSnapshot.angleText : null,
     } as any)
     .select(PROJECT_SELECT)
     .single();

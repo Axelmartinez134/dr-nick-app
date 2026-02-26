@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
 import { useEditorSelector } from "@/features/editor/store";
+import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChatModal";
+import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
 
 type Category = { id: string; name: string };
 type SwipeItem = {
@@ -105,6 +107,10 @@ export function SwipeFileModal() {
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const pendingAutoGenerateProjectIdRef = useRef<string | null>(null);
+
+  const [ideasChatOpen, setIdeasChatOpen] = useState(false);
+  const [ideasCount, setIdeasCount] = useState<number>(0);
+  const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
   const captureLink = useMemo(() => {
     try {
       const origin = typeof window !== "undefined" ? String(window.location.origin || "").trim() : "";
@@ -154,6 +160,30 @@ export function SwipeFileModal() {
       cancelled = true;
     };
   }, [open, isSuperadmin]);
+
+  const refreshIdeasCount = async (itemId: string) => {
+    const id = String(itemId || "").trim();
+    if (!id) return;
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas`, { method: "GET", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) return;
+      const rows = Array.isArray(j.ideas) ? (j.ideas as any[]) : [];
+      setIdeasCount(rows.length);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    if (!selectedItemId) return;
+    void refreshIdeasCount(selectedItemId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedItemId]);
 
   const refresh = async (opts?: { setSpinner?: boolean }) => {
     const setSpinner = opts?.setSpinner !== false;
@@ -420,7 +450,7 @@ export function SwipeFileModal() {
     }
   };
 
-  const onCreateProject = async () => {
+  const onCreateProject = async (opts?: { ideaId: string | null }) => {
     setCreateBusy(true);
     setCreateError(null);
     try {
@@ -447,7 +477,7 @@ export function SwipeFileModal() {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(selectedItem.id)}/create-project`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ templateTypeId: templateTypeIdRef.current, savedPromptId }),
+        body: JSON.stringify({ templateTypeId: templateTypeIdRef.current, savedPromptId, ideaId: opts?.ideaId ?? null }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Create project failed (${res.status})`));
@@ -875,12 +905,26 @@ export function SwipeFileModal() {
                       type="button"
                       className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
                       disabled={createBusy || !savedPromptId}
-                      onClick={() => void onCreateProject()}
+                      onClick={() => setIdeasPickerOpen(true)}
                       title="Create project and auto-generate copy (when transcript exists)"
                     >
                       {createBusy ? "Creating..." : "Create project + rewrite"}
                     </button>
                     {createError ? <div className="text-xs text-red-600">❌ {createError}</div> : null}
+
+                    <button
+                      type="button"
+                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      disabled={!selectedItem || !String(selectedItem.transcript || "").trim()}
+                      onClick={() => setIdeasChatOpen(true)}
+                      title={
+                        !String(selectedItem?.transcript || "").trim()
+                          ? "Enrich first to get a transcript"
+                          : "Chat with this Swipe item and generate carousel-ready ideas"
+                      }
+                    >
+                      Generate ideas{ideasCount > 0 ? ` (${ideasCount})` : ""}
+                    </button>
                     {selectedItem.createdProjectId ? (
                       <button
                         type="button"
@@ -915,6 +959,27 @@ export function SwipeFileModal() {
           </aside>
         </div>
       </div>
+
+      <SwipeIdeasChatModal
+        open={ideasChatOpen}
+        onClose={() => setIdeasChatOpen(false)}
+        swipeItemId={selectedItem?.id || null}
+        swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        onIdeaSaved={() => {
+          if (selectedItem?.id) void refreshIdeasCount(selectedItem.id);
+        }}
+      />
+
+      <SwipeIdeasPickerModal
+        open={ideasPickerOpen}
+        onClose={() => setIdeasPickerOpen(false)}
+        swipeItemId={selectedItem?.id || null}
+        swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        onPick={(args) => {
+          setIdeasPickerOpen(false);
+          void onCreateProject({ ideaId: args.ideaId });
+        }}
+      />
     </div>
   );
 }

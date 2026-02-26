@@ -877,6 +877,42 @@ Superadmin-only workflow to speed up outreach setup for creators. Input an Insta
   - Updates an existing `editor_outreach_targets` row (superadmin-only)
   - Used to attach Whisper transcript + reel video storage path after the initial record is persisted
 
+## Swipe File (Linkwarden-inspired library)
+Superadmin-only content library for saving links, enriching Instagram content, and repurposing into carousels.
+
+### Superadmin-only UI (inside `/editor`)
+- **Top bar button**: `src/features/editor/components/EditorTopBar.tsx`
+  - “Swipe File” (superadmin-only)
+- **Modal**: `src/features/editor/components/SwipeFileModal.tsx`
+  - Categories + saved items (account-scoped)
+  - Enrich (Instagram-only in V1) + Repurpose into a new project
+  - **Ideas Chat (Phase 1)**: “Generate ideas” button opens `SwipeIdeasChatModal`
+- **Ideas Chat modal**: `src/features/editor/components/SwipeIdeasChatModal.tsx`
+  - Persisted per-item chat thread and saved Idea cards
+  - Master prompt override editor (account-wide) under Settings
+
+### Superadmin-only APIs (authed)
+- Swipe items:
+  - `GET/POST /api/swipe-file/items` → `src/app/api/swipe-file/items/route.ts`
+  - `PATCH/DELETE /api/swipe-file/items/[id]` → `src/app/api/swipe-file/items/[id]/route.ts`
+  - `POST /api/swipe-file/items/[id]/enrich` → `src/app/api/swipe-file/items/[id]/enrich/route.ts`
+  - `POST /api/swipe-file/items/[id]/create-project` → `src/app/api/swipe-file/items/[id]/create-project/route.ts`
+- Ideas Chat (Phase 1):
+  - `GET /api/swipe-file/items/[id]/ideas/thread` → `src/app/api/swipe-file/items/[id]/ideas/thread/route.ts`
+  - `POST /api/swipe-file/items/[id]/ideas/messages` → `src/app/api/swipe-file/items/[id]/ideas/messages/route.ts`
+  - `GET/POST /api/swipe-file/items/[id]/ideas` → `src/app/api/swipe-file/items/[id]/ideas/route.ts`
+- Master prompt override (account-wide):
+  - `GET/POST /api/editor/user-settings/swipe-ideas-master-prompt` → `src/app/api/editor/user-settings/swipe-ideas-master-prompt/route.ts`
+
+### Phase 2 (Idea picker → project creation → Generate Copy)
+- `src/features/editor/components/SwipeIdeasPickerModal.tsx`
+  - Opened from Swipe File Repurpose section before creating a project
+  - Allows selecting a saved idea **or** continuing without an idea (Angle/Notes fallback)
+- `POST /api/swipe-file/items/[id]/create-project`
+  - Accepts optional `ideaId` to snapshot the selected idea onto the new project
+- `POST /api/editor/projects/jobs/generate-copy`
+  - If `source_swipe_idea_snapshot` exists, it is used as the Swipe “angle” input (preferred over Angle/Notes)
+
 ### Data model
 - **Migration**: `supabase/migrations/20260208_000001_add_editor_outreach_targets.sql`
 - **Table**: `public.editor_outreach_targets`

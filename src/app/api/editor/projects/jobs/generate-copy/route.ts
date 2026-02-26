@@ -469,7 +469,9 @@ export async function POST(request: NextRequest) {
   // Load project (account-scoped)
   let { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
-    .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot')
+    .select(
+      'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot'
+    )
     .eq('id', body.projectId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -478,7 +480,9 @@ export async function POST(request: NextRequest) {
   if (!project?.id) {
     const legacy = await supabase
       .from('carousel_projects')
-      .select('id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot')
+      .select(
+        'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot'
+      )
       .eq('id', body.projectId)
       .eq('owner_user_id', user.id)
       .is('account_id', null)
@@ -498,6 +502,7 @@ export async function POST(request: NextRequest) {
   // Swipe File origin marker: project created from a swipe item should bypass Poppy and generate from the saved transcript.
   const swipeItemId = String((project as any)?.source_swipe_item_id || '').trim();
   const swipeAngleSnapshot = String((project as any)?.source_swipe_angle_snapshot || '').trim();
+  const swipeIdeaSnapshot = String((project as any)?.source_swipe_idea_snapshot || '').trim();
 
   // Phase 6: Generate Copy uses the user's active saved Poppy prompt (per-account, per template type).
   // Fallback to account-level effective prompt only if the saved prompt is missing/empty.
@@ -524,7 +529,7 @@ export async function POST(request: NextRequest) {
 
   // Phase BV: compose the final prompt at runtime.
   // - Default: brand voice + selected style prompt (Poppy prompt)
-  // - Swipe-origin: brand voice + the project's stored prompt_snapshot + swipe angle notes
+  // - Swipe-origin: brand voice + the project's stored prompt_snapshot + selected Swipe idea (or angle notes fallback)
   // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
   const stylePromptRaw = swipeItemId ? String((project as any)?.prompt_snapshot || '') : promptRaw;
   const composedPromptRaw = swipeItemId
@@ -532,7 +537,11 @@ export async function POST(request: NextRequest) {
         `BRAND_VOICE:\n${brandVoiceRaw}`,
         ``,
         `STYLE_PROMPT:\n${stylePromptRaw}`,
-        swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
+        swipeIdeaSnapshot
+          ? `\nSWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`
+          : swipeAngleSnapshot
+            ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}`
+            : ``,
       ]
         .filter(Boolean)
         .join('\n')
