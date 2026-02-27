@@ -73,6 +73,8 @@ export function SwipeFileModal() {
   const [rowMenu, setRowMenu] = useState<null | { x: number; y: number; itemId: string }>(null);
   const [rowMenuBusy, setRowMenuBusy] = useState(false);
 
+  const [repurposeFilter, setRepurposeFilter] = useState<"all" | "repurposed" | "not_repurposed">("all");
+
   const selectedItem = useMemo(() => items.find((it) => it.id === selectedItemId) || null, [items, selectedItemId]);
   const [noteDraft, setNoteDraft] = useState<string>("");
   const noteDirty = useMemo(() => {
@@ -259,9 +261,28 @@ export function SwipeFileModal() {
     if (!open) return;
     if (!isSuperadmin) return;
     // Category filter should apply immediately.
+    setRepurposeFilter("all");
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategoryId]);
+
+  const visibleItems = useMemo(() => {
+    const mode = repurposeFilter;
+    if (mode === "repurposed") return (items || []).filter((it) => !!String((it as any)?.createdProjectId || "").trim());
+    if (mode === "not_repurposed") return (items || []).filter((it) => !String((it as any)?.createdProjectId || "").trim());
+    return items || [];
+  }, [items, repurposeFilter]);
+
+  useEffect(() => {
+    // Keep selection consistent with current filter.
+    if (!open) return;
+    if (!selectedItemId) {
+      setSelectedItemId(visibleItems[0]?.id || null);
+      return;
+    }
+    const ok = visibleItems.some((it) => it.id === selectedItemId);
+    if (!ok) setSelectedItemId(visibleItems[0]?.id || null);
+  }, [open, selectedItemId, visibleItems]);
 
   useEffect(() => {
     // Sync note draft when selection changes.
@@ -644,16 +665,54 @@ export function SwipeFileModal() {
                   if (e.key === "Enter") void refresh();
                 }}
               />
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  className={[
+                    "h-8 px-3 rounded-full border text-xs font-semibold shadow-sm transition-colors",
+                    repurposeFilter === "repurposed" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => setRepurposeFilter((prev) => (prev === "repurposed" ? "all" : "repurposed"))}
+                  title="Show only items that already have a project"
+                >
+                  Repurposed
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    "h-8 px-3 rounded-full border text-xs font-semibold shadow-sm transition-colors",
+                    repurposeFilter === "not_repurposed"
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => setRepurposeFilter((prev) => (prev === "not_repurposed" ? "all" : "not_repurposed"))}
+                  title="Show only items that do not have a project yet"
+                >
+                  Not repurposed
+                </button>
+                {repurposeFilter !== "all" ? (
+                  <button
+                    type="button"
+                    className="h-8 px-2 rounded-full text-xs font-semibold text-slate-500 hover:text-slate-700"
+                    onClick={() => setRepurposeFilter("all")}
+                    title="Clear filter"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
               {error ? <div className="mt-2 text-xs text-red-600">❌ {error}</div> : null}
               {notice ? <div className="mt-2 text-xs text-amber-700">{notice}</div> : null}
               {loading ? <div className="mt-2 text-xs text-slate-500">Loading…</div> : null}
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
-              {items.length === 0 ? (
-                <div className="p-6 text-sm text-slate-600">No items yet. Use the iPhone Shortcut to save a link.</div>
+              {visibleItems.length === 0 ? (
+                <div className="p-6 text-sm text-slate-600">
+                  {items.length === 0 ? "No items yet. Use the iPhone Shortcut to save a link." : "No items match this filter."}
+                </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {items.map((it) => {
+                  {visibleItems.map((it) => {
                     const selected = it.id === selectedItemId;
                     return (
                       <button
@@ -682,6 +741,11 @@ export function SwipeFileModal() {
                                     ? "needs transcript"
                                     : String(it.enrichStatus || "idle").toLowerCase()}
                               </span>
+                              {String(it.createdProjectId || "").trim() ? (
+                                <span className="text-[11px] font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                  repurposed
+                                </span>
+                              ) : null}
                             </div>
                             <div
                               className="mt-1 text-sm font-semibold text-slate-900 overflow-hidden leading-snug"
@@ -975,6 +1039,9 @@ export function SwipeFileModal() {
         onClose={() => setIdeasPickerOpen(false)}
         swipeItemId={selectedItem?.id || null}
         swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        templateTypeId={templateTypeIdRef.current}
+        savedPromptId={savedPromptId}
+        angleNotesSnapshot={noteDraft}
         onPick={(args) => {
           setIdeasPickerOpen(false);
           void onCreateProject({ ideaId: args.ideaId });

@@ -342,11 +342,16 @@ async function callAnthropicGenerateFromReel(opts: {
   if (!prompt) throw new Error('Template type prompt is empty');
   if (!transcript) throw new Error('Missing reel transcript (Whisper required)');
 
+  const isSwipeSelectedIdea = String(opts.poppyPromptRaw || '').includes('SWIPE_SELECTED_IDEA:');
+  const primaryHeader = isSwipeSelectedIdea
+    ? 'PRIMARY INSTRUCTIONS: Create the carousel and enhance it from the generated Swipe Selected Idea.'
+    : 'PRIMARY INSTRUCTIONS (user-provided "Poppy Prompt"):';
+
   const userText = [
     `You are an expert Instagram carousel copywriter.`,
     `You are given source material from an Instagram Reel (caption + transcript).`,
     ``,
-    `PRIMARY INSTRUCTIONS (user-provided "Poppy Prompt"):\n${prompt}`,
+    `${primaryHeader}\n${prompt}`,
     best ? `\nBEST PRACTICES (superadmin-only):\n${best}` : ``,
     ``,
     `SOURCE MATERIAL:\nREEL_CAPTION:\n${caption || '(empty)'}\n\nREEL_TRANSCRIPT:\n${transcript}`,
@@ -533,18 +538,21 @@ export async function POST(request: NextRequest) {
   // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
   const stylePromptRaw = swipeItemId ? String((project as any)?.prompt_snapshot || '') : promptRaw;
   const composedPromptRaw = swipeItemId
-    ? [
-        `BRAND_VOICE:\n${brandVoiceRaw}`,
-        ``,
-        `STYLE_PROMPT:\n${stylePromptRaw}`,
-        swipeIdeaSnapshot
-          ? `\nSWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`
-          : swipeAngleSnapshot
-            ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}`
-            : ``,
-      ]
-        .filter(Boolean)
-        .join('\n')
+    ? swipeIdeaSnapshot
+      ? [
+          // If the user selected an idea, we want the model to follow that direction
+          // without being influenced by account-level BRAND_VOICE or template STYLE_PROMPT.
+          `SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : [
+          // If no idea was selected, fall back to the saved style prompt + angle notes.
+          `STYLE_PROMPT:\n${stylePromptRaw}`,
+          swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
+        ]
+          .filter(Boolean)
+          .join('\n')
     : `BRAND_VOICE:\n${brandVoiceRaw}\n\nSTYLE_PROMPT:\n${promptRaw}`;
   const composedPrompt = sanitizePrompt(composedPromptRaw);
 

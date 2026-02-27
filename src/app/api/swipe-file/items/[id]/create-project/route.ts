@@ -62,22 +62,25 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const url = String((item as any)?.url || '').trim();
 
   // Optional: load idea snapshot (must belong to this account+item)
-  let ideaSnapshot: { id: string; angleText: string } | null = null;
+  let ideaSnapshot: { id: string; title: string; slideOutline: string[]; angleText: string } | null = null;
   if (ideaId) {
     const { data: ideaRow, error: ideaErr } = await supabase
       .from('swipe_file_ideas')
-      .select('id, angle_text')
+      .select('id, title, slide_outline, angle_text')
       .eq('account_id', accountId)
       .eq('swipe_item_id', itemId)
       .eq('id', ideaId)
       .maybeSingle();
     if (ideaErr) return NextResponse.json({ success: false, error: ideaErr.message } satisfies Resp, { status: 500 });
-    const angleText = String((ideaRow as any)?.angle_text || '').trim();
     const id = String((ideaRow as any)?.id || '').trim();
-    if (!id || !angleText) {
+    const ideaTitle = String((ideaRow as any)?.title || '').trim();
+    const slideOutlineIn = (ideaRow as any)?.slide_outline;
+    const slideOutline = Array.isArray(slideOutlineIn) ? slideOutlineIn.map((x: any) => String(x ?? '')).slice(0, 6) : [];
+    const angleText = String((ideaRow as any)?.angle_text || '').trim();
+    if (!id || !angleText || !ideaTitle || slideOutline.length !== 6) {
       return NextResponse.json({ success: false, error: 'Idea not found' } satisfies Resp, { status: 404 });
     }
-    ideaSnapshot = { id, angleText };
+    ideaSnapshot = { id, title: ideaTitle, slideOutline, angleText };
   }
 
   // Load saved prompt for this user/account/template type.
@@ -97,10 +100,26 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
 
   const title = (() => {
+    // If a Swipe idea was chosen, that title should become the project's title.
+    if (ideaSnapshot?.title) return String(ideaSnapshot.title).slice(0, 120);
     const base = platform === 'instagram' ? 'Swipe File (IG)' : platform === 'youtube' ? 'Swipe File (YT)' : 'Swipe File';
     const trimmed = url ? url.replace(/^https?:\/\//, '').slice(0, 60) : '';
     return `${base}: ${trimmed || 'Link'}`.slice(0, 120);
   })();
+
+  const formatIdeaSnapshotText = (idea: { title: string; slideOutline: string[]; angleText: string }): string => {
+    const slides = (Array.isArray(idea.slideOutline) ? idea.slideOutline : []).slice(0, 6);
+    return [
+      `TITLE:\n${String(idea.title || '').trim()}`,
+      ``,
+      `SLIDE_OUTLINE (6 slides):`,
+      ...slides.map((s, i) => `${i + 1}. ${String(s || '').trim()}`),
+      ``,
+      `ANGLE_TEXT:\n${String(idea.angleText || '').trim()}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  };
 
   // 1) Create project + slides (mirror /api/editor/projects/create)
   const PROJECT_SELECT =
@@ -123,7 +142,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       source_swipe_item_id: itemId,
       source_swipe_angle_snapshot: typeof (item as any)?.note === 'string' ? String((item as any).note || '').trim() || null : null,
       source_swipe_idea_id: ideaSnapshot ? ideaSnapshot.id : null,
-      source_swipe_idea_snapshot: ideaSnapshot ? ideaSnapshot.angleText : null,
+      source_swipe_idea_snapshot: ideaSnapshot ? formatIdeaSnapshotText(ideaSnapshot) : null,
     } as any)
     .select(PROJECT_SELECT)
     .single();

@@ -30,9 +30,12 @@ export function SwipeIdeasPickerModal(props: {
   onClose: () => void;
   swipeItemId: string | null;
   swipeItemLabel: string;
+  templateTypeId: "regular" | "enhanced";
+  savedPromptId: string;
+  angleNotesSnapshot: string;
   onPick: (args: { ideaId: string | null }) => void;
 }) {
-  const { open, onClose, swipeItemId, swipeItemLabel, onPick } = props;
+  const { open, onClose, swipeItemId, swipeItemLabel, templateTypeId, savedPromptId, angleNotesSnapshot, onPick } = props;
 
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +43,11 @@ export function SwipeIdeasPickerModal(props: {
   const [selectedId, setSelectedId] = useState<string>("");
 
   const selectedIdea = useMemo(() => ideas.find((i) => i.id === selectedId) || null, [ideas, selectedId]);
+
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [promptSections, setPromptSections] = useState<Array<{ id: string; title: string; content: string }>>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +60,10 @@ export function SwipeIdeasPickerModal(props: {
       setError(null);
       setIdeas([]);
       setSelectedId("");
+      setPromptOpen(false);
+      setPromptLoading(false);
+      setPromptError(null);
+      setPromptSections([]);
       try {
         const token = await getToken();
         if (!token) throw new Error("Missing auth token");
@@ -83,6 +95,44 @@ export function SwipeIdeasPickerModal(props: {
       cancelled = true;
     };
   }, [open, swipeItemId]);
+
+  const loadPromptPreview = async (args: { ideaId: string | null }) => {
+    const itemId = String(swipeItemId || "").trim();
+    if (!itemId) return;
+    setPromptLoading(true);
+    setPromptError(null);
+    setPromptSections([]);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/prompt-preview`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          templateTypeId,
+          savedPromptId: String(savedPromptId || "").trim(),
+          ideaId: args.ideaId,
+          angleNotesSnapshot: String(angleNotesSnapshot || ""),
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompt (${res.status})`));
+      const sections = Array.isArray(j.sections) ? (j.sections as any[]) : [];
+      setPromptSections(
+        sections.map((s) => ({
+          id: String(s?.id || ""),
+          title: String(s?.title || ""),
+          content: String(s?.content || ""),
+        }))
+      );
+    } catch (e: any) {
+      setPromptError(String(e?.message || e || "Failed to load prompt"));
+      setPromptSections([]);
+    } finally {
+      setPromptLoading(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -194,10 +244,83 @@ export function SwipeIdeasPickerModal(props: {
               >
                 Continue without idea
               </button>
+              <button
+                type="button"
+                className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                disabled={!String(swipeItemId || "").trim() || !String(savedPromptId || "").trim()}
+                onClick={() => {
+                  setPromptOpen(true);
+                  void loadPromptPreview({ ideaId: selectedIdea ? selectedIdea.id : null });
+                }}
+                title="See the exact LLM prompt (split into sections)"
+              >
+                Show prompt that will be sent
+              </button>
             </div>
           </aside>
         </div>
       </div>
+
+      {promptOpen ? (
+        <div
+          className="fixed inset-0 z-[155] flex items-stretch justify-center bg-black/50 p-2 md:p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPromptOpen(false);
+          }}
+        >
+          <div className="w-full max-w-4xl h-full bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-900 truncate">Prompt preview</div>
+                <div className="mt-0.5 text-xs text-slate-500 truncate">Shown in the same order the LLM receives it.</div>
+              </div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setPromptOpen(false)}
+                aria-label="Close"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-auto p-4">
+              {promptError ? <div className="text-sm text-red-600">❌ {promptError}</div> : null}
+              {promptLoading ? <div className="text-sm text-slate-600">Loading…</div> : null}
+
+              {!promptLoading && !promptError && promptSections.length === 0 ? (
+                <div className="text-sm text-slate-600">No prompt sections.</div>
+              ) : null}
+
+              <div className="space-y-3">
+                {promptSections.map((sec, idx) => (
+                  <div key={sec.id || String(idx)} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                      <div className="text-xs font-semibold text-slate-700">
+                        {idx + 1}. {sec.title || "Section"}
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <div className="text-xs text-slate-800 whitespace-pre-wrap break-words">{sec.content || "—"}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 p-4 flex justify-end">
+              <button
+                type="button"
+                className="h-10 px-4 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                onClick={() => setPromptOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

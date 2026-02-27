@@ -16,8 +16,18 @@ function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(String(v || '').trim());
 }
 
-function sanitizeText(input: string): string {
-  return String(input || '').replace(/[\x00-\x1F\x7F]/g, ' ').trim();
+function normalizeSlideOutline(input: any): string[] {
+  if (!Array.isArray(input)) return [];
+  const out = input.map((x) => String(x ?? '')).slice(0, 6);
+  return out.length === 6 ? out : [];
+}
+
+function sanitizePrompt(input: string): string {
+  // Remove ASCII control chars that can break JSON payloads/logging,
+  // but preserve common whitespace formatting (tabs/newlines).
+  return String(input || '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
+    .trim();
 }
 
 function extractJsonObject(text: string): any {
@@ -45,7 +55,12 @@ function assertCards(payload: any): { assistantMessage: string; cards: CardOut[]
   return { assistantMessage: String(assistantMessage || '').trim(), cards };
 }
 
-async function callAnthropicJson(args: { system: string; messages: Array<{ role: 'user' | 'assistant'; content: string }> }) {
+async function callAnthropicJson(args: {
+  system: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
   if (!apiKey) throw new Error('Missing env var: ANTHROPIC_API_KEY');
@@ -62,8 +77,8 @@ async function callAnthropicJson(args: { system: string; messages: Array<{ role:
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2600,
-        temperature: 0.2,
+        max_tokens: typeof args.max_tokens === 'number' ? args.max_tokens : 2600,
+        temperature: typeof args.temperature === 'number' ? args.temperature : 0.2,
         system: args.system,
         messages: args.messages,
       }),
@@ -80,6 +95,11 @@ async function callAnthropicJson(args: { system: string; messages: Array<{ role:
   } finally {
     clearTimeout(t);
   }
+}
+
+function parseCardsFromRaw(rawText: string): { assistantMessage: string; cards: CardOut[] } {
+  const payload = extractJsonObject(rawText);
+  return assertCards(payload);
 }
 
 async function ensureThread(args: { supabase: any; accountId: string; userId: string; swipeItemId: string }): Promise<string> {
@@ -218,7 +238,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       thread_id: threadId,
       created_by_user_id: user.id,
       role: 'user',
-      content: sanitizeText(content),
+      content: sanitizePrompt(content),
     } as any);
     if (userMsgErr) return NextResponse.json({ success: false, error: userMsgErr.message } satisfies Resp, { status: 500 });
 
@@ -239,7 +259,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       }))
       .reverse();
 
-    const system = sanitizeText(
+    const systemBase = sanitizePrompt(
       [
         `MASTER_PROMPT:\n${masterPrompt}`,
         ``,
@@ -257,9 +277,38 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       ].join('\n')
     );
 
-    const anthropic = await callAnthropicJson({ system, messages: history });
-    const payload = extractJsonObject(anthropic.rawText);
-    const parsed = assertCards(payload);
+    const system =
+      systemBase +
+      '\n\n' +
+      sanitizePrompt(
+        [
+          'IMPORTANT:',
+          '- Return JSON only (no markdown, no preamble).',
+          '- If you want to explain something, put it inside assistantMessage.',
+        ].join('\n')
+      );
+
+    const anthropic = await callAnthropicJson({ system, messages: history, temperature: 0.2, max_tokens: 2600 });
+
+    // Robustness: Claude may occasionally return non-JSON on follow-ups. Retry once with stricter instructions.
+    const parsed = await (async () => {
+      try {
+        return parseCardsFromRaw(anthropic.rawText);
+      } catch {
+        const retrySystem =
+          system +
+          '\n\n' +
+          sanitizePrompt(
+            [
+              'FORMAT_ERROR: Your previous response was invalid.',
+              'Return ONLY the JSON object in the required shape. No other text.',
+            ].join('\n')
+          );
+        const retry = await callAnthropicJson({ system: retrySystem, messages: history, temperature: 0, max_tokens: 2200 });
+        return parseCardsFromRaw(retry.rawText);
+      }
+    })();
+
     const assistantMessage = parsed.assistantMessage || 'Here are some ideas. Tell me which direction you like.';
 
     // Persist assistant message.
@@ -270,18 +319,37 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         thread_id: threadId,
         created_by_user_id: user.id,
         role: 'assistant',
-        content: sanitizeText(assistantMessage),
+        content: sanitizePrompt(assistantMessage),
       } as any)
       .select('id')
       .single();
     if (assistantErr) return NextResponse.json({ success: false, error: assistantErr.message } satisfies Resp, { status: 500 });
+
+    const sourceMessageId = String((assistantRow as any)?.id || '').trim();
+    if (!sourceMessageId) {
+      return NextResponse.json({ success: false, error: 'Failed to persist assistant message' } satisfies Resp, { status: 500 });
+    }
+
+    const draftRows = parsed.cards.map((c) => ({
+      account_id: accountId,
+      swipe_item_id: swipeItemId,
+      thread_id: threadId,
+      source_message_id: sourceMessageId,
+      created_by_user_id: user.id,
+      title: String(c.title || '').trim().slice(0, 240),
+      slide_outline: normalizeSlideOutline(c.slides) as any,
+      angle_text: String(c.angleText || '').trim(),
+    }));
+
+    const { error: draftErr } = await supabase.from('swipe_file_idea_drafts').insert(draftRows as any);
+    if (draftErr) return NextResponse.json({ success: false, error: draftErr.message } satisfies Resp, { status: 500 });
 
     return NextResponse.json({
       success: true,
       assistantMessage,
       cards: parsed.cards,
       threadId,
-      sourceMessageId: String((assistantRow as any)?.id || ''),
+      sourceMessageId,
     } satisfies Resp);
   } catch (e: any) {
     return NextResponse.json({ success: false, error: String(e?.message || 'Failed') } satisfies Resp, { status: 500 });
