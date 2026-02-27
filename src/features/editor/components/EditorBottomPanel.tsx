@@ -1,10 +1,11 @@
 /* eslint-disable react/no-unstable-nested-components */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RichTextInput } from "@/app/editor/RichTextInput";
 import { DebugCard } from "./DebugCard";
 import { useEditorSelector } from "@/features/editor/store";
+import { CaptionRegenHistoryModal } from "@/features/editor/components/CaptionRegenHistoryModal";
 
 export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
@@ -12,6 +13,7 @@ export function EditorBottomPanel() {
   const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
   const actions = useEditorSelector((s: any) => (s as any).actions);
   const aiSettingsPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [captionHistoryOpen, setCaptionHistoryOpen] = useState(false);
 
   // Dismiss Gemini settings popover on outside click (and not on the ⚙️ toggle button).
   // NOTE: must be unconditionally declared (hooks cannot be after an early return).
@@ -702,6 +704,18 @@ export function EditorBottomPanel() {
                 ) : ui.captionCopyStatus === "error" ? (
                 <span className="text-xs text-red-600 font-medium">Copy failed</span>
               ) : null}
+              {isSuperadmin ? (
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  onClick={() => setCaptionHistoryOpen(true)}
+                  disabled={!currentProjectId || copyGenerating || ui.captionRegenGenerating}
+                  title={!currentProjectId ? "Create or load a project first" : "View caption regeneration history"}
+                  aria-label="View caption regen history"
+                >
+                  History
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="h-8 w-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
@@ -744,6 +758,12 @@ export function EditorBottomPanel() {
             <div className="mt-2 text-xs text-red-600">❌ {ui.captionRegenError}</div>
           ) : null}
         </div>
+
+        <CaptionRegenHistoryModal
+          open={captionHistoryOpen}
+          onClose={() => setCaptionHistoryOpen(false)}
+          projectId={currentProjectId || null}
+        />
 
         <DebugCard
           debugScreenshot={ui.debugScreenshot || null}

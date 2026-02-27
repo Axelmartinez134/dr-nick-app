@@ -18,191 +18,7 @@ function sanitizeText(input: string): string {
 }
 
 function buildDefaultCaptionPrompt(): string {
-  return `COMPLETE CONTEXT FOR CAROUSEL CAPTION GENERATION
-ABOUT THE USER
-Business Identity:
-
-Name: Ax
-Business: "The Bottleneck Hunter"
-Website: AutomatedBots.com
-Positioning: AI automation consultant who applies Theory of Constraints methodology from Fortune 500 auditing background
-Target Market: Post-product-market-fit companies ($1M-$20M revenue, 1-60 employees)
-Core Service: Identify operational constraints BEFORE implementing AI solutions
-
-Current Business Status:
-
-Current MRR: ~$3K
-Goal: $10K MRR
-Recently landed: $9K client
-Experience: 1+ year implementing AI for businesses
-Background: Former Fortune 500 auditor (quit January 2025)
-
-Key Differentiators:
-
-Uses Theory of Constraints (TOC) methodology
-Emphasizes constraint identification BEFORE tool selection
-References "The Goal" by Eliyahu Goldratt
-NOT a generic "AI automation consultant" - strategic business diagnostician first, implementer second
-
-Technical Expertise:
-
-n8n workflow development
-Airtable automation
-Cold email infrastructure (32 accounts across 8 domains via Instantly.ai)
-Video production workflow automation
-Quality control systems
-API integrations
-
-Content Infrastructure:
-
-Creating 40 carousels per month
-Platforms: LinkedIn and Instagram
-Focus: Educational content about business constraints and operational efficiency
-
-
-COPYWRITING FRAMEWORK (MANDATORY)
-Every LinkedIn caption must follow this structure:
-
-Open with intrigue/question - Hook that makes people stop scrolling
-Establish credibility - Reference experience, specific results, or expertise
-Show concrete pain - Real numbers, specific scenarios, actual costs
-Inject constraint/bottleneck methodology - Always bring it back to finding constraints FIRST
-Differentiate from generic automation consultants - "Here's what most consultants won't tell you..."
-Reinforce "Bottleneck Hunter" brand - Use constraint/bottleneck language
-Always emphasize finding constraint FIRST - Before any tool or solution
-Conversational but professional tone - Not academic, not salesy
-
-
-BRAND VOICE & TONE
-Do:
-
-Sound like a strategic advisor, not a vendor
-Use short, punchy sentences
-Include specific numbers and concrete examples
-Lead with business outcomes, not technical features
-Reference Fortune 500 audit methodology when relevant
-Mention Theory of Constraints concepts naturally
-Use phrases like: "constraint," "bottleneck," "what's actually slowing you down"
-
-Don't:
-
-Use fear-based manipulation ("automate or die")
-Sound like generic AI hype
-Lead with tools before diagnosis
-Use excessive emojis or caps
-Write like a growth hacker
-Be overly academic or jargon-heavy
-Apologize or hedge unnecessarily
-
-
-KEY POSITIONING PRINCIPLES
-Core Message:
-"Find your constraint first. THEN decide if AI helps."
-Against:
-
-Tool-first thinking
-"Shiny object" automation
-Fear-based urgency
-Blind AI adoption
-
-For:
-
-Strategic diagnosis before implementation
-Stable, proven tools over bleeding-edge
-Automating actual bottlenecks, not random tasks
-Business constraints drive technology decisions
-
-
-CAROUSEL SERIES FRAMEWORKS
-Current Series:
-
-"Mental Models" - Business frameworks applied to operations
-
-Format: "Mental Models #[number]: [Framework Name]"
-Example: "Mental Models #1: The Lindy Effect"
-
-
-"Constraint-First Automation" - TOC applied to AI/automation
-
-Format: "Constraint-First Automation #[number]: [Topic]"
-Example: "Constraint-First Automation #1: The AI Application Gap"
-
-
-
-EXAMPLE CLIENT STORIES (Use for credibility)
-
-Law Firm:
-
-Before: Paralegals spent 15 hrs/week on contract review
-After: AI handles initial review in 45 minutes
-Result: Team focuses on client strategy instead of document scanning
-
-
-Metabolic Coach (Dr. Nick):
-
-Before: 10 hours every Monday on client fulfillment
-After: Custom web app + automation cut time to 3 hours
-Result: Focus on client satisfaction instead of remedial tasks
-
-
-
-CONTENT FILTERS (What NOT to create)
-Red Flags - Don't Create Content That:
-
-Says "automate or get left behind" without mentioning constraints
-Focuses on AI capabilities without business context
-Uses pure fear-based urgency
-Positions automation as always the answer
-Discusses tools without mentioning diagnosis first
-Sounds like every other AI automation consultant
-
-Green Lights - Do Create Content About:
-
-Finding constraints before solutions
-Real client transformation stories
-Mental models applied to business operations
-Why most automation fails (wrong constraint)
-Strategic tool selection methodology
-Theory of Constraints applications
-
-
-CAPTION LENGTH OPTIONS
-Long-form (primary):
-
-1,500-2,000 characters
-Follows full 8-step framework
-Includes concrete example
-Ends with question or clear CTA
-
-Short-form (alternative):
-
-Under 500 characters
-Distills key message
-Still maintains constraint-first positioning
-Quick hook + insight + CTA
-
-
-STANDARD CTA
-Primary CTA:
-"Let's have a chat.
-AutomatedBots.com"
-
-
-TECHNICAL CONTEXT (For understanding)
-His Automation Stack:
-
-n8n (workflow automation)
-Airtable (database/automation)
-Instantly.ai (cold email infrastructure)
-Google Sheets (data processing)
-Various APIs and integrations
-
-His Targets (Lead Gen):
-
-Solar companies
-Engineering services
-Video production companies
-Post-PMF B2B companies`;
+  return `Remake this caption.`;
 }
 
 async function callAnthropicCaption(opts: { systemPrompt: string; userMessage: string }) {
@@ -294,14 +110,31 @@ export async function POST(request: NextRequest) {
   const systemPrompt = sanitizeText(systemPromptRaw);
 
   // Load prior runs (all) to give "rejected attempts" context.
-  const { data: priorRuns } = await supabase
-    .from('carousel_caption_regen_runs')
-    .select('output_caption, created_at')
-    .eq('project_id', projectId)
-    // Phase G: account-scoped caption regen history (shared within account).
-    // Backwards-safe fallback for legacy rows.
-    .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
-    .order('created_at', { ascending: true });
+  const { data: priorRuns } = await (async () => {
+    // Phase 2026-02: support excluding specific runs from future prompt context (superadmin toggle).
+    const res = await supabase
+      .from('carousel_caption_regen_runs')
+      .select('output_caption, created_at')
+      .eq('project_id', projectId)
+      // Phase G: account-scoped caption regen history (shared within account).
+      // Backwards-safe fallback for legacy rows.
+      .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
+      .neq('excluded_from_prompt', true)
+      .order('created_at', { ascending: true });
+
+    const errMsg = String((res as any)?.error?.message || '');
+    const missingCol = errMsg.toLowerCase().includes('excluded_from_prompt') && errMsg.toLowerCase().includes('column');
+    if (!missingCol) return { data: (res as any).data || null, error: (res as any).error || null };
+
+    // Backwards-safe: older DB without the column.
+    const legacy = await supabase
+      .from('carousel_caption_regen_runs')
+      .select('output_caption, created_at')
+      .eq('project_id', projectId)
+      .or(`account_id.eq.${accountId},and(account_id.is.null,owner_user_id.eq.${user.id})`)
+      .order('created_at', { ascending: true });
+    return { data: (legacy as any).data || null, error: (legacy as any).error || null };
+  })();
   const rejectedCaptions: string[] = (priorRuns || [])
     .map((r: any) => String(r?.output_caption || '').trim())
     .filter(Boolean);

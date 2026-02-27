@@ -913,6 +913,21 @@ Superadmin-only content library for saving links, enriching Instagram content, a
 - `POST /api/editor/projects/jobs/generate-copy`
   - If `source_swipe_idea_snapshot` exists, it is used as the Swipe “angle” input (preferred over Angle/Notes)
 
+## Caption Regenerate (History + Exclude)
+Caption regeneration persists run history and now supports superadmin-only exclusion of prior runs from future prompt context.
+
+### UI (inside `/editor`)
+- **Caption card**: `src/features/editor/components/EditorBottomPanel.tsx`
+  - Superadmin-only “History” button opens `CaptionRegenHistoryModal`
+- **Modal**: `src/features/editor/components/CaptionRegenHistoryModal.tsx`
+  - View past caption regen runs (output caption)
+  - Expand details to see `input_context` JSON and exact `prompt_rendered`
+  - Toggle **Exclude / Include again** to control what is sent in future regen attempts
+
+### APIs (authed; superadmin-only)
+- `GET /api/editor/projects/caption-regen-runs?projectId=...` → `src/app/api/editor/projects/caption-regen-runs/route.ts`
+- `GET/PATCH /api/editor/projects/caption-regen-runs/[id]?projectId=...` → `src/app/api/editor/projects/caption-regen-runs/[id]/route.ts`
+
 ### Data model
 - **Migration**: `supabase/migrations/20260208_000001_add_editor_outreach_targets.sql`
 - **Table**: `public.editor_outreach_targets`
