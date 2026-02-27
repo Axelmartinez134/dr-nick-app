@@ -133,6 +133,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       title,
       template_type_id: templateTypeId,
       caption: null,
+      // Keep an at-a-glance source link in the editor's "Source material…" field.
+      review_source: url ? url.slice(0, 8000) : null,
       // IMPORTANT: store the selected saved prompt so this project uses it (without changing global active).
       prompt_snapshot: promptText,
       slide1_template_id_snapshot: (effective as any)?.slide1TemplateId ?? null,
