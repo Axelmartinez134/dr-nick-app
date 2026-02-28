@@ -403,6 +403,13 @@ export function useEditorStoreActionsSync(args: Args) {
 
     setIsSuperadmin: (next: boolean) => setIsSuperadmin(next),
     onOpenShareCarousels: () => onOpenShareCarousels(),
+    onOpenMobileDrawer: () => {
+      try {
+        if (isMobile) setMobileDrawerOpen(true);
+      } catch {
+        // ignore
+      }
+    },
     onCloseMobileDrawer: () => {
       try {
         if (isMobile) setMobileDrawerOpen(false);
@@ -743,6 +750,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onDownloadPdf: () => implRef.current?.onDownloadPdf?.(),
       onShareAll: () => implRef.current?.onShareAll?.(),
       onOpenShareCarousels: () => implRef.current?.onOpenShareCarousels?.(),
+      onOpenMobileDrawer: () => implRef.current?.onOpenMobileDrawer?.(),
       onCloseMobileDrawer: () => implRef.current?.onCloseMobileDrawer?.(),
       onSignOut: () => implRef.current?.onSignOut?.(),
       setIsSuperadmin: (next: boolean) => implRef.current?.setIsSuperadmin?.(next),

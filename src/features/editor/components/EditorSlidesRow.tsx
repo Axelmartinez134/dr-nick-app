@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useEditorSelector } from "@/features/editor/store";
 import { useFabricCanvasBinding } from "@/features/editor/hooks/useFabricCanvasBinding";
+import { ReviewStatusOverlay } from "@/features/editor/components/ReviewStatusOverlay";
 
 export function EditorSlidesRow() {
   const workspaceNav = useEditorSelector((s: any) => (s as any).workspaceNav);
@@ -12,6 +13,8 @@ export function EditorSlidesRow() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const switchingSlides = useEditorSelector((s) => s.switchingSlides);
   const activeSlideIndexStore = useEditorSelector((s) => s.activeSlideIndex);
+  const currentProjectId = useEditorSelector((s: any) => ((s as any).currentProjectId as string | null) || null);
+  const mobileDrawerOpen = useEditorSelector((s: any) => !!(s as any)?.workspaceNav?.mobileDrawerOpen);
   const copyGenerating = useEditorSelector((s: any) => {
     const nav = (s as any).workspaceNav;
     if (nav) return !!nav.copyGenerating;
@@ -181,25 +184,42 @@ export function EditorSlidesRow() {
         {isMobile ? (
           <div className="w-full">
             <div className="flex items-center justify-between gap-3 mb-3">
-              <button
-                className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
-                aria-label="Previous"
-                onClick={effectiveGoPrev}
-                disabled={!canGoPrev || switchingSlides}
-              >
-                ←
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
+                  aria-label="Previous"
+                  onClick={effectiveGoPrev}
+                  disabled={!canGoPrev || switchingSlides}
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  className="h-10 w-10 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
+                  aria-label={mobileDrawerOpen ? "Close menu" : "Open menu"}
+                  title={mobileDrawerOpen ? "Close menu" : "Open menu"}
+                  onClick={() => {
+                    if (mobileDrawerOpen) actions?.onCloseMobileDrawer?.();
+                    else actions?.onOpenMobileDrawer?.();
+                  }}
+                >
+                  ☰
+                </button>
+              </div>
               <div className="text-sm font-semibold text-slate-700">
                 Slide {activeSlideIndex + 1} / {effectiveSlideCount}
               </div>
-              <button
-                className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
-                aria-label="Next"
-                onClick={effectiveGoNext}
-                disabled={!canGoNext || switchingSlides}
-              >
-                →
-              </button>
+              <div className="flex items-center gap-2">
+                <ReviewStatusOverlay projectId={currentProjectId} mobileMode="inline" mobileInlineAlign="right" />
+                <button
+                  className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
+                  aria-label="Next"
+                  onClick={effectiveGoNext}
+                  disabled={!canGoNext || switchingSlides}
+                >
+                  →
+                </button>
+              </div>
             </div>
 
             <div

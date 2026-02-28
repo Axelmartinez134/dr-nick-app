@@ -9,6 +9,7 @@ const noopActions: EditorActions = {
   onDownloadPdf: () => {},
   onShareAll: () => {},
   onOpenShareCarousels: () => {},
+  onOpenMobileDrawer: () => {},
   onCloseMobileDrawer: () => {},
   onSignOut: () => {},
   onChangeNewProjectTemplateTypeId: () => {},

@@ -76,6 +76,26 @@ export default function CaptureClient() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    // iOS Safari fallback: prevent pinch-to-zoom gesture on this capture page.
+    // (Viewport `user-scalable=no` should handle most cases, but this makes it more robust.)
+    const onGesture = (e: any) => {
+      try {
+        e.preventDefault?.();
+      } catch {
+        // ignore
+      }
+    };
+    document.addEventListener("gesturestart" as any, onGesture, { passive: false } as any);
+    document.addEventListener("gesturechange" as any, onGesture, { passive: false } as any);
+    document.addEventListener("gestureend" as any, onGesture, { passive: false } as any);
+    return () => {
+      document.removeEventListener("gesturestart" as any, onGesture as any);
+      document.removeEventListener("gesturechange" as any, onGesture as any);
+      document.removeEventListener("gestureend" as any, onGesture as any);
+    };
+  }, []);
+
+  useEffect(() => {
     setUrl(urlFromQuery);
   }, [urlFromQuery]);
 
@@ -261,7 +281,7 @@ export default function CaptureClient() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-4">
+    <main className="min-h-screen bg-gray-50 p-4 touch-manipulation">
       <div className="max-w-md mx-auto bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <div className="text-base font-semibold text-slate-900">Save to Swipe File</div>

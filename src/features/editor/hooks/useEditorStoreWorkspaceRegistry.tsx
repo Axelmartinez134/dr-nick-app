@@ -474,6 +474,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
         VIEWPORT_PAD,
         translateX,
         totalW,
+        mobileDrawerOpen,
       },
       workspaceRefs: {
         viewportRef,

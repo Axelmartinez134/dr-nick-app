@@ -102,6 +102,50 @@ export function ShareCarouselsModal() {
   }, [open]);
 
   useEffect(() => {
+    // iOS Safari: when a fixed full-screen modal has a scrollable region,
+    // reaching the scroll boundary can "rubber-band" the underlying page.
+    // Lock body scroll while this modal is open on mobile.
+    if (!open || !isMobile) return;
+    const body = document.body;
+    const html = document.documentElement;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyLeft = body.style.left;
+    const prevBodyRight = body.style.right;
+    const prevBodyWidth = body.style.width;
+    const prevHtmlOverflow = html.style.overflow;
+    const scrollY = window.scrollY || 0;
+
+    try {
+      html.style.overflow = "hidden";
+      body.style.overflow = "hidden";
+      body.style.position = "fixed";
+      body.style.top = `-${scrollY}px`;
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      try {
+        html.style.overflow = prevHtmlOverflow;
+        body.style.overflow = prevBodyOverflow;
+        body.style.position = prevBodyPosition;
+        body.style.top = prevBodyTop;
+        body.style.left = prevBodyLeft;
+        body.style.right = prevBodyRight;
+        body.style.width = prevBodyWidth;
+        window.scrollTo(0, scrollY);
+      } catch {
+        // ignore
+      }
+    };
+  }, [open, isMobile]);
+
+  useEffect(() => {
     if (!manualCopyOpen) return;
     const t = window.setTimeout(() => {
       try {
@@ -143,7 +187,7 @@ export function ShareCarouselsModal() {
     ? "fixed inset-0 z-[80] flex items-stretch justify-stretch bg-black/40"
     : "fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4";
   const innerCls = isMobile
-    ? "w-full h-full overflow-hidden bg-white border border-slate-200 shadow-2xl"
+    ? "w-full h-full overflow-hidden bg-white border border-slate-200 shadow-2xl flex flex-col"
     : "w-full max-w-[980px] max-h-[85vh] overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-2xl";
 
   return (
@@ -232,7 +276,14 @@ export function ShareCarouselsModal() {
           ) : null}
         </div>
 
-        <div className={isMobile ? "px-5 py-4 overflow-auto h-[calc(100vh-164px)]" : "px-5 py-4 overflow-auto max-h-[65vh]"}>
+        <div
+          className={
+            isMobile
+              ? "px-5 py-4 flex-1 min-h-0 overflow-y-auto overscroll-contain"
+              : "px-5 py-4 overflow-auto max-h-[65vh]"
+          }
+          style={isMobile ? ({ WebkitOverflowScrolling: "touch" as any } as any) : undefined}
+        >
           {error ? <div className="text-sm text-red-700 mb-3">{error}</div> : null}
           {loading ? (
             <div className="text-sm text-slate-600">Loading…</div>

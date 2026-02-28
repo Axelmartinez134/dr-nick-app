@@ -38,10 +38,13 @@ export function ReviewStatusOverlay(props: {
   projectId: string | null;
   showEditTemplateButton?: boolean;
   onClickEditTemplate?: () => void;
+  mobileMode?: "overlay" | "inline";
+  mobileInlineAlign?: "left" | "right";
 }) {
-  const { projectId, showEditTemplateButton, onClickEditTemplate } = props;
+  const { projectId, showEditTemplateButton, onClickEditTemplate, mobileMode = "overlay", mobileInlineAlign = "left" } = props;
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
+  const mobileDrawerOpen = useEditorSelector((s: any) => !!(s as any)?.workspaceNav?.mobileDrawerOpen);
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
   const ready = useEditorSelector((s: any) => !!(s as any).reviewReady);
@@ -68,6 +71,13 @@ export function ReviewStatusOverlay(props: {
     // Mobile UX: default closed to avoid blocking the workspace.
     setMobileOpen(false);
   }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // If the menu drawer opens, close the review popover to avoid overlap.
+    if (!isMobile) return;
+    if (!mobileDrawerOpen) return;
+    setMobileOpen(false);
+  }, [isMobile, mobileDrawerOpen]);
 
   useEffect(() => {
     return () => {
@@ -115,32 +125,28 @@ export function ReviewStatusOverlay(props: {
   if (!isSuperadmin || !pid) return null;
 
   if (isMobile) {
+    if (mobileMode === "overlay") return null;
+    // Inline mode: used inside the mobile slide-nav row (so nothing overlaps the menu button).
     return (
-      <div className="absolute left-2 top-2 z-[60]">
-        {!mobileOpen ? (
-          <button
-            type="button"
-            className="h-10 px-3 rounded-xl border border-slate-200 bg-white/95 backdrop-blur text-[12px] font-semibold text-slate-900 shadow-lg"
-            onClick={() => setMobileOpen(true)}
-            aria-label="Open review controls"
-            title="Open review controls"
+      <div className="relative">
+        <button
+          type="button"
+          className="h-10 px-3 rounded-md bg-white border border-slate-200 shadow-sm text-slate-700"
+          onClick={() => setMobileOpen((v) => !v)}
+          aria-label={mobileOpen ? "Close status controls" : "Open status controls"}
+          title={mobileOpen ? "Close status controls" : "Open status controls"}
+        >
+          Status
+        </button>
+
+        {mobileOpen ? (
+          <div
+            className={[
+              "absolute top-[calc(100%+8px)] z-[60] rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-3 py-3 shadow-xl w-[220px]",
+              mobileInlineAlign === "right" ? "right-0" : "left-0",
+            ].join(" ")}
           >
-            Review
-          </button>
-        ) : (
-          <div className="rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-3 py-3 shadow-xl w-[220px]">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[12px] font-semibold text-slate-900">Review</div>
-              <button
-                type="button"
-                className="h-8 px-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-[12px] font-semibold shadow-sm"
-                onClick={() => setMobileOpen(false)}
-                aria-label="Close review controls"
-                title="Close"
-              >
-                Close
-              </button>
-            </div>
+            <div className="text-[12px] font-semibold text-slate-900 mb-2">Status</div>
             <div className="space-y-2">
               <IosToggle
                 label="Ready"
@@ -169,7 +175,7 @@ export function ReviewStatusOverlay(props: {
             </div>
             {busy ? <div className="mt-2 text-[11px] text-slate-500">Saving…</div> : null}
           </div>
-        )}
+        ) : null}
       </div>
     );
   }
@@ -177,7 +183,7 @@ export function ReviewStatusOverlay(props: {
   return (
     <div className="absolute left-[5px] top-[5px] z-[50] flex items-start gap-3">
       <div className="rounded-xl border border-slate-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg w-[160px]">
-          <div className="text-[11px] font-semibold text-slate-900 mb-2">Review</div>
+          <div className="text-[11px] font-semibold text-slate-900 mb-2">Status</div>
           <div className="space-y-1.5">
             <IosToggle
               label="Ready"

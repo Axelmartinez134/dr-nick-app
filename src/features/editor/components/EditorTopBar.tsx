@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unstable-nested-components */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEditorSelector } from "@/features/editor/store";
 import { supabase, useAuth } from "@/app/components/auth/AuthContext";
 
@@ -24,6 +24,11 @@ export function EditorTopBar() {
   const [isSuperadmin, setIsSuperadmin] = useState<boolean>(false);
   const [accountsLoading, setAccountsLoading] = useState<boolean>(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState<boolean>(false);
+
+  const [mobileRenameOpen, setMobileRenameOpen] = useState<boolean>(false);
+  const [mobileRenameDraft, setMobileRenameDraft] = useState<string>("");
+  const mobileTitleRef = useRef<HTMLDivElement | null>(null);
+  const [mobileTitleFontPx, setMobileTitleFontPx] = useState<number>(14);
 
   // Keep the editor store's superadmin flag in sync with the top-bar auth context.
   // Important: `actions` may be a noop object on first render, so this must re-run when `actions` updates.
@@ -173,6 +178,44 @@ export function EditorTopBar() {
     return editorFirstName ? `Welcome, ${editorFirstName}` : "Welcome";
   }, [editorFirstName]);
 
+  useEffect(() => {
+    if (!isMobile) return;
+    // Fit-to-space behavior: shrink from 14px down to 12px if needed.
+    // If still too long, we allow truncation (3 lines max).
+    const el = mobileTitleRef.current;
+    if (!el) return;
+
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        let size = 14;
+        const min = 12;
+        // Try a few steps max; keeps it lightweight.
+        for (let i = 0; i < 4; i++) {
+          el.style.fontSize = `${size}px`;
+          // Force reflow for accurate measures.
+          // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+          el.offsetHeight;
+          const overflowY = el.scrollHeight > el.clientHeight + 1;
+          const overflowX = el.scrollWidth > el.clientWidth + 1;
+          if (!overflowY && !overflowX) break;
+          if (size <= min) break;
+          size = Math.max(min, size - 1);
+        }
+        setMobileTitleFontPx(size);
+      } catch {
+        setMobileTitleFontPx(12);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [isMobile, projectTitleValue, isSuperadmin, topExporting]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!mobileRenameOpen) return;
+    setMobileRenameDraft(String(projectTitleValue || ""));
+  }, [isMobile, mobileRenameOpen, projectTitleValue]);
+
   const PromptStatusPill = () => {
     if (promptSaveStatus === "idle") return null;
     const base = "px-3 py-1 rounded-full text-xs font-semibold border";
@@ -203,8 +246,8 @@ export function EditorTopBar() {
   };
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4">
-      <div className="flex items-center gap-3">
+    <header className="h-14 bg-white border-b border-slate-200 flex items-center gap-3 px-4">
+      <div className="flex items-center gap-3 shrink-0">
         <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-white select-none">
           🎠
         </div>
@@ -227,11 +270,39 @@ export function EditorTopBar() {
             ) : (
               <div className="text-sm font-semibold text-slate-900 truncate">{titleText}</div>
             )}
-            <div className="text-xs text-slate-600 whitespace-nowrap">{welcomeText}</div>
           </div>
         )}
       </div>
-      <div className="flex items-center gap-2 min-w-0">
+
+      {/* Mobile: show carousel name (3 lines max, shrink-to-fit, tap to rename) */}
+      {isMobile ? (
+        <div className="flex-1 min-w-0 px-1">
+          <button
+            type="button"
+            className="w-full h-12 px-2 rounded-md border border-slate-200 bg-white text-slate-900 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+            onClick={() => setMobileRenameOpen(true)}
+            disabled={projectTitleDisabled}
+            title={projectTitleValue || "Untitled Project"}
+            aria-label="Rename carousel"
+          >
+            <div
+              ref={mobileTitleRef}
+              className="w-full text-left leading-4 overflow-hidden"
+              style={{
+                fontSize: `${mobileTitleFontPx}px`,
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical" as any,
+                WebkitLineClamp: 3 as any,
+                wordBreak: "break-word",
+              }}
+            >
+              {projectTitleValue || "Untitled Project"}
+            </div>
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-2 min-w-0 shrink-0 ml-auto">
         {!isMobile && isSuperadmin ? (
           <button
             onClick={actions?.onOpenOutreachModal}
@@ -339,15 +410,7 @@ export function EditorTopBar() {
             disabled={projectTitleDisabled}
             title="Project title"
           />
-        ) : (
-          <div
-            className="h-9 max-w-[34vw] px-3 rounded-md border border-slate-200 bg-slate-50 text-slate-900 text-sm flex items-center truncate"
-            title={projectTitleValue || "Untitled Project"}
-            aria-label="Project title"
-          >
-            {projectTitleValue || "Untitled Project"}
-          </div>
-        )}
+        ) : null}
         {!isMobile ? (
           <>
             <ProjectStatusPill />
@@ -383,16 +446,19 @@ export function EditorTopBar() {
               </button>
             ) : null}
           </>
-        ) : (
+        ) : null}
+        {isMobile && isSuperadmin ? (
           <button
-            className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
-            onClick={actions.onShareAll}
+            className="h-10 px-3 rounded-md bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+            onClick={actions.onOpenShareCarousels}
             disabled={topExporting}
-            title="Download all slides (saves to Photos when supported)"
+            title="Open review queue and share link"
+            aria-label="Open share carousels"
+            type="button"
           >
-            {topExporting ? "Preparing..." : "Download All"}
+            Share
           </button>
-        )}
+        ) : null}
         <button
           onClick={actions.onSignOut}
           className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
@@ -401,6 +467,60 @@ export function EditorTopBar() {
           Sign Out
         </button>
       </div>
+
+      {/* Mobile rename sheet */}
+      {isMobile && mobileRenameOpen ? (
+        <div className="fixed inset-0 z-[90] bg-black/40" role="dialog" aria-modal="true">
+          <div className="absolute inset-x-0 bottom-0 bg-white rounded-t-2xl border-t border-slate-200 shadow-2xl">
+            <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900">Rename carousel</div>
+                <div className="mt-0.5 text-xs text-slate-600">This updates the title for this carousel project.</div>
+              </div>
+              <button
+                type="button"
+                className="h-10 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm text-sm font-semibold"
+                onClick={() => setMobileRenameOpen(false)}
+                aria-label="Close rename"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="px-5 pb-4">
+              <input
+                className="w-full h-12 rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-900 shadow-sm"
+                value={mobileRenameDraft}
+                onChange={(e) => setMobileRenameDraft(e.target.value)}
+                placeholder="Untitled Project"
+                autoFocus
+                inputMode="text"
+              />
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex-1 h-12 rounded-xl bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-60"
+                  onClick={() => {
+                    actions?.onChangeProjectTitle?.(String(mobileRenameDraft || ""));
+                    setMobileRenameOpen(false);
+                  }}
+                  disabled={projectTitleDisabled}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="h-12 px-4 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                  onClick={() => setMobileRenameOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <div className="pb-[env(safe-area-inset-bottom)]" />
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }

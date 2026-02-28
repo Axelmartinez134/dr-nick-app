@@ -17,19 +17,6 @@ export function MobileDrawer(props: MobileDrawerProps) {
 
   return (
     <>
-      {/* Open handle */}
-      {!open ? (
-        <button
-          type="button"
-          className="fixed left-2 top-24 z-40 h-10 w-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700"
-          onClick={onOpen}
-          aria-label="Open menu"
-          title="Open menu"
-        >
-          ☰
-        </button>
-      ) : null}
-
       {/* Backdrop */}
       {open ? (
         <button
@@ -42,7 +29,7 @@ export function MobileDrawer(props: MobileDrawerProps) {
 
       {/* Drawer */}
       <aside
-        className="fixed top-0 left-0 z-50 h-full bg-white border-r border-slate-200 shadow-xl"
+        className="fixed top-0 left-0 z-50 h-full bg-white border-r border-slate-200 shadow-xl flex flex-col"
         style={{
           width: "min(88vw, 420px)",
           transform: open ? "translateX(0)" : "translateX(-110%)",
@@ -63,7 +50,13 @@ export function MobileDrawer(props: MobileDrawerProps) {
             Close
           </button>
         </div>
-        {children}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+          style={{ WebkitOverflowScrolling: "touch" as any }}
+        >
+          {children}
+          <div className="pb-[env(safe-area-inset-bottom)]" />
+        </div>
       </aside>
     </>
   );
