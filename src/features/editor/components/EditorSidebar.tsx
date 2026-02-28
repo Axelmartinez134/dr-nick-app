@@ -220,6 +220,24 @@ export function EditorSidebar() {
               </div>
             ) : null}
 
+            {isSuperadmin ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="text-xs font-semibold text-slate-700 mb-2">Swipe File</div>
+                <button
+                  type="button"
+                  className="w-full h-11 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-50"
+                  disabled={switchingSlides}
+                  onClick={() => {
+                    actions?.onCloseMobileDrawer?.();
+                    actions?.onOpenSwipeFileModal?.();
+                  }}
+                  title="Open Swipe File"
+                >
+                  Open Swipe File
+                </button>
+              </div>
+            ) : null}
+
             <div className="rounded-lg border border-slate-200 bg-white p-3">
               <div className="text-xs font-semibold text-slate-700 mb-2">Export / Save</div>
               <div className="space-y-2">

@@ -208,10 +208,28 @@ export function EditorTopBar() {
         <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-white select-none">
           🎠
         </div>
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="text-sm font-semibold text-slate-900 truncate">{titleText}</div>
-          <div className="text-sm text-slate-600 whitespace-nowrap">{welcomeText}</div>
-        </div>
+        {!isMobile ? (
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="text-sm font-semibold text-slate-900 truncate">{titleText}</div>
+            <div className="text-sm text-slate-600 whitespace-nowrap">{welcomeText}</div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            {isSuperadmin ? (
+              <button
+                type="button"
+                className="h-10 px-3 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800"
+                onClick={actions?.onOpenSwipeFileModal}
+                title="Open Swipe File"
+              >
+                Swipe File
+              </button>
+            ) : (
+              <div className="text-sm font-semibold text-slate-900 truncate">{titleText}</div>
+            )}
+            <div className="text-xs text-slate-600 whitespace-nowrap">{welcomeText}</div>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2 min-w-0">
         {!isMobile && isSuperadmin ? (
@@ -323,7 +341,7 @@ export function EditorTopBar() {
           />
         ) : (
           <div
-            className="h-9 max-w-[44vw] px-3 rounded-md border border-slate-200 bg-slate-50 text-slate-900 text-sm flex items-center truncate"
+            className="h-9 max-w-[34vw] px-3 rounded-md border border-slate-200 bg-slate-50 text-slate-900 text-sm flex items-center truncate"
             title={projectTitleValue || "Untitled Project"}
             aria-label="Project title"
           >

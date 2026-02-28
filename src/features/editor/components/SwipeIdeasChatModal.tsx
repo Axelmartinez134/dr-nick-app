@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
+import { useEditorSelector } from "@/features/editor/store";
 
 type ChatMsg = { id: string; role: "user" | "assistant"; content: string; createdAt: string };
 type IdeaCard = { title: string; slides: string[]; angleText: string; sourceMessageId?: string | null };
@@ -73,6 +74,7 @@ export function SwipeIdeasChatModal(props: {
   onIdeaSaved?: () => void;
 }) {
   const { open, onClose, swipeItemId, swipeItemLabel, onIdeaSaved } = props;
+  const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
 
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +113,15 @@ export function SwipeIdeasChatModal(props: {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [batchesOpenBySourceMessageId, setBatchesOpenBySourceMessageId] = useState<Record<string, boolean>>({});
+
+  const [openPanel, setOpenPanel] = useState<null | "source" | "ideas">(null);
+  const [sourceTab, setSourceTab] = useState<"transcript" | "caption" | "notes">("transcript");
+  const gestureRef = useRef<{
+    mode: null | "open-source" | "open-ideas";
+    startX: number;
+    startY: number;
+    fired: boolean;
+  }>({ mode: null, startX: 0, startY: 0, fired: false });
 
   const canSend = useMemo(() => {
     return !!open && !!String(swipeItemId || "").trim() && !!String(draft || "").trim() && !sendBusy;
@@ -159,6 +170,8 @@ export function SwipeIdeasChatModal(props: {
     setAngleNotesSaveError(null);
     setDraft("");
     setBatchesOpenBySourceMessageId({});
+    setOpenPanel(null);
+    setSourceTab("transcript");
   }, [open]);
 
   const refreshSavedIdeas = async (itemId: string) => {
@@ -520,11 +533,436 @@ export function SwipeIdeasChatModal(props: {
 
   if (!open) return null;
 
+  const closePanels = () => setOpenPanel(null);
+  const openSource = () => {
+    setOpenPanel("source");
+  };
+  const openIdeas = () => {
+    setOpenPanel("ideas");
+  };
+
+  const isEditableTarget = (target: any) => {
+    try {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = String(el.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return true;
+      if ((el as any).isContentEditable) return true;
+      if (el.closest?.('[data-no-gesture="1"]')) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const renderContextInner = () => {
+    return (
+      <>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-slate-700">Context</div>
+          <button
+            type="button"
+            className="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold shadow-sm hover:bg-slate-50"
+            onClick={() => {
+              const id = String(swipeItemId || "").trim();
+              if (id) void refreshSwipeContext(id);
+            }}
+            title="Refresh context"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {swipeContextError ? <div className="mt-2 text-xs text-red-600">❌ {swipeContextError}</div> : null}
+        {swipeContextLoading ? <div className="mt-3 text-sm text-slate-600">Loading context…</div> : null}
+
+        {swipeContext ? (
+          <div className="mt-3 space-y-4">
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Title</div>
+              <div className="mt-1 text-sm text-slate-900 whitespace-pre-wrap break-words">{swipeContext.title || "—"}</div>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <div className="text-xs font-semibold text-slate-700">Author</div>
+                <div className="mt-1 text-sm text-slate-900 break-words">{swipeContext.authorHandle || "—"}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-700">Category</div>
+                <div className="mt-1 text-sm text-slate-900 break-words">{swipeContext.categoryName || "—"}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Angle / Notes</div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <div className="text-[11px] text-slate-500">Auto-saves as you type.</div>
+                {angleNotesSaveStatus === "saving" ? (
+                  <span className="text-[11px] text-slate-500">Saving…</span>
+                ) : angleNotesSaveStatus === "saved" ? (
+                  <span className="text-[11px] text-emerald-700">Saved ✓</span>
+                ) : angleNotesSaveStatus === "error" ? (
+                  <span className="text-[11px] text-red-600">Save failed</span>
+                ) : null}
+              </div>
+              <textarea
+                data-no-gesture="1"
+                className="mt-2 w-full min-h-[84px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                value={angleNotesDraft}
+                onChange={(e) => setAngleNotesDraft(e.target.value)}
+                placeholder="Optional notes about the angle you want…"
+              />
+              {angleNotesSaveStatus === "error" && angleNotesSaveError ? (
+                <div className="mt-2 text-xs text-red-600">❌ {angleNotesSaveError}</div>
+              ) : null}
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Caption</div>
+              <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
+                {swipeContext.caption ? swipeContext.caption : <span className="text-slate-400">—</span>}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Transcript</div>
+              <div className="mt-2 max-h-[360px] overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
+                {swipeContext.transcript ? swipeContext.transcript : <span className="text-slate-400">—</span>}
+              </div>
+            </div>
+          </div>
+        ) : status === "ready" ? (
+          <div className="mt-3 text-sm text-slate-600">No context loaded.</div>
+        ) : null}
+      </>
+    );
+  };
+
+  const renderIdeasInner = () => {
+    return (
+      <>
+        <div className="text-xs font-semibold text-slate-700">Saved ideas (persisted)</div>
+        <div className="mt-2 text-[11px] text-slate-500">These are the ideas you saved and can reuse later.</div>
+        {savedIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {savedIdeasError}</div> : null}
+
+        {savedIdeasLoading ? (
+          <div className="mt-3 text-sm text-slate-600">Loading saved ideas…</div>
+        ) : savedIdeas.length === 0 ? (
+          <div className="mt-3 text-sm text-slate-600">No saved ideas yet. Use the section below to save one.</div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {savedIdeas.map((it) => (
+              <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 truncate" title={it.title}>
+                      {it.title || "Idea"}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">{it.createdAt ? new Date(it.createdAt).toLocaleString() : ""}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(String(it.angleText || "").trim());
+                        setNotice("Copied idea angle.");
+                      } catch {
+                        // ignore
+                      }
+                    }}
+                    title="Copy angle text"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <div className="mt-2 space-y-1">
+                  {(Array.isArray(it.slides) ? it.slides : []).slice(0, 2).map((s, i) => (
+                    <div key={i} className="text-xs text-slate-700 truncate" title={String(s || "")}>
+                      <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Batches</div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                Each time you chat, new ideas are grouped into an attempt. Expand/collapse as needed.
+              </div>
+            </div>
+            <button
+              type="button"
+              className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+              onClick={() => void refreshDraftIdeas(String(swipeItemId || ""))}
+              title="Refresh batches"
+            >
+              Refresh
+            </button>
+          </div>
+
+          {draftIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {draftIdeasError}</div> : null}
+          {saveIdeaError ? <div className="mt-2 text-xs text-red-600">❌ {saveIdeaError}</div> : null}
+
+          {draftIdeasLoading ? (
+            <div className="mt-3 text-sm text-slate-600">Loading batches…</div>
+          ) : attemptGroups.length === 0 ? (
+            <div className="mt-3 text-sm text-slate-600">No ideas yet. Send a message to generate ideas.</div>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {attemptGroups.map((g, idx) => {
+                const attemptNumber = idx + 1;
+                const openNow = batchesOpenBySourceMessageId[String(g.sourceMessageId)] !== false;
+                return (
+                  <div key={g.sourceMessageId} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-slate-50"
+                      onClick={() =>
+                        setBatchesOpenBySourceMessageId((prev) => ({
+                          ...(prev || {}),
+                          [String(g.sourceMessageId)]: !openNow,
+                        }))
+                      }
+                      title={openNow ? "Collapse" : "Expand"}
+                    >
+                      <div className="text-xs font-semibold text-slate-700">Attempt {attemptNumber}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {g.items.length} idea{g.items.length === 1 ? "" : "s"} {openNow ? "▾" : "▸"}
+                      </div>
+                    </button>
+
+                    {openNow ? (
+                      <div className="border-t border-slate-100 p-3 space-y-3">
+                        {g.items.map((it) => {
+                          const key = `batch-${it.id}`;
+                          const busy = saveIdeaBusyKey === key;
+                          const isSaved = savedCardKeySet.has(cardKey({ title: it.title, angleText: it.angleText, slides: it.slides }));
+                          return (
+                            <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-900">{it.title || "Idea"}</div>
+                                </div>
+                                {isSaved ? <span className="shrink-0 text-[11px] font-semibold text-emerald-700">Saved ✓</span> : null}
+                              </div>
+                              <div className="mt-2 space-y-1">
+                                {(Array.isArray(it.slides) ? it.slides : []).slice(0, 6).map((s, i) => (
+                                  <div key={i} className="text-xs text-slate-700">
+                                    <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
+                                  </div>
+                                ))}
+                              </div>
+                              <button
+                                type="button"
+                                className="mt-3 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                                disabled={busy || isSaved}
+                                onClick={() => void saveIdea({ title: it.title, slides: it.slides, angleText: it.angleText }, key, it.sourceMessageId)}
+                              >
+                                {isSaved ? "Saved" : busy ? "Saving…" : "Select (save idea)"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </>
+    );
+  };
+
+  const renderSourceDrawer = () => {
+    if (!isMobile || openPanel !== "source") return null;
+    return (
+      <div
+        className="fixed inset-0 z-[160] bg-black/40"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) closePanels();
+        }}
+      >
+        <aside
+          className="absolute left-0 top-0 h-full bg-white border-r border-slate-200 shadow-2xl overflow-hidden flex flex-col"
+          style={{ width: "min(88vw, 360px)" }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="h-14 px-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">Source</div>
+            <button
+              type="button"
+              className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
+              onClick={closePanels}
+            >
+              Close
+            </button>
+          </div>
+          <div className="px-2 pt-2 border-b border-slate-100">
+            <div className="flex items-center gap-1">
+              {([
+                { id: "transcript", label: "Transcript" },
+                { id: "caption", label: "Caption" },
+                { id: "notes", label: "Notes" },
+              ] as const).map((t) => {
+                const active = sourceTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={[
+                      "h-10 px-3 rounded-lg text-sm font-semibold",
+                      active ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50",
+                    ].join(" ")}
+                    onClick={() => setSourceTab(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto p-4">
+            {sourceTab === "notes" ? (
+              <>
+                <div className="text-xs font-semibold text-slate-700">Angle / Notes</div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <div className="text-[11px] text-slate-500">Auto-saves as you type.</div>
+                  {angleNotesSaveStatus === "saving" ? (
+                    <span className="text-[11px] text-slate-500">Saving…</span>
+                  ) : angleNotesSaveStatus === "saved" ? (
+                    <span className="text-[11px] text-emerald-700">Saved ✓</span>
+                  ) : angleNotesSaveStatus === "error" ? (
+                    <span className="text-[11px] text-red-600">Save failed</span>
+                  ) : null}
+                </div>
+                <textarea
+                  data-no-gesture="1"
+                  className="mt-2 w-full min-h-[180px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  value={angleNotesDraft}
+                  onChange={(e) => setAngleNotesDraft(e.target.value)}
+                  placeholder="Optional notes about the angle you want…"
+                />
+                {angleNotesSaveStatus === "error" && angleNotesSaveError ? (
+                  <div className="mt-2 text-xs text-red-600">❌ {angleNotesSaveError}</div>
+                ) : null}
+              </>
+            ) : sourceTab === "caption" ? (
+              <>
+                <div className="text-xs font-semibold text-slate-700">Caption</div>
+                <div className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-800 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  {swipeContext?.caption ? swipeContext.caption : "—"}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs font-semibold text-slate-700">Transcript</div>
+                <div className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-800 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  {swipeContext?.transcript ? swipeContext.transcript : "—"}
+                </div>
+              </>
+            )}
+          </div>
+          <div className="pb-[env(safe-area-inset-bottom)]" />
+        </aside>
+      </div>
+    );
+  };
+
+  const renderIdeasDrawer = () => {
+    if (!isMobile || openPanel !== "ideas") return null;
+    return (
+      <div
+        className="fixed inset-0 z-[160] bg-black/40"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) closePanels();
+        }}
+      >
+        <aside
+          className="absolute right-0 top-0 h-full bg-white border-l border-slate-200 shadow-2xl overflow-hidden flex flex-col"
+          style={{ width: "min(88vw, 360px)" }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="h-14 px-4 border-b border-slate-200 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-900">Ideas</div>
+            <button
+              type="button"
+              className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
+              onClick={closePanels}
+            >
+              Close
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-4 bg-slate-50/50">
+            {renderIdeasInner()}
+          </div>
+          <div className="pb-[env(safe-area-inset-bottom)]" />
+        </aside>
+      </div>
+    );
+  };
+
+  const disabledComposer = isMobile && openPanel === "ideas";
+  const canSendEffective = canSend && !disabledComposer;
+
   return (
     <div
       className="fixed inset-0 z-[140] flex items-stretch justify-center bg-black/50 p-2 md:p-6"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
+      }}
+      onPointerDown={(e) => {
+        if (!isMobile) return;
+        if ((e as any).pointerType && (e as any).pointerType !== "touch") return;
+        if (openPanel) return;
+        if (isEditableTarget((e as any).target)) return;
+        const x = (e as any).clientX ?? 0;
+        const y = (e as any).clientY ?? 0;
+        const w = typeof window !== "undefined" ? window.innerWidth : 0;
+        if (x <= 20) {
+          gestureRef.current = { mode: "open-source", startX: x, startY: y, fired: false };
+        } else if (w > 0 && x >= w - 20) {
+          gestureRef.current = { mode: "open-ideas", startX: x, startY: y, fired: false };
+        } else {
+          gestureRef.current = { mode: null, startX: x, startY: y, fired: false };
+        }
+      }}
+      onPointerMove={(e) => {
+        if (!isMobile) return;
+        const g = gestureRef.current;
+        if (!g.mode) return;
+        const x = (e as any).clientX ?? 0;
+        const y = (e as any).clientY ?? 0;
+        const dx = x - g.startX;
+        const dy = y - g.startY;
+        if (Math.abs(dy) > Math.abs(dx)) return;
+        if (g.fired) return;
+        if (g.mode === "open-source" && dx > 60) {
+          g.fired = true;
+          setOpenPanel("source");
+          setSourceTab((prev) => prev || "transcript");
+        }
+        if (g.mode === "open-ideas" && dx < -60) {
+          g.fired = true;
+          setOpenPanel("ideas");
+        }
+      }}
+      onPointerUp={() => {
+        if (!isMobile) return;
+        gestureRef.current.mode = null;
+        gestureRef.current.fired = false;
+      }}
+      onPointerCancel={() => {
+        if (!isMobile) return;
+        gestureRef.current.mode = null;
+        gestureRef.current.fired = false;
       }}
     >
       <div className="w-full max-w-7xl h-full bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden">
@@ -536,14 +974,40 @@ export function SwipeIdeasChatModal(props: {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
-              onClick={() => setSettingsOpen((v) => !v)}
-              title="Master prompt settings"
-            >
-              Settings
-            </button>
+            {isMobile ? (
+              <>
+                <button
+                  type="button"
+                  className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    setOpenPanel((prev) => (prev === "source" ? null : "source"));
+                    setSourceTab((prev) => prev || "transcript");
+                  }}
+                  aria-label="Source"
+                  title="Source"
+                >
+                  ☰
+                </button>
+                <button
+                  type="button"
+                  className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                  onClick={() => setOpenPanel((prev) => (prev === "ideas" ? null : "ideas"))}
+                  aria-label="Ideas"
+                  title="Ideas"
+                >
+                  Ideas
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
+                onClick={() => setSettingsOpen((v) => !v)}
+                title="Master prompt settings"
+              >
+                Settings
+              </button>
+            )}
             <button
               type="button"
               className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -583,83 +1047,12 @@ export function SwipeIdeasChatModal(props: {
         ) : null}
 
         <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr_360px]">
-          <aside className="border-b md:border-b-0 md:border-r border-slate-100 bg-white p-4 overflow-auto">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-slate-700">Context</div>
-              <button
-                type="button"
-                className="h-7 px-2 rounded-md border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold shadow-sm hover:bg-slate-50"
-                onClick={() => {
-                  const id = String(swipeItemId || "").trim();
-                  if (id) void refreshSwipeContext(id);
-                }}
-                title="Refresh context"
-              >
-                Refresh
-              </button>
-            </div>
-
-            {swipeContextError ? <div className="mt-2 text-xs text-red-600">❌ {swipeContextError}</div> : null}
-            {swipeContextLoading ? <div className="mt-3 text-sm text-slate-600">Loading context…</div> : null}
-
-            {swipeContext ? (
-              <div className="mt-3 space-y-4">
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Title</div>
-                  <div className="mt-1 text-sm text-slate-900 whitespace-pre-wrap break-words">{swipeContext.title || "—"}</div>
-                </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <div className="text-xs font-semibold text-slate-700">Author</div>
-                    <div className="mt-1 text-sm text-slate-900 break-words">{swipeContext.authorHandle || "—"}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-slate-700">Category</div>
-                    <div className="mt-1 text-sm text-slate-900 break-words">{swipeContext.categoryName || "—"}</div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Angle / Notes</div>
-                  <div className="mt-1 flex items-center justify-between gap-3">
-                    <div className="text-[11px] text-slate-500">Auto-saves as you type.</div>
-                    {angleNotesSaveStatus === "saving" ? (
-                      <span className="text-[11px] text-slate-500">Saving…</span>
-                    ) : angleNotesSaveStatus === "saved" ? (
-                      <span className="text-[11px] text-emerald-700">Saved ✓</span>
-                    ) : angleNotesSaveStatus === "error" ? (
-                      <span className="text-[11px] text-red-600">Save failed</span>
-                    ) : null}
-                  </div>
-                  <textarea
-                    className="mt-2 w-full min-h-[84px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
-                    value={angleNotesDraft}
-                    onChange={(e) => setAngleNotesDraft(e.target.value)}
-                    placeholder="Optional notes about the angle you want…"
-                  />
-                  {angleNotesSaveStatus === "error" && angleNotesSaveError ? (
-                    <div className="mt-2 text-xs text-red-600">❌ {angleNotesSaveError}</div>
-                  ) : null}
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Caption</div>
-                  <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
-                    {swipeContext.caption ? swipeContext.caption : <span className="text-slate-400">—</span>}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Transcript</div>
-                  <div className="mt-2 max-h-[360px] overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
-                    {swipeContext.transcript ? swipeContext.transcript : <span className="text-slate-400">—</span>}
-                  </div>
-                </div>
-              </div>
-            ) : status === "ready" ? (
-              <div className="mt-3 text-sm text-slate-600">No context loaded.</div>
-            ) : null}
-          </aside>
+          {/* Left: context (desktop only) */}
+          {!isMobile ? (
+            <aside className="border-b md:border-b-0 md:border-r border-slate-100 bg-white p-4 overflow-auto">
+              {renderContextInner()}
+            </aside>
+          ) : null}
 
           <main className="min-h-0 flex flex-col">
             <div className="flex-1 min-h-0 overflow-auto p-5 space-y-3">
@@ -690,6 +1083,7 @@ export function SwipeIdeasChatModal(props: {
               {error ? <div className="mb-2 text-xs text-red-600">❌ {error}</div> : null}
               <div className="flex items-end gap-2">
                 <textarea
+                  data-no-gesture="1"
                   className="flex-1 min-h-[44px] max-h-40 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
                   placeholder="Message…"
                   value={draft}
@@ -697,166 +1091,40 @@ export function SwipeIdeasChatModal(props: {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
-                      if (canSend) void sendMessage();
+                      if (canSendEffective) void sendMessage();
                     }
                   }}
+                  disabled={disabledComposer}
                 />
                 <button
                   type="button"
                   className="h-11 px-4 rounded-lg bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                  disabled={!canSend}
+                  disabled={!canSendEffective}
                   onClick={() => void sendMessage()}
                   title="Send (⌘+Enter)"
                 >
                   {sendBusy ? "Sending…" : "Send"}
                 </button>
               </div>
-              <div className="mt-2 text-[11px] text-slate-500">Tip: press ⌘+Enter to send.</div>
+              {disabledComposer ? (
+                <div className="mt-2 text-[11px] text-slate-500">Close Ideas to type.</div>
+              ) : (
+                <div className="mt-2 text-[11px] text-slate-500">Tip: press ⌘+Enter to send.</div>
+              )}
             </div>
           </main>
 
-          <aside className="border-t md:border-t-0 md:border-l border-slate-100 bg-slate-50/50 p-4 overflow-auto">
-            <div className="text-xs font-semibold text-slate-700">Saved ideas (persisted)</div>
-            <div className="mt-2 text-[11px] text-slate-500">These are the ideas you saved and can reuse later.</div>
-            {savedIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {savedIdeasError}</div> : null}
-
-            {savedIdeasLoading ? (
-              <div className="mt-3 text-sm text-slate-600">Loading saved ideas…</div>
-            ) : savedIdeas.length === 0 ? (
-              <div className="mt-3 text-sm text-slate-600">No saved ideas yet. Use the section below to save one.</div>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {savedIdeas.map((it) => (
-                  <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-900 truncate" title={it.title}>
-                          {it.title || "Idea"}
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-slate-500">{it.createdAt ? new Date(it.createdAt).toLocaleString() : ""}</div>
-                      </div>
-                      <button
-                        type="button"
-                        className="shrink-0 h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(String(it.angleText || "").trim());
-                            setNotice("Copied idea angle.");
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                        title="Copy angle text"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <div className="mt-2 space-y-1">
-                      {(Array.isArray(it.slides) ? it.slides : []).slice(0, 2).map((s, i) => (
-                        <div key={i} className="text-xs text-slate-700 truncate" title={String(s || "")}>
-                          <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-5 border-t border-slate-200 pt-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold text-slate-700">Batches</div>
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    Each time you chat, new ideas are grouped into an attempt. Expand/collapse as needed.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
-                  onClick={() => void refreshDraftIdeas(String(swipeItemId || ""))}
-                  title="Refresh batches"
-                >
-                  Refresh
-                </button>
-              </div>
-
-              {draftIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {draftIdeasError}</div> : null}
-              {saveIdeaError ? <div className="mt-2 text-xs text-red-600">❌ {saveIdeaError}</div> : null}
-
-              {draftIdeasLoading ? (
-                <div className="mt-3 text-sm text-slate-600">Loading batches…</div>
-              ) : attemptGroups.length === 0 ? (
-                <div className="mt-3 text-sm text-slate-600">No ideas yet. Send a message to generate ideas.</div>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {attemptGroups.map((g, idx) => {
-                    const attemptNumber = idx + 1;
-                    const openNow = batchesOpenBySourceMessageId[String(g.sourceMessageId)] !== false;
-                    return (
-                      <div key={g.sourceMessageId} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                        <button
-                          type="button"
-                          className="w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-slate-50"
-                          onClick={() =>
-                            setBatchesOpenBySourceMessageId((prev) => ({
-                              ...(prev || {}),
-                              [String(g.sourceMessageId)]: !openNow,
-                            }))
-                          }
-                          title={openNow ? "Collapse" : "Expand"}
-                        >
-                          <div className="text-xs font-semibold text-slate-700">Attempt {attemptNumber}</div>
-                          <div className="text-[11px] text-slate-500">
-                            {g.items.length} idea{g.items.length === 1 ? "" : "s"} {openNow ? "▾" : "▸"}
-                          </div>
-                        </button>
-
-                        {openNow ? (
-                          <div className="border-t border-slate-100 p-3 space-y-3">
-                            {g.items.map((it) => {
-                              const key = `batch-${it.id}`;
-                              const busy = saveIdeaBusyKey === key;
-                              const isSaved = savedCardKeySet.has(cardKey({ title: it.title, angleText: it.angleText, slides: it.slides }));
-                              return (
-                                <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="text-sm font-semibold text-slate-900">{it.title || "Idea"}</div>
-                                    </div>
-                                    {isSaved ? (
-                                      <span className="shrink-0 text-[11px] font-semibold text-emerald-700">Saved ✓</span>
-                                    ) : null}
-                                  </div>
-                                  <div className="mt-2 space-y-1">
-                                    {(Array.isArray(it.slides) ? it.slides : []).slice(0, 6).map((s, i) => (
-                                      <div key={i} className="text-xs text-slate-700">
-                                        <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="mt-3 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                                    disabled={busy || isSaved}
-                                    onClick={() => void saveIdea({ title: it.title, slides: it.slides, angleText: it.angleText }, key, it.sourceMessageId)}
-                                  >
-                                    {isSaved ? "Saved" : busy ? "Saving…" : "Select (save idea)"}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </aside>
+          {/* Right: ideas (desktop only) */}
+          {!isMobile ? (
+            <aside className="border-t md:border-t-0 md:border-l border-slate-100 bg-slate-50/50 p-4 overflow-auto">
+              {renderIdeasInner()}
+            </aside>
+          ) : null}
         </div>
       </div>
+
+      {renderSourceDrawer()}
+      {renderIdeasDrawer()}
     </div>
   );
 }

@@ -55,6 +55,7 @@ function platformBadge(platform: string) {
 export function SwipeFileModal() {
   const open = useEditorSelector((s: any) => !!(s as any).swipeFileModalOpen);
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const actions = useEditorSelector((s: any) => (s as any).actions);
   const currentProjectId = useEditorSelector((s: any) => (s as any).currentProjectId);
 
@@ -113,6 +114,7 @@ export function SwipeFileModal() {
   const [ideasChatOpen, setIdeasChatOpen] = useState(false);
   const [ideasCount, setIdeasCount] = useState<number>(0);
   const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
+  const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
   const captureLink = useMemo(() => {
     try {
       const origin = typeof window !== "undefined" ? String(window.location.origin || "").trim() : "";
@@ -543,6 +545,26 @@ export function SwipeFileModal() {
     }
   };
 
+  const openLink = (urlRaw: string) => {
+    const raw = String(urlRaw || "").trim();
+    if (!raw) return;
+    try {
+      const u = raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`;
+      window.open(u, "_blank", "noopener,noreferrer");
+    } catch {
+      // ignore
+    }
+  };
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(String(text || ""));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-stretch justify-center bg-black/50 p-2 md:p-6"
@@ -551,64 +573,67 @@ export function SwipeFileModal() {
       }}
     >
       <div className="w-full max-w-6xl h-full bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-4 md:px-5 py-4 border-b border-slate-100">
           <div className="min-w-0">
             <div className="text-base font-semibold text-slate-900 truncate">Swipe File</div>
             <div className="mt-0.5 text-xs text-slate-500">
               Save links on mobile, enrich on desktop, repurpose into carousels.
             </div>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">iPhone Shortcut URL</div>
-              <input
-                className="h-8 flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-800 shadow-sm"
-                value={captureLinkNoLogin || captureLink}
-                readOnly
-                onFocus={(e) => e.currentTarget.select()}
-                aria-label="Swipe File capture link base"
-                title={
-                  captureLinkNoLogin
-                    ? "No-login capture link base (includes key). Append URL-encoded shared link after `url=`."
-                    : "Capture link base. No-login capture link will appear once your account capture key is loaded."
-                }
-              />
-              <button
-                type="button"
-                className="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(captureLinkNoLogin || captureLink);
-                  } catch {
-                    // ignore
-                  }
-                }}
-                title="Copy capture link base"
-              >
-                Copy
-              </button>
-            </div>
-            {captureKeyPresent === false ? (
-              <div className="mt-1 text-[11px] text-amber-700">Could not load capture key for this account.</div>
+            {!isMobile ? (
+              <>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">iPhone Shortcut URL</div>
+                  <input
+                    className="h-8 flex-1 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-[11px] text-slate-800 shadow-sm"
+                    value={captureLinkNoLogin || captureLink}
+                    readOnly
+                    onFocus={(e) => e.currentTarget.select()}
+                    aria-label="Swipe File capture link base"
+                    title={
+                      captureLinkNoLogin
+                        ? "No-login capture link base (includes key). Append URL-encoded shared link after `url=`."
+                        : "Capture link base. No-login capture link will appear once your account capture key is loaded."
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                    onClick={async () => {
+                      await copyText(captureLinkNoLogin || captureLink);
+                    }}
+                    title="Copy capture link base"
+                  >
+                    Copy
+                  </button>
+                </div>
+                {captureKeyPresent === false ? (
+                  <div className="mt-1 text-[11px] text-amber-700">Could not load capture key for this account.</div>
+                ) : null}
+              </>
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-50"
-              onClick={() => void refresh()}
-              disabled={loading}
-              title="Refresh"
-            >
-              Refresh
-            </button>
-            <button
-              type="button"
-              className="h-9 px-3 rounded-md bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-              onClick={() => void onEnrichAll()}
-              disabled={loading || enrichableIds.length === 0}
-              title="Enrich all pending Instagram items (one-by-one)"
-            >
-              Enrich all pending
-            </button>
+            {!isMobile ? (
+              <button
+                type="button"
+                className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => void refresh()}
+                disabled={loading}
+                title="Refresh"
+              >
+                Refresh
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setMobileSheet({ kind: "overflow" })}
+                aria-label="More"
+                title="More"
+              >
+                ⋯
+              </button>
+            )}
             <button
               type="button"
               className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -623,7 +648,7 @@ export function SwipeFileModal() {
 
         <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_1fr_360px]">
           {/* Left: categories */}
-          <aside className="border-r border-slate-100 bg-slate-50/50 p-3 overflow-auto">
+          <aside className="hidden md:block border-r border-slate-100 bg-slate-50/50 p-3 overflow-auto">
             <div className="text-xs font-semibold text-slate-600 uppercase mb-2">Categories</div>
             <button
               type="button"
@@ -665,41 +690,58 @@ export function SwipeFileModal() {
                   if (e.key === "Enter") void refresh();
                 }}
               />
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {isMobile ? (
+                  <select
+                    className="h-9 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm"
+                    value={activeCategoryId}
+                    onChange={(e) => setActiveCategoryId(e.target.value || "all")}
+                    title="Category"
+                    aria-label="Category"
+                  >
+                    <option value="all">All categories</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
                 <button
                   type="button"
                   className={[
-                    "h-8 px-3 rounded-full border text-xs font-semibold shadow-sm transition-colors",
-                    repurposeFilter === "repurposed" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                    "h-9 px-4 rounded-full border text-xs font-semibold shadow-sm transition-colors",
+                    repurposeFilter === "all" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
                   ].join(" ")}
-                  onClick={() => setRepurposeFilter((prev) => (prev === "repurposed" ? "all" : "repurposed"))}
-                  title="Show only items that already have a project"
+                  onClick={() => setRepurposeFilter("all")}
+                  title="Show all"
                 >
-                  Repurposed
+                  All
                 </button>
                 <button
                   type="button"
                   className={[
-                    "h-8 px-3 rounded-full border text-xs font-semibold shadow-sm transition-colors",
+                    "h-9 px-4 rounded-full border text-xs font-semibold shadow-sm transition-colors",
                     repurposeFilter === "not_repurposed"
                       ? "bg-slate-900 text-white border-slate-900"
                       : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
                   ].join(" ")}
-                  onClick={() => setRepurposeFilter((prev) => (prev === "not_repurposed" ? "all" : "not_repurposed"))}
+                  onClick={() => setRepurposeFilter("not_repurposed")}
                   title="Show only items that do not have a project yet"
                 >
                   Not repurposed
                 </button>
-                {repurposeFilter !== "all" ? (
-                  <button
-                    type="button"
-                    className="h-8 px-2 rounded-full text-xs font-semibold text-slate-500 hover:text-slate-700"
-                    onClick={() => setRepurposeFilter("all")}
-                    title="Clear filter"
-                  >
-                    Clear
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className={[
+                    "h-9 px-4 rounded-full border text-xs font-semibold shadow-sm transition-colors",
+                    repurposeFilter === "repurposed" ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => setRepurposeFilter("repurposed")}
+                  title="Show only items that already have a project"
+                >
+                  Repurposed
+                </button>
               </div>
               {error ? <div className="mt-2 text-xs text-red-600">❌ {error}</div> : null}
               {notice ? <div className="mt-2 text-xs text-amber-700">{notice}</div> : null}
@@ -714,24 +756,33 @@ export function SwipeFileModal() {
                 <div className="divide-y divide-slate-100">
                   {visibleItems.map((it) => {
                     const selected = it.id === selectedItemId;
+                    const canIdeasChat = !!String(it.transcript || "").trim();
+                    const canEnrich = String(it.platform || "").toLowerCase() === "instagram";
+                    const enrichStatus = String(it.enrichStatus || "idle").toLowerCase();
+                    const enrichDone = enrichStatus === "ok";
+                    const enrichRunning = enrichStatus === "running";
                     return (
-                      <button
+                      <div
                         key={it.id}
-                        type="button"
                         className={[
-                          "w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors",
-                          selected ? "bg-slate-50" : "bg-white",
+                          "w-full px-4 py-3 transition-colors",
+                          !isMobile ? "hover:bg-slate-50" : "",
+                          !isMobile && selected ? "bg-slate-50" : "bg-white",
                         ].join(" ")}
-                        onClick={() => setSelectedItemId(it.id)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setSelectedItemId(it.id);
-                          setRowMenu({ x: e.clientX, y: e.clientY, itemId: it.id });
-                        }}
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
+                            onClick={() => {
+                              if (isMobile) {
+                                openLink(it.url);
+                                return;
+                              }
+                              setSelectedItemId(it.id);
+                            }}
+                            title={isMobile ? "Open link" : "Select item"}
+                          >
                             <div className="flex items-center gap-2">
                               <span className={platformBadge(it.platform)}>{String(it.platform || "unknown")}</span>
                               <span className="text-xs text-slate-500">
@@ -761,12 +812,248 @@ export function SwipeFileModal() {
                             <div className="mt-0.5 text-[11px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap" title={it.url}>
                               {it.url}
                             </div>
-                          </div>
-                          <div className="text-[11px] text-slate-500 whitespace-nowrap">
-                            {it.createdAt ? new Date(it.createdAt).toLocaleDateString() : ""}
+                          </button>
+
+                          <div className="shrink-0 flex flex-col items-end gap-1">
+                            <div className="text-[11px] text-slate-500 whitespace-nowrap">
+                              {it.createdAt ? new Date(it.createdAt).toLocaleDateString() : ""}
+                            </div>
+                            {isMobile ? (
+                              <button
+                                type="button"
+                                className="h-11 w-11 rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                                onClick={() => {
+                                  setSelectedItemId(it.id);
+                                  setMobileSheet({ kind: "actions", itemId: it.id });
+                                }}
+                                aria-label="Actions"
+                                title="Actions"
+                              >
+                                ⋯
+                              </button>
+                            ) : null}
                           </div>
                         </div>
-                      </button>
+
+                        {/* iOS-style action sheet (mobile) */}
+                        {isMobile && mobileSheet?.kind === "actions" && mobileSheet.itemId === it.id ? (
+                          <div
+                            className="fixed inset-0 z-[200] flex items-end justify-center bg-black/40"
+                            onMouseDown={(e) => {
+                              if (e.target === e.currentTarget) setMobileSheet(null);
+                            }}
+                          >
+                            <div className="w-full max-w-[520px] rounded-t-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+                              <div className="px-4 py-3 border-b border-slate-100">
+                                <div className="text-xs font-semibold text-slate-700">Actions</div>
+                                <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                                  {it.title ? it.title : it.note ? it.note : it.url}
+                                </div>
+                              </div>
+                              <div className="p-2 space-y-2">
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+                                  onClick={() => {
+                                    setMobileSheet(null);
+                                    openLink(it.url);
+                                  }}
+                                >
+                                  Open link
+                                </button>
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+                                  onClick={async () => {
+                                    await copyText(it.url);
+                                    setMobileSheet(null);
+                                  }}
+                                >
+                                  Copy link
+                                </button>
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                  disabled={!canEnrich || loading || enrichDone || enrichRunning}
+                                  onClick={async () => {
+                                    if (!canEnrich) return;
+                                    if (enrichDone || enrichRunning) return;
+                                    setMobileSheet(null);
+                                    try {
+                                      setLoading(true);
+                                      setNotice("Enriching (Apify)…");
+                                      setError(null);
+                                      setActionError(null);
+                                      await runEnrichOne(it.id);
+                                      const nextItems = await refresh({ setSpinner: false });
+                                      const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === it.id) : null;
+                                      if (String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+                                        setNotice("Transcript missing — transcribing (Whisper)…");
+                                        await runTranscribeOne(it.id);
+                                        await refresh({ setSpinner: false });
+                                      }
+                                    } catch (e: any) {
+                                      const msg = String(e?.message || e || "Enrich failed");
+                                      setActionError(msg);
+                                      setError(msg);
+                                    } finally {
+                                      setNotice(null);
+                                      setLoading(false);
+                                    }
+                                  }}
+                                  title={
+                                    !canEnrich
+                                      ? "Enrich is only available for Instagram items right now"
+                                      : enrichDone
+                                        ? "Already enriched"
+                                        : enrichRunning
+                                          ? "Enrich running"
+                                          : "Enrich (Apify)"
+                                  }
+                                >
+                                  {enrichDone ? "Enriched ✓" : enrichRunning ? "Enriching…" : "Enrich"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                  disabled={!canIdeasChat}
+                                  onClick={() => {
+                                    if (!canIdeasChat) return;
+                                    setMobileSheet(null);
+                                    setSelectedItemId(it.id);
+                                    setIdeasChatOpen(true);
+                                  }}
+                                  title={!canIdeasChat ? "Enrich first to get a transcript" : "Open Ideas Chat"}
+                                >
+                                  Ideas Chat
+                                </button>
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold hover:bg-slate-900"
+                                  onClick={() => {
+                                    setSelectedItemId(it.id);
+                                    setMobileSheet({ kind: "repurpose", itemId: it.id });
+                                  }}
+                                >
+                                  Repurpose (create project)
+                                </button>
+                                {String(it.createdProjectId || "").trim() ? (
+                                  <button
+                                    type="button"
+                                    className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+                                    onClick={() => {
+                                      setMobileSheet(null);
+                                      actions.onCloseSwipeFileModal?.();
+                                      actions.onLoadProject?.(String(it.createdProjectId));
+                                    }}
+                                  >
+                                    Open existing project
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-white border border-red-200 text-red-700 text-sm font-semibold hover:bg-red-50"
+                                  disabled={rowMenuBusy}
+                                  onClick={async () => {
+                                    const ok = window.confirm("Delete this Swipe File item? This cannot be undone.");
+                                    if (!ok) return;
+                                    await deleteItem(it.id);
+                                    setMobileSheet(null);
+                                  }}
+                                >
+                                  {rowMenuBusy ? "Deleting…" : "Delete"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="w-full h-12 rounded-xl bg-slate-100 text-slate-900 text-sm font-semibold hover:bg-slate-200"
+                                  onClick={() => setMobileSheet(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                              <div className="pb-[env(safe-area-inset-bottom)]" />
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Repurpose sheet (mobile) */}
+                        {isMobile && mobileSheet?.kind === "repurpose" && mobileSheet.itemId === it.id ? (
+                          <div
+                            className="fixed inset-0 z-[210] flex items-end justify-center bg-black/40"
+                            onMouseDown={(e) => {
+                              if (e.target === e.currentTarget) setMobileSheet(null);
+                            }}
+                          >
+                            <div className="w-full max-w-[520px] rounded-t-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+                              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-900">Repurpose</div>
+                                  <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                                    {it.title ? it.title : it.note ? it.note : it.url}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="h-10 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                                  onClick={() => setMobileSheet(null)}
+                                >
+                                  Close
+                                </button>
+                              </div>
+                              <div className="p-4 space-y-3">
+                                <div>
+                                  <div className="text-xs font-semibold text-slate-700">Template type</div>
+                                  <select
+                                    className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                                    value={templateTypeId}
+                                    onChange={(e) => {
+                                      const next = e.target.value === "regular" ? "regular" : "enhanced";
+                                      setTemplateTypeId(next);
+                                    }}
+                                    disabled={createBusy}
+                                  >
+                                    <option value="enhanced">Enhanced</option>
+                                    <option value="regular">Regular</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <div className="text-xs font-semibold text-slate-700">Saved prompt</div>
+                                  <select
+                                    className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-50"
+                                    value={savedPromptId}
+                                    onChange={(e) => setSavedPromptId(e.target.value)}
+                                    disabled={createBusy || promptsLoading || savedPrompts.length === 0}
+                                  >
+                                    {savedPrompts.length === 0 ? (
+                                      <option value="">{promptsLoading ? "Loading..." : "No saved prompts found"}</option>
+                                    ) : null}
+                                    {savedPrompts.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.is_active ? "★ " : ""}
+                                        {p.title}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="w-full h-11 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:bg-slate-900 disabled:opacity-50"
+                                  disabled={createBusy || !savedPromptId}
+                                  onClick={() => {
+                                    setMobileSheet(null);
+                                    setSelectedItemId(it.id);
+                                    setIdeasPickerOpen(true);
+                                  }}
+                                >
+                                  {createBusy ? "Creating..." : "Create project + rewrite"}
+                                </button>
+                                {createError ? <div className="text-xs text-red-600">❌ {createError}</div> : null}
+                              </div>
+                              <div className="pb-[env(safe-area-inset-bottom)]" />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
@@ -802,8 +1089,8 @@ export function SwipeFileModal() {
             </div>
           ) : null}
 
-          {/* Right: detail */}
-          <aside className="border-l border-slate-100 bg-white p-4 overflow-auto">
+          {/* Right: detail (desktop only) */}
+          <aside className="hidden md:block border-l border-slate-100 bg-white p-4 overflow-auto">
             {!selectedItem ? (
               <div className="text-sm text-slate-600">Select an item to view details.</div>
             ) : (
@@ -1047,6 +1334,53 @@ export function SwipeFileModal() {
           void onCreateProject({ ideaId: args.ideaId });
         }}
       />
+
+      {/* Mobile overflow sheet */}
+      {isMobile && mobileSheet?.kind === "overflow" ? (
+        <div
+          className="fixed inset-0 z-[190] flex items-end justify-center bg-black/40"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setMobileSheet(null);
+          }}
+        >
+          <div className="w-full max-w-[520px] rounded-t-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100">
+              <div className="text-xs font-semibold text-slate-700">Swipe File</div>
+            </div>
+            <div className="p-2 space-y-2">
+              <button
+                type="button"
+                className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+                onClick={async () => {
+                  await copyText(captureLinkNoLogin || captureLink);
+                  setMobileSheet(null);
+                }}
+              >
+                Copy capture link
+              </button>
+              <button
+                type="button"
+                className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                disabled={loading}
+                onClick={() => {
+                  setMobileSheet(null);
+                  void refresh();
+                }}
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="w-full h-12 rounded-xl bg-slate-100 text-slate-900 text-sm font-semibold hover:bg-slate-200"
+                onClick={() => setMobileSheet(null)}
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="pb-[env(safe-area-inset-bottom)]" />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
