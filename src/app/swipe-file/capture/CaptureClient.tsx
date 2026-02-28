@@ -96,6 +96,29 @@ export default function CaptureClient() {
   }, []);
 
   useEffect(() => {
+    // This capture page is intended to be a static, non-scrollable screen.
+    // Lock page scrolling while mounted.
+    const body = document.body;
+    const html = document.documentElement;
+    const prevBodyOverflow = body.style.overflow;
+    const prevHtmlOverflow = html.style.overflow;
+    try {
+      html.style.overflow = "hidden";
+      body.style.overflow = "hidden";
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        html.style.overflow = prevHtmlOverflow;
+        body.style.overflow = prevBodyOverflow;
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     setUrl(urlFromQuery);
   }, [urlFromQuery]);
 
@@ -281,16 +304,15 @@ export default function CaptureClient() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 p-4 touch-manipulation">
-      <div className="max-w-md mx-auto bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <main className="h-[100dvh] overflow-hidden bg-gray-50 p-4 touch-manipulation flex items-center justify-center">
+      <div className="w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <div className="text-base font-semibold text-slate-900">Save to Swipe File</div>
           <div className="mt-1 text-xs text-slate-500">Fast capture — enrichment happens later on desktop.</div>
         </div>
 
-        <div className="px-5 py-4 space-y-4">
+        <div className="px-5 py-4 space-y-3">
           {error ? <div className="text-sm text-red-600">❌ {error}</div> : null}
-          {success ? <div className="text-sm text-emerald-700 font-medium">Saved ✓</div> : null}
 
           <div>
             <div className="text-xs font-semibold text-slate-700">URL</div>
@@ -394,8 +416,9 @@ export default function CaptureClient() {
             onClick={() => void onSubmit()}
             disabled={busy}
           >
-            {busy ? "Saving…" : "Save"}
+            {busy ? "Saving…" : success ? "Saved ✓" : "Save"}
           </button>
+          {success && !busy ? <div className="text-sm text-emerald-700 font-medium text-center">Saved ✓</div> : null}
 
           <div className="flex items-center justify-between gap-3">
             <button
