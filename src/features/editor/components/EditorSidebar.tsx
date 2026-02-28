@@ -1,10 +1,16 @@
 /* eslint-disable react/no-unstable-nested-components */
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { SavedProjectsCard } from "@/features/editor/components/SavedProjectsCard";
 import { useEditorSelector } from "@/features/editor/store";
+import { supabase, useAuth } from "@/app/components/auth/AuthContext";
 
 export function EditorSidebar() {
+  const { user } = useAuth();
+  const isMobile = useEditorSelector((s) => !!(s as any).isMobile);
+  const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const topExporting = useEditorSelector((s: any) => !!(s as any).topExporting);
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const newProjectTemplateTypeId = useEditorSelector((s) => s.newProjectTemplateTypeId);
   const switchingSlides = useEditorSelector((s) => s.switchingSlides);
@@ -26,6 +32,96 @@ export function EditorSidebar() {
   const themeIsCustomized = useEditorSelector((s: any) => (s as any).themeIsCustomized);
 
   const actions = useEditorSelector((s) => s.actions);
+
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<Array<{ accountId: string; displayName: string; role: string }>>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string>("");
+  const [accountsRefreshNonce, setAccountsRefreshNonce] = useState(0);
+
+  const canShowAccountSwitcher = useMemo(() => {
+    // Phase 1: mobile-only account switching for superadmins.
+    return !!isMobile && !!isSuperadmin;
+  }, [isMobile, isSuperadmin]);
+
+  useEffect(() => {
+    if (!canShowAccountSwitcher) return;
+    let cancelled = false;
+
+    async function loadAccountContext() {
+      const userId = user?.id;
+      if (!userId) {
+        setAccounts([]);
+        setActiveAccountId("");
+        setAccountsLoading(false);
+        setAccountsError(null);
+        return;
+      }
+
+      setAccountsLoading(true);
+      setAccountsError(null);
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token || "";
+        if (!token) throw new Error("Missing session");
+
+        const rawActive = (() => {
+          try {
+            return typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+          } catch {
+            return "";
+          }
+        })();
+
+        const res = await fetch("/api/editor/accounts/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            ...(rawActive ? { "x-account-id": rawActive } : {}),
+          },
+        });
+        const j = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !j?.success) {
+          throw new Error(String(j?.error || "Failed to load accounts"));
+        }
+
+        const nextAccounts = Array.isArray(j.accounts) ? j.accounts : [];
+        const nextActive = String(j.activeAccountId || "").trim();
+        setAccounts(nextAccounts);
+        setActiveAccountId(nextActive);
+
+        // Keep store's superadmin flag aligned (defensive; TopBar also does this).
+        try {
+          actions?.setIsSuperadmin?.(!!j.isSuperadmin);
+        } catch {
+          // ignore
+        }
+
+        if (nextActive) {
+          try {
+            localStorage.setItem("editor.activeAccountId", nextActive);
+          } catch {
+            // ignore
+          }
+        }
+      } catch (e: any) {
+        if (cancelled) return;
+        setAccounts([]);
+        setActiveAccountId("");
+        setAccountsError(String(e?.message || "Failed to load accounts"));
+      } finally {
+        if (cancelled) return;
+        setAccountsLoading(false);
+      }
+    }
+
+    void loadAccountContext();
+    return () => {
+      cancelled = true;
+    };
+  }, [actions, accountsRefreshNonce, canShowAccountSwitcher, user?.id]);
 
   return (
     <div className="p-4 space-y-4 overflow-auto">
@@ -62,6 +158,118 @@ export function EditorSidebar() {
 
       {/* Saved Projects Card */}
       <SavedProjectsCard />
+
+      {/* Mobile-only: tools menu (Phase 1) */}
+      {isMobile ? (
+        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-7 h-7 rounded-lg bg-[#6D28D9] text-white text-sm flex items-center justify-center">🧰</span>
+            <span className="text-sm font-semibold text-slate-900">Tools</span>
+          </div>
+
+          <div className="space-y-3">
+            {canShowAccountSwitcher ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="text-xs font-semibold text-slate-700">Account</div>
+                  {accountsLoading ? (
+                    <div className="text-[11px] text-slate-500">Loading…</div>
+                  ) : accounts.length > 0 ? (
+                    <button
+                      type="button"
+                      className="text-[11px] font-semibold text-slate-600 hover:text-slate-900"
+                      onClick={() => {
+                        setAccountsRefreshNonce((n) => n + 1);
+                      }}
+                      title="Refresh accounts"
+                    >
+                      Refresh
+                    </button>
+                  ) : null}
+                </div>
+
+                <select
+                  className="w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-60"
+                  value={activeAccountId}
+                  disabled={accountsLoading || accounts.length <= 1}
+                  onChange={(e) => {
+                    const next = String(e.target.value || "").trim();
+                    if (!next || next === activeAccountId) return;
+                    try {
+                      localStorage.setItem("editor.activeAccountId", next);
+                    } catch {
+                      // ignore
+                    }
+                    actions?.onCloseMobileDrawer?.();
+                    // Hard reload so the editor bootstraps cleanly under the new account context.
+                    window.location.reload();
+                  }}
+                  title="Switch account (reloads editor)"
+                  aria-label="Switch account"
+                >
+                  {accounts.length === 0 ? <option value="">{accountsLoading ? "Loading…" : "No accounts"}</option> : null}
+                  {accounts.map((a: any) => (
+                    <option key={String(a.accountId)} value={String(a.accountId)}>
+                      {String(a.displayName || "Account")}
+                    </option>
+                  ))}
+                </select>
+
+                {accountsError ? <div className="mt-2 text-xs text-red-600">{accountsError}</div> : null}
+                <div className="mt-2 text-[11px] text-slate-500">Switching accounts reloads the editor.</div>
+              </div>
+            ) : null}
+
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="text-xs font-semibold text-slate-700 mb-2">Export / Save</div>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="w-full h-11 rounded-md bg-[#6D28D9] text-white text-sm font-semibold disabled:opacity-50"
+                  disabled={topExporting || switchingSlides}
+                  onClick={() => {
+                    actions?.onCloseMobileDrawer?.();
+                    actions?.onShareAll?.();
+                  }}
+                  title="Download all slides using the iPhone share/save flow"
+                >
+                  {topExporting ? "Preparing..." : "Download All"}
+                </button>
+                <button
+                  type="button"
+                  className="w-full h-11 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold disabled:opacity-50"
+                  disabled={topExporting || switchingSlides}
+                  onClick={() => {
+                    actions?.onCloseMobileDrawer?.();
+                    actions?.onDownloadAll?.();
+                  }}
+                  title="Fallback: downloads a ZIP to the Files app"
+                >
+                  {topExporting ? "Preparing..." : "Download ZIP (Files)"}
+                </button>
+              </div>
+            </div>
+
+            {isSuperadmin ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="text-xs font-semibold text-slate-700 mb-2">Review &amp; Share</div>
+                <button
+                  type="button"
+                  className="w-full h-11 rounded-md bg-black text-white text-sm font-semibold disabled:opacity-50"
+                  disabled={topExporting}
+                  onClick={() => {
+                    actions?.onCloseMobileDrawer?.();
+                    actions?.onOpenShareCarousels?.();
+                  }}
+                  title="Open the review queue (Ready=true, Posted=false)"
+                >
+                  Open queue
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {/* Template Card */}
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">

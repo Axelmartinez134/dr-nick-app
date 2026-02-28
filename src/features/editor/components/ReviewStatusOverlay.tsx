@@ -41,6 +41,7 @@ export function ReviewStatusOverlay(props: {
 }) {
   const { projectId, showEditTemplateButton, onClickEditTemplate } = props;
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
   const ready = useEditorSelector((s: any) => !!(s as any).reviewReady);
@@ -56,6 +57,7 @@ export function ReviewStatusOverlay(props: {
   const [draft, setDraft] = useState<string>(() => reviewSource);
   const timerRef = useRef<number | null>(null);
   const dirtyRef = useRef<boolean>(false);
+  const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // New project loaded.
@@ -63,6 +65,8 @@ export function ReviewStatusOverlay(props: {
     setDraft(reviewSource);
     if (timerRef.current) window.clearTimeout(timerRef.current);
     timerRef.current = null;
+    // Mobile UX: default closed to avoid blocking the workspace.
+    setMobileOpen(false);
   }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -109,6 +113,66 @@ export function ReviewStatusOverlay(props: {
   }, [draft, saveNow]);
 
   if (!isSuperadmin || !pid) return null;
+
+  if (isMobile) {
+    return (
+      <div className="absolute left-2 top-2 z-[60]">
+        {!mobileOpen ? (
+          <button
+            type="button"
+            className="h-10 px-3 rounded-xl border border-slate-200 bg-white/95 backdrop-blur text-[12px] font-semibold text-slate-900 shadow-lg"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open review controls"
+            title="Open review controls"
+          >
+            Review
+          </button>
+        ) : (
+          <div className="rounded-2xl border border-slate-200 bg-white/95 backdrop-blur px-3 py-3 shadow-xl w-[220px]">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[12px] font-semibold text-slate-900">Review</div>
+              <button
+                type="button"
+                className="h-8 px-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-[12px] font-semibold shadow-sm"
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close review controls"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-2">
+              <IosToggle
+                label="Ready"
+                value={ready}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewReady?.({ projectId: pid, next })}
+              />
+              <IosToggle
+                label="Posted"
+                value={posted}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewPosted?.({ projectId: pid, next })}
+              />
+              <IosToggle
+                label="Approved"
+                value={approved}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewApproved?.({ projectId: pid, next })}
+              />
+              <IosToggle
+                label="Scheduled"
+                value={scheduled}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewScheduled?.({ projectId: pid, next })}
+              />
+            </div>
+            {busy ? <div className="mt-2 text-[11px] text-slate-500">Saving…</div> : null}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="absolute left-[5px] top-[5px] z-[50] flex items-start gap-3">

@@ -218,13 +218,16 @@ export function EditorSlidesRow() {
 
                 // Prefer slice-owned viewport width when available.
                 const vw = effectiveViewportWidth;
-                const maxW = Math.max(240, Math.min(540, (vw || 540) - 24));
-                const scale = Math.max(0.35, Math.min(1, maxW / 540));
-                const displayW = Math.round(maxW);
-                const displayH = Math.round(720 * scale);
+                // Mobile UX: keep the canvas comfortably smaller than the screen so it feels framed
+                // and never looks "cropped/zoomed" on iPhone.
+                const gutter = 32;
+                const cap = 380; // fits large iPhone while leaving margins
+                const displayW = Math.round(Math.max(240, Math.min(cap, (vw || 390) - gutter)));
+                // 3:4 aspect ratio
+                const displayH = Math.round(displayW * (4 / 3));
 
                 return (
-                  <div style={{ width: displayW, height: displayH, overflow: "hidden" }}>
+                  <div className="flex items-center justify-center" style={{ width: displayW, height: displayH }}>
                     {!tid ? (
                       <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm">
                         No template selected

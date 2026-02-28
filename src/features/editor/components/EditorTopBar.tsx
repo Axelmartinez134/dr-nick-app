@@ -214,7 +214,7 @@ export function EditorTopBar() {
         </div>
       </div>
       <div className="flex items-center gap-2 min-w-0">
-        {isSuperadmin ? (
+        {!isMobile && isSuperadmin ? (
           <button
             onClick={actions?.onOpenOutreachModal}
             className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
@@ -224,7 +224,7 @@ export function EditorTopBar() {
             Outreach
           </button>
         ) : null}
-        {isSuperadmin ? (
+        {!isMobile && isSuperadmin ? (
           <button
             onClick={actions?.onOpenSwipeFileModal}
             className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
@@ -234,7 +234,7 @@ export function EditorTopBar() {
             Swipe File
           </button>
         ) : null}
-        {isSuperadmin && accounts.length > 0 ? (
+        {!isMobile && isSuperadmin && accounts.length > 0 ? (
           <div className="flex items-center gap-2 relative">
             <div className="text-xs font-semibold text-slate-600 whitespace-nowrap">Account</div>
             <select
@@ -312,16 +312,30 @@ export function EditorTopBar() {
             ) : null}
           </div>
         ) : null}
-        <input
-          className="h-9 w-[320px] max-w-[40vw] rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-          value={projectTitleValue}
-          onChange={(e) => actions.onChangeProjectTitle(e.target.value)}
-          placeholder="Untitled Project"
-          disabled={projectTitleDisabled}
-          title="Project title"
-        />
-        <ProjectStatusPill />
-        <PromptStatusPill />
+        {!isMobile ? (
+          <input
+            className="h-9 w-[320px] max-w-[40vw] rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+            value={projectTitleValue}
+            onChange={(e) => actions.onChangeProjectTitle(e.target.value)}
+            placeholder="Untitled Project"
+            disabled={projectTitleDisabled}
+            title="Project title"
+          />
+        ) : (
+          <div
+            className="h-9 max-w-[44vw] px-3 rounded-md border border-slate-200 bg-slate-50 text-slate-900 text-sm flex items-center truncate"
+            title={projectTitleValue || "Untitled Project"}
+            aria-label="Project title"
+          >
+            {projectTitleValue || "Untitled Project"}
+          </div>
+        )}
+        {!isMobile ? (
+          <>
+            <ProjectStatusPill />
+            <PromptStatusPill />
+          </>
+        ) : null}
         {!isMobile ? (
           <>
             <button

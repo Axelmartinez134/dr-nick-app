@@ -25,6 +25,7 @@ export type EditorActions = {
   onDownloadPdf: () => void;
   onShareAll: () => void;
   onOpenShareCarousels: () => void;
+  onCloseMobileDrawer: () => void;
   onSignOut: () => void;
 
   // Project card

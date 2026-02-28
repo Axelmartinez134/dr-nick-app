@@ -6226,7 +6226,7 @@ export default function EditorShell() {
 
         {/* Workspace */}
         <main
-          className={`relative flex-1 min-w-0 overflow-y-auto ${styles.workspace}`}
+          className={`relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden ${styles.workspace}`}
           onPointerDown={(e) => {
             if (!isMobile) return;
             if (mobileDrawerOpen) return;

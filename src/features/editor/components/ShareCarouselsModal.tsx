@@ -1,7 +1,7 @@
 /* eslint-disable react/no-unstable-nested-components */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEditorSelector } from "@/features/editor/store";
 
 function formatUpdatedAt(s: string) {
@@ -55,6 +55,7 @@ function IosToggle(props: {
 export function ShareCarouselsModal() {
   const open = useEditorSelector((s: any) => !!(s as any).shareCarouselsModalOpen);
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const currentProjectId = useEditorSelector((s: any) => (s as any).currentProjectId ? String((s as any).currentProjectId) : null);
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
@@ -77,6 +78,8 @@ export function ShareCarouselsModal() {
   }, [filteredProjects]);
 
   const [copied, setCopied] = useState(false);
+  const [manualCopyOpen, setManualCopyOpen] = useState(false);
+  const manualCopyRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(false), 1200);
@@ -91,6 +94,25 @@ export function ShareCarouselsModal() {
       return linkPath;
     }
   }, [linkPath]);
+
+  useEffect(() => {
+    if (!open) return;
+    setCopied(false);
+    setManualCopyOpen(false);
+  }, [open]);
+
+  useEffect(() => {
+    if (!manualCopyOpen) return;
+    const t = window.setTimeout(() => {
+      try {
+        manualCopyRef.current?.focus();
+        manualCopyRef.current?.select();
+      } catch {
+        // ignore
+      }
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [manualCopyOpen]);
 
   const [currentThumb, setCurrentThumb] = useState<string | null>(null);
   const workspaceRefs = useEditorSelector((s: any) => (s as any).workspaceRefs);
@@ -117,16 +139,23 @@ export function ShareCarouselsModal() {
 
   if (!open || !isSuperadmin) return null;
 
+  const outerCls = isMobile
+    ? "fixed inset-0 z-[80] flex items-stretch justify-stretch bg-black/40"
+    : "fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4";
+  const innerCls = isMobile
+    ? "w-full h-full overflow-hidden bg-white border border-slate-200 shadow-2xl"
+    : "w-full max-w-[980px] max-h-[85vh] overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-2xl";
+
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+      className={outerCls}
       onMouseDown={(e) => {
         // Close on outside click (backdrop).
         if (e.target === e.currentTarget) actions.onCloseShareCarousels?.();
       }}
     >
       <div
-        className="w-full max-w-[980px] max-h-[85vh] overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-2xl"
+        className={innerCls}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
@@ -139,12 +168,12 @@ export function ShareCarouselsModal() {
           </div>
           <button
             type="button"
-            className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm"
+            className={isMobile ? "h-10 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm text-sm font-semibold" : "h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm"}
             onClick={actions.onCloseShareCarousels}
             aria-label="Close"
             title="Close"
           >
-            ✕
+            {isMobile ? "Close" : "✕"}
           </button>
         </div>
 
@@ -157,8 +186,11 @@ export function ShareCarouselsModal() {
               try {
                 await actions.onClickCopyShareCarouselsLink?.();
                 setCopied(true);
+                setManualCopyOpen(false);
               } catch {
-                // ignore; linkError will show if present
+                // Clipboard can fail on iOS; fall back to manual copy.
+                setCopied(false);
+                setManualCopyOpen(true);
               }
             }}
             title="Copy review link"
@@ -180,9 +212,27 @@ export function ShareCarouselsModal() {
             </div>
           ) : null}
           {linkError ? <div className="w-full text-xs text-red-600">Link error: {linkError}</div> : null}
+          {manualCopyOpen && fullUrl ? (
+            <div className="w-full">
+              <div className="text-[11px] text-slate-500 mb-1">Copy failed — tap the box to select the link:</div>
+              <input
+                ref={manualCopyRef}
+                className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-mono text-slate-900 shadow-sm"
+                readOnly
+                value={fullUrl}
+                onFocus={(e) => {
+                  try {
+                    e.currentTarget.select();
+                  } catch {
+                    // ignore
+                  }
+                }}
+              />
+            </div>
+          ) : null}
         </div>
 
-        <div className="px-5 py-4 overflow-auto max-h-[65vh]">
+        <div className={isMobile ? "px-5 py-4 overflow-auto h-[calc(100vh-164px)]" : "px-5 py-4 overflow-auto max-h-[65vh]"}>
           {error ? <div className="text-sm text-red-700 mb-3">{error}</div> : null}
           {loading ? (
             <div className="text-sm text-slate-600">Loading…</div>

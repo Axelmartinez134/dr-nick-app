@@ -350,23 +350,38 @@ export function EditorBottomPanel() {
                 {/* Generate Image Button with Progress Bar */}
                 <div className="mt-4">
                   <div className="relative">
-                    <div className="flex flex-nowrap items-stretch gap-2">
-                      <select
-                        className="h-12 w-[280px] max-w-[280px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm"
-                        value={String(aiImageGenModel || "gpt-image-1.5")}
-                        disabled={ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
-                        onChange={(e) => actions.onChangeAiImageGenModel(e.target.value as any)}
-                        title="AI image generation model (per-user default)"
-                      >
-                        <option value="gpt-image-1.5">GPT Image (gpt-image-1.5)</option>
-                        <option value="gemini-3-pro-image-preview">Gemini 3 Pro (gemini-3-pro-image-preview)</option>
-                      </select>
+                    <div className="flex flex-col gap-2 md:flex-row md:flex-nowrap md:items-stretch">
+                      <div className="flex items-stretch gap-2 min-w-0">
+                        <select
+                          className="h-12 flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm md:flex-none md:w-[280px] md:max-w-[280px]"
+                          value={String(aiImageGenModel || "gpt-image-1.5")}
+                          disabled={ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
+                          onChange={(e) => actions.onChangeAiImageGenModel(e.target.value as any)}
+                          title="AI image generation model (per-user default)"
+                        >
+                          <option value="gpt-image-1.5">GPT Image (gpt-image-1.5)</option>
+                          <option value="gemini-3-pro-image-preview">Gemini 3 Pro (gemini-3-pro-image-preview)</option>
+                        </select>
+
+                        {String(aiImageGenModel) === "gemini-3-pro-image-preview" ? (
+                          <button
+                            type="button"
+                            data-ai-settings-toggle="1"
+                            className="h-12 w-12 shrink-0 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                            onClick={actions.onClickToggleAiImageSettings}
+                            disabled={ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
+                            title="Image settings (session only)"
+                          >
+                            ⚙️
+                          </button>
+                        ) : null}
+                      </div>
 
                       <div
-                        className="h-12 shrink-0 rounded-lg border border-slate-200 bg-white px-3 shadow-sm flex items-center gap-2"
+                        className="h-12 w-full md:w-auto rounded-lg border border-slate-200 bg-white px-3 shadow-sm flex items-center justify-between gap-2"
                         title="If ON, AI-generated images will auto-run background removal (per project)."
                       >
-                        <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">BG Removal?</span>
+                        <span className="text-xs font-semibold text-slate-700">BG Removal?</span>
                         <button
                           type="button"
                           className={[
@@ -385,46 +400,33 @@ export function EditorBottomPanel() {
                         </button>
                       </div>
 
-                      {String(aiImageGenModel) === "gemini-3-pro-image-preview" ? (
-                        <button
-                          type="button"
-                          data-ai-settings-toggle="1"
-                          className="h-12 w-12 shrink-0 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                          onClick={actions.onClickToggleAiImageSettings}
-                          disabled={ui.aiImageGeneratingThis || copyGenerating || switchingSlides || ui.imagePromptGenerating}
-                          title="Image settings (session only)"
-                        >
-                          ⚙️
-                        </button>
-                      ) : null}
-
-                  <button
-                        className="h-12 flex-1 min-w-0 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
-                    disabled={
-                      !currentProjectId ||
-                      ui.aiImageGeneratingThis ||
-                      copyGenerating ||
-                      switchingSlides ||
-                      ui.imagePromptGenerating ||
+                      <button
+                        className="h-12 w-full md:flex-1 min-w-0 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold shadow-md hover:shadow-lg disabled:opacity-50 relative overflow-hidden transition-shadow"
+                        disabled={
+                          !currentProjectId ||
+                          ui.aiImageGeneratingThis ||
+                          copyGenerating ||
+                          switchingSlides ||
+                          ui.imagePromptGenerating ||
                           !String(aiImagePromptDraft ?? slides[activeSlideIndex]?.draftAiImagePrompt ?? "").trim()
-                    }
-                    onClick={actions.onClickGenerateAiImage}
-                  >
-                    {ui.aiImageGeneratingThis ? (
-                      <>
-                        <div
-                          className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
-                          style={{ width: `${ui.aiImageProgressThis || 0}%` }}
-                        />
-                        <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
-                          <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
+                        }
+                        onClick={actions.onClickGenerateAiImage}
+                      >
+                        {ui.aiImageGeneratingThis ? (
+                          <>
+                            <div
+                              className="absolute inset-0 bg-gradient-to-r from-purple-700 to-blue-700 transition-all duration-200"
+                              style={{ width: `${ui.aiImageProgressThis || 0}%` }}
+                            />
+                            <span className="relative z-10 flex flex-col items-center justify-center leading-tight">
+                              <span className="text-xs opacity-90">{ui.aiImageStatusThis || "Working..."}</span>
                               <span className="text-sm font-bold">{Math.round(ui.aiImageProgressThis || 0)}%</span>
-                        </span>
-                      </>
-                    ) : (
-                      "🎨 Generate Image"
-                    )}
-                  </button>
+                            </span>
+                          </>
+                        ) : (
+                          "🎨 Generate Image"
+                        )}
+                      </button>
                     </div>
 
                     {String(aiImageGenModel) === "gemini-3-pro-image-preview" && aiImageSettingsOpen ? (
