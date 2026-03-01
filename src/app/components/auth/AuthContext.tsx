@@ -57,6 +57,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const gapFillTriggeredRef = useRef(false)
   const pastRedirectTriggeredRef = useRef(false)
   const lastEditorCheckUserIdRef = useRef<string | null>(null)
+  const lastAuthUserIdRef = useRef<string | null>(null)
 
   // Role detection based on email
   const isDoctor = !!(user?.email && process.env.NEXT_PUBLIC_ADMIN_EMAIL && user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL)
@@ -127,6 +128,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       .then(({ data: { session } }) => {
       setSession(session)
       setUser(session?.user ?? null)
+      lastAuthUserIdRef.current = session?.user?.id ?? null
       setLoading(false)
       if (session?.user && !gapFillTriggeredRef.current) {
         gapFillTriggeredRef.current = true
@@ -181,8 +183,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      // IMPORTANT: clear editor-scoped persisted context when sessions change.
+      // Otherwise logging in as a different user can reuse the previous user's active account context.
+      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') {
+        try {
+          localStorage.removeItem('editor.activeAccountId')
+        } catch {
+          // ignore
+        }
+      }
       setSession(session)
       setUser(session?.user ?? null)
+      lastAuthUserIdRef.current = session?.user?.id ?? null
       setLoading(false)
       if (session?.user && !gapFillTriggeredRef.current) {
         gapFillTriggeredRef.current = true
@@ -295,6 +307,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       // Clear all possible storage locations
       try {
+        localStorage.removeItem('editor.activeAccountId')
         localStorage.removeItem('supabase.auth.token')
         localStorage.removeItem('sb-pobkamvdnbxhmyfwbnsj-auth-token')
         sessionStorage.clear()
