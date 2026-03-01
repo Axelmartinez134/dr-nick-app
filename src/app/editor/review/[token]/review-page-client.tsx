@@ -566,6 +566,10 @@ function ReviewProjectCard(props: {
   const templateSnap = templateId ? templatesById[templateId] : null;
   const layout = project.slides?.[activeSlide]?.layout_snapshot ?? EMPTY_LAYOUT;
   const inputSnap = project.slides?.[activeSlide]?.input_snapshot ?? null;
+  // Slide 1 local overrides live in slide 1's input_snapshot, and must be passed through to the renderer.
+  const slide1InputSnap = project.slides?.[0]?.input_snapshot ?? null;
+  const slide1Style = (slide1InputSnap as any)?.slide1Style ?? null;
+  const slide1Background = (slide1InputSnap as any)?.slide1Background ?? null;
   const isEnhanced = project.template_type_id === "enhanced";
   const lockTextLayout = isEnhanced ? !!(inputSnap as any)?.editor?.layoutLocked : false;
   // Important: CarouselPreviewVision has a "preserve user-image position" fallback that can drift across re-renders
@@ -859,6 +863,8 @@ function ReviewProjectCard(props: {
               layout={lay}
               backgroundColor={project.project_background_color}
               textColor={project.project_text_color}
+              slide1Style={slide1Style}
+              slide1Background={slide1Background}
               deferInit={false}
               backgroundEffectEnabled={project.background_effect_enabled}
               backgroundEffectType={project.background_effect_type}
@@ -934,6 +940,8 @@ function ReviewProjectCard(props: {
                   layout={layout}
                   backgroundColor={project.project_background_color}
                   textColor={project.project_text_color}
+                  slide1Style={slide1Style}
+                  slide1Background={slide1Background}
                   deferInit={false}
                   backgroundEffectEnabled={project.background_effect_enabled}
                   backgroundEffectType={project.background_effect_type}
