@@ -9,7 +9,7 @@ import {
   uploadMp4ToReelsBucket,
   whisperTranscribeMp4Bytes,
 } from '@/app/api/_shared/reel_media';
-import { canonicalizeInstagramUrl, getAuthedSwipeContext, isInstagramReelOrPostUrl } from '../../../_utils';
+import { canonicalizeInstagramUrl, getAuthedSwipeSuperadminContext, isInstagramReelOrPostUrl } from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 210;
@@ -99,7 +99,7 @@ async function whisperTranscribeMp4(buf: Buffer): Promise<string> {
 }
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await getAuthedSwipeContext(request);
+  const auth = await getAuthedSwipeSuperadminContext(request);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error } satisfies Resp, { status: auth.status });
   const { supabase, accountId } = auth;
 

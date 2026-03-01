@@ -3,7 +3,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { getAuthedSwipeContext } from '../_utils';
+import { getAuthedSwipeContext, requireAccountMembership } from '../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -40,6 +40,10 @@ export async function GET(request: NextRequest) {
   if (!ctx.ok) return NextResponse.json({ success: false, error: ctx.error } satisfies Resp, { status: ctx.status });
 
   try {
+    const member = await requireAccountMembership({ supabase: ctx.supabase, userId: ctx.user.id, accountId: ctx.accountId });
+    if (!member.ok) {
+      return NextResponse.json({ success: false, error: member.error } satisfies Resp, { status: member.status });
+    }
     const svc = requireServiceClient();
 
     // Read existing.

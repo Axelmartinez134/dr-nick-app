@@ -16,6 +16,49 @@ export async function requireSuperadmin(supabase: any, userId: string): Promise<
   return { ok: true };
 }
 
+export async function requireAccountMembership(args: {
+  supabase: any;
+  userId: string;
+  accountId: string;
+}): Promise<{ ok: true } | { ok: false; status: 403 | 500; error: string }> {
+  const { supabase, userId, accountId } = args;
+  const uid = String(userId || '').trim();
+  const aid = String(accountId || '').trim();
+  if (!uid || !aid) return { ok: false, status: 403, error: 'Forbidden' };
+
+  // Owner fast-path.
+  try {
+    const { data: acct, error: acctErr } = await supabase
+      .from('editor_accounts')
+      .select('id')
+      .eq('id', aid)
+      .eq('created_by_user_id', uid)
+      .maybeSingle();
+    if (acctErr) {
+      // If RLS blocks, treat as forbidden rather than leaking details.
+    } else if (acct?.id) {
+      return { ok: true };
+    }
+  } catch {
+    // ignore
+  }
+
+  // Membership check.
+  try {
+    const { data: mem, error: memErr } = await supabase
+      .from('editor_account_memberships')
+      .select('account_id')
+      .eq('account_id', aid)
+      .eq('user_id', uid)
+      .maybeSingle();
+    if (memErr) return { ok: false, status: 403, error: 'Forbidden' };
+    if (!mem?.account_id) return { ok: false, status: 403, error: 'Forbidden' };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, status: 500, error: String(e?.message || 'Failed to validate account') };
+  }
+}
+
 export function s(v: any): string | null {
   const out = typeof v === 'string' ? v.trim() : '';
   return out ? out : null;
@@ -80,6 +123,17 @@ export function isInstagramReelOrPostUrl(urlRaw: string): boolean {
 }
 
 export async function getAuthedSwipeContext(request: NextRequest) {
+  const authed = await getAuthedSupabase(request);
+  if (!authed.ok) return authed;
+  const { supabase, user } = authed;
+
+  const acct = await resolveActiveAccountId({ request, supabase, userId: user.id });
+  if (!acct.ok) return { ok: false as const, status: acct.status, error: acct.error };
+
+  return { ok: true as const, supabase, user, accountId: acct.accountId };
+}
+
+export async function getAuthedSwipeSuperadminContext(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
   if (!authed.ok) return authed;
   const { supabase, user } = authed;

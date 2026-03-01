@@ -140,7 +140,6 @@ export function SwipeFileModal() {
 
   useEffect(() => {
     if (!open) return;
-    if (!isSuperadmin) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -163,7 +162,7 @@ export function SwipeFileModal() {
     return () => {
       cancelled = true;
     };
-  }, [open, isSuperadmin]);
+  }, [open]);
 
   const refreshIdeasCount = async (itemId: string) => {
     const id = String(itemId || "").trim();
@@ -254,19 +253,17 @@ export function SwipeFileModal() {
 
   useEffect(() => {
     if (!open) return;
-    if (!isSuperadmin) return;
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isSuperadmin]);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    if (!isSuperadmin) return;
     // Category filter should apply immediately.
     setRepurposeFilter("all");
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategoryId]);
+  }, [activeCategoryId, open]);
 
   const visibleItems = useMemo(() => {
     const mode = repurposeFilter;
@@ -297,9 +294,8 @@ export function SwipeFileModal() {
 
   useEffect(() => {
     if (!open) return;
-    if (!isSuperadmin) return;
     void refreshPrompts(templateTypeId);
-  }, [open, templateTypeId, isSuperadmin]);
+  }, [open, templateTypeId]);
 
   useEffect(() => {
     if (!rowMenu) return;
@@ -330,26 +326,6 @@ export function SwipeFileModal() {
 
   if (!open) return null;
   if (!actions) return null;
-
-  if (!isSuperadmin) {
-    return (
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-6">
-        <div className="w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 p-6">
-          <div className="text-lg font-semibold text-slate-900">Swipe File</div>
-          <div className="mt-2 text-sm text-slate-600">Access denied.</div>
-          <div className="mt-4 flex justify-end">
-            <button
-              type="button"
-              className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
-              onClick={actions.onCloseSwipeFileModal}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const enrichableIds = items
     .filter((it) => String(it.platform || "").toLowerCase() === "instagram")
@@ -769,6 +745,13 @@ export function SwipeFileModal() {
                           !isMobile ? "hover:bg-slate-50" : "",
                           !isMobile && selected ? "bg-slate-50" : "bg-white",
                         ].join(" ")}
+                        onContextMenu={(e) => {
+                          if (isMobile) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSelectedItemId(it.id);
+                          setRowMenu({ x: e.clientX, y: e.clientY, itemId: it.id });
+                        }}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <button

@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 
   const acct = await resolveActiveAccountId({ request: req, supabase, userId: user.id });
   if (!acct.ok) return NextResponse.json({ success: false, error: acct.error } satisfies Resp, { status: acct.status });
-  const activeAccountId = acct.accountId;
+  const requestedActiveAccountId = acct.accountId;
 
   const { data: saRow, error: saErr } = await supabase
     .from('editor_superadmins')
@@ -57,6 +57,11 @@ export async function GET(req: NextRequest) {
     if (tb !== ta) return tb - ta;
     return a.displayName.localeCompare(b.displayName);
   });
+
+  // Self-heal invalid x-account-id: only allow accounts the user actually belongs to.
+  // This prevents stale localStorage from accidentally pointing a user at the wrong account context.
+  const activeAccountId =
+    accounts.some((a) => a.accountId === requestedActiveAccountId) ? requestedActiveAccountId : (accounts[0]?.accountId || '');
 
   return NextResponse.json({ success: true, isSuperadmin, activeAccountId, accounts } satisfies Resp);
 }

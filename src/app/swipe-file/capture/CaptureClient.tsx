@@ -59,7 +59,6 @@ export default function CaptureClient() {
     }
   }, [sp]);
 
-  const [isSuperadmin, setIsSuperadmin] = useState<boolean | null>(null);
   const publicMode = useMemo(() => !!String(keyFromQuery || "").trim(), [keyFromQuery]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState<string>("");
@@ -127,33 +126,6 @@ export default function CaptureClient() {
     if (!user && !publicMode) router.replace("/");
   }, [loading, user, router, publicMode]);
 
-  useEffect(() => {
-    if (loading) return;
-    if (!user) return;
-    if (publicMode) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const token = await getToken();
-        if (!token) throw new Error("Missing auth token");
-        const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-        const res = await fetch("/api/editor/accounts/me", { method: "GET", headers });
-        const j = await res.json().catch(() => null);
-        if (cancelled) return;
-        if (!res.ok || !j?.success) {
-          setIsSuperadmin(false);
-          return;
-        }
-        setIsSuperadmin(!!j.isSuperadmin);
-      } catch {
-        if (!cancelled) setIsSuperadmin(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, user, publicMode]);
-
   const loadCategories = async () => {
     setError(null);
     try {
@@ -186,10 +158,9 @@ export default function CaptureClient() {
       void loadCategories();
       return;
     }
-    if (isSuperadmin !== true) return;
     void loadCategories();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuperadmin, publicMode]);
+  }, [publicMode]);
 
   const onAddCategory = async () => {
     const name = String(newCategory || "").trim();
@@ -280,25 +251,6 @@ export default function CaptureClient() {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="text-sm text-gray-700">Redirecting…</div>
-      </main>
-    );
-  }
-
-  if (!publicMode && isSuperadmin === false) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="w-full max-w-md bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-          <div className="text-lg font-semibold text-slate-900">Swipe File</div>
-          <div className="mt-2 text-sm text-slate-600">Access denied.</div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!publicMode && isSuperadmin === null) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="text-sm text-gray-700">Checking access…</div>
       </main>
     );
   }
