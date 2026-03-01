@@ -183,13 +183,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      // IMPORTANT: clear editor-scoped persisted context when sessions change.
-      // Otherwise logging in as a different user can reuse the previous user's active account context.
-      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') {
+      // IMPORTANT: clear editor-scoped persisted context ONLY when it is unsafe to keep it.
+      // - Always clear on SIGNED_OUT.
+      // - Clear on SIGNED_IN only if the signed-in user differs from the last known user.
+      // Otherwise, account switching (which relies on localStorage + reload) would break because
+      // Supabase can emit SIGNED_IN on page load/session restore.
+      if (event === 'SIGNED_OUT') {
         try {
           localStorage.removeItem('editor.activeAccountId')
         } catch {
           // ignore
+        }
+      } else if (event === 'SIGNED_IN') {
+        const nextUserId = session?.user?.id ?? null
+        const prevUserId = lastAuthUserIdRef.current
+        if (prevUserId && nextUserId && prevUserId !== nextUserId) {
+          try {
+            localStorage.removeItem('editor.activeAccountId')
+          } catch {
+            // ignore
+          }
         }
       }
       setSession(session)
