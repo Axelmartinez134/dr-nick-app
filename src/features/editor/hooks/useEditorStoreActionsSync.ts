@@ -66,6 +66,7 @@ type Args = {
   projectBackgroundColorForUpdate: string;
   setProjectsDropdownOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
   setMobileDrawerOpen: (next: boolean) => void;
+  setSlideStyleModalOpen: (next: boolean) => void;
   setArchiveProjectTarget: (next: { id: string; title: string } | null) => void;
   setArchiveProjectModalOpen: (next: boolean) => void;
   setTemplateTypeMappingSlide1: (next: string | null) => void;
@@ -186,6 +187,7 @@ type Args = {
   onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onChangeProjectReviewSource: (args: { projectId: string; next: string }) => Promise<any> | void;
+  onSetSlide1StyleId: (nextStyleId: string | null) => void;
 
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
@@ -285,6 +287,7 @@ export function useEditorStoreActionsSync(args: Args) {
     projectBackgroundColorForUpdate,
     setProjectsDropdownOpen,
     setMobileDrawerOpen,
+    setSlideStyleModalOpen,
     setArchiveProjectTarget,
     setArchiveProjectModalOpen,
     setTemplateTypeMappingSlide1,
@@ -374,6 +377,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleProjectReviewApproved,
     onToggleProjectReviewScheduled,
     onChangeProjectReviewSource,
+    onSetSlide1StyleId,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -413,6 +417,27 @@ export function useEditorStoreActionsSync(args: Args) {
     onCloseMobileDrawer: () => {
       try {
         if (isMobile) setMobileDrawerOpen(false);
+      } catch {
+        // ignore
+      }
+    },
+    onOpenSlideStyleModal: () => {
+      try {
+        setSlideStyleModalOpen(true);
+      } catch {
+        // ignore
+      }
+    },
+    onCloseSlideStyleModal: () => {
+      try {
+        setSlideStyleModalOpen(false);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1StyleId: (nextStyleId: string | null) => {
+      try {
+        onSetSlide1StyleId(nextStyleId);
       } catch {
         // ignore
       }
@@ -752,6 +777,9 @@ export function useEditorStoreActionsSync(args: Args) {
       onOpenShareCarousels: () => implRef.current?.onOpenShareCarousels?.(),
       onOpenMobileDrawer: () => implRef.current?.onOpenMobileDrawer?.(),
       onCloseMobileDrawer: () => implRef.current?.onCloseMobileDrawer?.(),
+      onOpenSlideStyleModal: () => implRef.current?.onOpenSlideStyleModal?.(),
+      onCloseSlideStyleModal: () => implRef.current?.onCloseSlideStyleModal?.(),
+      onSetSlide1StyleId: (nextStyleId: string | null) => implRef.current?.onSetSlide1StyleId?.(nextStyleId),
       onSignOut: () => implRef.current?.onSignOut?.(),
       setIsSuperadmin: (next: boolean) => implRef.current?.setIsSuperadmin?.(next),
       onCloseShareCarousels: () => implRef.current?.onCloseShareCarousels?.(),

@@ -33,6 +33,7 @@ import {
   PoppyPromptsLibraryModal,
 } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
+import { SlideStyleModal } from "@/features/editor/components/SlideStyleModal";
 import { SwipeFileModal } from "@/features/editor/components/SwipeFileModal";
 import { fetchLogoTags, importLogoVariant, searchLogoVariants, searchLogoVariantsGlobal } from "@/features/editor/services/logosApi";
 import { MobileDrawer } from "@/features/editor/components/MobileDrawer";
@@ -257,6 +258,15 @@ export default function EditorShell() {
     if (!imageLibraryModalOpen) return;
     setImageLibraryBgRemovalEnabledAtInsert(!imageLibraryBgRemovalEnabledAtInsert);
   }, [imageLibraryBgRemovalEnabledAtInsert, imageLibraryModalOpen, setImageLibraryBgRemovalEnabledAtInsert]);
+
+  // Slide 1 Style modal (Phase 0): store-owned modal state (desktop-only in MVP)
+  const slideStyleModalOpen = useEditorSelector((s: any) => !!(s as any).slideStyleModalOpen);
+  const setSlideStyleModalOpen = useCallback(
+    (next: boolean) => {
+      editorStore.setState({ slideStyleModalOpen: !!next } as any);
+    },
+    [editorStore]
+  );
 
   // Body Regen modal (Regular only): store-owned modal state
   const setBodyRegenModalOpen = useCallback(
@@ -2727,6 +2737,45 @@ export default function EditorShell() {
       inputSnapshot: params.inputSnapshot,
     });
   };
+
+  // Slide 1 Styles (MVP): store a style id in slide[0].inputData.slideStyleId.
+  // Desktop-only UI for now, but the rendered result should be stable for exports.
+  const onSetSlide1StyleId = useCallback(
+    (nextStyleId: string | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slideStyleId: nextStyleId ? String(nextStyleId) : null }
+          : { slideStyleId: nextStyleId ? String(nextStyleId) : null };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, activeSlideIndexRef, currentProjectIdRef, templateTypeIdRef]
+  );
 
   const computeRegularBodyTextboxLayout = (params: {
     slideIndex: number;
@@ -6017,6 +6066,7 @@ export default function EditorShell() {
     projectBackgroundColorForUpdate: projectBackgroundColor,
     setProjectsDropdownOpen,
     setMobileDrawerOpen,
+    setSlideStyleModalOpen,
     setArchiveProjectTarget,
     setArchiveProjectModalOpen,
     setTemplateTypeMappingSlide1,
@@ -6124,6 +6174,7 @@ export default function EditorShell() {
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewScheduled: !!a?.next } }),
     onChangeProjectReviewSource: (a: any) =>
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewSource: String(a?.next ?? "") } }),
+    onSetSlide1StyleId,
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).
@@ -6375,6 +6426,8 @@ export default function EditorShell() {
       <IdeasModal />
 
       <ImageLibraryModal />
+
+      <SlideStyleModal />
 
       <BodyEmphasisStylesModal />
 

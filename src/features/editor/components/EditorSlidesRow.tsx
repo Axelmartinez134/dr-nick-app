@@ -263,6 +263,17 @@ export function EditorSlidesRow() {
                         }}
                         templateId={tid}
                         slideIndex={i}
+                        slideStyleId={
+                          (() => {
+                            try {
+                              const raw = (slides as any)?.[i]?.inputData?.slideStyleId;
+                              const v = raw == null ? "" : String(raw);
+                              return v.trim() || null;
+                            } catch {
+                              return null;
+                            }
+                          })()
+                        }
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
                         textColor={projectTextColor}
@@ -313,6 +324,17 @@ export function EditorSlidesRow() {
                     ref={(effectiveSlideCanvasRefs as any).current?.[i] as any}
                     templateId={tid}
                     slideIndex={i}
+                    slideStyleId={
+                      (() => {
+                        try {
+                          const raw = (slides as any)?.[i]?.inputData?.slideStyleId;
+                          const v = raw == null ? "" : String(raw);
+                          return v.trim() || null;
+                        } catch {
+                          return null;
+                        }
+                      })()
+                    }
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
                     textColor={projectTextColor}
@@ -431,6 +453,17 @@ export function EditorSlidesRow() {
                                 ref={refProp as any}
                                 templateId={tid}
                                 slideIndex={i}
+                                slideStyleId={
+                                  (() => {
+                                    try {
+                                      const raw = (slides as any)?.[i]?.inputData?.slideStyleId;
+                                      const v = raw == null ? "" : String(raw);
+                                      return v.trim() || null;
+                                    } catch {
+                                      return null;
+                                    }
+                                  })()
+                                }
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}

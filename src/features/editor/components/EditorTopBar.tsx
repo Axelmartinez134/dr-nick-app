@@ -258,18 +258,14 @@ export function EditorTopBar() {
           </div>
         ) : (
           <div className="flex items-center gap-2 min-w-0">
-            {isSuperadmin ? (
-              <button
-                type="button"
-                className="h-10 px-3 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800"
-                onClick={actions?.onOpenSwipeFileModal}
-                title="Open Swipe File"
-              >
-                Swipe File
-              </button>
-            ) : (
-              <div className="text-sm font-semibold text-slate-900 truncate">{titleText}</div>
-            )}
+            <button
+              type="button"
+              className="h-10 px-3 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800"
+              onClick={actions?.onOpenSwipeFileModal}
+              title="Open Swipe File"
+            >
+              Swipe File
+            </button>
           </div>
         )}
       </div>
@@ -313,11 +309,11 @@ export function EditorTopBar() {
             Outreach
           </button>
         ) : null}
-        {!isMobile && isSuperadmin ? (
+        {!isMobile ? (
           <button
             onClick={actions?.onOpenSwipeFileModal}
             className="px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm transition-colors"
-            title="Swipe File (superadmin)"
+            title="Swipe File"
             type="button"
           >
             Swipe File

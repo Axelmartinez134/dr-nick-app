@@ -42,6 +42,8 @@ interface CarouselPreviewProps {
   // Which slide within the templateSnapshot this canvas represents (0-based).
   // Used for debug overlays + contentRegion clamping.
   slideIndex?: number;
+  // /editor-only: optional visual style id applied to Slide 1 (Regular).
+  slideStyleId?: string | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   // When true, shrink each user text object's width to hug the rendered text (plus small padding),
   // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
@@ -129,6 +131,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       templateSnapshot,
       templateId,
       slideIndex,
+      slideStyleId,
       hasHeadline,
       headlineFontFamily,
       bodyFontFamily,
@@ -1817,6 +1820,140 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       constraintsRef.current.allowedRect = computeAllowedRect(templateSnapshot || null);
       updateOverlayData();
 
+      const addSlideStyleDecor = () => {
+        const styleIdRaw = slideStyleId == null ? '' : String(slideStyleId);
+        const styleId = styleIdRaw.trim();
+        const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
+        if (!styleId) return;
+        if (si !== 0) return; // Slide 1 only
+        // MVP: styles are for Regular (body-only) only.
+        if (hasHeadline) return;
+
+        const W = INTERNAL_W;
+        const H = INTERNAL_H;
+
+        const lockObj = (obj: any) => {
+          try {
+            obj.set?.({
+              selectable: false,
+              evented: false,
+              hasControls: false,
+              hasBorders: false,
+              lockMovementX: true,
+              lockMovementY: true,
+              lockScalingX: true,
+              lockScalingY: true,
+              lockRotation: true,
+              hoverCursor: 'default',
+            });
+            (obj as any).data = { role: 'style-decor', styleId };
+          } catch {
+            // ignore
+          }
+        };
+
+        const add = (obj: any) => {
+          lockObj(obj);
+          canvas.add(obj);
+          return obj;
+        };
+
+        const alpha = (hex: string, a: number) => {
+          const h = String(hex || '').trim();
+          const m = h.startsWith('#') ? h.slice(1) : h;
+          const v = m.length === 3 ? m.split('').map((x) => x + x).join('') : m;
+          const n = parseInt(v, 16);
+          if (!Number.isFinite(n)) return `rgba(0,0,0,${a})`;
+          const r = (n >> 16) & 255;
+          const g = (n >> 8) & 255;
+          const b = n & 255;
+          return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a))})`;
+        };
+
+        try {
+          if (styleId === 'aurora') {
+            add(new fabric.Circle({ left: -220, top: -260, radius: 520, fill: alpha('#7C3AED', 0.18) }));
+            add(new fabric.Circle({ left: W - 520 + 240, top: H - 520 + 220, radius: 520, fill: alpha('#2563EB', 0.14) }));
+            add(new fabric.Circle({ left: W - 360, top: -200, radius: 360, fill: alpha('#14B8A6', 0.10) }));
+            return;
+          }
+          if (styleId === 'spotlight') {
+            add(new fabric.Circle({ left: W / 2 - 520, top: H / 2 - 520, radius: 520, fill: alpha('#F59E0B', 0.10) }));
+            add(new fabric.Rect({ left: 80, top: 1100, width: W - 160, height: 220, rx: 32, ry: 32, fill: alpha('#111827', 0.04) }));
+            return;
+          }
+          if (styleId === 'ribbon') {
+            const ribbon = new fabric.Rect({
+              left: -260,
+              top: 220,
+              width: W + 520,
+              height: 140,
+              fill: alpha('#0EA5E9', 0.10),
+              angle: -12,
+              rx: 40,
+              ry: 40,
+            });
+            add(ribbon);
+            add(new fabric.Circle({ left: -200, top: H - 380, radius: 320, fill: alpha('#22C55E', 0.10) }));
+            add(new fabric.Circle({ left: W - 240, top: -160, radius: 260, fill: alpha('#A855F7', 0.10) }));
+            return;
+          }
+          if (styleId === 'frame') {
+            add(
+              new fabric.Rect({
+                left: 54,
+                top: 54,
+                width: W - 108,
+                height: H - 108,
+                rx: 54,
+                ry: 54,
+                fill: 'transparent',
+                stroke: alpha('#0F172A', 0.14),
+                strokeWidth: 10,
+              })
+            );
+            add(new fabric.Rect({ left: 90, top: 90, width: W - 180, height: H - 180, rx: 44, ry: 44, fill: alpha('#94A3B8', 0.06) }));
+            return;
+          }
+          if (styleId === 'paper') {
+            add(new fabric.Rect({ left: 90, top: 120, width: W - 180, height: 380, rx: 48, ry: 48, fill: alpha('#FDBA74', 0.14), angle: -2 }));
+            add(new fabric.Rect({ left: 120, top: 150, width: W - 240, height: 380, rx: 48, ry: 48, fill: alpha('#F97316', 0.10), angle: 1 }));
+            add(new fabric.Circle({ left: W - 260, top: H - 320, radius: 260, fill: alpha('#FEF3C7', 0.18) }));
+            return;
+          }
+          if (styleId === 'neon') {
+            add(new fabric.Rect({ left: 40, top: 240, width: W - 80, height: 90, rx: 32, ry: 32, fill: alpha('#06B6D4', 0.12) }));
+            add(new fabric.Rect({ left: 40, top: 360, width: W - 80, height: 90, rx: 32, ry: 32, fill: alpha('#22C55E', 0.10) }));
+            add(new fabric.Circle({ left: W - 340, top: H - 420, radius: 380, fill: alpha('#A78BFA', 0.12) }));
+            return;
+          }
+          if (styleId === 'minimal') {
+            add(new fabric.Rect({ left: 90, top: 90, width: W - 180, height: 12, fill: alpha('#0F172A', 0.10) }));
+            add(new fabric.Rect({ left: 90, top: H - 102, width: W - 180, height: 12, fill: alpha('#64748B', 0.10) }));
+            add(new fabric.Circle({ left: W - 180, top: 120, radius: 120, fill: alpha('#CBD5E1', 0.16) }));
+            return;
+          }
+          if (styleId === 'confetti') {
+            const dots: Array<[number, number, string]> = [
+              [120, 140, '#F43F5E'],
+              [180, 220, '#3B82F6'],
+              [260, 160, '#10B981'],
+              [W - 180, 180, '#F43F5E'],
+              [W - 240, 260, '#3B82F6'],
+              [W - 120, 300, '#10B981'],
+              [140, H - 220, '#3B82F6'],
+              [240, H - 160, '#10B981'],
+              [W - 220, H - 220, '#F43F5E'],
+            ];
+            dots.forEach(([x, y, c]) => add(new fabric.Circle({ left: x, top: y, radius: 18, fill: alpha(c, 0.18) })));
+            add(new fabric.Rect({ left: 90, top: 520, width: W - 180, height: 28, rx: 14, ry: 14, fill: alpha('#0F172A', 0.05) }));
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      };
+
       const addTemplateAssets = () => {
         if (!templateSnapshot?.slides?.length) return;
         const slide0 = templateSnapshot.slides.find(s => s.slideIndex === 0) || templateSnapshot.slides[0];
@@ -2164,6 +2301,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // STEP 0: Add locked template assets (if any)
       addTemplateAssets();
 
+      // STEP 0.5: Add Slide 1 style decor (if enabled)
+      addSlideStyleDecor();
+
       // STEP 1: Load and add image if provided
       if (layout.image && layout.image.url) {
         console.log('[Preview Vision] 🖼️ Loading image...');
@@ -2208,7 +2348,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
             // Stacking: template assets (locked layer) should be behind user content.
             // Place user image above template assets but below user text.
-            const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
+            const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset' || o?.data?.role === 'style-decor').length;
             let stacked = false;
             try {
               if (typeof canvas.moveTo === 'function') {
@@ -2303,7 +2443,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               canvas.add(fabricImage);
 
               // Stacking: place sticker above template assets but below user text.
-              const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
+              const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset' || o?.data?.role === 'style-decor').length;
               try {
                 if (typeof canvas.moveTo === 'function') {
                   canvas.moveTo(fabricImage, templateCount);
@@ -2829,7 +2969,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slideStyleId, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     const defaultFrameStyle: CSSProperties = {
       width: `${displayW}px`,

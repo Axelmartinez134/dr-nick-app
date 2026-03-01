@@ -27,6 +27,9 @@ export type EditorActions = {
   onOpenShareCarousels: () => void;
   onOpenMobileDrawer: () => void;
   onCloseMobileDrawer: () => void;
+  onOpenSlideStyleModal: () => void;
+  onCloseSlideStyleModal: () => void;
+  onSetSlide1StyleId: (nextStyleId: string | null) => void;
   onSignOut: () => void;
 
   // Project card
@@ -637,6 +640,7 @@ export type EditorState = {
   swipeFileModalOpen: boolean;
   brandAlignmentModalOpen: boolean;
   shareCarouselsModalOpen: boolean;
+  slideStyleModalOpen: boolean;
   bodyRegenModalOpen: boolean;
   bodyRegenTargetProjectId: string | null;
   bodyRegenTargetSlideIndex: number | null;
