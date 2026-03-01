@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
+import type { Slide1Background, Slide1Style } from "@/features/editor/store/types";
 
 type Args = {
   editorStore: any;
@@ -187,7 +188,9 @@ type Args = {
   onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onChangeProjectReviewSource: (args: { projectId: string; next: string }) => Promise<any> | void;
-  onSetSlide1StyleId: (nextStyleId: string | null) => void;
+  onSetSlide1Style: (next: Slide1Style | null) => void;
+  onSetSlide1BodyFontKey: (next: string | null) => void;
+  onSetSlide1Background: (next: Slide1Background) => void;
 
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
@@ -377,7 +380,9 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleProjectReviewApproved,
     onToggleProjectReviewScheduled,
     onChangeProjectReviewSource,
-    onSetSlide1StyleId,
+    onSetSlide1Style,
+    onSetSlide1BodyFontKey,
+    onSetSlide1Background,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -435,9 +440,23 @@ export function useEditorStoreActionsSync(args: Args) {
         // ignore
       }
     },
-    onSetSlide1StyleId: (nextStyleId: string | null) => {
+    onSetSlide1Style: (next: Slide1Style | null) => {
       try {
-        onSetSlide1StyleId(nextStyleId);
+        onSetSlide1Style(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1BodyFontKey: (next: string | null) => {
+      try {
+        onSetSlide1BodyFontKey(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1Background: (next: Slide1Background) => {
+      try {
+        onSetSlide1Background(next);
       } catch {
         // ignore
       }
@@ -779,7 +798,9 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseMobileDrawer: () => implRef.current?.onCloseMobileDrawer?.(),
       onOpenSlideStyleModal: () => implRef.current?.onOpenSlideStyleModal?.(),
       onCloseSlideStyleModal: () => implRef.current?.onCloseSlideStyleModal?.(),
-      onSetSlide1StyleId: (nextStyleId: string | null) => implRef.current?.onSetSlide1StyleId?.(nextStyleId),
+      onSetSlide1Style: (next: Slide1Style | null) => implRef.current?.onSetSlide1Style?.(next),
+      onSetSlide1BodyFontKey: (next: string | null) => implRef.current?.onSetSlide1BodyFontKey?.(next),
+      onSetSlide1Background: (next: Slide1Background) => implRef.current?.onSetSlide1Background?.(next),
       onSignOut: () => implRef.current?.onSignOut?.(),
       setIsSuperadmin: (next: boolean) => implRef.current?.setIsSuperadmin?.(next),
       onCloseShareCarousels: () => implRef.current?.onCloseShareCarousels?.(),

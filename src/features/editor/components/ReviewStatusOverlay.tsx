@@ -61,6 +61,7 @@ export function ReviewStatusOverlay(props: {
   const timerRef = useRef<number | null>(null);
   const dirtyRef = useRef<boolean>(false);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
+  const [desktopOpen, setDesktopOpen] = useState<boolean>(true);
 
   useEffect(() => {
     // New project loaded.
@@ -70,6 +71,8 @@ export function ReviewStatusOverlay(props: {
     timerRef.current = null;
     // Mobile UX: default closed to avoid blocking the workspace.
     setMobileOpen(false);
+    // Desktop UX: default open (matches prior always-visible behavior).
+    setDesktopOpen(true);
   }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -180,37 +183,53 @@ export function ReviewStatusOverlay(props: {
     );
   }
 
+  const open = isMobile ? mobileOpen : desktopOpen;
+
   return (
     <div className="absolute left-[5px] top-[5px] z-[50] flex items-start gap-3">
-      <div className="rounded-xl border border-slate-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg w-[160px]">
-          <div className="text-[11px] font-semibold text-slate-900 mb-2">Status</div>
-          <div className="space-y-1.5">
-            <IosToggle
-              label="Ready"
-              value={ready}
-              disabled={busy}
-              onChange={(next) => actions.onToggleProjectReviewReady?.({ projectId: pid, next })}
-            />
-            <IosToggle
-              label="Posted"
-              value={posted}
-              disabled={busy}
-              onChange={(next) => actions.onToggleProjectReviewPosted?.({ projectId: pid, next })}
-            />
-            <IosToggle
-              label="Approved"
-              value={approved}
-              disabled={busy}
-              onChange={(next) => actions.onToggleProjectReviewApproved?.({ projectId: pid, next })}
-            />
-            <IosToggle
-              label="Scheduled"
-              value={scheduled}
-              disabled={busy}
-              onChange={(next) => actions.onToggleProjectReviewScheduled?.({ projectId: pid, next })}
-            />
+      <div className="relative">
+        <button
+          type="button"
+          className="h-9 px-3 rounded-xl border border-slate-200 bg-white/95 backdrop-blur text-[12px] font-semibold text-slate-800 shadow-lg hover:bg-white"
+          onClick={() => setDesktopOpen((v) => !v)}
+          aria-label={open ? "Close status controls" : "Open status controls"}
+          title={open ? "Close status controls" : "Open status controls"}
+        >
+          Status
+        </button>
+
+        {open ? (
+          <div className="absolute top-[calc(100%+8px)] left-0 z-[60] rounded-xl border border-slate-200 bg-white/95 backdrop-blur px-3 py-2 shadow-lg w-[160px]">
+            <div className="text-[11px] font-semibold text-slate-900 mb-2">Status</div>
+            <div className="space-y-1.5">
+              <IosToggle
+                label="Ready"
+                value={ready}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewReady?.({ projectId: pid, next })}
+              />
+              <IosToggle
+                label="Posted"
+                value={posted}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewPosted?.({ projectId: pid, next })}
+              />
+              <IosToggle
+                label="Approved"
+                value={approved}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewApproved?.({ projectId: pid, next })}
+              />
+              <IosToggle
+                label="Scheduled"
+                value={scheduled}
+                disabled={busy}
+                onChange={(next) => actions.onToggleProjectReviewScheduled?.({ projectId: pid, next })}
+              />
+            </div>
+            {busy ? <div className="mt-2 text-[11px] text-slate-500">Saving…</div> : null}
           </div>
-          {busy ? <div className="mt-2 text-[11px] text-slate-500">Saving…</div> : null}
+        ) : null}
       </div>
 
       <div className="flex items-center gap-2">

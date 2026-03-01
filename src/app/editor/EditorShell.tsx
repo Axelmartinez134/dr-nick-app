@@ -811,6 +811,22 @@ export default function EditorShell() {
   const FONT_OPTIONS = useMemo(
     () => [
       { label: "Inter", family: "Inter, sans-serif", weight: 400 },
+      // Slide-friendly (bolder / more readable) presets.
+      { label: "Slide — DM Sans (Medium)", family: "\"DM Sans\", sans-serif", weight: 500 },
+      { label: "Slide — DM Sans (Bold)", family: "\"DM Sans\", sans-serif", weight: 700 },
+      { label: "Slide — Manrope (Medium)", family: "\"Manrope\", sans-serif", weight: 500 },
+      { label: "Slide — Manrope (Bold)", family: "\"Manrope\", sans-serif", weight: 700 },
+      { label: "Slide — Plus Jakarta Sans (Medium)", family: "\"Plus Jakarta Sans\", sans-serif", weight: 500 },
+      { label: "Slide — Plus Jakarta Sans (Bold)", family: "\"Plus Jakarta Sans\", sans-serif", weight: 700 },
+      { label: "Slide — Space Grotesk (Medium)", family: "\"Space Grotesk\", sans-serif", weight: 500 },
+      { label: "Slide — Space Grotesk (Bold)", family: "\"Space Grotesk\", sans-serif", weight: 700 },
+      { label: "Slide — SF Pro (System)", family: "-apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"SF Pro Text\", system-ui, sans-serif", weight: 600 },
+      { label: "Slide — Helvetica Neue (System)", family: "\"Helvetica Neue\", Helvetica, Arial, sans-serif", weight: 600 },
+      // Proprietary fonts (will fall back unless available on device / installed).
+      { label: "Slide — Söhne (Fallback)", family: "\"Söhne\", \"Sohne\", Inter, sans-serif", weight: 600 },
+      { label: "Slide — GT America (Fallback)", family: "\"GT America\", \"GT America Standard\", Inter, sans-serif", weight: 600 },
+      { label: "Slide — Graphik (Fallback)", family: "\"Graphik\", Inter, sans-serif", weight: 600 },
+      { label: "Slide — Aperçu (Fallback)", family: "\"Aperçu\", \"Apercu\", Inter, sans-serif", weight: 600 },
       { label: "Poppins", family: "Poppins, sans-serif", weight: 400 },
       { label: "Montserrat (Regular)", family: "Montserrat, sans-serif", weight: 400 },
       { label: "Montserrat (Medium)", family: "Montserrat, sans-serif", weight: 500 },
@@ -966,8 +982,96 @@ export default function EditorShell() {
       (Number.isFinite(args.lineIndex as any) ? lines[Number(args.lineIndex)] : null) ||
       null;
     if (!line) return;
-    const parts = Array.isArray((line as any).__sourceParts) ? (line as any).__sourceParts : null;
-    if (!parts) return;
+    const escapeRegExp = (s: string) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const findAll = (haystack: string, needle: string): number[] => {
+      const out: number[] = [];
+      const h = String(haystack || "");
+      const n = String(needle || "");
+      if (!n) return out;
+      let idx = 0;
+      while (idx <= h.length) {
+        const hit = h.indexOf(n, idx);
+        if (hit < 0) break;
+        out.push(hit);
+        idx = hit + Math.max(1, n.length);
+      }
+      return out;
+    };
+    const bestEffortFindLineStartInBlock = (params: {
+      blockText: string;
+      lineText: string;
+      hintStart?: number;
+    }): number | null => {
+      const blockText = String(params.blockText || "");
+      const lineText = String(params.lineText || "");
+      if (!blockText || !lineText) return null;
+
+      // 1) Exact match
+      let cands = findAll(blockText, lineText);
+
+      // 2) Trimmed match (common if generator trimmed but source has leading/trailing whitespace)
+      if (!cands.length) {
+        const trimmed = lineText.trim();
+        if (trimmed && trimmed !== lineText) cands = findAll(blockText, trimmed);
+      }
+
+      // 3) Whitespace-flex regex match
+      if (!cands.length) {
+        const words = lineText.trim().split(/\s+/g).filter(Boolean);
+        if (words.length) {
+          try {
+            const re = new RegExp(words.map(escapeRegExp).join("\\s+"), "g");
+            const matches: number[] = [];
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(blockText))) {
+              matches.push(Number(m.index) || 0);
+              // Avoid infinite loops on zero-length (shouldn't happen here, but be safe).
+              if (re.lastIndex === m.index) re.lastIndex++;
+            }
+            cands = matches;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!cands.length) return null;
+      const hint = Number(params.hintStart);
+      if (!Number.isFinite(hint)) return cands[0] ?? null;
+      return (
+        cands
+          .slice()
+          .sort((a, b) => Math.abs(a - hint) - Math.abs(b - hint))[0] ?? null
+      );
+    };
+
+    let parts = Array.isArray((line as any).__sourceParts) ? (line as any).__sourceParts : null;
+    if (!parts) {
+      // Fallback: try to reconstruct a minimal source mapping so inline marks can persist even if
+      // the layout snapshot was generated without `__sourceParts` (e.g., older snapshots).
+      const headlineText = String(curSlide.draftHeadline || "");
+      const bodyText = String(curSlide.draftBody || "");
+      const blockText = block === "HEADLINE" ? headlineText : bodyText;
+      const lineText = String((line as any)?.text || "");
+      const hintFromLine = Number((line as any)?.__hintStart ?? (line as any)?.hintStart ?? NaN);
+      const hintFromOverrides = (() => {
+        try {
+          const lk = String((line as any)?.lineKey || args.lineKey || "");
+          const ov = (baseInput && typeof baseInput === "object" ? (baseInput as any).lineOverridesByKey : null) || null;
+          const hs = ov && lk && typeof ov?.[lk]?.hintStart !== "undefined" ? Number(ov[lk].hintStart) : NaN;
+          return hs;
+        } catch {
+          return NaN;
+        }
+      })();
+      const hintStart = Number.isFinite(hintFromLine) ? hintFromLine : (Number.isFinite(hintFromOverrides) ? hintFromOverrides : undefined);
+      const start = bestEffortFindLineStartInBlock({ blockText, lineText, hintStart });
+      if (start != null && start >= 0) {
+        parts = [{ lineStart: 0, lineEnd: lineText.length, sourceStart: start, sourceEnd: start + lineText.length }];
+      } else {
+        return;
+      }
+    }
 
     const segs = mapLineSelectionToSourceSegments({
       parts,
@@ -1009,11 +1113,17 @@ export default function EditorShell() {
     const nextLayout = {
       ...(baseLayout as any),
       textLines: lines.map((l: any) => {
-        const p = Array.isArray(l?.__sourceParts) ? l.__sourceParts : null;
+        const p =
+          Array.isArray(l?.__sourceParts)
+            ? l.__sourceParts
+            : // If we just synthesized parts for this line, keep them so the next render/persist has a stable mapping.
+              (l === line ? parts : null);
         if (!p) return l;
         const blk = String(l?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
         const ranges = blk === "HEADLINE" ? nextHeadlineRanges : nextBodyRanges;
-        return { ...l, styles: buildTextStylesForLine(p, ranges) };
+        const next: any = { ...l, styles: buildTextStylesForLine(p, ranges) };
+        if (!Array.isArray((l as any).__sourceParts) && l === line) next.__sourceParts = p;
+        return next;
       }),
     };
 
@@ -2185,7 +2295,7 @@ export default function EditorShell() {
 
       // Technical floor only (user requested no UX minimum).
       let lo = 8;
-      const cap = Number.isFinite(params.maxFontSizePx as any) ? Math.max(8, Math.min(120, Math.floor(Number(params.maxFontSizePx)))) : 56;
+      const cap = Number.isFinite(params.maxFontSizePx as any) ? Math.max(8, Math.min(999, Math.floor(Number(params.maxFontSizePx)))) : 56;
       let hi = cap;
       let best = lo;
       while (lo <= hi) {
@@ -2342,8 +2452,9 @@ export default function EditorShell() {
     };
 
     const wrapOnce = (headlineAvg: number, bodyAvg: number) => {
+      const bodyMax = params.slideIndex === 0 ? 999 : 120;
       const headlineSizePx = Math.max(24, Math.min(120, Math.round(Number(params.headlineFontSizePx) || 76)));
-      const bodySizePx = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
+      const bodySizePx = Math.max(8, Math.min(bodyMax, Math.round(Number(params.bodyFontSizePx) || 48)));
       const debugWrap = typeof addLog === "function" && String(params.headline || "").includes("\n");
       return wrapFlowLayout(params.headline, params.body, imageBounds, {
         ...(inset ? { contentRect: inset } : { margin: 40 }),
@@ -2738,10 +2849,10 @@ export default function EditorShell() {
     });
   };
 
-  // Slide 1 Styles (MVP): store a style id in slide[0].inputData.slideStyleId.
-  // Desktop-only UI for now, but the rendered result should be stable for exports.
-  const onSetSlide1StyleId = useCallback(
-    (nextStyleId: string | null) => {
+  // Slide 1 Styles (Kalypso-like MVP): store minimal tokens in slide[0].inputData.slide1Style.
+  // Slide 1 Regular only; rendered result should be stable for exports.
+  const onSetSlide1Style = useCallback(
+    (next: any | null) => {
       const pid = String(currentProjectIdRef.current || "").trim();
       if (!pid) return;
       if (templateTypeIdRef.current !== "regular") return;
@@ -2755,10 +2866,11 @@ export default function EditorShell() {
       const baseInput =
         (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
 
+      const styleObj = next && typeof next === "object" ? next : null;
       const updatedInput =
         baseInput && typeof baseInput === "object"
-          ? { ...(baseInput as any), slideStyleId: nextStyleId ? String(nextStyleId) : null }
-          : { slideStyleId: nextStyleId ? String(nextStyleId) : null };
+          ? { ...(baseInput as any), slide1Style: styleObj }
+          : { slide1Style: styleObj };
 
       setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
       slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
@@ -2775,6 +2887,82 @@ export default function EditorShell() {
       });
     },
     [initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, activeSlideIndexRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetSlide1BodyFontKey = useCallback(
+    (nextKey: string | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const key = nextKey == null ? null : String(nextKey || "").trim() || null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1BodyFontKey: key }
+          : { slide1BodyFontKey: key };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetSlide1Background = useCallback(
+    (nextBg: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextBg && typeof nextBg === "object" ? nextBg : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1Background: obj }
+          : { slide1Background: obj };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
   );
 
   const computeRegularBodyTextboxLayout = (params: {
@@ -2794,7 +2982,7 @@ export default function EditorShell() {
     const imageUrl = (params.image as any)?.url || null;
     const prevLine = params.existingLayout?.textLines?.[0] || null;
 
-    const requestedBodySize = Math.max(24, Math.min(120, Math.round(Number(params.bodyFontSizePx) || 48)));
+    const requestedBodySize = Math.max(8, Math.min(params.slideIndex === 0 ? 999 : 120, Math.round(Number(params.bodyFontSizePx) || 48)));
     const rawX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
     // For Regular we anchor Y by CENTER so the box grows up/down.
     // - If we already have an anchored snapshot, preserve it.
@@ -2820,10 +3008,11 @@ export default function EditorShell() {
             maxWidthPx: width,
             maxHeightPx: region.height,
             bodyRanges: params.bodyRanges || [],
-            // Regular max is 56px; shrink as needed.
-            maxFontSizePx: 56,
+            // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
+            // Other slides: keep legacy cap for now.
+            maxFontSizePx: params.slideIndex === 0 ? requestedBodySize : 56,
           });
-    const bodySize = Math.max(8, Math.min(120, Math.round(Number(fittedSize) || requestedBodySize)));
+    const bodySize = Math.max(8, Math.min(params.slideIndex === 0 ? 999 : 120, Math.round(Number(fittedSize) || requestedBodySize)));
 
     // Clamp centerY so the wrapped textbox stays inside the contentRegion even after resizing text.
     // NOTE: y is stored as centerY for Regular (positionAnchorY="center").
@@ -3060,8 +3249,12 @@ export default function EditorShell() {
           maxWidthPx: width,
           maxHeightPx: region.height,
           bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
-          // Regular max is 56px; shrink as needed.
-          maxFontSizePx: 56,
+          // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
+          // Other slides: keep legacy cap for now.
+          maxFontSizePx:
+            slideIndex === 0
+              ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
+              : 56,
         });
         const measuredH = measureRegularBodyHeightPx(
           nextBodyForFit,
@@ -3093,7 +3286,15 @@ export default function EditorShell() {
 
     const tid = computeTemplateIdForSlide(slideIndex);
     const nextBody = change.text !== undefined ? change.text : (curSlide.draftBody || "");
+    // IMPORTANT: Merge existing input snapshot so Slide 1-local fields (e.g. slide1Style) aren't lost on drag/move.
+    // IMPORTANT: Prefer the sync ref snapshot over React state.
+    // When inline marks are applied during Fabric editing, we intentionally avoid updating React state
+    // to preserve the editing session; the ref is still updated and is the source of truth.
+    const baseInputForMerge =
+      (curSlide as any)?.inputData || (slideIndex === activeSlideIndex ? (inputData as any) : null) || null;
+    const baseObj = baseInputForMerge && typeof baseInputForMerge === "object" ? (baseInputForMerge as any) : {};
     const req: any = {
+      ...baseObj,
       headline: "",
       body: nextBody,
       bodyFontSizePx: fittedSizeForUi,
@@ -3231,7 +3432,9 @@ export default function EditorShell() {
     const nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
 
     // Phase 4: persist per-line overrides keyed by stable lineKey into input_snapshot.
-    const curInput: any = (slideIndex === activeSlideIndex ? inputData : null) || (curSlide as any)?.inputData || null;
+    // IMPORTANT: Prefer the sync ref snapshot over React state for the same reason as Regular:
+    // inline marks can update the ref while preserving Fabric editing (state stays stale until editing exits).
+    const curInput: any = (curSlide as any)?.inputData || (slideIndex === activeSlideIndex ? inputData : null) || null;
     const prevOverrides = (curInput && typeof curInput === "object" && curInput.lineOverridesByKey && typeof curInput.lineOverridesByKey === "object")
       ? curInput.lineOverridesByKey
       : {};
@@ -5226,7 +5429,8 @@ export default function EditorShell() {
 
   const onChangeBodyFontSize = (e: any) => {
     const raw = Number((e.target as any).value);
-    const nextSize = Number.isFinite(raw) ? Math.max(24, Math.min(120, Math.round(raw))) : 48;
+    const max = templateTypeIdRef.current === "regular" && activeSlideIndexRef.current === 0 ? 999 : 120;
+    const nextSize = Number.isFinite(raw) ? Math.max(8, Math.min(max, Math.round(raw))) : 48;
     pushUndoSnapshot();
     setSlides((prev: any) =>
       prev.map((s: any, i: number) =>
@@ -6174,7 +6378,9 @@ export default function EditorShell() {
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewScheduled: !!a?.next } }),
     onChangeProjectReviewSource: (a: any) =>
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewSource: String(a?.next ?? "") } }),
-    onSetSlide1StyleId,
+    onSetSlide1Style,
+    onSetSlide1BodyFontKey,
+    onSetSlide1Background,
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).

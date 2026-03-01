@@ -42,8 +42,16 @@ interface CarouselPreviewProps {
   // Which slide within the templateSnapshot this canvas represents (0-based).
   // Used for debug overlays + contentRegion clamping.
   slideIndex?: number;
-  // /editor-only: optional visual style id applied to Slide 1 (Regular).
-  slideStyleId?: string | null;
+  // /editor-only: optional Slide 1 style tokens (Kalypso-like MVP).
+  slide1Style?: {
+    themeId: string;
+    accentMode: "solid" | "gradient";
+    gradientId?: string | null;
+    backgroundHex?: string | null;
+    accentSolidHex?: string | null;
+  } | null;
+  // /editor-only: optional Slide 1 background override (wins over Slide 1 Style background).
+  slide1Background?: { backgroundHex: string; patternId: "none" | "dots_n8n" | "paper_grain" | "subtle_noise" | "grid" | "wrinkle_grain_black" } | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   // When true, shrink each user text object's width to hug the rendered text (plus small padding),
   // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
@@ -131,7 +139,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       templateSnapshot,
       templateId,
       slideIndex,
-      slideStyleId,
+      slide1Style,
+      slide1Background,
       hasHeadline,
       headlineFontFamily,
       bodyFontFamily,
@@ -217,6 +226,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     }>({ enabled: false, contentRect: null, allowedRect: null, imageRect: null, maskCanvas: null, maskU8: null, maskW: 0, maskH: 0 });
     const invalidCheckRef = useRef<{ raf: number | null; obj: any | null }>({ raf: null, obj: null });
     const bgPatternRef = useRef<{ key: string; pattern: any } | null>(null);
+    const slide1BgPatternRef = useRef<{ key: string; pattern: any } | null>(null);
 
     const PAD = Number.isFinite(contentPaddingPx as any) ? Math.max(0, Math.round(contentPaddingPx as any)) : 40;
     const clampText = clampUserTextToContentRect !== false;
@@ -338,6 +348,211 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         const pattern = new PatternCtor({ source: tile, repeat: 'repeat' });
         bgPatternRef.current = { key, pattern };
         return pattern;
+      } catch {
+        return null;
+      }
+    };
+
+    const getSlide1BackgroundPattern = (fabric: any, args: { backgroundHex: string; patternId: string }) => {
+      try {
+        const bgHex = String(args.backgroundHex || "").trim() || "#ffffff";
+        const patternId = String(args.patternId || "none").trim();
+        const key = `${patternId}|${bgHex}`;
+        if (slide1BgPatternRef.current?.key === key && slide1BgPatternRef.current?.pattern) return slide1BgPatternRef.current.pattern;
+
+        const PatternCtor = (fabric as any).Pattern;
+        if (typeof PatternCtor !== "function") return null;
+
+        const parseHex = (h: string) => {
+          const s = String(h || "").replace("#", "").trim();
+          if (s.length === 3) {
+            const r = parseInt(s[0] + s[0], 16);
+            const g = parseInt(s[1] + s[1], 16);
+            const b = parseInt(s[2] + s[2], 16);
+            return { r, g, b };
+          }
+          const r = parseInt(s.slice(0, 2), 16);
+          const g = parseInt(s.slice(2, 4), 16);
+          const b = parseInt(s.slice(4, 6), 16);
+          return { r, g, b };
+        };
+        // Neutral monochrome texture ink (NOT tinted by background color).
+        // Previous behavior: auto-pick black vs white by luminance so it remains visible.
+        const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+        const base = parseHex(bgHex);
+        const lum = (() => {
+          const sr = base.r / 255, sg = base.g / 255, sb = base.b / 255;
+          return 0.2126 * sr + 0.7152 * sg + 0.0722 * sb;
+        })();
+        const ink = lum > 0.6 ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
+        const inkCss = (a: number) => `rgba(${ink.r}, ${ink.g}, ${ink.b}, ${clamp01(a)})`;
+
+        if (patternId === "none") return null;
+
+        const tile = document.createElement("canvas");
+        const size = patternId === "subtle_noise" ? 96 : patternId === "paper_grain" ? 128 : 96;
+        tile.width = size;
+        tile.height = size;
+        const ctx = tile.getContext("2d");
+        if (!ctx) return null;
+
+        // Base fill (so pattern itself provides the background color).
+        ctx.fillStyle = bgHex;
+        ctx.fillRect(0, 0, size, size);
+
+        if (patternId === "wrinkle_grain_black") {
+          // Attempt to match the provided reference: deep black base with soft diagonal "paper" waves + grain.
+          // We draw everything into the tile so it repeats seamlessly.
+          const baseHex = "#0b0b0b";
+          ctx.fillStyle = baseHex;
+          ctx.fillRect(0, 0, size, size);
+
+          // Soft diagonal bands (wrinkle lighting).
+          const bands: Array<{ a: number; w: number; o: number }> = [
+            { a: -0.14, w: 0.48, o: 0.10 },
+            { a: 0.12, w: 0.40, o: 0.08 },
+            { a: 0.33, w: 0.36, o: 0.06 },
+          ];
+          for (const b of bands) {
+            ctx.save();
+            ctx.translate(size / 2, size / 2);
+            ctx.rotate(Math.PI / 4 + b.a);
+            const g = ctx.createLinearGradient(-size, 0, size, 0);
+            g.addColorStop(0.0, "rgba(255,255,255,0)");
+            g.addColorStop(0.35, `rgba(255,255,255,${b.o})`);
+            g.addColorStop(0.5, `rgba(255,255,255,${b.o * 0.25})`);
+            g.addColorStop(0.65, `rgba(255,255,255,${b.o})`);
+            g.addColorStop(1.0, "rgba(255,255,255,0)");
+            ctx.fillStyle = g;
+            ctx.fillRect(-size, -size * b.w, size * 2, size * b.w * 2);
+            ctx.restore();
+          }
+
+          // Grain: dense micro-speckle + soft noise field.
+          const noise = ctx.createImageData(size, size);
+          for (let i = 0; i < noise.data.length; i += 4) {
+            const r = Math.random();
+            // Two layers: sparse bright specks + subtle base grain.
+            const speck = r > 0.985 ? 1.0 : 0.0;
+            const base = (Math.random() * 0.6);
+            const v = Math.floor(255 * Math.min(1, speck * 0.8 + base * 0.22));
+            noise.data[i] = v;
+            noise.data[i + 1] = v;
+            noise.data[i + 2] = v;
+            // Alpha tuned so it reads like real grain on black, not a gray wash.
+            noise.data[i + 3] = speck ? 90 : 18;
+          }
+          const ncan = document.createElement("canvas");
+          ncan.width = size;
+          ncan.height = size;
+          const nctx = ncan.getContext("2d");
+          if (nctx) {
+            nctx.putImageData(noise, 0, 0);
+            ctx.save();
+            ctx.globalAlpha = 0.55;
+            ctx.drawImage(ncan, 0, 0);
+            ctx.restore();
+          }
+
+          // Slight vignette.
+          ctx.save();
+          const vg = ctx.createRadialGradient(size / 2, size / 2, size * 0.2, size / 2, size / 2, size * 0.75);
+          vg.addColorStop(0, "rgba(0,0,0,0)");
+          vg.addColorStop(1, "rgba(0,0,0,0.35)");
+          ctx.fillStyle = vg;
+          ctx.fillRect(0, 0, size, size);
+          ctx.restore();
+
+          const pattern = new PatternCtor({ source: tile, repeat: "repeat" });
+          slide1BgPatternRef.current = { key, pattern };
+          return pattern;
+        }
+
+        if (patternId === "dots_n8n") {
+          const gap = Math.max(8, Math.round(DOTS_N8N.gap * DOTS_N8N_SCALE));
+          const dotDiameter = Math.max(0.8, DOTS_N8N.dotDiameter * DOTS_N8N_SCALE);
+          const tile2 = document.createElement("canvas");
+          tile2.width = gap;
+          tile2.height = gap;
+          const c2 = tile2.getContext("2d");
+          if (!c2) return null;
+          c2.fillStyle = bgHex;
+          c2.fillRect(0, 0, gap, gap);
+          c2.fillStyle = inkCss(0.18);
+          const r = Math.max(0.4, dotDiameter / 2);
+          c2.beginPath();
+          c2.arc(1, 1, r, 0, Math.PI * 2);
+          c2.fill();
+          const pattern = new PatternCtor({ source: tile2, repeat: "repeat" });
+          slide1BgPatternRef.current = { key, pattern };
+          return pattern;
+        }
+
+        if (patternId === "grid") {
+          ctx.strokeStyle = inkCss(0.10);
+          ctx.lineWidth = 1;
+          const step = 18;
+          for (let x = 0; x <= size; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x + 0.5, 0);
+            ctx.lineTo(x + 0.5, size);
+            ctx.stroke();
+          }
+          for (let y = 0; y <= size; y += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, y + 0.5);
+            ctx.lineTo(size, y + 0.5);
+            ctx.stroke();
+          }
+          const pattern = new PatternCtor({ source: tile, repeat: "repeat" });
+          slide1BgPatternRef.current = { key, pattern };
+          return pattern;
+        }
+
+        if (patternId === "subtle_noise" || patternId === "paper_grain") {
+          // Create an opaque noise image, then composite with low alpha over the base color.
+          const noise = document.createElement("canvas");
+          noise.width = size;
+          noise.height = size;
+          const nctx = noise.getContext("2d");
+          if (!nctx) return null;
+          const img = nctx.createImageData(size, size);
+          for (let i = 0; i < img.data.length; i += 4) {
+            const n = Math.floor(Math.random() * 255);
+            img.data[i] = ink.r;
+            img.data[i + 1] = ink.g;
+            img.data[i + 2] = ink.b;
+            img.data[i + 3] = 255;
+            // Use n to vary density (via later globalAlpha + extra strokes for grain).
+            // (kept for future tuning)
+            void n;
+          }
+          nctx.putImageData(img, 0, 0);
+          ctx.save();
+          ctx.globalAlpha = patternId === "paper_grain" ? 0.08 : 0.06;
+          ctx.drawImage(noise, 0, 0);
+          ctx.restore();
+          if (patternId === "paper_grain") {
+            ctx.strokeStyle = inkCss(0.08);
+            ctx.lineWidth = 1;
+            for (let k = 0; k < 18; k++) {
+              const x1 = Math.random() * size;
+              const y1 = Math.random() * size;
+              const x2 = x1 + (Math.random() * 22 - 11);
+              const y2 = y1 + (Math.random() * 22 - 11);
+              ctx.beginPath();
+              ctx.moveTo(x1, y1);
+              ctx.lineTo(x2, y2);
+              ctx.stroke();
+            }
+          }
+          const pattern = new PatternCtor({ source: tile, repeat: "repeat" });
+          slide1BgPatternRef.current = { key, pattern };
+          return pattern;
+        }
+
+        // Fallback: no pattern
+        return null;
       } catch {
         return null;
       }
@@ -1797,7 +2012,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         canvas.viewportTransform[4] = 0;
         canvas.viewportTransform[5] = 0;
       }
-      const wantDots = !!backgroundEffectEnabled && String(backgroundEffectType || '') === 'dots_n8n';
+      const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
+      const canUseSlide1Overrides = si === 0 && !hasHeadline;
+      const bgOverride = canUseSlide1Overrides && slide1Background && typeof slide1Background === "object"
+        ? String((slide1Background as any)?.backgroundHex || "").trim()
+        : "";
+      const wantDots = !bgOverride && !!backgroundEffectEnabled && String(backgroundEffectType || '') === 'dots_n8n';
       if (wantDots) {
         const pattern = getDotsN8nPattern(fabric);
         if (typeof canvas.setBackgroundColor === 'function') {
@@ -1808,11 +2028,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         console.log('[Preview Vision] 🧹 Canvas cleared, background set to DOTS (n8n)');
       } else {
         if (typeof canvas.setBackgroundColor === 'function') {
-          canvas.setBackgroundColor(backgroundColor, () => canvas.renderAll());
+          canvas.setBackgroundColor(bgOverride || backgroundColor, () => canvas.renderAll());
         } else {
-          canvas.backgroundColor = backgroundColor;
+          canvas.backgroundColor = bgOverride || backgroundColor;
         }
-        console.log('[Preview Vision] 🧹 Canvas cleared, background set to', backgroundColor);
+        console.log('[Preview Vision] 🧹 Canvas cleared, background set to', bgOverride || backgroundColor);
       }
 
       // Update clamp constraints based on template snapshot (contentRegion inset by 40px).
@@ -1820,134 +2040,159 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       constraintsRef.current.allowedRect = computeAllowedRect(templateSnapshot || null);
       updateOverlayData();
 
-      const addSlideStyleDecor = () => {
-        const styleIdRaw = slideStyleId == null ? '' : String(slideStyleId);
-        const styleId = styleIdRaw.trim();
+      const applySlide1Style = () => {
         const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
-        if (!styleId) return;
         if (si !== 0) return; // Slide 1 only
-        // MVP: styles are for Regular (body-only) only.
-        if (hasHeadline) return;
+        if (hasHeadline) return; // Regular only
+        const bgOverride = slide1Background && typeof slide1Background === "object"
+          ? {
+              hex: String((slide1Background as any)?.backgroundHex || "").trim(),
+              patternId: String((slide1Background as any)?.patternId || "none").trim(),
+            }
+          : null;
+        const s = slide1Style && typeof slide1Style === "object" ? (slide1Style as any) : null;
+        const themeId = s ? String(s.themeId || "").trim() : "";
 
-        const W = INTERNAL_W;
-        const H = INTERNAL_H;
-
-        const lockObj = (obj: any) => {
-          try {
-            obj.set?.({
-              selectable: false,
-              evented: false,
-              hasControls: false,
-              hasBorders: false,
-              lockMovementX: true,
-              lockMovementY: true,
-              lockScalingX: true,
-              lockScalingY: true,
-              lockRotation: true,
-              hoverCursor: 'default',
-            });
-            (obj as any).data = { role: 'style-decor', styleId };
-          } catch {
-            // ignore
-          }
+        const THEME_MAP: Record<string, { background: string; accent: string }> = {
+          "kalypso-uofbw2": { background: "#000000", accent: "#ff0000" },
+          "kalypso-9-ljhze": { background: "#0c0d0b", accent: "#89e842" },
+          "kalypso-odmodm": { background: "#c4bc00", accent: "#002e7a" },
+          "kalypso-kuyz7-r": { background: "#f9faed", accent: "#d2e120" },
+          "kalypso-6-n8-muc": { background: "#000000", accent: "#2ff33f" },
+          "kalypso-s0-yx87": { background: "#f3edfa", accent: "#720cf5" },
+        };
+        const GRADIENT_MAP: Record<string, { angleDeg: number; stops: Array<{ at: number; color: string }> }> = {
+          sunset_glow: {
+            angleDeg: 0,
+            stops: [
+              { at: 0, color: "#66E5E5" },
+              { at: 50, color: "#E599B2" },
+              { at: 100, color: "#E54D4D" },
+            ],
+          },
+          ocean_breeze: {
+            angleDeg: 0,
+            stops: [
+              { at: 0, color: "#22D3EE" },
+              { at: 55, color: "#60A5FA" },
+              { at: 100, color: "#A78BFA" },
+            ],
+          },
+          coral_reef: {
+            angleDeg: 0,
+            stops: [
+              { at: 0, color: "#FB7185" },
+              { at: 55, color: "#F97316" },
+              { at: 100, color: "#FDE047" },
+            ],
+          },
+          warm_ember: {
+            angleDeg: 0,
+            stops: [
+              { at: 0, color: "#F97316" },
+              { at: 55, color: "#EF4444" },
+              { at: 100, color: "#A855F7" },
+            ],
+          },
+          acid_lime: {
+            angleDeg: 0,
+            stops: [
+              { at: 0, color: "#A3E635" },
+              { at: 55, color: "#22C55E" },
+              { at: 100, color: "#14B8A6" },
+            ],
+          },
+          pure_silver: {
+            angleDeg: 0,
+            stops: [
+              { at: 0, color: "#FFFFFF" },
+              { at: 55, color: "#E5E7EB" },
+              { at: 100, color: "#94A3B8" },
+            ],
+          },
         };
 
-        const add = (obj: any) => {
-          lockObj(obj);
-          canvas.add(obj);
-          return obj;
-        };
+        const theme = themeId ? (THEME_MAP[themeId] || null) : null;
+        const accentMode = s && String(s.accentMode || "solid").trim() === "gradient" ? "gradient" : "solid";
+        const gradientId = s ? String(s.gradientId || "").trim() : "";
+        const gradient = s && accentMode === "gradient" && gradientId ? (GRADIENT_MAP[gradientId] || null) : null;
+        const backgroundHex = s ? (String(s.backgroundHex || "").trim() || null) : null;
+        const accentSolidHex = s ? (String(s.accentSolidHex || "").trim() || null) : null;
 
-        const alpha = (hex: string, a: number) => {
-          const h = String(hex || '').trim();
-          const m = h.startsWith('#') ? h.slice(1) : h;
-          const v = m.length === 3 ? m.split('').map((x) => x + x).join('') : m;
-          const n = parseInt(v, 16);
-          if (!Number.isFinite(n)) return `rgba(0,0,0,${a})`;
-          const r = (n >> 16) & 255;
-          const g = (n >> 8) & 255;
-          const b = n & 255;
-          return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a))})`;
-        };
-
+        // Background override (Slide 1 Background wins over Style background).
         try {
-          if (styleId === 'aurora') {
-            add(new fabric.Circle({ left: -220, top: -260, radius: 520, fill: alpha('#7C3AED', 0.18) }));
-            add(new fabric.Circle({ left: W - 520 + 240, top: H - 520 + 220, radius: 520, fill: alpha('#2563EB', 0.14) }));
-            add(new fabric.Circle({ left: W - 360, top: -200, radius: 360, fill: alpha('#14B8A6', 0.10) }));
+          const bg =
+            (bgOverride?.hex ? bgOverride.hex : null) ||
+            (theme ? theme.background : (themeId === "custom" ? (backgroundHex || null) : null));
+          if (!bg) {
+            // no background override
+          } else if (typeof canvas.setBackgroundColor === "function") {
+            canvas.setBackgroundColor(bg, () => {});
+          } else {
+            canvas.backgroundColor = bg;
+          }
+        } catch {
+          // ignore
+        }
+
+        // Slide 1 background texture: set a background pattern so it can't be occluded by template assets.
+        try {
+          const patternId = String(bgOverride?.patternId || "none");
+          const hex = String(bgOverride?.hex || theme?.background || backgroundHex || backgroundColor || "#ffffff").trim() || "#ffffff";
+          if (patternId && patternId !== "none") {
+            const pat = getSlide1BackgroundPattern(fabric, { backgroundHex: hex, patternId });
+            if (pat) {
+              if (typeof canvas.setBackgroundColor === "function") canvas.setBackgroundColor(pat, () => {});
+              else canvas.backgroundColor = pat;
+            } else {
+              if (typeof canvas.setBackgroundColor === "function") canvas.setBackgroundColor(hex, () => {});
+              else canvas.backgroundColor = hex;
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        // Apply accent to Slide 1 BODY text only (only when slide1Style exists).
+        if (!s) return;
+        try {
+          const objs = canvas.getObjects?.() || [];
+          if (!gradient) {
+            const solid = accentSolidHex || (theme ? theme.accent : null) || textColor;
+            for (const obj of objs) {
+              if ((obj as any)?.data?.role !== "user-text") continue;
+              const b = String((obj as any)?.data?.block || "");
+              if (b && b !== "BODY") continue;
+              (obj as any).set?.({ fill: solid });
+            }
             return;
           }
-          if (styleId === 'spotlight') {
-            add(new fabric.Circle({ left: W / 2 - 520, top: H / 2 - 520, radius: 520, fill: alpha('#F59E0B', 0.10) }));
-            add(new fabric.Rect({ left: 80, top: 1100, width: W - 160, height: 220, rx: 32, ry: 32, fill: alpha('#111827', 0.04) }));
-            return;
-          }
-          if (styleId === 'ribbon') {
-            const ribbon = new fabric.Rect({
-              left: -260,
-              top: 220,
-              width: W + 520,
-              height: 140,
-              fill: alpha('#0EA5E9', 0.10),
-              angle: -12,
-              rx: 40,
-              ry: 40,
-            });
-            add(ribbon);
-            add(new fabric.Circle({ left: -200, top: H - 380, radius: 320, fill: alpha('#22C55E', 0.10) }));
-            add(new fabric.Circle({ left: W - 240, top: -160, radius: 260, fill: alpha('#A855F7', 0.10) }));
-            return;
-          }
-          if (styleId === 'frame') {
-            add(
-              new fabric.Rect({
-                left: 54,
-                top: 54,
-                width: W - 108,
-                height: H - 108,
-                rx: 54,
-                ry: 54,
-                fill: 'transparent',
-                stroke: alpha('#0F172A', 0.14),
-                strokeWidth: 10,
-              })
-            );
-            add(new fabric.Rect({ left: 90, top: 90, width: W - 180, height: H - 180, rx: 44, ry: 44, fill: alpha('#94A3B8', 0.06) }));
-            return;
-          }
-          if (styleId === 'paper') {
-            add(new fabric.Rect({ left: 90, top: 120, width: W - 180, height: 380, rx: 48, ry: 48, fill: alpha('#FDBA74', 0.14), angle: -2 }));
-            add(new fabric.Rect({ left: 120, top: 150, width: W - 240, height: 380, rx: 48, ry: 48, fill: alpha('#F97316', 0.10), angle: 1 }));
-            add(new fabric.Circle({ left: W - 260, top: H - 320, radius: 260, fill: alpha('#FEF3C7', 0.18) }));
-            return;
-          }
-          if (styleId === 'neon') {
-            add(new fabric.Rect({ left: 40, top: 240, width: W - 80, height: 90, rx: 32, ry: 32, fill: alpha('#06B6D4', 0.12) }));
-            add(new fabric.Rect({ left: 40, top: 360, width: W - 80, height: 90, rx: 32, ry: 32, fill: alpha('#22C55E', 0.10) }));
-            add(new fabric.Circle({ left: W - 340, top: H - 420, radius: 380, fill: alpha('#A78BFA', 0.12) }));
-            return;
-          }
-          if (styleId === 'minimal') {
-            add(new fabric.Rect({ left: 90, top: 90, width: W - 180, height: 12, fill: alpha('#0F172A', 0.10) }));
-            add(new fabric.Rect({ left: 90, top: H - 102, width: W - 180, height: 12, fill: alpha('#64748B', 0.10) }));
-            add(new fabric.Circle({ left: W - 180, top: 120, radius: 120, fill: alpha('#CBD5E1', 0.16) }));
-            return;
-          }
-          if (styleId === 'confetti') {
-            const dots: Array<[number, number, string]> = [
-              [120, 140, '#F43F5E'],
-              [180, 220, '#3B82F6'],
-              [260, 160, '#10B981'],
-              [W - 180, 180, '#F43F5E'],
-              [W - 240, 260, '#3B82F6'],
-              [W - 120, 300, '#10B981'],
-              [140, H - 220, '#3B82F6'],
-              [240, H - 160, '#10B981'],
-              [W - 220, H - 220, '#F43F5E'],
-            ];
-            dots.forEach(([x, y, c]) => add(new fabric.Circle({ left: x, top: y, radius: 18, fill: alpha(c, 0.18) })));
-            add(new fabric.Rect({ left: 90, top: 520, width: W - 180, height: 28, rx: 14, ry: 14, fill: alpha('#0F172A', 0.05) }));
-            return;
+
+          const angle = Number(gradient.angleDeg || 0);
+          const rad = (angle * Math.PI) / 180;
+          const dx = Math.cos(rad);
+          const dy = Math.sin(rad);
+          const stops = gradient.stops
+            .map((s) => ({ offset: Math.max(0, Math.min(1, Number(s.at) / 100)), color: String(s.color || "").trim() || "#ffffff" }))
+            .filter((s) => s.color);
+          if (stops.length === 0) return;
+
+          for (const obj of objs) {
+            if ((obj as any)?.data?.role !== "user-text") continue;
+            const b = String((obj as any)?.data?.block || "");
+            if (b && b !== "BODY") continue;
+            if (typeof (obj as any).getBoundingRect !== "function") continue;
+            const br = (obj as any).getBoundingRect(true, true);
+            const w = Math.max(1, Number(br?.width || (obj as any).width || 1));
+            const h = Math.max(1, Number(br?.height || (obj as any).height || 1));
+            const len = Math.max(w, h);
+            const grad = new fabric.Gradient({
+              type: "linear",
+              gradientUnits: "pixels",
+              coords: { x1: 0, y1: 0, x2: dx * len, y2: dy * len },
+              colorStops: stops,
+            } as any);
+            (obj as any).set?.({ fill: grad });
           }
         } catch {
           // ignore
@@ -2301,8 +2546,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // STEP 0: Add locked template assets (if any)
       addTemplateAssets();
 
-      // STEP 0.5: Add Slide 1 style decor (if enabled)
-      addSlideStyleDecor();
+      // STEP 0.5: Slide 1 style (MVP) is applied at the end (after text objects exist).
 
       // STEP 1: Load and add image if provided
       if (layout.image && layout.image.url) {
@@ -2348,7 +2592,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
             // Stacking: template assets (locked layer) should be behind user content.
             // Place user image above template assets but below user text.
-            const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset' || o?.data?.role === 'style-decor').length;
+            const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
             let stacked = false;
             try {
               if (typeof canvas.moveTo === 'function') {
@@ -2443,7 +2687,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               canvas.add(fabricImage);
 
               // Stacking: place sticker above template assets but below user text.
-              const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset' || o?.data?.role === 'style-decor').length;
+              const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === 'template-asset').length;
               try {
                 if (typeof canvas.moveTo === 'function') {
                   canvas.moveTo(fabricImage, templateCount);
@@ -2949,6 +3193,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         // ignore
       }
 
+      // Apply Slide 1 style overrides (background + accent fill/gradient).
+      applySlide1Style();
+
       canvas.renderAll();
       try {
         canvas.calcOffset?.();
@@ -2969,7 +3216,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slideStyleId, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     const defaultFrameStyle: CSSProperties = {
       width: `${displayW}px`,

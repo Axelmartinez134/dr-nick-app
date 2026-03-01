@@ -43,6 +43,24 @@ export function EditorSlidesRow() {
     return [family || "Inter, sans-serif", Number.isFinite(weight) ? weight : 400] as const;
   })();
 
+  const slide1BodyFontKeyOverride = useMemo(() => {
+    try {
+      const wsSlides = ((workspaceUi as any)?.slides || []) as any[];
+      const raw = wsSlides?.[0]?.inputData?.slide1BodyFontKey;
+      const v = raw == null ? "" : String(raw);
+      return v.trim() || null;
+    } catch {
+      return null;
+    }
+  }, [workspaceUi]);
+
+  const [slide1BodyFontFamily, slide1BodyFontWeight] = useMemo(() => {
+    const key = String(slide1BodyFontKeyOverride || bodyFontKey || "");
+    const [family, w] = key.split("@@");
+    const weight = Number(w);
+    return [family || "Inter, sans-serif", Number.isFinite(weight) ? weight : bodyFontWeight] as const;
+  }, [slide1BodyFontKeyOverride, bodyFontKey, bodyFontWeight]);
+
   // IMPORTANT: Hooks must be called unconditionally. `workspace` can be null briefly during boot.
   // So we compute stable fallbacks and call the Fabric binding hook regardless.
   const noop = useMemo(() => () => {}, []);
@@ -263,17 +281,8 @@ export function EditorSlidesRow() {
                         }}
                         templateId={tid}
                         slideIndex={i}
-                        slideStyleId={
-                          (() => {
-                            try {
-                              const raw = (slides as any)?.[i]?.inputData?.slideStyleId;
-                              const v = raw == null ? "" : String(raw);
-                              return v.trim() || null;
-                            } catch {
-                              return null;
-                            }
-                          })()
-                        }
+                        slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
+                        slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
                         textColor={projectTextColor}
@@ -288,9 +297,9 @@ export function EditorSlidesRow() {
                         onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
                         showLayoutOverlays={showLayoutOverlays}
                         headlineFontFamily={headlineFontFamily}
-                        bodyFontFamily={bodyFontFamily}
+                        bodyFontFamily={i === 0 && templateTypeId === "regular" ? slide1BodyFontFamily : bodyFontFamily}
                         headlineFontWeight={headlineFontWeight}
-                        bodyFontWeight={bodyFontWeight}
+                        bodyFontWeight={i === 0 && templateTypeId === "regular" ? slide1BodyFontWeight : bodyFontWeight}
                         // Regular should use the same safe-area inset as the teal overlay (40px).
                         contentPaddingPx={40}
                         clampUserTextToContentRect={true}
@@ -324,17 +333,8 @@ export function EditorSlidesRow() {
                     ref={(effectiveSlideCanvasRefs as any).current?.[i] as any}
                     templateId={tid}
                     slideIndex={i}
-                    slideStyleId={
-                      (() => {
-                        try {
-                          const raw = (slides as any)?.[i]?.inputData?.slideStyleId;
-                          const v = raw == null ? "" : String(raw);
-                          return v.trim() || null;
-                        } catch {
-                          return null;
-                        }
-                      })()
-                    }
+                    slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
+                    slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
                     textColor={projectTextColor}
@@ -348,9 +348,9 @@ export function EditorSlidesRow() {
                     tightUserTextWidth={templateTypeId !== "regular"}
                     showLayoutOverlays={showLayoutOverlays}
                     headlineFontFamily={headlineFontFamily}
-                    bodyFontFamily={bodyFontFamily}
+                    bodyFontFamily={i === 0 && templateTypeId === "regular" ? slide1BodyFontFamily : bodyFontFamily}
                     headlineFontWeight={headlineFontWeight}
-                    bodyFontWeight={bodyFontWeight}
+                    bodyFontWeight={i === 0 && templateTypeId === "regular" ? slide1BodyFontWeight : bodyFontWeight}
                     contentPaddingPx={40}
                     clampUserTextToContentRect={true}
                     clampUserImageToContentRect={false}
@@ -453,17 +453,8 @@ export function EditorSlidesRow() {
                                 ref={refProp as any}
                                 templateId={tid}
                                 slideIndex={i}
-                                slideStyleId={
-                                  (() => {
-                                    try {
-                                      const raw = (slides as any)?.[i]?.inputData?.slideStyleId;
-                                      const v = raw == null ? "" : String(raw);
-                                      return v.trim() || null;
-                                    } catch {
-                                      return null;
-                                    }
-                                  })()
-                                }
+                                slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
+                                slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}
@@ -478,9 +469,9 @@ export function EditorSlidesRow() {
                                 onDebugLog={templateTypeId !== "regular" ? addLog : undefined}
                                 showLayoutOverlays={showLayoutOverlays}
                                 headlineFontFamily={headlineFontFamily}
-                                bodyFontFamily={bodyFontFamily}
+                                bodyFontFamily={i === 0 && templateTypeId === "regular" ? slide1BodyFontFamily : bodyFontFamily}
                                 headlineFontWeight={headlineFontWeight}
-                                bodyFontWeight={bodyFontWeight}
+                                bodyFontWeight={i === 0 && templateTypeId === "regular" ? slide1BodyFontWeight : bodyFontWeight}
                                 contentPaddingPx={40}
                                 clampUserTextToContentRect={true}
                                 clampUserImageToContentRect={false}

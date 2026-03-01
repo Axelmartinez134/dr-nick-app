@@ -253,7 +253,14 @@ export function useLiveLayoutQueue(params: {
           : 0;
         addLog(`✅ Live layout slide ${slideIndex + 1} done: lines=${textLineCount} styles=${styleCount}`);
 
+        // IMPORTANT: Merge existing input snapshot so Slide 1-local fields (e.g. slide1Style) aren't lost
+        // during live-layout runs.
+        const curSlideForMerge = slidesRef.current[slideIndex] || initSlide();
+        const baseInputForMerge =
+          (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) || (curSlideForMerge as any)?.inputData || null;
+        const baseObj = baseInputForMerge && typeof baseInputForMerge === "object" ? (baseInputForMerge as any) : {};
         const req: any = {
+          ...baseObj,
           headline,
           body,
           headlineFontSizePx: item.headlineFontSizePx,
@@ -382,9 +389,10 @@ export function useLiveLayoutQueue(params: {
             : 76;
         const _hAlign = (slide as any)?.draftHeadlineTextAlign;
         const headlineTextAlign: "left" | "center" | "right" = _hAlign === "center" || _hAlign === "right" ? _hAlign : "left";
+        const bodyMax = (i === 0 && templateTypeAtSchedule === "regular") ? 999 : 120;
         const bodyFontSizePxSnap =
           Number.isFinite((slide as any)?.draftBodyFontSizePx as any)
-            ? Math.max(24, Math.min(120, Math.round(Number((slide as any).draftBodyFontSizePx))))
+            ? Math.max(8, Math.min(bodyMax, Math.round(Number((slide as any).draftBodyFontSizePx))))
             : 48;
         const _bAlign = (slide as any)?.draftBodyTextAlign;
         const bodyTextAlign: "left" | "center" | "right" = _bAlign === "center" || _bAlign === "right" ? _bAlign : "left";

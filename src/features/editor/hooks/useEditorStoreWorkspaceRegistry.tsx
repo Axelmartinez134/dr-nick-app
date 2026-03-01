@@ -108,6 +108,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     []
   );
 
+
   useLayoutEffect(() => {
     const mobilePointerDown = (e: any) => {
       if (!isMobile) return;
@@ -211,24 +212,26 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
         </button>
 
         {templateTypeId === "regular" && activeSlideIndexRef.current === 0 ? (
-          <button
-            type="button"
-            className="h-9 px-3 rounded-full border border-slate-200 bg-white/90 backdrop-blur text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-white disabled:opacity-40"
-            disabled={!currentProjectId || switchingSlides || copyGenerating}
-            title={!currentProjectId ? "Create or load a project first" : "Apply a visual style to Slide 1"}
-            aria-label="Open Slide 1 style picker"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              try {
-                editorStore.getState?.().actions?.onOpenSlideStyleModal?.();
-              } catch {
-                // ignore
-              }
-            }}
-          >
-            Style
-          </button>
+          <div className="relative flex items-center gap-2">
+            <button
+              type="button"
+              className="h-9 px-3 rounded-full border border-slate-200 bg-white/90 backdrop-blur text-[12px] font-semibold text-slate-800 shadow-sm hover:bg-white disabled:opacity-40"
+              disabled={!currentProjectId || switchingSlides || copyGenerating}
+              title={!currentProjectId ? "Create or load a project first" : "Apply a visual style to Slide 1"}
+              aria-label="Open Slide 1 style picker"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                  editorStore.getState?.().actions?.onOpenSlideStyleModal?.();
+                } catch {
+                  // ignore
+                }
+              }}
+            >
+              Style
+            </button>
+          </div>
         ) : null}
 
         {templateTypeId === "enhanced" ? (

@@ -11,6 +11,22 @@ export type PromptSaveStatus = "idle" | "saving" | "saved" | "error";
 
 export type TemplateListItem = { id: string; name: string };
 
+// Slide 1 Styles (Kalypso-like MVP): minimal tokens for Slide 1 Regular only.
+export type Slide1Style = {
+  themeId: string; // e.g. "kalypso-odmodm" or "custom"
+  accentMode: "solid" | "gradient";
+  gradientId?: string | null; // when accentMode === "gradient"
+  // Optional overrides (used for Slide 1 local text controls without forcing a theme change).
+  backgroundHex?: string | null; // only used when themeId === "custom"
+  accentSolidHex?: string | null; // used when accentMode === "solid"
+};
+
+// Slide 1 Background override (Regular only): wins over Slide 1 Style background.
+export type Slide1Background = {
+  backgroundHex: string; // solid base color
+  patternId: "none" | "dots_n8n" | "paper_grain" | "subtle_noise" | "grid" | "wrinkle_grain_black";
+} | null;
+
 export type SavedProjectListItem = {
   id: string;
   title: string;
@@ -29,7 +45,9 @@ export type EditorActions = {
   onCloseMobileDrawer: () => void;
   onOpenSlideStyleModal: () => void;
   onCloseSlideStyleModal: () => void;
-  onSetSlide1StyleId: (nextStyleId: string | null) => void;
+  onSetSlide1Style: (next: Slide1Style | null) => void;
+  onSetSlide1BodyFontKey: (next: string | null) => void;
+  onSetSlide1Background: (next: Slide1Background) => void;
   onSignOut: () => void;
 
   // Project card

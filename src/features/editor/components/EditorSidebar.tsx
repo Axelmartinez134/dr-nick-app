@@ -23,6 +23,7 @@ export function EditorSidebar() {
   const fontOptions = useEditorSelector((s) => s.fontOptions);
   const headlineFontKey = useEditorSelector((s) => s.headlineFontKey);
   const bodyFontKey = useEditorSelector((s) => s.bodyFontKey);
+  const isSlideFontOpt = (o: any) => String(o?.label || "").startsWith("Slide —");
 
   const projectBackgroundColor = useEditorSelector((s) => s.projectBackgroundColor);
   const projectTextColor = useEditorSelector((s) => s.projectTextColor);
@@ -371,7 +372,11 @@ export function EditorSidebar() {
               onChange={(e) => actions.onChangeHeadlineFontKey(e.target.value || "")}
             >
               {fontOptions.map((o) => (
-                <option key={`${o.family}@@${o.weight}`} value={`${o.family}@@${o.weight}`}>
+                <option
+                  key={`${o.family}@@${o.weight}`}
+                  value={`${o.family}@@${o.weight}`}
+                  style={isSlideFontOpt(o) ? { color: "#2563eb" } : undefined}
+                >
                   {o.label}
                 </option>
               ))}
@@ -385,7 +390,11 @@ export function EditorSidebar() {
               onChange={(e) => actions.onChangeBodyFontKey(e.target.value || "")}
             >
               {fontOptions.map((o) => (
-                <option key={`${o.family}@@${o.weight}`} value={`${o.family}@@${o.weight}`}>
+                <option
+                  key={`${o.family}@@${o.weight}`}
+                  value={`${o.family}@@${o.weight}`}
+                  style={isSlideFontOpt(o) ? { color: "#2563eb" } : undefined}
+                >
                   {o.label}
                 </option>
               ))}

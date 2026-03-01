@@ -168,7 +168,7 @@ export function useProjectLifecycle(params: {
                 ? 'right'
                 : 'left',
           draftBodyFontSizePx: Number.isFinite((inputSnap as any)?.bodyFontSizePx as any)
-            ? Math.max(24, Math.min(120, Math.round(Number((inputSnap as any).bodyFontSizePx))))
+            ? Math.max(8, Math.min(i === 0 ? 999 : 120, Math.round(Number((inputSnap as any).bodyFontSizePx))))
             : 48,
           draftBodyTextAlign:
             String((inputSnap as any)?.bodyTextAlign || 'left') === 'center'
