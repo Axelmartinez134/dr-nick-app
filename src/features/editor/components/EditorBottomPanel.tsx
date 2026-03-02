@@ -340,6 +340,26 @@ export function EditorBottomPanel() {
                               const bg = (slides as any)?.[0]?.inputData?.slide1Background || null;
                               const bgHex = String(bg?.backgroundHex || "").trim() || "#ffffff";
                               const patternId = String(bg?.patternId || "none") as any;
+                              const card = (slides as any)?.[0]?.inputData?.slide1Card || null;
+                              const cardEnabled = !!(card && typeof card === "object" ? (card as any).enabled : false);
+                              const cardHex = String((card as any)?.backgroundHex || "").trim() || "#ffffff";
+                              const cardPatternId = String((card as any)?.patternId || "none") as any;
+                              const cardBorderEnabled = !!(card && typeof card === "object" ? (card as any).borderEnabled : true);
+                              const cardBorderThicknessPx = Math.max(0, Math.round(Number((card as any)?.borderThicknessPx ?? 2) || 0));
+                              const cardBorderRadiusPx = Math.max(0, Math.round(Number((card as any)?.borderRadiusPx ?? 49) || 0));
+                              const cardEdgeGapPx = Math.max(0, Math.min(80, Math.round(Number((card as any)?.edgeGapPx ?? 20) || 0)));
+
+                              const borderColor = (() => {
+                                try {
+                                  const st = (slides as any)?.[0]?.inputData?.slide1Style || null;
+                                  const tid = String(st?.themeId || "").trim();
+                                  const hex = String(st?.accentSolidHex || "").trim();
+                                  return hex || SLIDE1_THEME_ACCENT_BY_ID[tid] || "#000000";
+                                } catch {
+                                  return "#000000";
+                                }
+                              })();
+
                               return (
                                 <div className="mt-3 space-y-3">
                                   <div>
@@ -370,6 +390,429 @@ export function EditorBottomPanel() {
                                     </div>
                                   </div>
 
+                                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="text-[11px] font-semibold text-slate-900 uppercase">Card</div>
+                                      <button
+                                        type="button"
+                                        className={[
+                                          "h-7 w-12 rounded-full transition-colors",
+                                          cardEnabled ? "bg-black" : "bg-slate-300",
+                                          (!currentProjectId || switchingSlides || copyGenerating) ? "opacity-60" : "",
+                                        ].join(" ")}
+                                        aria-label={cardEnabled ? "Disable card" : "Enable card"}
+                                        title={cardEnabled ? "Card enabled" : "Card disabled"}
+                                        onClick={() => {
+                                          if (!currentProjectId || switchingSlides || copyGenerating) return;
+                                          const base =
+                                            card && typeof card === "object"
+                                              ? { ...(card as any) }
+                                              : {
+                                                  enabled: false,
+                                                  backgroundHex: "#ffffff",
+                                                  patternId: "none",
+                                                  borderEnabled: true,
+                                                  borderThicknessPx: 2,
+                                                  borderRadiusPx: 49,
+                                                  edgeGapPx: 20,
+                                                };
+                                          base.enabled = !cardEnabled;
+                                          // Ensure defaults are present.
+                                          base.backgroundHex = String(base.backgroundHex || "#ffffff");
+                                          base.patternId = String(base.patternId || "none");
+                                          base.borderEnabled = typeof base.borderEnabled === "boolean" ? base.borderEnabled : true;
+                                          base.borderThicknessPx = Math.max(0, Math.round(Number(base.borderThicknessPx ?? 2) || 0));
+                                          base.borderRadiusPx = Math.max(0, Math.round(Number(base.borderRadiusPx ?? 49) || 0));
+                                          actions.onSetSlide1Card?.(base as any);
+                                        }}
+                                      >
+                                        <span
+                                          className={[
+                                            "block h-6 w-6 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                            cardEnabled ? "translate-x-5" : "translate-x-1",
+                                          ].join(" ")}
+                                        />
+                                      </button>
+                                    </div>
+
+                                    <div className="mt-3 space-y-3">
+                                      <div>
+                                        <div className="text-[11px] font-semibold text-slate-600 uppercase">Card color</div>
+                                        <div className="mt-1 flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                            value={cardHex}
+                                            disabled={!cardEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                            onChange={(e) => {
+                                              const nextHex = String(e.target.value || "").trim() || "#ffffff";
+                                              const base =
+                                                card && typeof card === "object"
+                                                  ? { ...(card as any) }
+                                                  : {
+                                                      enabled: true,
+                                                      backgroundHex: "#ffffff",
+                                                      patternId: "none",
+                                                      borderEnabled: true,
+                                                      borderThicknessPx: 2,
+                                                      borderRadiusPx: 49,
+                                                  edgeGapPx: 20,
+                                                    };
+                                              base.enabled = true;
+                                              base.backgroundHex = nextHex;
+                                              actions.onSetSlide1Card?.(base as any);
+                                            }}
+                                            aria-label="Slide 1 card background color"
+                                          />
+                                          <div className="text-xs text-slate-600 tabular-nums">{cardHex}</div>
+                                          <div className="ml-auto text-[10px] text-slate-500">Inset 40px</div>
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <div className="text-[11px] font-semibold text-slate-900 uppercase">Card texture</div>
+                                        <div className="mt-2 grid grid-cols-2 gap-2">
+                                          {([
+                                            { id: "none", name: "None" },
+                                            { id: "dots_n8n", name: "n8n dots" },
+                                            { id: "paper_grain", name: "Paper grain" },
+                                            { id: "subtle_noise", name: "Subtle noise" },
+                                            { id: "grid", name: "Grid" },
+                                            { id: "wrinkle_grain_black", name: "Wrinkled grain (black)" },
+                                          ] as const).map((p) => {
+                                            const selected = String(cardPatternId || "none") === p.id;
+                                            const ariaDisabled = !cardEnabled || !currentProjectId || switchingSlides || copyGenerating;
+                                            return (
+                                              <button
+                                                key={p.id}
+                                                type="button"
+                                                className={[
+                                                  "h-10 rounded-xl border px-3 text-left text-xs font-semibold transition-colors",
+                                                  selected ? "border-black ring-2 ring-black/10 bg-white" : "border-slate-200 hover:bg-white",
+                                                  ariaDisabled ? "opacity-60" : "",
+                                                ].join(" ")}
+                                                style={{ color: "#000000" }}
+                                                aria-disabled={ariaDisabled}
+                                                onClick={() => {
+                                                  if (ariaDisabled) return;
+                                                  const base =
+                                                    card && typeof card === "object"
+                                                      ? { ...(card as any) }
+                                                      : {
+                                                          enabled: true,
+                                                          backgroundHex: cardHex || "#ffffff",
+                                                          patternId: "none",
+                                                          borderEnabled: true,
+                                                          borderThicknessPx: 2,
+                                                          borderRadiusPx: 49,
+                                                  edgeGapPx: 20,
+                                                        };
+                                                  base.enabled = true;
+                                                  base.patternId = p.id;
+                                                  actions.onSetSlide1Card?.(base as any);
+                                                }}
+                                                title={p.name}
+                                              >
+                                                {p.name}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="text-[11px] font-semibold text-slate-900 uppercase">Borders</div>
+                                          <button
+                                            type="button"
+                                            className={[
+                                              "h-7 w-12 rounded-full transition-colors",
+                                              cardBorderEnabled ? "bg-red-600" : "bg-slate-300",
+                                              (!cardEnabled || !currentProjectId || switchingSlides || copyGenerating) ? "opacity-60" : "",
+                                            ].join(" ")}
+                                            aria-label={cardBorderEnabled ? "Disable borders" : "Enable borders"}
+                                            title={cardBorderEnabled ? "Borders enabled" : "Borders disabled"}
+                                            onClick={() => {
+                                              if (!cardEnabled || !currentProjectId || switchingSlides || copyGenerating) return;
+                                              const base =
+                                                card && typeof card === "object"
+                                                  ? { ...(card as any) }
+                                                  : {
+                                                      enabled: true,
+                                                      backgroundHex: cardHex || "#ffffff",
+                                                      patternId: cardPatternId || "none",
+                                                      borderEnabled: true,
+                                                      borderThicknessPx: 2,
+                                                      borderRadiusPx: 49,
+                                                  edgeGapPx: 20,
+                                                    };
+                                              base.enabled = true;
+                                              base.borderEnabled = !cardBorderEnabled;
+                                              actions.onSetSlide1Card?.(base as any);
+                                            }}
+                                          >
+                                            <span
+                                              className={[
+                                                "block h-6 w-6 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                                cardBorderEnabled ? "translate-x-5" : "translate-x-1",
+                                              ].join(" ")}
+                                            />
+                                          </button>
+                                        </div>
+
+                                        <div className="mt-3 grid grid-cols-2 gap-3">
+                                          {/* Thickness */}
+                                          <div>
+                                            <div className="text-[11px] font-semibold text-slate-600 uppercase">Thickness</div>
+                                            <div className="mt-1 flex items-stretch gap-2">
+                                              <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                                className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                                value={String(cardBorderThicknessPx)}
+                                                disabled={!cardEnabled || !cardBorderEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                                onChange={(e) => {
+                                                  const raw = String(e.target.value || "").replace(/[^\d]/g, "");
+                                                  const n = Math.max(0, Math.min(20, Number(raw) || 0));
+                                                  const base =
+                                                    card && typeof card === "object"
+                                                      ? { ...(card as any) }
+                                                      : {
+                                                          enabled: true,
+                                                          backgroundHex: cardHex || "#ffffff",
+                                                          patternId: cardPatternId || "none",
+                                                          borderEnabled: true,
+                                                          borderThicknessPx: 2,
+                                                          borderRadiusPx: 49,
+                                                          edgeGapPx: 20,
+                                                        };
+                                                  base.enabled = true;
+                                                  base.borderThicknessPx = n;
+                                                  actions.onSetSlide1Card?.(base as any);
+                                                }}
+                                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.(); }}
+                                                title="Border thickness in px. Min 0, max 20."
+                                              />
+                                              <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                                {([
+                                                  { dir: "up" as const, label: "Increase thickness", delta: +1, glyph: "▲" },
+                                                  { dir: "down" as const, label: "Decrease thickness", delta: -1, glyph: "▼" },
+                                                ] as const).map((btn) => {
+                                                  const disabled = !cardEnabled || !cardBorderEnabled || !currentProjectId || switchingSlides || copyGenerating;
+                                                  return (
+                                                    <button
+                                                      key={btn.dir}
+                                                      type="button"
+                                                      className={[
+                                                        "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                                        btn.dir === "up" ? "border-b border-slate-200" : "",
+                                                        disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                                      ].join(" ")}
+                                                      onMouseDown={(e) => e.preventDefault()}
+                                                      onClick={() => {
+                                                        if (disabled) return;
+                                                        const next = Math.max(0, Math.min(20, cardBorderThicknessPx + btn.delta));
+                                                        const base =
+                                                          card && typeof card === "object"
+                                                            ? { ...(card as any) }
+                                                            : {
+                                                                enabled: true,
+                                                                backgroundHex: cardHex || "#ffffff",
+                                                                patternId: cardPatternId || "none",
+                                                                borderEnabled: true,
+                                                                borderThicknessPx: 2,
+                                                                borderRadiusPx: 49,
+                                                                edgeGapPx: 20,
+                                                              };
+                                                        base.enabled = true;
+                                                        base.borderThicknessPx = next;
+                                                        actions.onSetSlide1Card?.(base as any);
+                                                      }}
+                                                      aria-label={btn.label}
+                                                      aria-disabled={disabled}
+                                                      title={btn.label}
+                                                    >
+                                                      {btn.glyph}
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          </div>
+                                          {/* Radius */}
+                                          <div>
+                                            <div className="text-[11px] font-semibold text-slate-600 uppercase">Radius</div>
+                                            <div className="mt-1 flex items-stretch gap-2">
+                                              <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                pattern="[0-9]*"
+                                                className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                                value={String(cardBorderRadiusPx)}
+                                                disabled={!cardEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                                onChange={(e) => {
+                                                  const raw = String(e.target.value || "").replace(/[^\d]/g, "");
+                                                  const n = Math.max(0, Math.min(200, Number(raw) || 0));
+                                                  const base =
+                                                    card && typeof card === "object"
+                                                      ? { ...(card as any) }
+                                                      : {
+                                                          enabled: true,
+                                                          backgroundHex: cardHex || "#ffffff",
+                                                          patternId: cardPatternId || "none",
+                                                          borderEnabled: true,
+                                                          borderThicknessPx: 2,
+                                                          borderRadiusPx: 49,
+                                                          edgeGapPx: 20,
+                                                        };
+                                                  base.enabled = true;
+                                                  base.borderRadiusPx = n;
+                                                  actions.onSetSlide1Card?.(base as any);
+                                                }}
+                                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.(); }}
+                                                title="Border radius in px. Min 0, max 200."
+                                              />
+                                              <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                                {([
+                                                  { dir: "up" as const, label: "Increase radius", delta: +1, glyph: "▲" },
+                                                  { dir: "down" as const, label: "Decrease radius", delta: -1, glyph: "▼" },
+                                                ] as const).map((btn) => {
+                                                  const disabled = !cardEnabled || !currentProjectId || switchingSlides || copyGenerating;
+                                                  return (
+                                                    <button
+                                                      key={btn.dir}
+                                                      type="button"
+                                                      className={[
+                                                        "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                                        btn.dir === "up" ? "border-b border-slate-200" : "",
+                                                        disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                                      ].join(" ")}
+                                                      onMouseDown={(e) => e.preventDefault()}
+                                                      onClick={() => {
+                                                        if (disabled) return;
+                                                        const next = Math.max(0, Math.min(200, cardBorderRadiusPx + btn.delta));
+                                                        const base =
+                                                          card && typeof card === "object"
+                                                            ? { ...(card as any) }
+                                                            : {
+                                                                enabled: true,
+                                                                backgroundHex: cardHex || "#ffffff",
+                                                                patternId: cardPatternId || "none",
+                                                                borderEnabled: true,
+                                                                borderThicknessPx: 2,
+                                                                borderRadiusPx: 49,
+                                                                edgeGapPx: 20,
+                                                              };
+                                                        base.enabled = true;
+                                                        base.borderRadiusPx = next;
+                                                        actions.onSetSlide1Card?.(base as any);
+                                                      }}
+                                                      aria-label={btn.label}
+                                                      aria-disabled={disabled}
+                                                      title={btn.label}
+                                                    >
+                                                      {btn.glyph}
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Card Edge gap */}
+                                        <div className="mt-3">
+                                          <div className="text-[11px] font-semibold text-slate-600 uppercase">Card Edge gap</div>
+                                          <div className="mt-1 flex items-stretch gap-2">
+                                            <input
+                                              type="text"
+                                              inputMode="numeric"
+                                              pattern="[0-9]*"
+                                              className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                              value={String(cardEdgeGapPx)}
+                                              disabled={!cardEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                              onChange={(e) => {
+                                                const raw = String(e.target.value || "").replace(/[^\d]/g, "");
+                                                const n = Math.max(0, Math.min(80, Number(raw) || 0));
+                                                const base =
+                                                  card && typeof card === "object"
+                                                    ? { ...(card as any) }
+                                                    : {
+                                                        enabled: true,
+                                                        backgroundHex: cardHex || "#ffffff",
+                                                        patternId: cardPatternId || "none",
+                                                        borderEnabled: true,
+                                                        borderThicknessPx: 2,
+                                                        borderRadiusPx: 49,
+                                                        edgeGapPx: 20,
+                                                      };
+                                                base.enabled = true;
+                                                base.edgeGapPx = n;
+                                                actions.onSetSlide1Card?.(base as any);
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key !== "Enter") return;
+                                                (e.target as HTMLInputElement | null)?.blur?.();
+                                              }}
+                                              title="Card edge gap in px. Min 0, max 80."
+                                            />
+
+                                            <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                              {([
+                                                { dir: "up" as const, label: "Increase gap", delta: +1, glyph: "▲" },
+                                                { dir: "down" as const, label: "Decrease gap", delta: -1, glyph: "▼" },
+                                              ] as const).map((btn) => {
+                                                const disabled = !cardEnabled || !currentProjectId || switchingSlides || copyGenerating;
+                                                return (
+                                                  <button
+                                                    key={btn.dir}
+                                                    type="button"
+                                                    className={[
+                                                      "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                                      btn.dir === "up" ? "border-b border-slate-200" : "",
+                                                      disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                                    ].join(" ")}
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onClick={() => {
+                                                      if (disabled) return;
+                                                      const next = Math.max(0, Math.min(80, cardEdgeGapPx + btn.delta));
+                                                      const base =
+                                                        card && typeof card === "object"
+                                                          ? { ...(card as any) }
+                                                          : {
+                                                              enabled: true,
+                                                              backgroundHex: cardHex || "#ffffff",
+                                                              patternId: cardPatternId || "none",
+                                                              borderEnabled: true,
+                                                              borderThicknessPx: 2,
+                                                              borderRadiusPx: 49,
+                                                              edgeGapPx: 20,
+                                                            };
+                                                      base.enabled = true;
+                                                      base.edgeGapPx = next;
+                                                      actions.onSetSlide1Card?.(base as any);
+                                                    }}
+                                                    aria-label={btn.label}
+                                                    aria-disabled={disabled}
+                                                    title={btn.label}
+                                                  >
+                                                    {btn.glyph}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                          <div className="mt-1 text-[10px] text-slate-500">0 = full-bleed · 80 = max gap</div>
+                                        </div>
+
+                                        <div className="mt-2 text-[10px] text-slate-500">
+                                          Border color: <span className="font-semibold">{borderColor}</span> (from Slide 1 accent)
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
                                   <div>
                                     <div className="text-[11px] font-semibold text-slate-900 uppercase">Texture</div>
                                     <div className="mt-2 grid grid-cols-2 gap-2">
@@ -382,6 +825,7 @@ export function EditorBottomPanel() {
                                         { id: "wrinkle_grain_black", name: "Wrinkled grain (black)" },
                                       ] as const).map((p) => {
                                         const selected = String(patternId || "none") === p.id;
+                                        const ariaDisabled = (!currentProjectId || switchingSlides || copyGenerating) || cardEnabled;
                                         return (
                                           <button
                                             key={p.id}
@@ -389,11 +833,12 @@ export function EditorBottomPanel() {
                                             className={[
                                               "h-10 rounded-xl border px-3 text-left text-xs font-semibold transition-colors",
                                               selected ? "border-black ring-2 ring-black/10 bg-slate-50" : "border-slate-200 hover:bg-slate-50",
+                                              ariaDisabled ? "opacity-60" : "",
                                             ].join(" ")}
                                             style={{ color: "#000000" }}
-                                            aria-disabled={!currentProjectId || switchingSlides || copyGenerating}
+                                            aria-disabled={ariaDisabled}
                                             onClick={() => {
-                                              if (!currentProjectId || switchingSlides || copyGenerating) return;
+                                              if (ariaDisabled) return;
                                               // "Exact" preset: force black base for the wrinkled grain look.
                                               const forcedHex = p.id === "wrinkle_grain_black" ? "#0b0b0b" : bgHex;
                                               const next = { backgroundHex: forcedHex, patternId: p.id };
@@ -406,7 +851,11 @@ export function EditorBottomPanel() {
                                         );
                                       })}
                                     </div>
-                                    <div className="mt-2 text-[10px] text-slate-500">Textures are neutral (black/white) so your color stays vivid.</div>
+                                    {cardEnabled ? (
+                                      <div className="mt-2 text-[10px] text-slate-500">Outer background stays solid while Card is on (texture applies to card).</div>
+                                    ) : (
+                                      <div className="mt-2 text-[10px] text-slate-500">Textures are neutral (black/white) so your color stays vivid.</div>
+                                    )}
                                   </div>
                                 </div>
                               );

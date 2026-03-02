@@ -16,6 +16,7 @@ const noopActions: EditorActions = {
   onSetSlide1Style: () => {},
   onSetSlide1BodyFontKey: () => {},
   onSetSlide1Background: () => {},
+  onSetSlide1Card: () => {},
   onSignOut: () => {},
   onChangeNewProjectTemplateTypeId: () => {},
   onClickNewProject: () => {},

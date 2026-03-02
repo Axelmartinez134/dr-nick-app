@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { Slide1Background, Slide1Style } from "@/features/editor/store/types";
+import type { Slide1Background, Slide1Card, Slide1Style } from "@/features/editor/store/types";
 
 type Args = {
   editorStore: any;
@@ -191,6 +191,7 @@ type Args = {
   onSetSlide1Style: (next: Slide1Style | null) => void;
   onSetSlide1BodyFontKey: (next: string | null) => void;
   onSetSlide1Background: (next: Slide1Background) => void;
+  onSetSlide1Card: (next: Slide1Card) => void;
 
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
@@ -383,6 +384,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1Style,
     onSetSlide1BodyFontKey,
     onSetSlide1Background,
+    onSetSlide1Card,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -457,6 +459,13 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1Background: (next: Slide1Background) => {
       try {
         onSetSlide1Background(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1Card: (next: Slide1Card) => {
+      try {
+        onSetSlide1Card(next);
       } catch {
         // ignore
       }
@@ -801,6 +810,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onSetSlide1Style: (next: Slide1Style | null) => implRef.current?.onSetSlide1Style?.(next),
       onSetSlide1BodyFontKey: (next: string | null) => implRef.current?.onSetSlide1BodyFontKey?.(next),
       onSetSlide1Background: (next: Slide1Background) => implRef.current?.onSetSlide1Background?.(next),
+      onSetSlide1Card: (next: Slide1Card) => implRef.current?.onSetSlide1Card?.(next),
       onSignOut: () => implRef.current?.onSignOut?.(),
       setIsSuperadmin: (next: boolean) => implRef.current?.setIsSuperadmin?.(next),
       onCloseShareCarousels: () => implRef.current?.onCloseShareCarousels?.(),

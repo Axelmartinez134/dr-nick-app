@@ -171,6 +171,40 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
 - **Smart Guides helper (lock mode)**: `src/app/components/health/marketing/ai-carousel/smartGuides.ts`
   - Visual-only horizontal alignment guides (left/center/right)
 
+### Slide 1 Card (Instagram-like framing) — bug fix reference (2026-03-01)
+The Slide 1 Card is an optional rounded rectangle rendered on Slide 1 Regular only, giving an "Instagram card" look (card covers most of the canvas with a thin solid-color frame visible on all four edges).
+
+**Where**: `CarouselPreviewVision.tsx` → `applySlide1Style()` → `if (cardEnabled)` block.
+
+**Props**: `slide1Card: { enabled, backgroundHex, patternId, borderEnabled, borderThicknessPx, borderRadiusPx }` (passed from EditorShell).
+
+**Two bugs were fixed (both in the card Rect creation)**:
+
+1. **Missing `originX: 'left', originY: 'top'`**.
+   Fabric v7 (`fabric ^7.0.0`) defaults to `originX: 'center', originY: 'center'`. Every other object in the file sets origin explicitly, but the card Rect did not. This caused `left`/`top` to position the *center* of the rect instead of the top-left corner, making the card extend far beyond the visible canvas on all sides — appearing full-bleed with no gap.
+
+2. **Wrong world-coordinate span for card dimensions**.
+   The code used `cw = INTERNAL_W / zoom` (the full Fabric *buffer* world span ≈ 2777 at zoom 0.39) as the card's bounding box. But the *visible* world area (clipped by the parent `overflow: hidden` div) is always `(0,0)-(INTERNAL_W, INTERNAL_H)` = `(0,0)-(1080, 1440)`, regardless of zoom. The card must fit within this range. Using `cw` made the card ~2.6× wider than the visible area.
+
+**Correct coordinate model** (for future reference):
+- Fabric canvas CSS = `INTERNAL_W × INTERNAL_H` (1080×1440, set by Fabric on init)
+- Parent div clips visible area to `displayW × displayH` (e.g. 420×560)
+- Fabric zoom = `displayW / INTERNAL_W` (e.g. 0.389)
+- World → Fabric CSS: multiply by `zoom`
+- Visible world area: `(0, 0)` to `(displayW / zoom, displayH / zoom)` = `(0, 0)` to `(INTERNAL_W, INTERNAL_H)`
+- To convert N screen-CSS pixels to world units: `N / zoom`
+
+**Correct card formula**:
+```
+insetWorld = 40 / zoom
+card: left = insetWorld, top = insetWorld
+       width = INTERNAL_W - 2 * insetWorld
+       height = INTERNAL_H - 2 * insetWorld
+       originX = 'left', originY = 'top'
+```
+
+**Scope**: only affects Slide 1, Regular template, when `slide1Card.enabled` is true. No impact on Enhanced templates or any other canvas objects.
+
 ### Debug: wrap/realign instrumentation (kept for future sessions)
 To avoid spamming production Debug output, wrap/realign logs are **gated** behind a localStorage flag:
 

@@ -64,6 +64,7 @@ export function useCanvasExport(params: {
       throw new Error("Canvas not ready");
     }
     const currentZoom = fabricCanvas.getZoom?.() ?? 1;
+    const savedVpt = fabricCanvas.viewportTransform ? [...fabricCanvas.viewportTransform] : null;
     try {
       try {
         fabricCanvas.discardActiveObject?.();
@@ -71,8 +72,29 @@ export function useCanvasExport(params: {
         // ignore
       }
       fabricCanvas.setZoom?.(1);
+      if (fabricCanvas.viewportTransform && Array.isArray(fabricCanvas.viewportTransform)) {
+        fabricCanvas.viewportTransform[4] = 0;
+        fabricCanvas.viewportTransform[5] = 0;
+      }
       fabricCanvas.renderAll?.();
       await new Promise((r) => setTimeout(r, 80));
+      // Re-assert zoom/vpt after the delay in case a React effect changed them
+      fabricCanvas.setZoom?.(1);
+      if (fabricCanvas.viewportTransform && Array.isArray(fabricCanvas.viewportTransform)) {
+        fabricCanvas.viewportTransform[4] = 0;
+        fabricCanvas.viewportTransform[5] = 0;
+      }
+      // Force all objects to recalculate coords at the export zoom
+      try {
+        const objs = fabricCanvas.getObjects?.() || [];
+        for (const o of objs) {
+          if (o && typeof o.setCoords === 'function') {
+            (o as any).dirty = true;
+            o.setCoords();
+          }
+        }
+      } catch { /* ignore */ }
+      fabricCanvas.renderAll?.();
       const dataURL = fabricCanvas.toDataURL({
         format: "png",
         quality: 3.0,
@@ -81,7 +103,11 @@ export function useCanvasExport(params: {
       const res = await fetch(dataURL);
       return await res.blob();
     } finally {
-      fabricCanvas.setZoom?.(currentZoom);
+      if (savedVpt && fabricCanvas.viewportTransform) {
+        for (let i = 0; i < savedVpt.length; i++) fabricCanvas.viewportTransform[i] = savedVpt[i];
+      } else {
+        fabricCanvas.setZoom?.(currentZoom);
+      }
       fabricCanvas.renderAll?.();
     }
   }, [getFabricCanvasFromHandle]);

@@ -2965,6 +2965,44 @@ export default function EditorShell() {
     [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
   );
 
+  const onSetSlide1Card = useCallback(
+    (nextCard: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextCard && typeof nextCard === "object" ? nextCard : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1Card: obj }
+          : { slide1Card: obj };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
   const computeRegularBodyTextboxLayout = (params: {
     slideIndex: number;
     body: string;
@@ -6381,6 +6419,7 @@ export default function EditorShell() {
     onSetSlide1Style,
     onSetSlide1BodyFontKey,
     onSetSlide1Background,
+    onSetSlide1Card,
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).

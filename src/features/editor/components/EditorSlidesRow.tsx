@@ -283,6 +283,7 @@ export function EditorSlidesRow() {
                         slideIndex={i}
                         slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
                         slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
+                        slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
                         textColor={projectTextColor}
@@ -335,6 +336,7 @@ export function EditorSlidesRow() {
                     slideIndex={i}
                     slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
                     slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
+                    slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
                     textColor={projectTextColor}
@@ -455,6 +457,7 @@ export function EditorSlidesRow() {
                                 slideIndex={i}
                                 slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
                                 slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
+                                slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}

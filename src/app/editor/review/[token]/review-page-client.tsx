@@ -570,6 +570,7 @@ function ReviewProjectCard(props: {
   const slide1InputSnap = project.slides?.[0]?.input_snapshot ?? null;
   const slide1Style = (slide1InputSnap as any)?.slide1Style ?? null;
   const slide1Background = (slide1InputSnap as any)?.slide1Background ?? null;
+  const slide1Card = (slide1InputSnap as any)?.slide1Card ?? null;
   const isEnhanced = project.template_type_id === "enhanced";
   const lockTextLayout = isEnhanced ? !!(inputSnap as any)?.editor?.layoutLocked : false;
   // Important: CarouselPreviewVision has a "preserve user-image position" fallback that can drift across re-renders
@@ -865,6 +866,7 @@ function ReviewProjectCard(props: {
               textColor={project.project_text_color}
               slide1Style={slide1Style}
               slide1Background={slide1Background}
+              slide1Card={slide1Card}
               deferInit={false}
               backgroundEffectEnabled={project.background_effect_enabled}
               backgroundEffectType={project.background_effect_type}
@@ -942,6 +944,7 @@ function ReviewProjectCard(props: {
                   textColor={project.project_text_color}
                   slide1Style={slide1Style}
                   slide1Background={slide1Background}
+                  slide1Card={slide1Card}
                   deferInit={false}
                   backgroundEffectEnabled={project.background_effect_enabled}
                   backgroundEffectType={project.background_effect_type}

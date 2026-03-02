@@ -27,6 +27,16 @@ export type Slide1Background = {
   patternId: "none" | "dots_n8n" | "paper_grain" | "subtle_noise" | "grid" | "wrinkle_grain_black";
 } | null;
 
+// Slide 1 Card overlay (Regular only): renders a rounded "post card" above the background.
+export type Slide1Card = {
+  enabled: boolean;
+  backgroundHex: string; // card fill
+  patternId: "none" | "dots_n8n" | "paper_grain" | "subtle_noise" | "grid" | "wrinkle_grain_black"; // card texture
+  borderEnabled: boolean;
+  borderThicknessPx: number;
+  borderRadiusPx: number;
+} | null;
+
 export type SavedProjectListItem = {
   id: string;
   title: string;
@@ -48,6 +58,7 @@ export type EditorActions = {
   onSetSlide1Style: (next: Slide1Style | null) => void;
   onSetSlide1BodyFontKey: (next: string | null) => void;
   onSetSlide1Background: (next: Slide1Background) => void;
+  onSetSlide1Card: (next: Slide1Card) => void;
   onSignOut: () => void;
 
   // Project card

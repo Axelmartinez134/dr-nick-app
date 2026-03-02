@@ -52,6 +52,16 @@ interface CarouselPreviewProps {
   } | null;
   // /editor-only: optional Slide 1 background override (wins over Slide 1 Style background).
   slide1Background?: { backgroundHex: string; patternId: "none" | "dots_n8n" | "paper_grain" | "subtle_noise" | "grid" | "wrinkle_grain_black" } | null;
+  // /editor-only: optional Slide 1 "card" overlay (Instagram-like post framing).
+  slide1Card?: {
+    enabled: boolean;
+    backgroundHex: string;
+    patternId: "none" | "dots_n8n" | "paper_grain" | "subtle_noise" | "grid" | "wrinkle_grain_black";
+    borderEnabled: boolean;
+    borderThicknessPx: number;
+    borderRadiusPx: number;
+    edgeGapPx?: number;
+  } | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   // When true, shrink each user text object's width to hug the rendered text (plus small padding),
   // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
@@ -141,6 +151,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       slideIndex,
       slide1Style,
       slide1Background,
+      slide1Card,
       hasHeadline,
       headlineFontFamily,
       bodyFontFamily,
@@ -1746,10 +1757,18 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         
         console.log('[Preview Vision] 📸 Capturing canvas screenshot...');
         
-        // Temporarily reset zoom to 1.0 for full-resolution screenshot
+        // Save current viewport state
         const currentZoom = canvas.getZoom();
+        const savedVpt = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
+
+        // Reset to clean zoom-1 viewport with zero translation
         canvas.setZoom(1.0);
-        
+        if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
+          canvas.viewportTransform[4] = 0;
+          canvas.viewportTransform[5] = 0;
+        }
+        canvas.renderAll();
+
         // Capture as PNG data URL
         const dataURL = canvas.toDataURL({
           format: 'png',
@@ -1757,8 +1776,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           multiplier: 1,
         });
         
-        // Restore original zoom
-        canvas.setZoom(currentZoom);
+        // Restore original viewport state
+        if (savedVpt && canvas.viewportTransform) {
+          for (let i = 0; i < savedVpt.length; i++) canvas.viewportTransform[i] = savedVpt[i];
+        } else {
+          canvas.setZoom(currentZoom);
+        }
+        canvas.renderAll();
         
         console.log('[Preview Vision] ✅ Screenshot captured, length:', dataURL.length);
         return dataURL;
@@ -1777,6 +1801,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         
         // Save current state
         const currentZoom = canvas.getZoom();
+        const savedVpt = canvas.viewportTransform ? [...canvas.viewportTransform] : null;
         const objects = canvas.getObjects();
         
         // Hide all text objects temporarily
@@ -1787,9 +1812,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           obj.visible = false;
         });
         
-        // Reset zoom for full-resolution
+        // Reset to clean zoom-1 viewport with zero translation
         canvas.setZoom(1.0);
-        canvas.renderAll(); // Re-render without text
+        if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
+          canvas.viewportTransform[4] = 0;
+          canvas.viewportTransform[5] = 0;
+        }
+        canvas.renderAll();
         
         // Capture screenshot
         const dataURL = canvas.toDataURL({
@@ -1804,8 +1833,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           obj.visible = true;
         });
         
-        // Restore zoom
-        canvas.setZoom(currentZoom);
+        // Restore original viewport state
+        if (savedVpt && canvas.viewportTransform) {
+          for (let i = 0; i < savedVpt.length; i++) canvas.viewportTransform[i] = savedVpt[i];
+        } else {
+          canvas.setZoom(currentZoom);
+        }
         canvas.renderAll();
         
         console.log('[Preview Vision] ✅ Image-only screenshot captured, length:', dataURL.length);
@@ -2051,6 +2084,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }
           : null;
         const s = slide1Style && typeof slide1Style === "object" ? (slide1Style as any) : null;
+        const card = slide1Card && typeof slide1Card === "object" ? (slide1Card as any) : null;
+        const cardEnabled = !!card?.enabled;
         const themeId = s ? String(s.themeId || "").trim() : "";
 
         const THEME_MAP: Record<string, { background: string; accent: string }> = {
@@ -2136,10 +2171,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         }
 
         // Slide 1 background texture: set a background pattern so it can't be occluded by template assets.
+        // NOTE: When Card mode is enabled, the outer background must remain solid (texture applies to card only).
         try {
           const patternId = String(bgOverride?.patternId || "none");
           const hex = String(bgOverride?.hex || theme?.background || backgroundHex || backgroundColor || "#ffffff").trim() || "#ffffff";
-          if (patternId && patternId !== "none") {
+          if (!cardEnabled && patternId && patternId !== "none") {
             const pat = getSlide1BackgroundPattern(fabric, { backgroundHex: hex, patternId });
             if (pat) {
               if (typeof canvas.setBackgroundColor === "function") canvas.setBackgroundColor(pat, () => {});
@@ -2147,6 +2183,122 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             } else {
               if (typeof canvas.setBackgroundColor === "function") canvas.setBackgroundColor(hex, () => {});
               else canvas.backgroundColor = hex;
+            }
+          } else {
+            // Ensure we always reset the OUTER background to a solid color when:
+            // - Card is enabled (texture belongs to the card only)
+            // - Or texture is "none"
+            if (typeof canvas.setBackgroundColor === "function") canvas.setBackgroundColor(hex, () => {});
+            else canvas.backgroundColor = hex;
+          }
+        } catch {
+          // ignore
+        }
+
+        // Slide 1 card overlay (Instagram-like): render a rounded card above the background.
+        // - Outer background stays solid when card is enabled.
+        // - Card can have its own background + optional texture + optional border.
+        try {
+          // Always remove any prior card before (re)adding.
+          try {
+            const objs = canvas?.getObjects?.() || [];
+            for (const o of objs) {
+              if (o?.data?.role === "slide1-card") {
+                try {
+                  canvas.remove(o);
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          if (cardEnabled) {
+            // Deterministic mapping for /editor preview:
+            // We want a TRUE 40px inset in *CSS pixels* (what you see on screen),
+            // regardless of Fabric zoom + any CSS scaling.
+            //
+            // Convert CSS px → world units by scaling against the world span of the full canvas.
+            const zoom = Math.max(
+              1e-6,
+              Number(
+                (canvas.viewportTransform && Array.isArray(canvas.viewportTransform) ? canvas.viewportTransform[0] : null) ??
+                  canvas.getZoom?.() ??
+                  computeDisplayZoom()
+              ) || 1
+            );
+
+            // Visible world area is (0,0)-(INTERNAL_W, INTERNAL_H).
+            // Convert screen px → world units by dividing by zoom.
+            const insetScreenPx = Math.max(0, Math.min(80, Number(card?.edgeGapPx ?? 20) || 0));
+            const insetWorld = insetScreenPx / zoom;
+
+            const cardHex = String(card?.backgroundHex || "#ffffff").trim() || "#ffffff";
+            const cardPatternId = String(card?.patternId || "none").trim() || "none";
+
+            const borderOn = !!card?.borderEnabled;
+            const strokeScreenPx = Math.max(0, Math.round(Number(card?.borderThicknessPx ?? 2) || 0));
+            const strokeWorld = strokeScreenPx / zoom;
+            const borderInsetWorld = borderOn && strokeWorld > 0 ? (strokeWorld / 2) : 0;
+
+            const rxScreenPx = Math.max(0, Math.round(Number(card?.borderRadiusPx ?? 49) || 0));
+            const rx = rxScreenPx / zoom;
+
+            const leftTop = insetWorld + borderInsetWorld;
+            const w = Math.max(1, INTERNAL_W - leftTop * 2);
+            const h = Math.max(1, INTERNAL_H - leftTop * 2);
+
+            const borderColor =
+              String(accentSolidHex || "").trim() ||
+              (theme ? String(theme.accent || "").trim() : "") ||
+              String(textColor || "#000000").trim() ||
+              "#000000";
+
+            const fill =
+              cardPatternId !== "none"
+                ? (getSlide1BackgroundPattern(fabric, { backgroundHex: cardHex, patternId: cardPatternId }) as any) || cardHex
+                : cardHex;
+
+            const rect = new fabric.Rect({
+              left: leftTop,
+              top: leftTop,
+              width: w,
+              height: h,
+              rx,
+              ry: rx,
+              fill,
+              originX: 'left',
+              originY: 'top',
+              ...(borderOn && strokeWorld > 0 ? { stroke: borderColor, strokeWidth: strokeWorld, strokeUniform: true } : {}),
+              selectable: false,
+              evented: false,
+              objectCaching: false,
+            } as any);
+            (rect as any).data = { role: "slide1-card" };
+            canvas.add(rect);
+            // Card must sit BELOW all user content (text, images, stickers).
+            // Send card to back, then bring every user object to front.
+            try {
+              if (typeof canvas.sendObjectToBack === "function") {
+                canvas.sendObjectToBack(rect);
+              } else if (typeof (canvas as any).sendToBack === "function") {
+                (canvas as any).sendToBack(rect);
+              }
+              const objs = (canvas.getObjects?.() || []) as any[];
+              for (const o of objs) {
+                const role = String(o?.data?.role || "");
+                if (role === "user-text" || role === "user-image" || role === "user-image-sticker") {
+                  if (typeof canvas.bringObjectToFront === "function") {
+                    canvas.bringObjectToFront(o);
+                  } else if (typeof (canvas as any).bringToFront === "function") {
+                    (canvas as any).bringToFront(o);
+                  }
+                }
+              }
+            } catch {
+              // ignore
             }
           }
         } catch {
@@ -3216,9 +3368,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     const defaultFrameStyle: CSSProperties = {
+      boxSizing: 'content-box',
       width: `${displayW}px`,
       height: `${displayH}px`,
       border: '2px solid #e5e7eb',
