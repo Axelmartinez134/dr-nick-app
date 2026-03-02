@@ -19,6 +19,10 @@ export function EditorBottomPanel() {
   const [captionHistoryOpen, setCaptionHistoryOpen] = useState(false);
   const [slide1TextOpen, setSlide1TextOpen] = useState(false);
   const [slide1BgOpen, setSlide1BgOpen] = useState(false);
+  const [slide1CopyPasteOpen, setSlide1CopyPasteOpen] = useState(false);
+  const [slide1CopyPasteDraft, setSlide1CopyPasteDraft] = useState<string>("");
+  const [slide1CopyPasteStatus, setSlide1CopyPasteStatus] = useState<"idle" | "copied" | "applied" | "error">("idle");
+  const [slide1CopyPasteError, setSlide1CopyPasteError] = useState<string | null>(null);
   const [slide1GradientPickerOpen, setSlide1GradientPickerOpen] = useState(false);
   const [slide1BodySizeDraft, setSlide1BodySizeDraft] = useState<string>("");
   const slide1BodySizeEditingRef = useRef<boolean>(false);
@@ -120,6 +124,332 @@ export function EditorBottomPanel() {
     const n = clampSlide1BodySize(next);
     setSlide1BodySizeDraft(String(n));
     actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
+  };
+
+  const buildSlide1PresetJson = () => {
+    const slide0 = (slides as any)?.[0] || null;
+    const input0 = slide0?.inputData || null;
+    const templateId = String((ui as any)?.slide1TemplateIdSnapshot || "").trim() || null;
+    const bodyFontSizePx =
+      Number.isFinite(Number(slide0?.draftBodyFontSizePx))
+        ? Math.round(Number(slide0.draftBodyFontSizePx))
+        : (Number.isFinite(Number(input0?.bodyFontSizePx)) ? Math.round(Number(input0.bodyFontSizePx)) : 48);
+
+    const payload = {
+      kind: "dn.slide1_preset",
+      v: 1,
+      createdAt: new Date().toISOString(),
+      templateId,
+      slide1: {
+        slide1Background: (input0 as any)?.slide1Background ?? null,
+        slide1Card: (input0 as any)?.slide1Card ?? null,
+        slide1Style: (input0 as any)?.slide1Style ?? null,
+        slide1BodyFontKey: (input0 as any)?.slide1BodyFontKey ?? null,
+        slide1TextNoise: (input0 as any)?.slide1TextNoise ?? null,
+        slide1BodyLineGapPx: (input0 as any)?.slide1BodyLineGapPx ?? 0,
+        bodyFontSizePx,
+      },
+    };
+    return JSON.stringify(payload, null, 2);
+  };
+
+  const copySlide1Preset = async () => {
+    try {
+      const json = buildSlide1PresetJson();
+      setSlide1CopyPasteDraft(json);
+      setSlide1CopyPasteError(null);
+      setSlide1CopyPasteStatus("idle");
+      try {
+        await navigator.clipboard.writeText(json);
+        setSlide1CopyPasteStatus("copied");
+        window.setTimeout(() => setSlide1CopyPasteStatus("idle"), 1200);
+      } catch {
+        setSlide1CopyPasteStatus("error");
+        setSlide1CopyPasteError("Clipboard blocked. The JSON is in the box below — copy it manually.");
+      }
+    } catch (e: any) {
+      setSlide1CopyPasteStatus("error");
+      setSlide1CopyPasteError(String(e?.message || "Failed to build preset"));
+    }
+  };
+
+  const applySlide1PresetFromText = async (rawText: string) => {
+    const text = String(rawText || "").trim();
+    if (!text) {
+      setSlide1CopyPasteStatus("error");
+      setSlide1CopyPasteError("Paste preset JSON first.");
+      return;
+    }
+    try {
+      try {
+        addLog?.(`📋 Slide 1 preset: apply start (len=${text.length})`);
+      } catch {
+        // ignore
+      }
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object") throw new Error("Invalid JSON");
+      if (String((parsed as any).kind || "") !== "dn.slide1_preset") throw new Error("Not a Slide 1 preset");
+      if (Number((parsed as any).v || 0) !== 1) throw new Error("Unsupported preset version");
+
+      setSlide1CopyPasteError(null);
+
+      const templateId = String((parsed as any).templateId || "").trim() || null;
+      try {
+        addLog?.(
+          `📋 Slide 1 preset: parsed templateId=${templateId || "—"} currentMapping=${String((ui as any)?.slide1TemplateIdSnapshot || "—")}`
+        );
+      } catch {
+        // ignore
+      }
+      if (templateId) {
+        const ok = await Promise.resolve(actions.onSetCurrentProjectSlide1TemplateIdSnapshot?.(templateId) as any);
+        try {
+          addLog?.(`📋 Slide 1 preset: template apply result ok=${ok ? "1" : "0"} (requested=${templateId})`);
+        } catch {
+          // ignore
+        }
+        if (!ok) {
+          setSlide1CopyPasteError("Applied style, but could not apply the pasted Slide 1 template (missing / invalid).");
+        }
+      }
+
+      const s1 = (parsed as any).slide1 || {};
+      try {
+        const has = (k: string) => (s1 as any)?.[k] !== undefined;
+        addLog?.(
+          `📋 Slide 1 preset: applying input keys=` +
+            [
+              has("slide1Background") ? "bg" : null,
+              has("slide1Card") ? "card" : null,
+              has("slide1Style") ? "style" : null,
+              has("slide1BodyFontKey") ? "font" : null,
+              has("slide1TextNoise") ? "textNoise" : null,
+              has("slide1BodyLineGapPx") ? "lineGap" : null,
+              has("bodyFontSizePx") ? "bodySize" : null,
+            ]
+              .filter(Boolean)
+              .join(",")
+        );
+      } catch {
+        // ignore
+      }
+      actions.onApplySlide1PresetInput?.({
+        slide1Background: s1.slide1Background ?? undefined,
+        slide1Card: s1.slide1Card ?? undefined,
+        slide1Style: s1.slide1Style ?? undefined,
+        slide1BodyFontKey: s1.slide1BodyFontKey ?? undefined,
+        slide1TextNoise: s1.slide1TextNoise ?? undefined,
+        slide1BodyLineGapPx:
+          s1.slide1BodyLineGapPx == null ? undefined : Math.max(-80, Math.min(80, Math.round(Number(s1.slide1BodyLineGapPx) || 0))),
+      } as any);
+
+      if (Number.isFinite(Number(s1.bodyFontSizePx))) {
+        const n = Math.max(8, Math.min(999, Math.round(Number(s1.bodyFontSizePx))));
+        actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
+      }
+
+      try {
+        addLog?.(`📋 Slide 1 preset: apply done (mappingNow=${String((ui as any)?.slide1TemplateIdSnapshot || "—")})`);
+      } catch {
+        // ignore
+      }
+      setSlide1CopyPasteStatus("applied");
+      window.setTimeout(() => setSlide1CopyPasteStatus("idle"), 1200);
+    } catch (e: any) {
+      setSlide1CopyPasteStatus("error");
+      setSlide1CopyPasteError(String(e?.message || "Failed to apply preset"));
+    }
+  };
+
+  const pasteSlide1PresetFromClipboard = async () => {
+    setSlide1CopyPasteError(null);
+    setSlide1CopyPasteStatus("idle");
+    try {
+      const text = await navigator.clipboard.readText();
+      setSlide1CopyPasteDraft(String(text || ""));
+      await applySlide1PresetFromText(String(text || ""));
+    } catch {
+      setSlide1CopyPasteStatus("error");
+      setSlide1CopyPasteError("Clipboard blocked. Paste the JSON into the box and click Apply.");
+    }
+  };
+
+  const applyBoldComplementarySlide1Colors = () => {
+    if (!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn) return;
+    if (templateTypeId !== "regular") return;
+    if (activeSlideIndex !== 0) return;
+
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const toHex2 = (n: number) => n.toString(16).padStart(2, "0");
+    const rgbToHex = (r: number, g: number, b: number) =>
+      `#${toHex2(clamp(Math.round(r), 0, 255))}${toHex2(clamp(Math.round(g), 0, 255))}${toHex2(clamp(Math.round(b), 0, 255))}`;
+    const hexToRgb = (h: string) => {
+      const s = String(h || "").replace("#", "").trim();
+      if (s.length === 3) {
+        const r = parseInt(s[0] + s[0], 16);
+        const g = parseInt(s[1] + s[1], 16);
+        const b = parseInt(s[2] + s[2], 16);
+        return { r, g, b };
+      }
+      if (s.length >= 6) {
+        const r = parseInt(s.slice(0, 2), 16);
+        const g = parseInt(s.slice(2, 4), 16);
+        const b = parseInt(s.slice(4, 6), 16);
+        return { r, g, b };
+      }
+      return { r: 0, g: 0, b: 0 };
+    };
+    const hslToRgb = (h: number, s: number, l: number) => {
+      // h: 0..360, s/l: 0..1
+      const hh = ((h % 360) + 360) % 360;
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs(((hh / 60) % 2) - 1));
+      const m = l - c / 2;
+      let r1 = 0, g1 = 0, b1 = 0;
+      if (hh < 60) [r1, g1, b1] = [c, x, 0];
+      else if (hh < 120) [r1, g1, b1] = [x, c, 0];
+      else if (hh < 180) [r1, g1, b1] = [0, c, x];
+      else if (hh < 240) [r1, g1, b1] = [0, x, c];
+      else if (hh < 300) [r1, g1, b1] = [x, 0, c];
+      else [r1, g1, b1] = [c, 0, x];
+      return {
+        r: (r1 + m) * 255,
+        g: (g1 + m) * 255,
+        b: (b1 + m) * 255,
+      };
+    };
+    const rgbToHsl = (r: number, g: number, b: number) => {
+      const rr = r / 255, gg = g / 255, bb = b / 255;
+      const max = Math.max(rr, gg, bb);
+      const min = Math.min(rr, gg, bb);
+      const d = max - min;
+      let h = 0;
+      if (d !== 0) {
+        if (max === rr) h = 60 * (((gg - bb) / d) % 6);
+        else if (max === gg) h = 60 * ((bb - rr) / d + 2);
+        else h = 60 * ((rr - gg) / d + 4);
+      }
+      if (h < 0) h += 360;
+      const l = (max + min) / 2;
+      const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+      return { h, s, l };
+    };
+    const relLum = (rgb: { r: number; g: number; b: number }) => {
+      const f = (u: number) => {
+        const c = u / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      };
+      const r = f(rgb.r), g = f(rgb.g), b = f(rgb.b);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }) => {
+      const la = relLum(a);
+      const lb = relLum(b);
+      const L1 = Math.max(la, lb);
+      const L2 = Math.min(la, lb);
+      return (L1 + 0.05) / (L2 + 0.05);
+    };
+
+    const MIN_CR = 4.5; // prioritize maximum readability
+
+    const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+    const maybeGradient = Math.random() < 0.3;
+
+    // Gradient path: pick gradient first, then choose a complementary bold card color that passes contrast for ALL stops.
+    const chooseGradientAndBg = () => {
+      const grads = SLIDE1_GRADIENTS.slice();
+      for (let tries = 0; tries < 40; tries++) {
+        const g = grads[Math.floor(Math.random() * grads.length)];
+        const stops = Array.isArray((g as any)?.stops) ? ((g as any).stops as any[]) : [];
+        const stopHexes = stops.map((s) => String(s?.color || "").trim()).filter(Boolean);
+        if (stopHexes.length < 2) continue;
+        const firstRgb = hexToRgb(stopHexes[0]);
+        const rep = rgbToHsl(firstRgb.r, firstRgb.g, firstRgb.b);
+        const bgHue = (rep.h + 180 + rand(-16, 16) + 360) % 360;
+
+        // Try a few lightness bands to find something that contrasts with all gradient stops.
+        const lCandidates = [0.28, 0.38, 0.48, 0.58, 0.68];
+        const s = clamp(rand(0.82, 0.96), 0, 1);
+        for (const l of lCandidates.sort(() => Math.random() - 0.5)) {
+          const bgRgb = hslToRgb(bgHue, s, clamp01(l));
+          const bgHex = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
+          const bg = hexToRgb(bgHex);
+          const ok = stopHexes.every((hx) => contrastRatio(bg, hexToRgb(hx)) >= MIN_CR);
+          if (ok) return { bgHex, gradientId: String((g as any).id || "").trim() };
+        }
+      }
+      return null;
+    };
+
+    // Solid path: pick bold bg and complementary bold text that passes contrast.
+    const chooseSolid = () => {
+      for (let tries = 0; tries < 60; tries++) {
+        const bgHue = rand(0, 360);
+        const bgS = clamp(rand(0.82, 0.98), 0, 1);
+        const bgL = clamp(rand(0.30, 0.66), 0, 1);
+        const bgRgb = hslToRgb(bgHue, bgS, bgL);
+        const bgHex = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
+        const bg = hexToRgb(bgHex);
+
+        const textHue = (bgHue + 180 + rand(-18, 18) + 360) % 360;
+        const textS = clamp(rand(0.88, 1.0), 0, 1);
+        // Try extreme lightness values for readability.
+        const lOptions = [0.92, 0.12];
+        for (const textL of lOptions) {
+          const trgb = hslToRgb(textHue, textS, textL);
+          const textHex = rgbToHex(trgb.r, trgb.g, trgb.b);
+          const cr = contrastRatio(bg, hexToRgb(textHex));
+          if (cr >= MIN_CR) return { bgHex, textHex };
+        }
+      }
+      return null;
+    };
+
+    let nextCardHex = "#ffffff";
+    let nextAccentMode: "solid" | "gradient" = "solid";
+    let nextAccentSolidHex: string | null = null;
+    let nextGradientId: string | null = null;
+
+    if (maybeGradient) {
+      const g = chooseGradientAndBg();
+      if (g?.bgHex && g.gradientId) {
+        nextCardHex = g.bgHex;
+        nextAccentMode = "gradient";
+        nextGradientId = g.gradientId;
+        nextAccentSolidHex = null;
+      } else {
+        const solid = chooseSolid();
+        if (solid) {
+          nextCardHex = solid.bgHex;
+          nextAccentMode = "solid";
+          nextAccentSolidHex = solid.textHex;
+        }
+      }
+    } else {
+      const solid = chooseSolid();
+      if (solid) {
+        nextCardHex = solid.bgHex;
+        nextAccentMode = "solid";
+        nextAccentSolidHex = solid.textHex;
+      } else {
+        // Extremely defensive fallback: pick bold bg, then pure white/black whichever contrasts.
+        const bgRgb = hslToRgb(rand(0, 360), 0.95, 0.45);
+        nextCardHex = rgbToHex(bgRgb.r, bgRgb.g, bgRgb.b);
+        const bg = hexToRgb(nextCardHex);
+        const white = { r: 255, g: 255, b: 255 };
+        const black = { r: 0, g: 0, b: 0 };
+        nextAccentSolidHex = contrastRatio(bg, white) >= contrastRatio(bg, black) ? "#ffffff" : "#000000";
+      }
+    }
+
+    // Apply atomically so one update can't overwrite the other.
+    actions.onSetSlide1CardAndAccent?.({
+      cardHex: String(nextCardHex || "#ffffff").trim() || "#ffffff",
+      accentMode: nextAccentMode,
+      accentSolidHex: nextAccentMode === "solid" ? (String(nextAccentSolidHex || "#ffffff").trim() || "#ffffff") : null,
+      gradientId: nextAccentMode === "gradient" ? (String(nextGradientId || "").trim() || null) : null,
+    } as any);
   };
 
   return (
@@ -307,6 +637,31 @@ export function EditorBottomPanel() {
                           <button
                             type="button"
                             className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            onClick={() => {
+                              setSlide1BgOpen(false);
+                              setSlide1TextOpen(false);
+                              setSlide1GradientPickerOpen(false);
+                              setSlide1CopyPasteOpen((v) => !v);
+                            }}
+                            disabled={!currentProjectId || copyGenerating || switchingSlides || enhancedLockOn}
+                            title="Copy/Paste Slide 1 setup (style + background + template)"
+                            aria-label={slide1CopyPasteOpen ? "Close Copy/Paste" : "Open Copy/Paste"}
+                          >
+                            Copy/Paste
+                          </button>
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            onClick={() => applyBoldComplementarySlide1Colors()}
+                            disabled={!currentProjectId || copyGenerating || switchingSlides || enhancedLockOn}
+                            title="Auto-pick bold complementary Card + Text colors (Slide 1)"
+                            aria-label="Auto-pick Slide 1 colors"
+                          >
+                            Colors
+                          </button>
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                             onClick={() => setSlide1BgOpen((v) => !v)}
                             disabled={!currentProjectId || copyGenerating || switchingSlides}
                             title={!currentProjectId ? "Create or load a project first" : "Slide 1 background (color + texture)"}
@@ -333,8 +688,73 @@ export function EditorBottomPanel() {
                           </button>
                         </div>
 
+                        {slide1CopyPasteOpen ? (
+                          <div className="absolute right-0 top-[calc(100%+8px)] z-[75] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold text-slate-900">Slide 1 setup</div>
+                                <div className="mt-1 text-[10px] text-slate-500">
+                                  Includes Background + Card + Slide 1 text settings, plus Slide 1 template snapshot.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50"
+                                onClick={() => setSlide1CopyPasteOpen(false)}
+                                aria-label="Close"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
+                            {slide1CopyPasteError ? (
+                              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-800">
+                                {slide1CopyPasteError}
+                              </div>
+                            ) : null}
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                className="h-9 px-3 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 disabled:opacity-50"
+                                disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                onClick={() => void copySlide1Preset()}
+                              >
+                                {slide1CopyPasteStatus === "copied" ? "Copied" : "Copy setup"}
+                              </button>
+                              <button
+                                type="button"
+                                className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                onClick={() => void pasteSlide1PresetFromClipboard()}
+                              >
+                                Paste + apply
+                              </button>
+                              <button
+                                type="button"
+                                className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                onClick={() => void applySlide1PresetFromText(slide1CopyPasteDraft)}
+                              >
+                                Apply from box
+                              </button>
+                              <div className="ml-auto text-[10px] font-semibold text-slate-500">
+                                Template: {String((ui as any)?.slide1TemplateIdSnapshot || "—")}
+                              </div>
+                            </div>
+
+                            <textarea
+                              className="mt-3 w-full h-40 rounded-xl border border-slate-200 bg-white p-2 text-[11px] font-mono text-slate-800"
+                              value={slide1CopyPasteDraft}
+                              onChange={(e) => setSlide1CopyPasteDraft(String(e.target.value || ""))}
+                              placeholder='Paste preset JSON here…'
+                              spellCheck={false}
+                            />
+                          </div>
+                        ) : null}
+
                         {slide1BgOpen ? (
-                          <div className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[360px] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+                          <div className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
                             <div className="text-xs font-semibold text-slate-900">Slide 1 background</div>
                             {(() => {
                               const bg = (slides as any)?.[0]?.inputData?.slide1Background || null;
@@ -348,6 +768,11 @@ export function EditorBottomPanel() {
                               const cardBorderThicknessPx = Math.max(0, Math.round(Number((card as any)?.borderThicknessPx ?? 2) || 0));
                               const cardBorderRadiusPx = Math.max(0, Math.round(Number((card as any)?.borderRadiusPx ?? 49) || 0));
                               const cardEdgeGapPx = Math.max(0, Math.min(80, Math.round(Number((card as any)?.edgeGapPx ?? 20) || 0)));
+                              const cardNoiseEnabled = !!(card && typeof card === "object" ? (card as any).noiseEnabled : false);
+                              const cardNoiseMode = String((card as any)?.noiseMode || "neutral") === "tinted" ? "tinted" : "neutral";
+                              const cardNoiseOpacityPct = Math.max(0, Math.min(40, Math.round(Number((card as any)?.noiseOpacityPct ?? 20) || 0)));
+                              const cardNoiseIntensityPct = Math.max(0, Math.min(100, Math.round(Number((card as any)?.noiseIntensityPct ?? 12) || 0)));
+                              const cardNoiseTileSizePx = Math.max(32, Math.min(1024, Math.round(Number((card as any)?.noiseTileSizePx ?? 256) || 0)));
 
                               const borderColor = (() => {
                                 try {
@@ -415,6 +840,11 @@ export function EditorBottomPanel() {
                                                   borderThicknessPx: 2,
                                                   borderRadiusPx: 49,
                                                   edgeGapPx: 20,
+                                                  noiseEnabled: false,
+                                                  noiseMode: "neutral",
+                                                  noiseOpacityPct: 20,
+                                                  noiseIntensityPct: 12,
+                                                  noiseTileSizePx: 256,
                                                 };
                                           base.enabled = !cardEnabled;
                                           // Ensure defaults are present.
@@ -423,6 +853,12 @@ export function EditorBottomPanel() {
                                           base.borderEnabled = typeof base.borderEnabled === "boolean" ? base.borderEnabled : true;
                                           base.borderThicknessPx = Math.max(0, Math.round(Number(base.borderThicknessPx ?? 2) || 0));
                                           base.borderRadiusPx = Math.max(0, Math.round(Number(base.borderRadiusPx ?? 49) || 0));
+                                          base.edgeGapPx = Math.max(0, Math.min(80, Math.round(Number(base.edgeGapPx ?? 20) || 0)));
+                                          base.noiseEnabled = !!base.noiseEnabled;
+                                          base.noiseMode = String(base.noiseMode || "neutral") === "tinted" ? "tinted" : "neutral";
+                                          base.noiseOpacityPct = Math.max(0, Math.min(40, Math.round(Number(base.noiseOpacityPct ?? 20) || 0)));
+                                          base.noiseIntensityPct = Math.max(0, Math.min(100, Math.round(Number(base.noiseIntensityPct ?? 12) || 0)));
+                                          base.noiseTileSizePx = Math.max(32, Math.min(1024, Math.round(Number(base.noiseTileSizePx ?? 256) || 0)));
                                           actions.onSetSlide1Card?.(base as any);
                                         }}
                                       >
@@ -457,6 +893,11 @@ export function EditorBottomPanel() {
                                                       borderThicknessPx: 2,
                                                       borderRadiusPx: 49,
                                                   edgeGapPx: 20,
+                                                  noiseEnabled: false,
+                                                  noiseMode: "neutral",
+                                                  noiseOpacityPct: 20,
+                                                  noiseIntensityPct: 12,
+                                                  noiseTileSizePx: 256,
                                                     };
                                               base.enabled = true;
                                               base.backgroundHex = nextHex;
@@ -506,6 +947,11 @@ export function EditorBottomPanel() {
                                                           borderThicknessPx: 2,
                                                           borderRadiusPx: 49,
                                                   edgeGapPx: 20,
+                                                          noiseEnabled: false,
+                                                          noiseMode: "neutral",
+                                                          noiseOpacityPct: 20,
+                                                          noiseIntensityPct: 12,
+                                                          noiseTileSizePx: 256,
                                                         };
                                                   base.enabled = true;
                                                   base.patternId = p.id;
@@ -545,6 +991,11 @@ export function EditorBottomPanel() {
                                                       borderThicknessPx: 2,
                                                       borderRadiusPx: 49,
                                                   edgeGapPx: 20,
+                                                      noiseEnabled: false,
+                                                      noiseMode: "neutral",
+                                                      noiseOpacityPct: 20,
+                                                      noiseIntensityPct: 12,
+                                                      noiseTileSizePx: 256,
                                                     };
                                               base.enabled = true;
                                               base.borderEnabled = !cardBorderEnabled;
@@ -586,6 +1037,11 @@ export function EditorBottomPanel() {
                                                           borderThicknessPx: 2,
                                                           borderRadiusPx: 49,
                                                           edgeGapPx: 20,
+                                                          noiseEnabled: false,
+                                                          noiseMode: "neutral",
+                                                          noiseOpacityPct: 20,
+                                                          noiseIntensityPct: 12,
+                                                          noiseTileSizePx: 256,
                                                         };
                                                   base.enabled = true;
                                                   base.borderThicknessPx = n;
@@ -624,6 +1080,11 @@ export function EditorBottomPanel() {
                                                                 borderThicknessPx: 2,
                                                                 borderRadiusPx: 49,
                                                                 edgeGapPx: 20,
+                                                                noiseEnabled: false,
+                                                                noiseMode: "neutral",
+                                                                noiseOpacityPct: 20,
+                                                                noiseIntensityPct: 12,
+                                                                noiseTileSizePx: 256,
                                                               };
                                                         base.enabled = true;
                                                         base.borderThicknessPx = next;
@@ -665,6 +1126,11 @@ export function EditorBottomPanel() {
                                                           borderThicknessPx: 2,
                                                           borderRadiusPx: 49,
                                                           edgeGapPx: 20,
+                                                          noiseEnabled: false,
+                                                          noiseMode: "neutral",
+                                                          noiseOpacityPct: 20,
+                                                          noiseIntensityPct: 12,
+                                                          noiseTileSizePx: 256,
                                                         };
                                                   base.enabled = true;
                                                   base.borderRadiusPx = n;
@@ -703,6 +1169,11 @@ export function EditorBottomPanel() {
                                                                 borderThicknessPx: 2,
                                                                 borderRadiusPx: 49,
                                                                 edgeGapPx: 20,
+                                                                noiseEnabled: false,
+                                                                noiseMode: "neutral",
+                                                                noiseOpacityPct: 20,
+                                                                noiseIntensityPct: 12,
+                                                                noiseTileSizePx: 256,
                                                               };
                                                         base.enabled = true;
                                                         base.borderRadiusPx = next;
@@ -746,6 +1217,11 @@ export function EditorBottomPanel() {
                                                         borderThicknessPx: 2,
                                                         borderRadiusPx: 49,
                                                         edgeGapPx: 20,
+                                                        noiseEnabled: false,
+                                                        noiseMode: "neutral",
+                                                        noiseOpacityPct: 20,
+                                                        noiseIntensityPct: 12,
+                                                        noiseTileSizePx: 256,
                                                       };
                                                 base.enabled = true;
                                                 base.edgeGapPx = n;
@@ -788,6 +1264,11 @@ export function EditorBottomPanel() {
                                                               borderThicknessPx: 2,
                                                               borderRadiusPx: 49,
                                                               edgeGapPx: 20,
+                                                              noiseEnabled: false,
+                                                              noiseMode: "neutral",
+                                                              noiseOpacityPct: 20,
+                                                              noiseIntensityPct: 12,
+                                                              noiseTileSizePx: 256,
                                                             };
                                                       base.enabled = true;
                                                       base.edgeGapPx = next;
@@ -808,6 +1289,288 @@ export function EditorBottomPanel() {
 
                                         <div className="mt-2 text-[10px] text-slate-500">
                                           Border color: <span className="font-semibold">{borderColor}</span> (from Slide 1 accent)
+                                        </div>
+
+                                        {/* Noise (Card only) */}
+                                        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+                                          <div className="flex items-center justify-between gap-3">
+                                            <div className="text-[11px] font-semibold text-slate-900 uppercase">Noise</div>
+                                            <button
+                                              type="button"
+                                              className={[
+                                                "h-7 w-12 rounded-full transition-colors",
+                                                cardNoiseEnabled ? "bg-black" : "bg-slate-300",
+                                                (!cardEnabled || !currentProjectId || switchingSlides || copyGenerating) ? "opacity-60" : "",
+                                              ].join(" ")}
+                                              aria-label={cardNoiseEnabled ? "Disable noise" : "Enable noise"}
+                                              title={cardNoiseEnabled ? "Noise enabled" : "Noise disabled"}
+                                              onClick={() => {
+                                                if (!cardEnabled || !currentProjectId || switchingSlides || copyGenerating) return;
+                                                const base =
+                                                  card && typeof card === "object"
+                                                    ? { ...(card as any) }
+                                                    : {
+                                                        enabled: true,
+                                                        backgroundHex: cardHex || "#ffffff",
+                                                        patternId: cardPatternId || "none",
+                                                        borderEnabled: true,
+                                                        borderThicknessPx: 2,
+                                                        borderRadiusPx: 49,
+                                                        edgeGapPx: 20,
+                                                        noiseEnabled: false,
+                                                        noiseMode: "neutral",
+                                                        noiseOpacityPct: 20,
+                                                        noiseIntensityPct: 12,
+                                                        noiseTileSizePx: 256,
+                                                      };
+                                                base.enabled = true;
+                                                base.noiseEnabled = !cardNoiseEnabled;
+                                                base.noiseMode = String(base.noiseMode || "neutral") === "tinted" ? "tinted" : "neutral";
+                                                base.noiseOpacityPct = Math.max(0, Math.min(40, Math.round(Number(base.noiseOpacityPct ?? 20) || 0)));
+                                                base.noiseIntensityPct = Math.max(0, Math.min(100, Math.round(Number(base.noiseIntensityPct ?? 12) || 0)));
+                                                base.noiseTileSizePx = Math.max(32, Math.min(1024, Math.round(Number(base.noiseTileSizePx ?? 256) || 0)));
+                                                actions.onSetSlide1Card?.(base as any);
+                                              }}
+                                            >
+                                              <span
+                                                className={[
+                                                  "block h-6 w-6 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                                  cardNoiseEnabled ? "translate-x-5" : "translate-x-1",
+                                                ].join(" ")}
+                                              />
+                                            </button>
+                                          </div>
+
+                                          <div className="mt-3 space-y-3">
+                                            <div>
+                                              <div className="text-[11px] font-semibold text-slate-600 uppercase">Mode</div>
+                                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                                {([
+                                                  { id: "neutral" as const, name: "Neutral" },
+                                                  { id: "tinted" as const, name: "Tinted" },
+                                                ] as const).map((m) => {
+                                                  const selected = cardNoiseMode === m.id;
+                                                  const ariaDisabled = !cardEnabled || !cardNoiseEnabled || !currentProjectId || switchingSlides || copyGenerating;
+                                                  return (
+                                                    <button
+                                                      key={m.id}
+                                                      type="button"
+                                                      className={[
+                                                        "h-9 rounded-xl border px-3 text-left text-xs font-semibold transition-colors",
+                                                        selected ? "border-black ring-2 ring-black/10 bg-white" : "border-slate-200 hover:bg-slate-50",
+                                                        ariaDisabled ? "opacity-60" : "",
+                                                      ].join(" ")}
+                                                      style={{ color: "#000000" }}
+                                                      aria-disabled={ariaDisabled}
+                                                      onClick={() => {
+                                                        if (ariaDisabled) return;
+                                                        const base =
+                                                          card && typeof card === "object"
+                                                            ? { ...(card as any) }
+                                                            : {
+                                                                enabled: true,
+                                                                backgroundHex: cardHex || "#ffffff",
+                                                                patternId: cardPatternId || "none",
+                                                                borderEnabled: true,
+                                                                borderThicknessPx: 2,
+                                                                borderRadiusPx: 49,
+                                                                edgeGapPx: 20,
+                                                                noiseEnabled: true,
+                                                                noiseMode: "neutral",
+                                                                noiseOpacityPct: 20,
+                                                                noiseIntensityPct: 12,
+                                                                noiseTileSizePx: 256,
+                                                              };
+                                                        base.enabled = true;
+                                                        base.noiseEnabled = true;
+                                                        base.noiseMode = m.id;
+                                                        actions.onSetSlide1Card?.(base as any);
+                                                      }}
+                                                      title={m.name}
+                                                    >
+                                                      {m.name}
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+
+                                            <div>
+                                              <div className="flex items-center justify-between gap-3">
+                                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Opacity</div>
+                                                <div className="text-[10px] font-semibold text-slate-700 tabular-nums">{cardNoiseOpacityPct}%</div>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min={0}
+                                                max={40}
+                                                step={1}
+                                                className="mt-2 w-full"
+                                                value={cardNoiseOpacityPct}
+                                                disabled={!cardEnabled || !cardNoiseEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                                onChange={(e) => {
+                                                  const n = Math.max(0, Math.min(40, Math.round(Number(e.target.value) || 0)));
+                                                  const base =
+                                                    card && typeof card === "object"
+                                                      ? { ...(card as any) }
+                                                      : {
+                                                          enabled: true,
+                                                          backgroundHex: cardHex || "#ffffff",
+                                                          patternId: cardPatternId || "none",
+                                                          borderEnabled: true,
+                                                          borderThicknessPx: 2,
+                                                          borderRadiusPx: 49,
+                                                          edgeGapPx: 20,
+                                                          noiseEnabled: true,
+                                                          noiseMode: "neutral",
+                                                          noiseOpacityPct: 20,
+                                                          noiseIntensityPct: 12,
+                                                          noiseTileSizePx: 256,
+                                                        };
+                                                  base.enabled = true;
+                                                  base.noiseEnabled = true;
+                                                  base.noiseOpacityPct = n;
+                                                  actions.onSetSlide1Card?.(base as any);
+                                                }}
+                                                aria-label="Noise opacity"
+                                              />
+                                              <div className="mt-1 text-[10px] text-slate-500">0–40%</div>
+                                            </div>
+
+                                            <div>
+                                              <div className="flex items-center justify-between gap-3">
+                                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Intensity</div>
+                                                <div className="text-[10px] font-semibold text-slate-700 tabular-nums">{cardNoiseIntensityPct}</div>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min={0}
+                                                max={100}
+                                                step={1}
+                                                className="mt-2 w-full"
+                                                value={cardNoiseIntensityPct}
+                                                disabled={!cardEnabled || !cardNoiseEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                                onChange={(e) => {
+                                                  const n = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                                  const base =
+                                                    card && typeof card === "object"
+                                                      ? { ...(card as any) }
+                                                      : {
+                                                          enabled: true,
+                                                          backgroundHex: cardHex || "#ffffff",
+                                                          patternId: cardPatternId || "none",
+                                                          borderEnabled: true,
+                                                          borderThicknessPx: 2,
+                                                          borderRadiusPx: 49,
+                                                          edgeGapPx: 20,
+                                                          noiseEnabled: true,
+                                                          noiseMode: "neutral",
+                                                          noiseOpacityPct: 20,
+                                                          noiseIntensityPct: 12,
+                                                          noiseTileSizePx: 256,
+                                                        };
+                                                  base.enabled = true;
+                                                  base.noiseEnabled = true;
+                                                  base.noiseIntensityPct = n;
+                                                  actions.onSetSlide1Card?.(base as any);
+                                                }}
+                                                aria-label="Noise intensity"
+                                              />
+                                              <div className="mt-1 text-[10px] text-slate-500">0–100</div>
+                                            </div>
+
+                                            <div>
+                                              <div className="text-[11px] font-semibold text-slate-600 uppercase">Tile size</div>
+                                              <div className="mt-1 flex items-stretch gap-2">
+                                                <input
+                                                  type="text"
+                                                  inputMode="numeric"
+                                                  pattern="[0-9]*"
+                                                  className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                                  value={String(cardNoiseTileSizePx)}
+                                                  disabled={!cardEnabled || !cardNoiseEnabled || !currentProjectId || switchingSlides || copyGenerating}
+                                                  onChange={(e) => {
+                                                    const raw = String(e.target.value || "").replace(/[^\d]/g, "");
+                                                    const n = Math.max(32, Math.min(1024, Number(raw) || 0));
+                                                    const base =
+                                                      card && typeof card === "object"
+                                                        ? { ...(card as any) }
+                                                        : {
+                                                            enabled: true,
+                                                            backgroundHex: cardHex || "#ffffff",
+                                                            patternId: cardPatternId || "none",
+                                                            borderEnabled: true,
+                                                            borderThicknessPx: 2,
+                                                            borderRadiusPx: 49,
+                                                            edgeGapPx: 20,
+                                                            noiseEnabled: true,
+                                                            noiseMode: "neutral",
+                                                            noiseOpacityPct: 20,
+                                                            noiseIntensityPct: 12,
+                                                            noiseTileSizePx: 256,
+                                                          };
+                                                    base.enabled = true;
+                                                    base.noiseEnabled = true;
+                                                    base.noiseTileSizePx = n;
+                                                    actions.onSetSlide1Card?.(base as any);
+                                                  }}
+                                                  onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.(); }}
+                                                  title="Noise tile size in px. Min 32, max 1024."
+                                                />
+                                                <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                                  {([
+                                                    { dir: "up" as const, label: "Increase tile size", delta: +1, glyph: "▲" },
+                                                    { dir: "down" as const, label: "Decrease tile size", delta: -1, glyph: "▼" },
+                                                  ] as const).map((btn) => {
+                                                    const disabled = !cardEnabled || !cardNoiseEnabled || !currentProjectId || switchingSlides || copyGenerating;
+                                                    return (
+                                                      <button
+                                                        key={btn.dir}
+                                                        type="button"
+                                                        className={[
+                                                          "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                                          btn.dir === "up" ? "border-b border-slate-200" : "",
+                                                          disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                                        ].join(" ")}
+                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        onClick={() => {
+                                                          if (disabled) return;
+                                                          const next = Math.max(32, Math.min(1024, cardNoiseTileSizePx + btn.delta));
+                                                          const base =
+                                                            card && typeof card === "object"
+                                                              ? { ...(card as any) }
+                                                              : {
+                                                                  enabled: true,
+                                                                  backgroundHex: cardHex || "#ffffff",
+                                                                  patternId: cardPatternId || "none",
+                                                                  borderEnabled: true,
+                                                                  borderThicknessPx: 2,
+                                                                  borderRadiusPx: 49,
+                                                                  edgeGapPx: 20,
+                                                                  noiseEnabled: true,
+                                                                  noiseMode: "neutral",
+                                                                  noiseOpacityPct: 20,
+                                                                  noiseIntensityPct: 12,
+                                                                  noiseTileSizePx: 256,
+                                                                };
+                                                          base.enabled = true;
+                                                          base.noiseEnabled = true;
+                                                          base.noiseTileSizePx = next;
+                                                          actions.onSetSlide1Card?.(base as any);
+                                                        }}
+                                                        aria-label={btn.label}
+                                                        aria-disabled={disabled}
+                                                        title={btn.label}
+                                                      >
+                                                        {btn.glyph}
+                                                      </button>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                              <div className="mt-1 text-[10px] text-slate-500">Bigger = smoother · smaller = finer</div>
+                                            </div>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -1113,6 +1876,69 @@ export function EditorBottomPanel() {
                               </div>
                             </div>
 
+                            {/* Line gap (Slide 1 BODY only) */}
+                            {(() => {
+                              const raw = (slides as any)?.[0]?.inputData?.slide1BodyLineGapPx;
+                              const gapPx = Math.max(-80, Math.min(80, Math.round(Number(raw ?? 0) || 0)));
+                              const disabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                              return (
+                                <div className="mt-3">
+                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Line gap</div>
+                                  <div className="mt-1 flex items-stretch gap-2">
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                      value={String(gapPx)}
+                                      disabled={disabled}
+                                      onChange={(e) => {
+                                        const cleaned = String(e.target.value || "").trim().replace(/[^\d-]/g, "");
+                                        // Keep only a single leading '-'
+                                        const norm = cleaned.startsWith("-")
+                                          ? "-" + cleaned.slice(1).replace(/-/g, "")
+                                          : cleaned.replace(/-/g, "");
+                                        const n = Math.max(-80, Math.min(80, Math.round(Number(norm) || 0)));
+                                        actions.onSetSlide1BodyLineGapPx?.(n);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.();
+                                      }}
+                                      title="Extra px between lines (Slide 1 BODY only). Min 0, max 80."
+                                    />
+                                    <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                      {([
+                                        { dir: "up" as const, label: "Increase line gap", delta: +1, glyph: "▲" },
+                                        { dir: "down" as const, label: "Decrease line gap", delta: -1, glyph: "▼" },
+                                      ] as const).map((btn) => (
+                                        <button
+                                          key={btn.dir}
+                                          type="button"
+                                          className={[
+                                            "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                            btn.dir === "up" ? "border-b border-slate-200" : "",
+                                            disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                          ].join(" ")}
+                                          onMouseDown={(e) => e.preventDefault()}
+                                          onClick={() => {
+                                            if (disabled) return;
+                                            const next = Math.max(-80, Math.min(80, gapPx + btn.delta));
+                                            actions.onSetSlide1BodyLineGapPx?.(next);
+                                          }}
+                                          aria-label={btn.label}
+                                          aria-disabled={disabled}
+                                          title={btn.label}
+                                        >
+                                          {btn.glyph}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="mt-1 text-[10px] text-slate-500">-80 = tight · 0 = default · 80 = loose</div>
+                                </div>
+                              );
+                            })()}
+
                             <div className="mt-3">
                               <div className="text-[11px] font-semibold text-slate-600 uppercase">Body font (Slide 1)</div>
                               <select
@@ -1142,6 +1968,231 @@ export function EditorBottomPanel() {
                                 ))}
                               </select>
                             </div>
+
+                            {/* Text Noise (Slide 1 BODY only) */}
+                            {(() => {
+                              const tn = (slides as any)?.[0]?.inputData?.slide1TextNoise || null;
+                              const enabled = !!(tn && typeof tn === "object" ? (tn as any).enabled : false);
+                              const mode = String((tn as any)?.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+                              const opacityPct = Math.max(0, Math.min(40, Math.round(Number((tn as any)?.opacityPct ?? 20) || 0)));
+                              const intensityPct = Math.max(0, Math.min(100, Math.round(Number((tn as any)?.intensityPct ?? 12) || 0)));
+                              const tileSizePx = Math.max(32, Math.min(1024, Math.round(Number((tn as any)?.tileSizePx ?? 256) || 0)));
+                              const ariaDisabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                              const ariaDisabledInner = ariaDisabled || !enabled;
+
+                              return (
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-[11px] font-semibold text-slate-900 uppercase">Text noise</div>
+                                    <button
+                                      type="button"
+                                      className={[
+                                        "h-7 w-12 rounded-full transition-colors",
+                                        enabled ? "bg-black" : "bg-slate-300",
+                                        ariaDisabled ? "opacity-60" : "",
+                                      ].join(" ")}
+                                      aria-label={enabled ? "Disable text noise" : "Enable text noise"}
+                                      title={enabled ? "Text noise enabled" : "Text noise disabled"}
+                                      onClick={() => {
+                                        if (ariaDisabled) return;
+                                        const base =
+                                          tn && typeof tn === "object"
+                                            ? { ...(tn as any) }
+                                            : {
+                                                enabled: false,
+                                                mode: "neutral",
+                                                opacityPct: 20,
+                                                intensityPct: 12,
+                                                tileSizePx: 256,
+                                              };
+                                        base.enabled = !enabled;
+                                        base.mode = String(base.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+                                        base.opacityPct = Math.max(0, Math.min(40, Math.round(Number(base.opacityPct ?? 20) || 0)));
+                                        base.intensityPct = Math.max(0, Math.min(100, Math.round(Number(base.intensityPct ?? 12) || 0)));
+                                        base.tileSizePx = Math.max(32, Math.min(1024, Math.round(Number(base.tileSizePx ?? 256) || 0)));
+                                        actions.onSetSlide1TextNoise?.(base as any);
+                                      }}
+                                    >
+                                      <span
+                                        className={[
+                                          "block h-6 w-6 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                          enabled ? "translate-x-5" : "translate-x-1",
+                                        ].join(" ")}
+                                      />
+                                    </button>
+                                  </div>
+
+                                  <div className="mt-3 space-y-3">
+                                    <div>
+                                      <div className="text-[11px] font-semibold text-slate-600 uppercase">Mode</div>
+                                      <div className="mt-2 grid grid-cols-2 gap-2">
+                                        {([
+                                          { id: "neutral" as const, name: "Neutral" },
+                                          { id: "tinted" as const, name: "Tinted" },
+                                        ] as const).map((m) => {
+                                          const selected = mode === m.id;
+                                          const d = ariaDisabledInner;
+                                          return (
+                                            <button
+                                              key={m.id}
+                                              type="button"
+                                              className={[
+                                                "h-9 rounded-xl border px-3 text-left text-xs font-semibold transition-colors",
+                                                selected ? "border-black ring-2 ring-black/10 bg-white" : "border-slate-200 hover:bg-slate-50",
+                                                d ? "opacity-60" : "",
+                                              ].join(" ")}
+                                              style={{ color: "#000000" }}
+                                              aria-disabled={d}
+                                              onClick={() => {
+                                                if (d) return;
+                                                const base =
+                                                  tn && typeof tn === "object"
+                                                    ? { ...(tn as any) }
+                                                    : {
+                                                        enabled: true,
+                                                        mode: "neutral",
+                                                        opacityPct: 20,
+                                                        intensityPct: 12,
+                                                        tileSizePx: 256,
+                                                      };
+                                                base.enabled = true;
+                                                base.mode = m.id;
+                                                actions.onSetSlide1TextNoise?.(base as any);
+                                              }}
+                                              title={m.name}
+                                            >
+                                              {m.name}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="text-[11px] font-semibold text-slate-600 uppercase">Opacity</div>
+                                        <div className="text-[10px] font-semibold text-slate-700 tabular-nums">{opacityPct}%</div>
+                                      </div>
+                                      <input
+                                        type="range"
+                                        min={0}
+                                        max={40}
+                                        step={1}
+                                        className="mt-2 w-full"
+                                        value={opacityPct}
+                                        disabled={ariaDisabledInner}
+                                        onChange={(e) => {
+                                          const n = Math.max(0, Math.min(40, Math.round(Number(e.target.value) || 0)));
+                                          const base =
+                                            tn && typeof tn === "object"
+                                              ? { ...(tn as any) }
+                                              : { enabled: true, mode: "neutral", opacityPct: 20, intensityPct: 12, tileSizePx: 256 };
+                                          base.enabled = true;
+                                          base.opacityPct = n;
+                                          actions.onSetSlide1TextNoise?.(base as any);
+                                        }}
+                                        aria-label="Text noise opacity"
+                                      />
+                                      <div className="mt-1 text-[10px] text-slate-500">0–40%</div>
+                                    </div>
+
+                                    <div>
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="text-[11px] font-semibold text-slate-600 uppercase">Intensity</div>
+                                        <div className="text-[10px] font-semibold text-slate-700 tabular-nums">{intensityPct}</div>
+                                      </div>
+                                      <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        className="mt-2 w-full"
+                                        value={intensityPct}
+                                        disabled={ariaDisabledInner}
+                                        onChange={(e) => {
+                                          const n = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                          const base =
+                                            tn && typeof tn === "object"
+                                              ? { ...(tn as any) }
+                                              : { enabled: true, mode: "neutral", opacityPct: 20, intensityPct: 12, tileSizePx: 256 };
+                                          base.enabled = true;
+                                          base.intensityPct = n;
+                                          actions.onSetSlide1TextNoise?.(base as any);
+                                        }}
+                                        aria-label="Text noise intensity"
+                                      />
+                                      <div className="mt-1 text-[10px] text-slate-500">0–100</div>
+                                    </div>
+
+                                    <div>
+                                      <div className="text-[11px] font-semibold text-slate-600 uppercase">Tile size</div>
+                                      <div className="mt-1 flex items-stretch gap-2">
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          pattern="[0-9]*"
+                                          className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                          value={String(tileSizePx)}
+                                          disabled={ariaDisabledInner}
+                                          onChange={(e) => {
+                                            const raw = String(e.target.value || "").replace(/[^\d]/g, "");
+                                            const n = Math.max(32, Math.min(1024, Number(raw) || 0));
+                                            const base =
+                                              tn && typeof tn === "object"
+                                                ? { ...(tn as any) }
+                                                : { enabled: true, mode: "neutral", opacityPct: 20, intensityPct: 12, tileSizePx: 256 };
+                                            base.enabled = true;
+                                            base.tileSizePx = n;
+                                            actions.onSetSlide1TextNoise?.(base as any);
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.();
+                                          }}
+                                          title="Noise tile size in px. Min 32, max 1024."
+                                        />
+                                        <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                          {([
+                                            { dir: "up" as const, label: "Increase tile size", delta: +1, glyph: "▲" },
+                                            { dir: "down" as const, label: "Decrease tile size", delta: -1, glyph: "▼" },
+                                          ] as const).map((btn) => {
+                                            const d = ariaDisabledInner;
+                                            return (
+                                              <button
+                                                key={btn.dir}
+                                                type="button"
+                                                className={[
+                                                  "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                                  btn.dir === "up" ? "border-b border-slate-200" : "",
+                                                  d ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                                ].join(" ")}
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => {
+                                                  if (d) return;
+                                                  const next = Math.max(32, Math.min(1024, tileSizePx + btn.delta));
+                                                  const base =
+                                                    tn && typeof tn === "object"
+                                                      ? { ...(tn as any) }
+                                                      : { enabled: true, mode: "neutral", opacityPct: 20, intensityPct: 12, tileSizePx: 256 };
+                                                  base.enabled = true;
+                                                  base.tileSizePx = next;
+                                                  actions.onSetSlide1TextNoise?.(base as any);
+                                                }}
+                                                aria-label={btn.label}
+                                                aria-disabled={d}
+                                                title={btn.label}
+                                              >
+                                                {btn.glyph}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                      <div className="mt-1 text-[10px] text-slate-500">Bigger = smoother · smaller = finer</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : null}
                       </div>

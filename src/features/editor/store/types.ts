@@ -35,6 +35,30 @@ export type Slide1Card = {
   borderEnabled: boolean;
   borderThicknessPx: number;
   borderRadiusPx: number;
+  // Gap between card edge and canvas edge (screen px)
+  edgeGapPx?: number;
+
+  // Noise / grain overlay (renders on top of card fill/texture)
+  noiseEnabled?: boolean;
+  noiseMode?: "neutral" | "tinted";
+  // 0–40 (percent)
+  noiseOpacityPct?: number;
+  // 0–100 (strength)
+  noiseIntensityPct?: number;
+  // tile size in px (fineness)
+  noiseTileSizePx?: number;
+} | null;
+
+// Slide 1 Body Text noise overlay (Regular only): makes letters subtly grainy.
+export type Slide1TextNoise = {
+  enabled: boolean;
+  mode: "neutral" | "tinted";
+  // 0–40 (percent)
+  opacityPct: number;
+  // 0–100 (strength)
+  intensityPct: number;
+  // tile size in px (fineness)
+  tileSizePx: number;
 } | null;
 
 export type SavedProjectListItem = {
@@ -59,6 +83,18 @@ export type EditorActions = {
   onSetSlide1BodyFontKey: (next: string | null) => void;
   onSetSlide1Background: (next: Slide1Background) => void;
   onSetSlide1Card: (next: Slide1Card) => void;
+  onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
+  onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
+  onSetSlide1BodyLineGapPx: (next: number) => void;
+  onSetCurrentProjectSlide1TemplateIdSnapshot: (nextTemplateId: string | null) => Promise<boolean> | boolean;
+  onApplySlide1PresetInput: (next: {
+    slide1Background?: Slide1Background;
+    slide1Card?: Slide1Card;
+    slide1Style?: Slide1Style | null;
+    slide1BodyFontKey?: string | null;
+    slide1TextNoise?: Slide1TextNoise;
+    slide1BodyLineGapPx?: number;
+  }) => void;
   onSignOut: () => void;
 
   // Project card

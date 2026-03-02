@@ -571,6 +571,8 @@ function ReviewProjectCard(props: {
   const slide1Style = (slide1InputSnap as any)?.slide1Style ?? null;
   const slide1Background = (slide1InputSnap as any)?.slide1Background ?? null;
   const slide1Card = (slide1InputSnap as any)?.slide1Card ?? null;
+  const slide1TextNoise = (slide1InputSnap as any)?.slide1TextNoise ?? null;
+  const slide1BodyLineGapPx = (slide1InputSnap as any)?.slide1BodyLineGapPx ?? 0;
   const isEnhanced = project.template_type_id === "enhanced";
   const lockTextLayout = isEnhanced ? !!(inputSnap as any)?.editor?.layoutLocked : false;
   // Important: CarouselPreviewVision has a "preserve user-image position" fallback that can drift across re-renders
@@ -867,6 +869,8 @@ function ReviewProjectCard(props: {
               slide1Style={slide1Style}
               slide1Background={slide1Background}
               slide1Card={slide1Card}
+              slide1TextNoise={slide1TextNoise}
+              slide1BodyLineGapPx={slide1BodyLineGapPx}
               deferInit={false}
               backgroundEffectEnabled={project.background_effect_enabled}
               backgroundEffectType={project.background_effect_type}
@@ -945,6 +949,8 @@ function ReviewProjectCard(props: {
                   slide1Style={slide1Style}
                   slide1Background={slide1Background}
                   slide1Card={slide1Card}
+                  slide1TextNoise={slide1TextNoise}
+                  slide1BodyLineGapPx={slide1BodyLineGapPx}
                   deferInit={false}
                   backgroundEffectEnabled={project.background_effect_enabled}
                   backgroundEffectType={project.background_effect_type}

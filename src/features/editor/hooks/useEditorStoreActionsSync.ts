@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { Slide1Background, Slide1Card, Slide1Style } from "@/features/editor/store/types";
+import type { Slide1Background, Slide1Card, Slide1Style, Slide1TextNoise } from "@/features/editor/store/types";
 
 type Args = {
   editorStore: any;
@@ -192,6 +192,11 @@ type Args = {
   onSetSlide1BodyFontKey: (next: string | null) => void;
   onSetSlide1Background: (next: Slide1Background) => void;
   onSetSlide1Card: (next: Slide1Card) => void;
+  onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
+  onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
+  onSetSlide1BodyLineGapPx: (next: number) => void;
+  onSetCurrentProjectSlide1TemplateIdSnapshot: (nextTemplateId: string | null) => Promise<boolean> | boolean;
+  onApplySlide1PresetInput: (next: any) => void;
 
   // Logos (Phase 3C: read-only)
   fetchLogoTags: (args: {
@@ -385,6 +390,11 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1BodyFontKey,
     onSetSlide1Background,
     onSetSlide1Card,
+    onSetSlide1TextNoise,
+    onSetSlide1CardAndAccent,
+    onSetSlide1BodyLineGapPx,
+    onSetCurrentProjectSlide1TemplateIdSnapshot,
+    onApplySlide1PresetInput,
     fetchLogoTags,
     searchLogoVariants,
     searchLogoVariantsGlobal,
@@ -466,6 +476,41 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1Card: (next: Slide1Card) => {
       try {
         onSetSlide1Card(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1TextNoise: (next: Slide1TextNoise) => {
+      try {
+        onSetSlide1TextNoise(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1CardAndAccent: (a: any) => {
+      try {
+        onSetSlide1CardAndAccent(a);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1BodyLineGapPx: (n: number) => {
+      try {
+        onSetSlide1BodyLineGapPx(n);
+      } catch {
+        // ignore
+      }
+    },
+    onSetCurrentProjectSlide1TemplateIdSnapshot: (t: string | null) => {
+      try {
+        return onSetCurrentProjectSlide1TemplateIdSnapshot(t);
+      } catch {
+        return false;
+      }
+    },
+    onApplySlide1PresetInput: (next: any) => {
+      try {
+        onApplySlide1PresetInput(next);
       } catch {
         // ignore
       }
@@ -811,6 +856,12 @@ export function useEditorStoreActionsSync(args: Args) {
       onSetSlide1BodyFontKey: (next: string | null) => implRef.current?.onSetSlide1BodyFontKey?.(next),
       onSetSlide1Background: (next: Slide1Background) => implRef.current?.onSetSlide1Background?.(next),
       onSetSlide1Card: (next: Slide1Card) => implRef.current?.onSetSlide1Card?.(next),
+      onSetSlide1TextNoise: (next: Slide1TextNoise) => implRef.current?.onSetSlide1TextNoise?.(next),
+      onSetSlide1CardAndAccent: (a: any) => implRef.current?.onSetSlide1CardAndAccent?.(a),
+      onSetSlide1BodyLineGapPx: (n: number) => implRef.current?.onSetSlide1BodyLineGapPx?.(n),
+      onSetCurrentProjectSlide1TemplateIdSnapshot: (t: string | null) =>
+        implRef.current?.onSetCurrentProjectSlide1TemplateIdSnapshot?.(t),
+      onApplySlide1PresetInput: (next: any) => implRef.current?.onApplySlide1PresetInput?.(next),
       onSignOut: () => implRef.current?.onSignOut?.(),
       setIsSuperadmin: (next: boolean) => implRef.current?.setIsSuperadmin?.(next),
       onCloseShareCarousels: () => implRef.current?.onCloseShareCarousels?.(),

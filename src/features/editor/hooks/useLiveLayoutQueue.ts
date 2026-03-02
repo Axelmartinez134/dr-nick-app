@@ -259,6 +259,26 @@ export function useLiveLayoutQueue(params: {
         const baseInputForMerge =
           (slideIndex === activeSlideIndexRef.current ? (inputData as any) : null) || (curSlideForMerge as any)?.inputData || null;
         const baseObj = baseInputForMerge && typeof baseInputForMerge === "object" ? (baseInputForMerge as any) : {};
+        if (slideIndex === 0 && item.templateTypeId === "regular") {
+          try {
+            const has = (k: string) => baseObj && Object.prototype.hasOwnProperty.call(baseObj, k);
+            addLog(
+              `🧩 Live layout merge (Slide 1): base has=` +
+                [
+                  has("slide1Background") ? "bg" : null,
+                  has("slide1Card") ? "card" : null,
+                  has("slide1Style") ? "style" : null,
+                  has("slide1BodyFontKey") ? "font" : null,
+                  has("slide1TextNoise") ? "textNoise" : null,
+                  has("slide1BodyLineGapPx") ? "lineGap" : null,
+                ]
+                  .filter(Boolean)
+                  .join(",")
+            );
+          } catch {
+            // ignore
+          }
+        }
         const req: any = {
           ...baseObj,
           headline,
@@ -273,6 +293,26 @@ export function useLiveLayoutQueue(params: {
           bodyStyleRanges: item.bodyRanges,
           ...(item.lineOverridesByKey ? { lineOverridesByKey: item.lineOverridesByKey } : {}),
         } satisfies CarouselTextRequest as any;
+        if (slideIndex === 0 && item.templateTypeId === "regular") {
+          try {
+            const has = (k: string) => req && Object.prototype.hasOwnProperty.call(req, k);
+            addLog(
+              `🧩 Live layout req (Slide 1): has=` +
+                [
+                  has("slide1Background") ? "bg" : null,
+                  has("slide1Card") ? "card" : null,
+                  has("slide1Style") ? "style" : null,
+                  has("slide1BodyFontKey") ? "font" : null,
+                  has("slide1TextNoise") ? "textNoise" : null,
+                  has("slide1BodyLineGapPx") ? "lineGap" : null,
+                ]
+                  .filter(Boolean)
+                  .join(",")
+            );
+          } catch {
+            // ignore
+          }
+        }
 
         const nextLayoutData = {
           success: true,

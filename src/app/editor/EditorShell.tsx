@@ -722,6 +722,8 @@ export default function EditorShell() {
   const [projectMappingSlide1, setProjectMappingSlide1] = useState<string | null>(null);
   const [projectMappingSlide2to5, setProjectMappingSlide2to5] = useState<string | null>(null);
   const [projectMappingSlide6, setProjectMappingSlide6] = useState<string | null>(null);
+  const projectMappingSlide1WriteRef = useRef<{ source: string; next: string | null; at: number } | null>(null);
+  const prevProjectMappingSlide1Ref = useRef<string | null>(null);
   const [templateSnapshots, setTemplateSnapshots] = useState<Record<string, any>>({});
   // Review overlay shortcut: open Template Editor targeting a specific template.
   const [templateEditorInitialTemplateId, setTemplateEditorInitialTemplateId] = useState<string | null>(null);
@@ -3002,6 +3004,300 @@ export default function EditorShell() {
     },
     [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
   );
+
+  const onSetSlide1TextNoise = useCallback(
+    (nextNoise: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextNoise && typeof nextNoise === "object" ? nextNoise : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1TextNoise: obj }
+          : { slide1TextNoise: obj };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetSlide1CardAndAccent = useCallback(
+    (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      // IMPORTANT: Use the slide snapshot as source-of-truth so this is atomic even if multiple actions fire in one tick.
+      const baseInput = (baseSlide as any)?.inputData || null;
+
+      const nextCardHex = String(args?.cardHex || "").trim() || "#ffffff";
+      const nextAccentMode = String(args?.accentMode || "solid") === "gradient" ? "gradient" : "solid";
+      const nextAccentSolidHex = args?.accentSolidHex == null ? null : String(args.accentSolidHex || "").trim() || null;
+      const nextGradientId = args?.gradientId == null ? null : String(args.gradientId || "").trim() || null;
+
+      const curStyle = baseInput && typeof baseInput === "object" ? (baseInput as any).slide1Style : null;
+      const styleNext = curStyle && typeof curStyle === "object" ? { ...(curStyle as any) } : { themeId: "custom" };
+      styleNext.themeId = String(styleNext.themeId || "custom").trim() || "custom";
+      styleNext.accentMode = nextAccentMode;
+      styleNext.gradientId = nextAccentMode === "gradient" ? nextGradientId : null;
+      if (nextAccentMode === "solid") {
+        styleNext.accentSolidHex = nextAccentSolidHex || "#ffffff";
+      } else {
+        styleNext.accentSolidHex = null;
+      }
+
+      const curCard = baseInput && typeof baseInput === "object" ? (baseInput as any).slide1Card : null;
+      const cardNext =
+        curCard && typeof curCard === "object"
+          ? { ...(curCard as any) }
+          : {
+              enabled: true,
+              backgroundHex: "#ffffff",
+              patternId: "none",
+              borderEnabled: true,
+              borderThicknessPx: 2,
+              borderRadiusPx: 49,
+              edgeGapPx: 20,
+            };
+      cardNext.enabled = true;
+      cardNext.backgroundHex = nextCardHex;
+
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1Style: styleNext, slide1Card: cardNext }
+          : { slide1Style: styleNext, slide1Card: cardNext };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetSlide1BodyLineGapPx = useCallback(
+    (nextGapPx: number) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const n = Math.max(-80, Math.min(80, Math.round(Number(nextGapPx) || 0)));
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1BodyLineGapPx: n }
+          : { slide1BodyLineGapPx: n };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetCurrentProjectSlide1TemplateIdSnapshot = useCallback(
+    async (nextTemplateId: string | null): Promise<boolean> => {
+      const projectIdAtStart = currentProjectIdRef.current;
+      if (!projectIdAtStart) return false;
+      const tid = nextTemplateId == null ? null : String(nextTemplateId || "").trim() || null;
+      if (!tid) return false;
+      try {
+        addLog?.(`🧩 Slide 1 template snapshot: apply start pid=${projectIdAtStart} tid=${tid}`);
+      } catch {
+        // ignore
+      }
+      try {
+        const res = await fetchJson('/api/editor/projects/update-mappings', {
+          method: 'POST',
+          body: JSON.stringify({ projectId: projectIdAtStart, slide1TemplateIdSnapshot: tid }),
+        });
+        const p = res?.project || null;
+        if (!p) return false;
+        try {
+          addLog?.(
+            `🧩 Slide 1 template snapshot: server says s1=${String(p.slide1_template_id_snapshot ?? "—")} (requested=${tid})`
+          );
+        } catch {
+          // ignore
+        }
+        projectMappingSlide1WriteRef.current = { source: "onSetCurrentProjectSlide1TemplateIdSnapshot", next: p.slide1_template_id_snapshot ?? null, at: Date.now() };
+        setProjectMappingSlide1(p.slide1_template_id_snapshot ?? null);
+        setProjectMappingSlide2to5(p.slide2_5_template_id_snapshot ?? null);
+        setProjectMappingSlide6(p.slide6_template_id_snapshot ?? null);
+        void ensureTemplateSnapshot(tid);
+        try {
+          addLog?.(`🧩 Slide 1 template snapshot: apply done`);
+        } catch {
+          // ignore
+        }
+        return true;
+      } catch {
+        try {
+          addLog?.(`🧩 Slide 1 template snapshot: apply failed`);
+        } catch {
+          // ignore
+        }
+        return false;
+      }
+    },
+    [fetchJson, ensureTemplateSnapshot, currentProjectIdRef]
+  );
+
+  const onApplySlide1PresetInput = useCallback(
+    (next: any) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput = (baseSlide as any)?.inputData || null;
+
+      const patch = next && typeof next === "object" ? next : {};
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? {
+              ...(baseInput as any),
+              ...(patch.slide1Background !== undefined ? { slide1Background: patch.slide1Background } : null),
+              ...(patch.slide1Card !== undefined ? { slide1Card: patch.slide1Card } : null),
+              ...(patch.slide1Style !== undefined ? { slide1Style: patch.slide1Style } : null),
+              ...(patch.slide1BodyFontKey !== undefined ? { slide1BodyFontKey: patch.slide1BodyFontKey } : null),
+              ...(patch.slide1TextNoise !== undefined ? { slide1TextNoise: patch.slide1TextNoise } : null),
+              ...(patch.slide1BodyLineGapPx !== undefined ? { slide1BodyLineGapPx: patch.slide1BodyLineGapPx } : null),
+            }
+          : {
+              ...(patch.slide1Background !== undefined ? { slide1Background: patch.slide1Background } : null),
+              ...(patch.slide1Card !== undefined ? { slide1Card: patch.slide1Card } : null),
+              ...(patch.slide1Style !== undefined ? { slide1Style: patch.slide1Style } : null),
+              ...(patch.slide1BodyFontKey !== undefined ? { slide1BodyFontKey: patch.slide1BodyFontKey } : null),
+              ...(patch.slide1TextNoise !== undefined ? { slide1TextNoise: patch.slide1TextNoise } : null),
+              ...(patch.slide1BodyLineGapPx !== undefined ? { slide1BodyLineGapPx: patch.slide1BodyLineGapPx } : null),
+            };
+
+      try {
+        const has = (k: string) => updatedInput && Object.prototype.hasOwnProperty.call(updatedInput, k);
+        addLog?.(
+          `📋 Slide 1 preset: shell apply input has=` +
+            [
+              has("slide1Background") ? "bg" : null,
+              has("slide1Card") ? "card" : null,
+              has("slide1Style") ? "style" : null,
+              has("slide1BodyFontKey") ? "font" : null,
+              has("slide1TextNoise") ? "textNoise" : null,
+              has("slide1BodyLineGapPx") ? "lineGap" : null,
+            ]
+              .filter(Boolean)
+              .join(",")
+        );
+      } catch {
+        // ignore
+      }
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+
+      // Persist immediately so any background reload/sync can't clobber the UI.
+      // (We still keep the debounced persist above for consistent behavior elsewhere.)
+      try {
+        addLog?.(`📋 Slide 1 preset: immediate persist start`);
+        void saveSlidePatchForProject(pid, slideIndexNow, {
+          layoutSnapshot: baseLayout,
+          inputSnapshot: updatedInput,
+        });
+        addLog?.(`📋 Slide 1 preset: immediate persist queued`);
+      } catch {
+        // ignore
+      }
+    },
+    [activeSlideIndexRef, initSlide, layoutData, schedulePersistLayoutAndInput, saveSlidePatchForProject, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  useEffect(() => {
+    const prev = prevProjectMappingSlide1Ref.current;
+    const next = projectMappingSlide1 || null;
+    if (prev === next) return;
+    prevProjectMappingSlide1Ref.current = next;
+    const meta = projectMappingSlide1WriteRef.current;
+    try {
+      addLog?.(
+        `🧩 projectMappingSlide1 changed: ${String(prev ?? "—")} -> ${String(next ?? "—")} (src=${String(meta?.source || "unknown")})`
+      );
+    } catch {
+      // ignore
+    }
+    // Clear after observing so a later unexpected change shows unknown (useful signal).
+    projectMappingSlide1WriteRef.current = null;
+  }, [addLog, projectMappingSlide1]);
 
   const computeRegularBodyTextboxLayout = (params: {
     slideIndex: number;
@@ -6162,6 +6458,7 @@ export default function EditorShell() {
         activeSlideIndex,
         slideCount,
         currentProjectId,
+        slide1TemplateIdSnapshot: currentProjectId ? (projectMappingSlide1 || null) : null,
         loading,
         switchingSlides,
         copyGenerating,
@@ -6420,6 +6717,11 @@ export default function EditorShell() {
     onSetSlide1BodyFontKey,
     onSetSlide1Background,
     onSetSlide1Card,
+    onSetSlide1TextNoise,
+    onSetSlide1CardAndAccent,
+    onSetSlide1BodyLineGapPx,
+    onSetCurrentProjectSlide1TemplateIdSnapshot,
+    onApplySlide1PresetInput,
   });
 
   // Phase 5E5: workspace slices are now published via a dedicated hook (no more workspace mirroring here).

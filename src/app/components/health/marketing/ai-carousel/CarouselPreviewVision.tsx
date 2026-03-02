@@ -62,6 +62,16 @@ interface CarouselPreviewProps {
     borderRadiusPx: number;
     edgeGapPx?: number;
   } | null;
+  // /editor-only: optional Slide 1 BODY text noise overlay (grainy letters).
+  slide1TextNoise?: {
+    enabled: boolean;
+    mode: "neutral" | "tinted";
+    opacityPct: number; // 0–40
+    intensityPct: number; // 0–100
+    tileSizePx: number; // 32–1024
+  } | null;
+  // /editor-only: Slide 1 BODY line spacing tweak (extra px between baselines)
+  slide1BodyLineGapPx?: number | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   // When true, shrink each user text object's width to hug the rendered text (plus small padding),
   // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
@@ -152,6 +162,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       slide1Style,
       slide1Background,
       slide1Card,
+      slide1TextNoise,
+      slide1BodyLineGapPx,
       hasHeadline,
       headlineFontFamily,
       bodyFontFamily,
@@ -564,6 +576,138 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
         // Fallback: no pattern
         return null;
+      } catch {
+        return null;
+      }
+    };
+
+    const getSlide1CardNoisePattern = (
+      fabric: any,
+      args: { baseHex: string; mode: "neutral" | "tinted"; intensityPct: number; tileSizePx: number }
+    ) => {
+      try {
+        const PatternCtor = (fabric as any).Pattern;
+        if (typeof PatternCtor !== "function") return null;
+
+        const parseHex = (h: string) => {
+          const s = String(h || "").replace("#", "").trim();
+          if (s.length === 3) {
+            const r = parseInt(s[0] + s[0], 16);
+            const g = parseInt(s[1] + s[1], 16);
+            const b = parseInt(s[2] + s[2], 16);
+            return { r, g, b };
+          }
+          const r = parseInt(s.slice(0, 2), 16);
+          const g = parseInt(s.slice(2, 4), 16);
+          const b = parseInt(s.slice(4, 6), 16);
+          return { r, g, b };
+        };
+        const clamp255 = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+
+        const baseHex = String(args.baseHex || "").trim() || "#ffffff";
+        const mode = args.mode === "tinted" ? "tinted" : "neutral";
+        const intensityPct = Math.max(0, Math.min(100, Math.round(Number(args.intensityPct) || 0)));
+        const size = Math.max(32, Math.min(1024, Math.round(Number(args.tileSizePx) || 256)));
+
+        const tile = document.createElement("canvas");
+        tile.width = size;
+        tile.height = size;
+        const ctx = tile.getContext("2d", { willReadFrequently: true } as any) as CanvasRenderingContext2D | null;
+        if (!ctx) return null;
+
+        const img = ctx.createImageData(size, size);
+        const data = img.data;
+
+        // Map 0–100 to a useful amplitude range (kept conservative so it reads as grain, not speckles).
+        const ampNeutral = (intensityPct / 100) * 90; // 0..90 around mid gray
+        const ampTinted = (intensityPct / 100) * 28; // 0..28 around base color
+        const base = parseHex(baseHex);
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = Math.random();
+          const delta = (r - 0.5) * 2;
+          if (mode === "tinted") {
+            const d = delta * ampTinted;
+            data[i] = clamp255(base.r + d);
+            data[i + 1] = clamp255(base.g + d);
+            data[i + 2] = clamp255(base.b + d);
+            data[i + 3] = 255;
+          } else {
+            const v = clamp255(128 + delta * ampNeutral);
+            data[i] = v;
+            data[i + 1] = v;
+            data[i + 2] = v;
+            data[i + 3] = 255;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+
+        const pattern = new PatternCtor({ source: tile, repeat: "repeat" });
+        return pattern;
+      } catch {
+        return null;
+      }
+    };
+
+    const getSlide1TextNoisePattern = (
+      fabric: any,
+      args: { baseHex: string; mode: "neutral" | "tinted"; intensityPct: number; tileSizePx: number }
+    ) => {
+      try {
+        const PatternCtor = (fabric as any).Pattern;
+        if (typeof PatternCtor !== "function") return null;
+
+        const parseHex = (h: string) => {
+          const s = String(h || "").replace("#", "").trim();
+          if (s.length === 3) {
+            const r = parseInt(s[0] + s[0], 16);
+            const g = parseInt(s[1] + s[1], 16);
+            const b = parseInt(s[2] + s[2], 16);
+            return { r, g, b };
+          }
+          const r = parseInt(s.slice(0, 2), 16);
+          const g = parseInt(s.slice(2, 4), 16);
+          const b = parseInt(s.slice(4, 6), 16);
+          return { r, g, b };
+        };
+        const clamp255 = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
+
+        const baseHex = String(args.baseHex || "").trim() || "#ffffff";
+        const mode = args.mode === "tinted" ? "tinted" : "neutral";
+        const intensityPct = Math.max(0, Math.min(100, Math.round(Number(args.intensityPct) || 0)));
+        const size = Math.max(32, Math.min(1024, Math.round(Number(args.tileSizePx) || 256)));
+
+        const tile = document.createElement("canvas");
+        tile.width = size;
+        tile.height = size;
+        const ctx = tile.getContext("2d", { willReadFrequently: true } as any) as CanvasRenderingContext2D | null;
+        if (!ctx) return null;
+
+        const img = ctx.createImageData(size, size);
+        const data = img.data;
+
+        const base = parseHex(baseHex);
+        const a = Math.max(0, Math.min(255, Math.round((intensityPct / 100) * 140))); // per-pixel alpha; speckle strength
+        const ampTinted = (intensityPct / 100) * 28;
+
+        for (let i = 0; i < data.length; i += 4) {
+          if (mode === "tinted") {
+            const delta = (Math.random() - 0.5) * 2 * ampTinted;
+            data[i] = clamp255(base.r + delta);
+            data[i + 1] = clamp255(base.g + delta);
+            data[i + 2] = clamp255(base.b + delta);
+            data[i + 3] = a;
+          } else {
+            // Black/white speckle
+            const v = Math.random() < 0.5 ? 0 : 255;
+            data[i] = v;
+            data[i + 1] = v;
+            data[i + 2] = v;
+            data[i + 3] = a;
+          }
+        }
+        ctx.putImageData(img, 0, 0);
+        return new PatternCtor({ source: tile, repeat: "repeat" });
       } catch {
         return null;
       }
@@ -2210,6 +2354,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                   // ignore
                 }
               }
+              if (o?.data?.role === "slide1-card-noise") {
+                try {
+                  canvas.remove(o);
+                } catch {
+                  // ignore
+                }
+              }
             }
           } catch {
             // ignore
@@ -2278,13 +2429,63 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             } as any);
             (rect as any).data = { role: "slide1-card" };
             canvas.add(rect);
-            // Card must sit BELOW all user content (text, images, stickers).
-            // Send card to back, then bring every user object to front.
+
+            // Noise / grain overlay (on top of card fill/texture).
+            let noiseRect: any = null;
             try {
-              if (typeof canvas.sendObjectToBack === "function") {
-                canvas.sendObjectToBack(rect);
-              } else if (typeof (canvas as any).sendToBack === "function") {
-                (canvas as any).sendToBack(rect);
+              const noiseEnabled = !!(card as any)?.noiseEnabled;
+              const noiseOpacityPct = Math.max(0, Math.min(40, Math.round(Number((card as any)?.noiseOpacityPct ?? 20) || 0)));
+              const noiseIntensityPct = Math.max(0, Math.min(100, Math.round(Number((card as any)?.noiseIntensityPct ?? 12) || 0)));
+              const noiseTileSizePx = Math.max(32, Math.min(1024, Math.round(Number((card as any)?.noiseTileSizePx ?? 256) || 0)));
+              const noiseMode = String((card as any)?.noiseMode || "neutral") === "tinted" ? "tinted" : "neutral";
+              const op = Math.max(0, Math.min(0.4, noiseOpacityPct / 100));
+              if (noiseEnabled && op > 0 && noiseIntensityPct > 0) {
+                const pat = getSlide1CardNoisePattern(fabric, {
+                  baseHex: cardHex,
+                  mode: noiseMode,
+                  intensityPct: noiseIntensityPct,
+                  tileSizePx: noiseTileSizePx,
+                });
+                if (pat) {
+                  noiseRect = new fabric.Rect({
+                    left: leftTop,
+                    top: leftTop,
+                    width: w,
+                    height: h,
+                    rx,
+                    ry: rx,
+                    fill: pat,
+                    opacity: op,
+                    originX: "left",
+                    originY: "top",
+                    selectable: false,
+                    evented: false,
+                    objectCaching: false,
+                  } as any);
+                  (noiseRect as any).data = { role: "slide1-card-noise" };
+                  canvas.add(noiseRect);
+                }
+              }
+            } catch {
+              // ignore
+            }
+
+            // Stacking:
+            // - Card + noise should sit ABOVE template assets
+            // - But BELOW user content (text/images)
+            try {
+              try {
+                const objsNow = (canvas.getObjects?.() || []) as any[];
+                const templateCount = objsNow.filter((o) => o?.data?.role === "template-asset").length;
+                if (typeof canvas.moveTo === "function") {
+                  canvas.moveTo(rect, templateCount);
+                  if (noiseRect) canvas.moveTo(noiseRect, templateCount + 1);
+                } else {
+                  (rect as any)?.moveTo?.(templateCount);
+                  (noiseRect as any)?.moveTo?.(templateCount + 1);
+                }
+              } catch {
+                // ignore
               }
               const objs = (canvas.getObjects?.() || []) as any[];
               for (const o of objs) {
@@ -2305,46 +2506,171 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
 
+        const objs = canvas.getObjects?.() || [];
+
         // Apply accent to Slide 1 BODY text only (only when slide1Style exists).
-        if (!s) return;
-        try {
-          const objs = canvas.getObjects?.() || [];
-          if (!gradient) {
-            const solid = accentSolidHex || (theme ? theme.accent : null) || textColor;
-            for (const obj of objs) {
-              if ((obj as any)?.data?.role !== "user-text") continue;
-              const b = String((obj as any)?.data?.block || "");
-              if (b && b !== "BODY") continue;
-              (obj as any).set?.({ fill: solid });
+        if (s) {
+          try {
+            if (!gradient) {
+              const solid = accentSolidHex || (theme ? theme.accent : null) || textColor;
+              for (const obj of objs) {
+                if ((obj as any)?.data?.role !== "user-text") continue;
+                const b = String((obj as any)?.data?.block || "");
+                if (b && b !== "BODY") continue;
+                (obj as any).set?.({ fill: solid });
+              }
+            } else {
+              const angle = Number(gradient.angleDeg || 0);
+              const rad = (angle * Math.PI) / 180;
+              const dx = Math.cos(rad);
+              const dy = Math.sin(rad);
+              const stops = gradient.stops
+                .map((s) => ({ offset: Math.max(0, Math.min(1, Number(s.at) / 100)), color: String(s.color || "").trim() || "#ffffff" }))
+                .filter((s) => s.color);
+              if (stops.length > 0) {
+                for (const obj of objs) {
+                  if ((obj as any)?.data?.role !== "user-text") continue;
+                  const b = String((obj as any)?.data?.block || "");
+                  if (b && b !== "BODY") continue;
+                  if (typeof (obj as any).getBoundingRect !== "function") continue;
+                  const br = (obj as any).getBoundingRect(true, true);
+                  const w = Math.max(1, Number(br?.width || (obj as any).width || 1));
+                  const h = Math.max(1, Number(br?.height || (obj as any).height || 1));
+                  const len = Math.max(w, h);
+                  const grad = new fabric.Gradient({
+                    type: "linear",
+                    gradientUnits: "pixels",
+                    coords: { x1: 0, y1: 0, x2: dx * len, y2: dy * len },
+                    colorStops: stops,
+                  } as any);
+                  (obj as any).set?.({ fill: grad });
+                }
+              }
             }
-            return;
+          } catch {
+            // ignore
+          }
+        }
+
+        // Slide 1 BODY text noise overlay (grainy letters).
+        try {
+          const tn = slide1TextNoise && typeof slide1TextNoise === "object" ? (slide1TextNoise as any) : null;
+          const enabled = !!tn?.enabled;
+          if (!enabled) return;
+          const mode = String(tn?.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+          const opacityPct = Math.max(0, Math.min(40, Math.round(Number(tn?.opacityPct ?? 20) || 0)));
+          const intensityPct = Math.max(0, Math.min(100, Math.round(Number(tn?.intensityPct ?? 12) || 0)));
+          const tileSizePx = Math.max(32, Math.min(1024, Math.round(Number(tn?.tileSizePx ?? 256) || 0)));
+          const op = Math.max(0, Math.min(0.4, opacityPct / 100));
+          if (op <= 0 || intensityPct <= 0) return;
+
+          // Remove any prior overlays (defensive; canvas is usually cleared each render).
+          try {
+            for (const o of objs as any[]) {
+              if (o?.data?.role === "slide1-text-noise") {
+                try {
+                  canvas.remove(o);
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          } catch {
+            // ignore
           }
 
-          const angle = Number(gradient.angleDeg || 0);
-          const rad = (angle * Math.PI) / 180;
-          const dx = Math.cos(rad);
-          const dy = Math.sin(rad);
-          const stops = gradient.stops
-            .map((s) => ({ offset: Math.max(0, Math.min(1, Number(s.at) / 100)), color: String(s.color || "").trim() || "#ffffff" }))
-            .filter((s) => s.color);
-          if (stops.length === 0) return;
+          const firstGradientStopHex =
+            gradient?.stops?.length ? String(gradient.stops[0]?.color || "").trim() : "";
 
-          for (const obj of objs) {
-            if ((obj as any)?.data?.role !== "user-text") continue;
-            const b = String((obj as any)?.data?.block || "");
+          for (const obj of objs as any[]) {
+            if (obj?.data?.role !== "user-text") continue;
+            const b = String(obj?.data?.block || "");
             if (b && b !== "BODY") continue;
-            if (typeof (obj as any).getBoundingRect !== "function") continue;
-            const br = (obj as any).getBoundingRect(true, true);
-            const w = Math.max(1, Number(br?.width || (obj as any).width || 1));
-            const h = Math.max(1, Number(br?.height || (obj as any).height || 1));
-            const len = Math.max(w, h);
-            const grad = new fabric.Gradient({
-              type: "linear",
-              gradientUnits: "pixels",
-              coords: { x1: 0, y1: 0, x2: dx * len, y2: dy * len },
-              colorStops: stops,
+            const txt = String(obj?.text || "");
+            if (!txt.trim()) continue;
+
+            const baseHex = (() => {
+              if (mode !== "tinted") return "#ffffff";
+              if (typeof obj?.fill === "string" && String(obj.fill).trim()) return String(obj.fill).trim();
+              if (firstGradientStopHex) return firstGradientStopHex;
+              return String(textColor || "#000000").trim() || "#000000";
+            })();
+
+            const pat = getSlide1TextNoisePattern(fabric, { baseHex, mode, intensityPct, tileSizePx });
+            if (!pat) continue;
+
+            // Full-canvas noise, clipped to the text shape so only letters look grainy.
+            const noiseRect = new fabric.Rect({
+              left: 0,
+              top: 0,
+              width: INTERNAL_W,
+              height: INTERNAL_H,
+              fill: pat,
+              opacity: op,
+              originX: "left",
+              originY: "top",
+              selectable: false,
+              evented: false,
+              objectCaching: false,
             } as any);
-            (obj as any).set?.({ fill: grad });
+
+            const isTextbox = String(obj?.type || "") === "textbox";
+            const Ctor =
+              isTextbox && typeof (fabric as any).Textbox === "function"
+                ? (fabric as any).Textbox
+                : (typeof (fabric as any).IText === "function" ? (fabric as any).IText : (fabric as any).Text);
+
+            const clip = new Ctor(txt, {
+              left: obj.left,
+              top: obj.top,
+              ...(isTextbox ? { width: Math.max(1, Number(obj.width || 1)) } : {}),
+              fontSize: obj.fontSize,
+              fontFamily: obj.fontFamily,
+              fontWeight: obj.fontWeight,
+              fontStyle: obj.fontStyle,
+              lineHeight: obj.lineHeight,
+              charSpacing: obj.charSpacing,
+              textAlign: obj.textAlign,
+              // These affect glyph positioning/measurement; keep them identical so the clip aligns 1:1.
+              padding: Number(obj.padding || 0) || 0,
+              styles: (obj as any).styles || undefined,
+              splitByGrapheme: typeof (obj as any).splitByGrapheme === "boolean" ? (obj as any).splitByGrapheme : undefined,
+              originX: obj.originX,
+              originY: obj.originY,
+              angle: obj.angle || 0,
+              scaleX: obj.scaleX || 1,
+              scaleY: obj.scaleY || 1,
+              skewX: obj.skewX || 0,
+              skewY: obj.skewY || 0,
+              fill: "#000000",
+              selectable: false,
+              evented: false,
+            });
+            (clip as any).absolutePositioned = true;
+            try {
+              // Ensure Fabric calculates internal offsets (pathOffset, text box offsets, etc.)
+              if (typeof (clip as any).initDimensions === "function") (clip as any).initDimensions();
+              if (typeof (clip as any).setCoords === "function") (clip as any).setCoords();
+              // Copy pathOffset when available (Fabric uses this for accurate positioning).
+              if ((obj as any).pathOffset && (clip as any)) {
+                (clip as any).pathOffset = { ...(obj as any).pathOffset };
+              }
+            } catch {
+              // ignore
+            }
+
+            (noiseRect as any).clipPath = clip;
+            (noiseRect as any).data = { role: "slide1-text-noise", forLineIndex: obj?.data?.lineIndex ?? null };
+            canvas.add(noiseRect);
+
+            // Ensure the noise sits above the text (so it overlays gradients/solids), but stays clipped.
+            try {
+              const idx = (canvas.getObjects?.() || []).indexOf(obj);
+              if (idx >= 0 && typeof canvas.moveTo === "function") canvas.moveTo(noiseRect, idx + 1);
+              else (noiseRect as any)?.moveTo?.(idx + 1);
+            } catch {
+              // ignore
+            }
           }
         } catch {
           // ignore
@@ -2759,22 +3085,35 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }
             console.log('[Preview Vision] 🧱 Image stacking:', stacked ? `moved to index ${templateCount} ✅` : 'could not reorder ⚠️');
 
-            // If the image loads after text has been added, force all text to the front.
+            // If the image loads after text has been added, force all text (and its noise overlays) to the front.
             try {
               const objs = canvas.getObjects?.() || [];
-              objs.forEach((obj: any) => {
-                if (obj?.data?.role === 'user-text') {
-                  if (typeof canvas.bringObjectToFront === 'function') {
-                    canvas.bringObjectToFront(obj);
-                  } else if (typeof canvas.bringToFront === 'function') {
-                    canvas.bringToFront(obj);
-                  } else if (typeof canvas.moveTo === 'function') {
-                    canvas.moveTo(obj, (canvas.getObjects?.().length || 1) - 1);
-                  } else if (typeof obj?.moveTo === 'function') {
-                    obj.moveTo((canvas.getObjects?.().length || 1) - 1);
-                  }
+              const bringFront = (o: any) => {
+                if (!o) return;
+                if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
+                else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
+                else if (typeof canvas.moveTo === 'function') canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+                else if (typeof o?.moveTo === 'function') o.moveTo((canvas.getObjects?.().length || 1) - 1);
+              };
+              // Ensure each text-noise overlay stays above its corresponding text.
+              const noiseByLine = new Map<number, any[]>();
+              for (const o of objs as any[]) {
+                if (o?.data?.role !== 'slide1-text-noise') continue;
+                const li = Number(o?.data?.forLineIndex);
+                if (!Number.isFinite(li)) continue;
+                const arr = noiseByLine.get(li) || [];
+                arr.push(o);
+                noiseByLine.set(li, arr);
+              }
+              for (const obj of objs as any[]) {
+                if (obj?.data?.role !== 'user-text') continue;
+                bringFront(obj);
+                const li = Number(obj?.data?.lineIndex);
+                const overlays = Number.isFinite(li) ? noiseByLine.get(li) : null;
+                if (overlays && overlays.length) {
+                  for (const ov of overlays) bringFront(ov);
                 }
-              });
+              }
               canvas.renderAll();
               console.log('[Preview Vision] ✅ Forced text to front after image load');
             } catch (e) {
@@ -2850,22 +3189,34 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 // ignore
               }
 
-              // If sticker loads after text has been added, force all text to the front.
+              // If sticker loads after text has been added, force all text (and its noise overlays) to the front.
               try {
                 const objs = canvas.getObjects?.() || [];
-                objs.forEach((obj: any) => {
-                  if (obj?.data?.role === 'user-text') {
-                    if (typeof canvas.bringObjectToFront === 'function') {
-                      canvas.bringObjectToFront(obj);
-                    } else if (typeof canvas.bringToFront === 'function') {
-                      canvas.bringToFront(obj);
-                    } else if (typeof canvas.moveTo === 'function') {
-                      canvas.moveTo(obj, (canvas.getObjects?.().length || 1) - 1);
-                    } else if (typeof obj?.moveTo === 'function') {
-                      obj.moveTo((canvas.getObjects?.().length || 1) - 1);
-                    }
+                const bringFront = (o: any) => {
+                  if (!o) return;
+                  if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
+                  else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
+                  else if (typeof canvas.moveTo === 'function') canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+                  else if (typeof o?.moveTo === 'function') o.moveTo((canvas.getObjects?.().length || 1) - 1);
+                };
+                const noiseByLine = new Map<number, any[]>();
+                for (const o of objs as any[]) {
+                  if (o?.data?.role !== 'slide1-text-noise') continue;
+                  const li = Number(o?.data?.forLineIndex);
+                  if (!Number.isFinite(li)) continue;
+                  const arr = noiseByLine.get(li) || [];
+                  arr.push(o);
+                  noiseByLine.set(li, arr);
+                }
+                for (const obj of objs as any[]) {
+                  if (obj?.data?.role !== 'user-text') continue;
+                  bringFront(obj);
+                  const li = Number(obj?.data?.lineIndex);
+                  const overlays = Number.isFinite(li) ? noiseByLine.get(li) : null;
+                  if (overlays && overlays.length) {
+                    for (const ov of overlays) bringFront(ov);
                   }
-                });
+                }
               } catch {
                 // ignore
               }
@@ -2945,6 +3296,14 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const useTight = !!tightUserTextWidth && effectiveHasHeadline;
           const isSingleLine = !String(line.text || '').includes('\n');
           const laneW = Math.max(1, Math.floor(Number(line.maxWidth || 1)));
+          const isSlide1Regular = Number.isFinite(slideIndex as any) ? Number(slideIndex) === 0 : false;
+          const isBodyBlock = String((line as any)?.block || "") === "" || String((line as any)?.block || "") === "BODY";
+          const gapPx = (isSlide1Regular && !effectiveHasHeadline && isBodyBlock)
+            ? Math.max(-80, Math.min(80, Math.round(Number(slide1BodyLineGapPx ?? 0) || 0)))
+            : 0;
+          const baseSize = Math.max(1, Number(line.baseSize || 1));
+          const baseLineHeight = Number.isFinite(Number(line.lineHeight)) ? Number(line.lineHeight) : 1.2;
+          const effectiveLineHeight = Math.max(0.6, Math.min(5, baseLineHeight + (gapPx / baseSize)));
 
           // For "Docs-like" headline alignment, we need a lane-width box so center/right has room to align.
           // If we used IText (tight width), alignment would be visually meaningless. Force Textbox for
@@ -2983,7 +3342,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 fontFamily: isHeadlineLine ? headlineFont : bodyFont,
                 fontWeight: baseWeight,
                 textAlign: line.textAlign,
-                lineHeight: line.lineHeight,
+                lineHeight: effectiveLineHeight,
                 originX,
                 originY,
                 selectable: true,
@@ -3002,7 +3361,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 fontFamily: isHeadlineLine ? headlineFont : bodyFont,
                 fontWeight: baseWeight,
                 textAlign: line.textAlign,
-                lineHeight: line.lineHeight,
+                lineHeight: effectiveLineHeight,
                 originX,
                 originY,
                 selectable: true,
@@ -3368,7 +3727,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, slide1TextNoise, slide1BodyLineGapPx, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     const defaultFrameStyle: CSSProperties = {
       boxSizing: 'content-box',
