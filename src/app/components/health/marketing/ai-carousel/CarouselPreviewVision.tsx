@@ -865,6 +865,23 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           };
         }
         const prev = !!obj.data.__dnInvalid;
+
+        // /editor Regular: allow overlap but never show the red warning highlight.
+        // (Enhanced keeps the warning behavior.)
+        if (hasHeadline === false) {
+          if (prev) {
+            const c = obj.data.__dnInvalidCache || {};
+            obj.set?.('stroke', c.stroke ?? null);
+            obj.set?.('strokeWidth', c.strokeWidth ?? 0);
+            obj.set?.('paintFirst', c.paintFirst ?? 'fill');
+            obj.set?.('backgroundColor', c.backgroundColor ?? null);
+            obj.set?.('opacity', typeof c.opacity === 'number' ? c.opacity : 1);
+            obj.data.__dnInvalid = false;
+            if (typeof obj.setCoords === 'function') obj.setCoords();
+          }
+          return;
+        }
+
         if (invalid) {
           obj.set?.('stroke', 'rgba(239,68,68,0.95)'); // red-500-ish
           obj.set?.('strokeWidth', 3);
