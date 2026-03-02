@@ -234,7 +234,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
           </div>
         ) : null}
 
-        {templateTypeId === "enhanced" ? (
+        {templateTypeId === "enhanced" || templateTypeId === "regular" ? (
           <div className="flex items-center gap-2">
             <button
               type="button"

@@ -143,11 +143,11 @@ export function useLiveLayoutQueue(params: {
         // Ignore stale completions for this project+slide.
         if (liveLayoutRunIdByKeyRef.current[key] !== item.runId) continue;
 
-        // Enhanced Lock Layout: if the slide is currently locked, do not apply/persist auto-reflow results.
+        // Lock Layout: if the slide is currently locked, do not apply/persist auto-reflow results.
         // (User explicitly chose to keep positions stable.)
         try {
           const cur = slidesRef.current[slideIndex] || null;
-          if (item.templateTypeId === "enhanced" && !!(cur as any)?.layoutLocked) {
+          if (!!(cur as any)?.layoutLocked) {
             addLog(`🔒 Live layout skipped slide ${slideIndex + 1}: layout is locked`);
             continue;
           }
@@ -519,23 +519,21 @@ export function useLiveLayoutQueue(params: {
         } catch {
           // ignore
         }
-        // Enhanced Lock Layout: never auto-reflow a slide that is currently locked
+        // Lock Layout: never auto-reflow a slide that is currently locked
         // (unless there is no layout yet, in which case we allow the initial layout to be generated).
         try {
-          if (templateTypeId === "enhanced") {
-            const s = slidesRef.current[slideIndex] || null;
-            const locked = !!(s as any)?.layoutLocked;
-            const hasLayout = !!(
-              (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) || (s as any)?.layoutData?.layout
-            );
-            if (locked && hasLayout) {
-              try {
-                if (debugNL) addLog(`⏱️ scheduleLiveLayout skip slide ${slideIndex + 1}: locked=1 hasLayout=1`);
-              } catch {
-                // ignore
-              }
-              return;
+          const s = slidesRef.current[slideIndex] || null;
+          const locked = !!(s as any)?.layoutLocked;
+          const hasLayout = !!(
+            (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) || (s as any)?.layoutData?.layout
+          );
+          if (locked && hasLayout) {
+            try {
+              if (debugNL) addLog(`⏱️ scheduleLiveLayout skip slide ${slideIndex + 1}: locked=1 hasLayout=1`);
+            } catch {
+              // ignore
             }
+            return;
           }
         } catch {
           // ignore

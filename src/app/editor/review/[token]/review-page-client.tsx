@@ -574,7 +574,7 @@ function ReviewProjectCard(props: {
   const slide1TextNoise = (slide1InputSnap as any)?.slide1TextNoise ?? null;
   const slide1BodyLineGapPx = (slide1InputSnap as any)?.slide1BodyLineGapPx ?? 0;
   const isEnhanced = project.template_type_id === "enhanced";
-  const lockTextLayout = isEnhanced ? !!(inputSnap as any)?.editor?.layoutLocked : false;
+  const lockTextLayout = !!(inputSnap as any)?.editor?.layoutLocked;
   // Important: CarouselPreviewVision has a "preserve user-image position" fallback that can drift across re-renders
   // when `onUserImageChange` is not provided. In /editor, image geometry is always driven by `layout.image`.
   // For the public review page we want the same deterministic behavior without persisting anything.

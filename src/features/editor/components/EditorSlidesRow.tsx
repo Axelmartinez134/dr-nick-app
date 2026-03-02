@@ -308,7 +308,7 @@ export function EditorSlidesRow() {
                         clampUserTextToContentRect={true}
                         clampUserImageToContentRect={false}
                         pushTextOutOfUserImage={templateTypeId !== "regular"}
-                        lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
+                        lockTextLayout={!!slides[i]?.layoutLocked}
                         displayWidthPx={displayW}
                         displayHeightPx={displayH}
                         onUserTextChange={templateTypeId === "regular" ? onUserTextChangeRegular : onUserTextChangeEnhanced}
@@ -361,7 +361,7 @@ export function EditorSlidesRow() {
                     clampUserTextToContentRect={true}
                     clampUserImageToContentRect={false}
                     pushTextOutOfUserImage={templateTypeId !== "regular"}
-                    lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
+                    lockTextLayout={!!slides[i]?.layoutLocked}
                     onUserImageChange={noop as any}
                     onUserExtraImageChange={noop as any}
                   />
@@ -485,7 +485,7 @@ export function EditorSlidesRow() {
                                 clampUserTextToContentRect={true}
                                 clampUserImageToContentRect={false}
                                 pushTextOutOfUserImage={templateTypeId !== "regular"}
-                                lockTextLayout={templateTypeId === "enhanced" ? !!slides[i]?.layoutLocked : false}
+                                lockTextLayout={!!slides[i]?.layoutLocked}
                                 suppressTextInvariantsWhileDraggingUserImage={
                                   templateTypeId === "enhanced"
                                     ? (!!slides[i]?.autoRealignOnImageRelease && !slides[i]?.layoutLocked)

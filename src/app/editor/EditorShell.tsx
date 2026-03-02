@@ -1331,7 +1331,7 @@ export default function EditorShell() {
   // Debounced autosave: active slide headline/body → Supabase (carousel_project_slides)
   const activeDraftHeadline = slides[activeSlideIndex]?.draftHeadline || "";
   const activeDraftBody = slides[activeSlideIndex]?.draftBody || "";
-  const enhancedLockOn = templateTypeId === "enhanced" && !!slides[activeSlideIndex]?.layoutLocked;
+  const enhancedLockOn = !!slides[activeSlideIndex]?.layoutLocked;
 
   // If the active slide's saved inputSnapshot doesn't match its current draft text (common after background Generate Copy),
   // queue a live layout so the canvas catches up when the user returns to the project.
