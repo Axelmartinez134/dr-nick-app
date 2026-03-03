@@ -118,6 +118,7 @@ export function EditorBottomPanel() {
 
   const outreachMessageDraft = String((ui as any)?.outreachMessageDraft || "");
   const outreachMessageCopyStatus = String((ui as any)?.outreachMessageCopyStatus || "idle");
+  const projectBackgroundColor = String((ui as any)?.projectBackgroundColor || "#ffffff");
   const isOutreachProject = !!(ui as any)?.isOutreachProject;
   const showOutreachMessage = isSuperadmin && isOutreachProject;
 

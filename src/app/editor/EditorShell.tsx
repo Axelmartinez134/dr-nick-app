@@ -3724,7 +3724,7 @@ export default function EditorShell() {
       const isCalloutLine = change.lineIndex === 1 && slideIndex === 0;
       const nextText = typeof change.text === "string" ? String(change.text || "") : null;
       if (isCalloutLine && nextText != null && nextText.trim().length === 0) {
-        nextTextLines = nextTextLines.filter((_, idx) => idx !== 1);
+        nextTextLines = nextTextLines.filter((_: any, idx: number) => idx !== 1);
       }
     } catch {
       // ignore
