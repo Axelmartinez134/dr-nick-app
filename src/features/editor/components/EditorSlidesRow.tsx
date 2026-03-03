@@ -285,6 +285,7 @@ export function EditorSlidesRow() {
                         slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                         slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
                         slide1TextNoise={(slides as any)?.[0]?.inputData?.slide1TextNoise || null}
+                        slide1CalloutTextNoise={(slides as any)?.[0]?.inputData?.slide1Callout?.textNoise || null}
                         slide1BodyLineGapPx={(slides as any)?.[0]?.inputData?.slide1BodyLineGapPx ?? 0}
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
@@ -340,6 +341,7 @@ export function EditorSlidesRow() {
                     slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                     slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
                     slide1TextNoise={(slides as any)?.[0]?.inputData?.slide1TextNoise || null}
+                    slide1CalloutTextNoise={(slides as any)?.[0]?.inputData?.slide1Callout?.textNoise || null}
                     slide1BodyLineGapPx={(slides as any)?.[0]?.inputData?.slide1BodyLineGapPx ?? 0}
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
@@ -463,6 +465,7 @@ export function EditorSlidesRow() {
                                 slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                                 slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
                                 slide1TextNoise={(slides as any)?.[0]?.inputData?.slide1TextNoise || null}
+                                slide1CalloutTextNoise={(slides as any)?.[0]?.inputData?.slide1Callout?.textNoise || null}
                                 slide1BodyLineGapPx={(slides as any)?.[0]?.inputData?.slide1BodyLineGapPx ?? 0}
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}

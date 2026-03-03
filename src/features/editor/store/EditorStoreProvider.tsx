@@ -18,6 +18,7 @@ const noopActions: EditorActions = {
   onSetSlide1Background: () => {},
   onSetSlide1Card: () => {},
   onSetSlide1TextNoise: () => {},
+  onSetSlide1Callout: () => {},
   onSetSlide1CardAndAccent: () => {},
   onSetSlide1BodyLineGapPx: () => {},
   onSetCurrentProjectSlide1TemplateIdSnapshot: async () => false,

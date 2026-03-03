@@ -70,6 +70,14 @@ interface CarouselPreviewProps {
     intensityPct: number; // 0–100
     tileSizePx: number; // 32–1024
   } | null;
+  // /editor-only: optional Slide 1 CALLOUT text noise overlay (grainy letters).
+  slide1CalloutTextNoise?: {
+    enabled: boolean;
+    mode: "neutral" | "tinted";
+    opacityPct: number; // 0–40
+    intensityPct: number; // 0–100
+    tileSizePx: number; // 32–1024
+  } | null;
   // /editor-only: Slide 1 BODY line spacing tweak (extra px between baselines)
   slide1BodyLineGapPx?: number | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
@@ -163,6 +171,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       slide1Background,
       slide1Card,
       slide1TextNoise,
+      slide1CalloutTextNoise,
       slide1BodyLineGapPx,
       hasHeadline,
       headlineFontFamily,
@@ -2692,6 +2701,141 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         } catch {
           // ignore
         }
+
+        // Slide 1 CALLOUT text noise overlay (grainy letters).
+        try {
+          const tn = slide1CalloutTextNoise && typeof slide1CalloutTextNoise === "object" ? (slide1CalloutTextNoise as any) : null;
+          const enabled = !!tn?.enabled;
+          if (!enabled) return;
+          const mode = String(tn?.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+          const opacityPct = Math.max(0, Math.min(40, Math.round(Number(tn?.opacityPct ?? 20) || 0)));
+          const intensityPct = Math.max(0, Math.min(100, Math.round(Number(tn?.intensityPct ?? 12) || 0)));
+          const tileSizePx = Math.max(32, Math.min(1024, Math.round(Number(tn?.tileSizePx ?? 256) || 0)));
+          const op = Math.max(0, Math.min(0.4, opacityPct / 100));
+          if (op <= 0 || intensityPct <= 0) return;
+
+          // Remove any prior overlays (defensive; canvas is usually cleared each render).
+          try {
+            for (const o of objs as any[]) {
+              if (o?.data?.role === "slide1-callout-text-noise") {
+                try {
+                  canvas.remove(o);
+                } catch {
+                  // ignore
+                }
+              }
+            }
+          } catch {
+            // ignore
+          }
+
+          for (const obj of objs as any[]) {
+            if (obj?.data?.role !== "user-text") continue;
+            const b = String(obj?.data?.block || "");
+            if (String(b || "").toUpperCase() !== "CALLOUT") continue;
+            const txt = String(obj?.text || "");
+            if (!txt.trim()) continue;
+
+            const baseHex = (() => {
+              if (mode !== "tinted") return "#ffffff";
+              if (typeof obj?.fill === "string" && String(obj.fill).trim()) return String(obj.fill).trim();
+              // Callout fill is often applied via per-range styles; fall back to first styled fill when available.
+              try {
+                const st = (obj as any)?.styles;
+                if (st && typeof st === "object") {
+                  const lineKeys = Object.keys(st);
+                  for (const lk of lineKeys) {
+                    const row = (st as any)[lk];
+                    if (!row || typeof row !== "object") continue;
+                    const charKeys = Object.keys(row);
+                    for (const ck of charKeys) {
+                      const f = (row as any)[ck]?.fill;
+                      if (typeof f === "string" && String(f).trim()) return String(f).trim();
+                    }
+                  }
+                }
+              } catch {
+                // ignore
+              }
+              return String(textColor || "#000000").trim() || "#000000";
+            })();
+
+            const pat = getSlide1TextNoisePattern(fabric, { baseHex, mode, intensityPct, tileSizePx });
+            if (!pat) continue;
+
+            // Full-canvas noise, clipped to the text shape so only letters look grainy.
+            const noiseRect = new fabric.Rect({
+              left: 0,
+              top: 0,
+              width: INTERNAL_W,
+              height: INTERNAL_H,
+              fill: pat,
+              opacity: op,
+              originX: "left",
+              originY: "top",
+              selectable: false,
+              evented: false,
+              objectCaching: false,
+            } as any);
+
+            const isTextbox = String(obj?.type || "") === "textbox";
+            const Ctor =
+              isTextbox && typeof (fabric as any).Textbox === "function"
+                ? (fabric as any).Textbox
+                : (typeof (fabric as any).IText === "function" ? (fabric as any).IText : (fabric as any).Text);
+
+            const clip = new Ctor(txt, {
+              left: obj.left,
+              top: obj.top,
+              ...(isTextbox ? { width: Math.max(1, Number(obj.width || 1)) } : {}),
+              fontSize: obj.fontSize,
+              fontFamily: obj.fontFamily,
+              fontWeight: obj.fontWeight,
+              fontStyle: obj.fontStyle,
+              lineHeight: obj.lineHeight,
+              charSpacing: obj.charSpacing,
+              textAlign: obj.textAlign,
+              padding: Number(obj.padding || 0) || 0,
+              styles: (obj as any).styles || undefined,
+              splitByGrapheme: typeof (obj as any).splitByGrapheme === "boolean" ? (obj as any).splitByGrapheme : undefined,
+              originX: obj.originX,
+              originY: obj.originY,
+              angle: obj.angle || 0,
+              scaleX: obj.scaleX || 1,
+              scaleY: obj.scaleY || 1,
+              skewX: obj.skewX || 0,
+              skewY: obj.skewY || 0,
+              fill: "#000000",
+              selectable: false,
+              evented: false,
+            });
+            (clip as any).absolutePositioned = true;
+            try {
+              if (typeof (clip as any).initDimensions === "function") (clip as any).initDimensions();
+              if (typeof (clip as any).setCoords === "function") (clip as any).setCoords();
+              if ((obj as any).pathOffset && (clip as any)) {
+                (clip as any).pathOffset = { ...(obj as any).pathOffset };
+              }
+            } catch {
+              // ignore
+            }
+
+            (noiseRect as any).clipPath = clip;
+            (noiseRect as any).data = { role: "slide1-callout-text-noise", forLineIndex: obj?.data?.lineIndex ?? null };
+            canvas.add(noiseRect);
+
+            // Ensure the noise sits above the text (so it overlays solids), but stays clipped.
+            try {
+              const idx = (canvas.getObjects?.() || []).indexOf(obj);
+              if (idx >= 0 && typeof canvas.moveTo === "function") canvas.moveTo(noiseRect, idx + 1);
+              else (noiseRect as any)?.moveTo?.(idx + 1);
+            } catch {
+              // ignore
+            }
+          }
+        } catch {
+          // ignore
+        }
       };
 
       const addTemplateAssets = () => {
@@ -3115,7 +3259,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               // Ensure each text-noise overlay stays above its corresponding text.
               const noiseByLine = new Map<number, any[]>();
               for (const o of objs as any[]) {
-                if (o?.data?.role !== 'slide1-text-noise') continue;
+                const r = String(o?.data?.role || "");
+                if (r !== 'slide1-text-noise' && r !== 'slide1-callout-text-noise') continue;
                 const li = Number(o?.data?.forLineIndex);
                 if (!Number.isFinite(li)) continue;
                 const arr = noiseByLine.get(li) || [];
@@ -3432,6 +3577,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               if (style.fill) {
                 styleObj.fill = style.fill;
               }
+              if ((style as any).fontFamily) {
+                styleObj.fontFamily = (style as any).fontFamily;
+              }
               if (style.underline) {
                 styleObj.underline = style.underline;
               }
@@ -3744,7 +3892,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, slide1TextNoise, slide1BodyLineGapPx, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, slide1TextNoise, slide1CalloutTextNoise, slide1BodyLineGapPx, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     const defaultFrameStyle: CSSProperties = {
       boxSizing: 'content-box',

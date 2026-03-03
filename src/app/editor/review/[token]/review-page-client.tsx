@@ -572,6 +572,7 @@ function ReviewProjectCard(props: {
   const slide1Background = (slide1InputSnap as any)?.slide1Background ?? null;
   const slide1Card = (slide1InputSnap as any)?.slide1Card ?? null;
   const slide1TextNoise = (slide1InputSnap as any)?.slide1TextNoise ?? null;
+  const slide1CalloutTextNoise = (slide1InputSnap as any)?.slide1Callout?.textNoise ?? null;
   const slide1BodyLineGapPx = (slide1InputSnap as any)?.slide1BodyLineGapPx ?? 0;
   const isEnhanced = project.template_type_id === "enhanced";
   const lockTextLayout = !!(inputSnap as any)?.editor?.layoutLocked;
@@ -870,6 +871,7 @@ function ReviewProjectCard(props: {
               slide1Background={slide1Background}
               slide1Card={slide1Card}
               slide1TextNoise={slide1TextNoise}
+              slide1CalloutTextNoise={slide1CalloutTextNoise}
               slide1BodyLineGapPx={slide1BodyLineGapPx}
               deferInit={false}
               backgroundEffectEnabled={project.background_effect_enabled}
@@ -950,6 +952,7 @@ function ReviewProjectCard(props: {
                   slide1Background={slide1Background}
                   slide1Card={slide1Card}
                   slide1TextNoise={slide1TextNoise}
+                  slide1CalloutTextNoise={slide1CalloutTextNoise}
                   slide1BodyLineGapPx={slide1BodyLineGapPx}
                   deferInit={false}
                   backgroundEffectEnabled={project.background_effect_enabled}

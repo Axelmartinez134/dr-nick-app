@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { Slide1Background, Slide1Card, Slide1Style, Slide1TextNoise } from "@/features/editor/store/types";
+import type { Slide1Background, Slide1Callout, Slide1Card, Slide1Style, Slide1TextNoise } from "@/features/editor/store/types";
 
 type Args = {
   editorStore: any;
@@ -193,6 +193,7 @@ type Args = {
   onSetSlide1Background: (next: Slide1Background) => void;
   onSetSlide1Card: (next: Slide1Card) => void;
   onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
+  onSetSlide1Callout: (next: Slide1Callout) => void;
   onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
   onSetSlide1BodyLineGapPx: (next: number) => void;
   onSetCurrentProjectSlide1TemplateIdSnapshot: (nextTemplateId: string | null) => Promise<boolean> | boolean;
@@ -391,6 +392,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1Background,
     onSetSlide1Card,
     onSetSlide1TextNoise,
+    onSetSlide1Callout,
     onSetSlide1CardAndAccent,
     onSetSlide1BodyLineGapPx,
     onSetCurrentProjectSlide1TemplateIdSnapshot,
@@ -483,6 +485,13 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1TextNoise: (next: Slide1TextNoise) => {
       try {
         onSetSlide1TextNoise(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1Callout: (next: Slide1Callout) => {
+      try {
+        onSetSlide1Callout(next);
       } catch {
         // ignore
       }
@@ -857,6 +866,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onSetSlide1Background: (next: Slide1Background) => implRef.current?.onSetSlide1Background?.(next),
       onSetSlide1Card: (next: Slide1Card) => implRef.current?.onSetSlide1Card?.(next),
       onSetSlide1TextNoise: (next: Slide1TextNoise) => implRef.current?.onSetSlide1TextNoise?.(next),
+      onSetSlide1Callout: (next: Slide1Callout) => implRef.current?.onSetSlide1Callout?.(next),
       onSetSlide1CardAndAccent: (a: any) => implRef.current?.onSetSlide1CardAndAccent?.(a),
       onSetSlide1BodyLineGapPx: (n: number) => implRef.current?.onSetSlide1BodyLineGapPx?.(n),
       onSetCurrentProjectSlide1TemplateIdSnapshot: (t: string | null) =>

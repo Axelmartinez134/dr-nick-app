@@ -3043,6 +3043,157 @@ export default function EditorShell() {
     [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
   );
 
+  const onSetSlide1Callout = useCallback(
+    (nextCallout: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextCallout && typeof nextCallout === "object" ? nextCallout : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1Callout: obj }
+          : { slide1Callout: obj };
+
+      // Ensure the layout snapshot includes/excludes the callout line so exports/review render it.
+      let nextLayoutSnap = baseLayout;
+      try {
+        if (baseLayout && typeof baseLayout === "object" && Array.isArray((baseLayout as any).textLines)) {
+          const lines = ((baseLayout as any).textLines as any[]).slice();
+          const hasCalloutLine = !!lines[1] && String((lines[1] as any)?.block || "").toUpperCase() === "CALLOUT";
+          if (!obj || !String(obj.text || "").trim()) {
+            // Remove callout line if present.
+            if (lines.length > 1) {
+              lines.splice(1, 1);
+              nextLayoutSnap = { ...(baseLayout as any), textLines: lines };
+            }
+          } else {
+            const text = String(obj.text || "");
+            const fontSizePx = Math.max(8, Math.min(999, Math.round(Number(obj.fontSizePx ?? 28) || 28)));
+            const lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(obj.lineGapPx ?? 0) || 0)));
+            const baseLineHeight = 1.2;
+            const lineHeight = Math.max(0.6, Math.min(5, baseLineHeight + (lineGapPx / Math.max(1, fontSizePx))));
+            const colorHex = String(obj.colorHex || "").trim() || "#000000";
+            const fontKey = obj.fontKey == null ? null : String(obj.fontKey || "").trim() || null;
+            const [fam, wRaw] = fontKey ? String(fontKey).split("@@") : [String(bodyFontFamily || "Inter, sans-serif"), String(bodyFontWeight || 400)];
+            const w = Number(wRaw);
+            const fontFamily = String(fam || bodyFontFamily || "Inter, sans-serif");
+            const fontWeight = Number.isFinite(w as any) ? w : (Number.isFinite(bodyFontWeight as any) ? Number(bodyFontWeight) : 400);
+
+            // Default placement (bottom-left) only when creating for the first time.
+            let x = Number((hasCalloutLine ? (lines[1] as any)?.position?.x : NaN));
+            let y = Number((hasCalloutLine ? (lines[1] as any)?.position?.y : NaN));
+            let maxWidth = Number((hasCalloutLine ? (lines[1] as any)?.maxWidth : NaN));
+            const tidForFit = computeTemplateIdForSlide(slideIndexNow);
+            const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
+            const region = getTemplateContentRectInset(snapForFit || null);
+            if (region) {
+              const desiredW = Math.max(180, Math.min(Math.floor(region.width * 0.55), 460));
+              maxWidth = Number.isFinite(maxWidth as any) ? Math.max(80, Math.min(region.width, Math.floor(maxWidth))) : desiredW;
+              // Approximate callout height for bottom anchoring.
+              const measuredH =
+                typeof document === "undefined" ? Math.round(fontSizePx * 1.2) : measureRegularBodyHeightPx(text, maxWidth, fontSizePx, []);
+              const pad = 8;
+              if (!Number.isFinite(x as any)) x = region.x + pad;
+              if (!Number.isFinite(y as any)) y = (region.y + region.height) - pad - Math.max(1, measuredH);
+              // Clamp inside region
+              x = Math.max(region.x, Math.min(region.x + region.width - 1, x));
+              y = Math.max(region.y, Math.min(region.y + region.height - 1, y));
+            } else {
+              if (!Number.isFinite(x as any)) x = 80;
+              if (!Number.isFinite(y as any)) y = 1200;
+              if (!Number.isFinite(maxWidth as any)) maxWidth = 420;
+            }
+
+            const calloutLine: any = {
+              ...(hasCalloutLine ? (lines[1] as any) : {}),
+              block: "CALLOUT",
+              text,
+              baseSize: fontSizePx,
+              position: { x, y },
+              textAlign: "left",
+              lineHeight,
+              maxWidth,
+              styles: [
+                {
+                  start: 0,
+                  end: text.length,
+                  fill: colorHex,
+                  fontFamily,
+                  fontWeight,
+                },
+              ],
+            };
+            if (hasCalloutLine) lines[1] = calloutLine;
+            else lines.splice(1, 0, calloutLine);
+            nextLayoutSnap = { ...(baseLayout as any), textLines: lines };
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      setSlides((prev: any) =>
+        prev.map((s: any, i: number) =>
+          i !== slideIndexNow
+            ? s
+            : ({
+                ...s,
+                inputData: updatedInput,
+                ...(nextLayoutSnap ? { layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } } : {}),
+              } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndexNow
+          ? s
+          : ({
+              ...s,
+              inputData: updatedInput,
+              ...(nextLayoutSnap ? { layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } } : {}),
+            } as any)
+      );
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+        if (nextLayoutSnap) setLayoutData({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || null } as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: nextLayoutSnap || baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [
+      activeSlideIndexRef,
+      bodyFontFamily,
+      bodyFontWeight,
+      computeTemplateIdForSlide,
+      initSlide,
+      inputData,
+      layoutData,
+      schedulePersistLayoutAndInput,
+      setInputData,
+      setLayoutData,
+      setSlides,
+      slidesRef,
+      currentProjectIdRef,
+      templateSnapshots,
+      templateTypeIdRef,
+    ]
+  );
+
   const onSetSlide1CardAndAccent = useCallback(
     (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => {
       const pid = String(currentProjectIdRef.current || "").trim();
@@ -3315,6 +3466,7 @@ export default function EditorShell() {
 
     const imageUrl = (params.image as any)?.url || null;
     const prevLine = params.existingLayout?.textLines?.[0] || null;
+    const prevExtraLines = Array.isArray(params.existingLayout?.textLines) ? (params.existingLayout.textLines as any[]).slice(1) : [];
 
     const requestedBodySize = Math.max(8, Math.min(params.slideIndex === 0 ? 999 : 120, Math.round(Number(params.bodyFontSizePx) || 48)));
     const rawX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
@@ -3387,6 +3539,8 @@ export default function EditorShell() {
             params.bodyRanges || []
           ),
         },
+        // Preserve any extra lines (e.g. Slide 1 callout) so Regular reflows don't wipe them.
+        ...(prevExtraLines.length ? prevExtraLines : []),
       ],
       ...(params.image && imageUrl
         ? {
@@ -3555,7 +3709,7 @@ export default function EditorShell() {
       pushUndoSnapshot();
     }
 
-    const nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
+    let nextTextLines = baseLayout.textLines.map((l: any, idx: number) => {
       if (idx !== change.lineIndex) return l;
       return {
         ...l,
@@ -3564,62 +3718,79 @@ export default function EditorShell() {
         maxWidth: Math.max(1, Number(change.maxWidth) || l.maxWidth || 1),
       };
     });
-    // Regular: shrink-to-fit after release (do NOT run full reflow here; preserve manual move/resize).
-    let nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
-    let fittedSizeForUi = Number((curSlide as any)?.draftBodyFontSizePx ?? 48);
+
+    // Slide 1 Callout: if the callout line was cleared, remove it entirely.
     try {
-      const tidForFit = computeTemplateIdForSlide(slideIndex);
-      const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
-      const region = getTemplateContentRectInset(snapForFit || null);
-      const nextBodyForFit = change.text !== undefined ? String(change.text || "") : String(curSlide.draftBody || "");
-      const line0 = (nextLayoutSnap as any)?.textLines?.[0] || null;
-      if (region && line0) {
-        const rawX = Number(line0?.position?.x ?? region.x) || region.x;
-        const x = Math.max(region.x, Math.min(region.x + region.width - 1, rawX));
-        const maxW = Math.max(1, Math.floor((region.x + region.width) - x));
-        const width = Math.max(1, Math.min(maxW, Math.floor(Number(line0?.maxWidth ?? region.width) || region.width)));
-        const fitted = fitRegularBodyFontSizePx({
-          text: nextBodyForFit,
-          maxWidthPx: width,
-          maxHeightPx: region.height,
-          bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
-          // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
-          // Other slides: keep legacy cap for now.
-          maxFontSizePx:
-            slideIndex === 0
-              ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
-              : 56,
-        });
-        const measuredH = measureRegularBodyHeightPx(
-          nextBodyForFit,
-          width,
-          fitted,
-          Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : []
-        );
-        const halfH = Math.max(1, Math.floor(measuredH / 2));
-        const minCenterY = region.y + halfH;
-        const maxCenterY = (region.y + region.height) - halfH;
-        const rawCenterY = Number(line0?.position?.y ?? (region.y + region.height / 2));
-        const centerY = Math.max(minCenterY, Math.min(maxCenterY, rawCenterY));
-        fittedSizeForUi = fitted;
-        nextLayoutSnap = {
-          ...nextLayoutSnap,
-          textLines: [
-            {
-              ...line0,
-              position: { ...(line0.position || {}), x, y: centerY },
-              maxWidth: width,
-              baseSize: fitted,
-            },
-          ],
-        } as any;
+      const isCalloutLine = change.lineIndex === 1 && slideIndex === 0;
+      const nextText = typeof change.text === "string" ? String(change.text || "") : null;
+      if (isCalloutLine && nextText != null && nextText.trim().length === 0) {
+        nextTextLines = nextTextLines.filter((_, idx) => idx !== 1);
       }
     } catch {
       // ignore
     }
+    // Regular: shrink-to-fit after release (do NOT run full reflow here; preserve manual move/resize).
+    let nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
+    let fittedSizeForUi = Number((curSlide as any)?.draftBodyFontSizePx ?? 48);
+    if (change.lineIndex === 0) {
+      try {
+        const tidForFit = computeTemplateIdForSlide(slideIndex);
+        const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
+        const region = getTemplateContentRectInset(snapForFit || null);
+        const nextBodyForFit = change.text !== undefined ? String(change.text || "") : String(curSlide.draftBody || "");
+        const line0 = (nextLayoutSnap as any)?.textLines?.[0] || null;
+        if (region && line0) {
+          const rawX = Number(line0?.position?.x ?? region.x) || region.x;
+          const x = Math.max(region.x, Math.min(region.x + region.width - 1, rawX));
+          const maxW = Math.max(1, Math.floor((region.x + region.width) - x));
+          const width = Math.max(1, Math.min(maxW, Math.floor(Number(line0?.maxWidth ?? region.width) || region.width)));
+          const fitted = fitRegularBodyFontSizePx({
+            text: nextBodyForFit,
+            maxWidthPx: width,
+            maxHeightPx: region.height,
+            bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
+            // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
+            // Other slides: keep legacy cap for now.
+            maxFontSizePx:
+              slideIndex === 0
+                ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
+                : 56,
+          });
+          const measuredH = measureRegularBodyHeightPx(
+            nextBodyForFit,
+            width,
+            fitted,
+            Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : []
+          );
+          const halfH = Math.max(1, Math.floor(measuredH / 2));
+          const minCenterY = region.y + halfH;
+          const maxCenterY = (region.y + region.height) - halfH;
+          const rawCenterY = Number(line0?.position?.y ?? (region.y + region.height / 2));
+          const centerY = Math.max(minCenterY, Math.min(maxCenterY, rawCenterY));
+          fittedSizeForUi = fitted;
+          const rest = Array.isArray((nextLayoutSnap as any)?.textLines) ? (nextLayoutSnap as any).textLines.slice(1) : [];
+          nextLayoutSnap = {
+            ...nextLayoutSnap,
+            textLines: [
+              {
+                ...line0,
+                position: { ...(line0.position || {}), x, y: centerY },
+                maxWidth: width,
+                baseSize: fitted,
+              },
+              ...(rest.length ? rest : []),
+            ],
+          } as any;
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     const tid = computeTemplateIdForSlide(slideIndex);
-    const nextBody = change.text !== undefined ? change.text : (curSlide.draftBody || "");
+    const nextBody = change.lineIndex === 0
+      ? (change.text !== undefined ? change.text : (curSlide.draftBody || ""))
+      : (curSlide.draftBody || "");
     // IMPORTANT: Merge existing input snapshot so Slide 1-local fields (e.g. slide1Style) aren't lost on drag/move.
     // IMPORTANT: Prefer the sync ref snapshot over React state.
     // When inline marks are applied during Fabric editing, we intentionally avoid updating React state
@@ -3627,8 +3798,26 @@ export default function EditorShell() {
     const baseInputForMerge =
       (curSlide as any)?.inputData || (slideIndex === activeSlideIndex ? (inputData as any) : null) || null;
     const baseObj = baseInputForMerge && typeof baseInputForMerge === "object" ? (baseInputForMerge as any) : {};
+    // If this was the callout line, also mirror the callout text into input snapshot (so it survives reflows/exports).
+    let mergedBaseObj = baseObj;
+    try {
+      if (change.lineIndex === 1 && slideIndex === 0 && typeof change.text === "string") {
+        const curCallout = mergedBaseObj && typeof mergedBaseObj === "object" ? (mergedBaseObj as any).slide1Callout : null;
+        const nextText = String(change.text || "");
+        const nextCallout =
+          nextText.trim().length === 0
+            ? null
+            : (curCallout && typeof curCallout === "object"
+                ? { ...(curCallout as any), text: nextText }
+                : { text: nextText, fontSizePx: 28, colorHex: "#000000" });
+        mergedBaseObj = mergedBaseObj && typeof mergedBaseObj === "object" ? { ...(mergedBaseObj as any), slide1Callout: nextCallout } : { slide1Callout: nextCallout };
+      }
+    } catch {
+      // ignore
+    }
+
     const req: any = {
-      ...baseObj,
+      ...(mergedBaseObj as any),
       headline: "",
       body: nextBody,
       bodyFontSizePx: fittedSizeForUi,
@@ -3649,8 +3838,8 @@ export default function EditorShell() {
           ? s
           : {
               ...s,
-              draftBody: change.text !== undefined ? nextBody : s.draftBody,
-              draftBodyFontSizePx: fittedSizeForUi,
+              ...(change.lineIndex === 0 ? { draftBody: change.text !== undefined ? nextBody : s.draftBody } : {}),
+              ...(change.lineIndex === 0 ? { draftBodyFontSizePx: fittedSizeForUi } : {}),
               layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null },
               inputData: req,
             }
@@ -3661,8 +3850,8 @@ export default function EditorShell() {
         ? s
         : {
             ...s,
-            draftBody: change.text !== undefined ? nextBody : (s.draftBody || ""),
-            draftBodyFontSizePx: fittedSizeForUi,
+            ...(change.lineIndex === 0 ? { draftBody: change.text !== undefined ? nextBody : (s.draftBody || "") } : {}),
+            ...(change.lineIndex === 0 ? { draftBodyFontSizePx: fittedSizeForUi } : {}),
             layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null },
             inputData: req,
           }
@@ -6718,6 +6907,7 @@ export default function EditorShell() {
     onSetSlide1Background,
     onSetSlide1Card,
     onSetSlide1TextNoise,
+    onSetSlide1Callout,
     onSetSlide1CardAndAccent,
     onSetSlide1BodyLineGapPx,
     onSetCurrentProjectSlide1TemplateIdSnapshot,

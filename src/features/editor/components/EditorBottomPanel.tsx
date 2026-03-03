@@ -24,6 +24,8 @@ export function EditorBottomPanel() {
   const [slide1CopyPasteStatus, setSlide1CopyPasteStatus] = useState<"idle" | "copied" | "applied" | "error">("idle");
   const [slide1CopyPasteError, setSlide1CopyPasteError] = useState<string | null>(null);
   const [slide1GradientPickerOpen, setSlide1GradientPickerOpen] = useState(false);
+  const [slide1TextTarget, setSlide1TextTarget] = useState<"body" | "callout">("body");
+  const [slide1CalloutDraft, setSlide1CalloutDraft] = useState<string>("");
   const [slide1BodySizeDraft, setSlide1BodySizeDraft] = useState<string>("");
   const slide1BodySizeEditingRef = useRef<boolean>(false);
   const slide1BodySizeHoldTimeoutRef = useRef<number | null>(null);
@@ -450,6 +452,40 @@ export function EditorBottomPanel() {
       accentSolidHex: nextAccentMode === "solid" ? (String(nextAccentSolidHex || "#ffffff").trim() || "#ffffff") : null,
       gradientId: nextAccentMode === "gradient" ? (String(nextGradientId || "").trim() || null) : null,
     } as any);
+  };
+
+  const hexToRgbSafe = (h: string) => {
+    const s = String(h || "").replace("#", "").trim();
+    if (s.length === 3) {
+      const r = parseInt(s[0] + s[0], 16);
+      const g = parseInt(s[1] + s[1], 16);
+      const b = parseInt(s[2] + s[2], 16);
+      return { r, g, b };
+    }
+    if (s.length >= 6) {
+      const r = parseInt(s.slice(0, 2), 16);
+      const g = parseInt(s.slice(2, 4), 16);
+      const b = parseInt(s.slice(4, 6), 16);
+      return { r, g, b };
+    }
+    return { r: 0, g: 0, b: 0 };
+  };
+  const relLum = (rgb: { r: number; g: number; b: number }) => {
+    const f = (u: number) => {
+      const c = u / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const r = f(rgb.r), g = f(rgb.g), b = f(rgb.b);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const pickBWForBg = (bgHex: string) => {
+    try {
+      const lum = relLum(hexToRgbSafe(bgHex));
+      // Threshold tuned for legibility; if background is bright, use black text.
+      return lum > 0.55 ? "#000000" : "#ffffff";
+    } catch {
+      return "#000000";
+    }
   };
 
   return (
@@ -1629,6 +1665,304 @@ export function EditorBottomPanel() {
                         {slide1TextOpen ? (
                           <div className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[360px] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
                             <div className="text-xs font-semibold text-slate-900">Slide 1 only</div>
+                            <div className="mt-3 flex items-center gap-2">
+                              {(["body", "callout"] as const).map((t) => {
+                                const active = slide1TextTarget === t;
+                                return (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    className={[
+                                      "h-8 px-3 rounded-full text-xs font-semibold border transition-colors",
+                                      active ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                                    ].join(" ")}
+                                    onClick={() => {
+                                      setSlide1GradientPickerOpen(false);
+                                      setSlide1TextTarget(t);
+                                      if (t === "callout") {
+                                        const cur = (slides as any)?.[0]?.inputData?.slide1Callout?.text;
+                                        setSlide1CalloutDraft(String(cur || ""));
+                                      }
+                                    }}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating}
+                                    aria-label={t === "body" ? "Edit Body" : "Edit Callout"}
+                                  >
+                                    {t === "body" ? "Body" : "Callout"}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {slide1TextTarget === "callout" ? (
+                              (() => {
+                                const callout = (slides as any)?.[0]?.inputData?.slide1Callout || null;
+                                const bg = (slides as any)?.[0]?.inputData?.slide1Background || null;
+                                const bgHex = String(bg?.backgroundHex || "").trim() || String(projectBackgroundColor || "#ffffff");
+                                const curText = String(callout?.text || slide1CalloutDraft || "");
+                                const hasText = curText.trim().length > 0;
+                                const disabledControls = !hasText || !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                                const fontSizePx = Math.max(8, Math.min(999, Math.round(Number(callout?.fontSizePx ?? 28) || 28)));
+                                const colorHex = String(callout?.colorHex || "").trim() || pickBWForBg(bgHex);
+
+                                return (
+                                  <div className="mt-3 space-y-3">
+                                    <div>
+                                      <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout text</div>
+                                      <textarea
+                                        className="mt-1 w-full h-20 rounded-xl border border-slate-200 bg-white p-2 text-sm font-semibold text-slate-800"
+                                        value={slide1CalloutDraft}
+                                        disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                        onChange={(e) => {
+                                          const v = String(e.target.value || "");
+                                          setSlide1CalloutDraft(v);
+                                          if (v.trim().length === 0) return;
+                                          const next = callout && typeof callout === "object" ? { ...(callout as any) } : {};
+                                          next.text = v;
+                                          next.fontSizePx = Math.max(8, Math.min(999, Math.round(Number(next.fontSizePx ?? 28) || 28)));
+                                          next.colorHex = String(next.colorHex || "").trim() || pickBWForBg(bgHex);
+                                          actions.onSetSlide1Callout?.(next as any);
+                                        }}
+                                        onBlur={() => {
+                                          const v = String(slide1CalloutDraft || "");
+                                          const trimmed = v.trim();
+                                          if (!trimmed.length) {
+                                            if (callout) actions.onSetSlide1Callout?.(null as any);
+                                            return;
+                                          }
+                                          const next = callout && typeof callout === "object" ? { ...(callout as any) } : {};
+                                          next.text = v;
+                                          next.fontSizePx = Math.max(8, Math.min(999, Math.round(Number(next.fontSizePx ?? 28) || 28)));
+                                          next.colorHex = String(next.colorHex || "").trim() || pickBWForBg(bgHex);
+                                          actions.onSetSlide1Callout?.(next as any);
+                                        }}
+                                        placeholder="Callout…"
+                                      />
+                                      <div className="mt-1 text-[10px] text-slate-500">Controls enable after you type.</div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <div className="text-[11px] font-semibold text-slate-600 uppercase">Size</div>
+                                        <input
+                                          type="number"
+                                          className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                          value={fontSizePx}
+                                          disabled={disabledControls}
+                                          onChange={(e) => {
+                                            const n = Math.max(8, Math.min(999, Math.round(Number(e.target.value) || 28)));
+                                            const next = callout && typeof callout === "object" ? { ...(callout as any) } : { text: curText };
+                                            next.text = curText;
+                                            next.fontSizePx = n;
+                                            next.colorHex = String(next.colorHex || "").trim() || colorHex;
+                                            actions.onSetSlide1Callout?.(next as any);
+                                          }}
+                                          title="Callout font size. Min 8, max 999."
+                                        />
+                                      </div>
+                                      <div>
+                                        <div className="text-[11px] font-semibold text-slate-600 uppercase">Color</div>
+                                        <div className="mt-1 flex items-center gap-2">
+                                          <input
+                                            type="color"
+                                            className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                            value={colorHex}
+                                            disabled={disabledControls}
+                                            onChange={(e) => {
+                                              const nextHex = String(e.target.value || "").trim() || colorHex;
+                                              const next = callout && typeof callout === "object" ? { ...(callout as any) } : { text: curText };
+                                              next.text = curText;
+                                              next.fontSizePx = fontSizePx;
+                                              next.colorHex = nextHex;
+                                              actions.onSetSlide1Callout?.(next as any);
+                                            }}
+                                            aria-label="Callout color"
+                                          />
+                                          <div className="text-xs text-slate-600 tabular-nums">{colorHex}</div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <div className="text-[11px] font-semibold text-slate-600 uppercase">Font</div>
+                                      <select
+                                        className="mt-1 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
+                                        value={(() => {
+                                          const localBody = String((slides as any)?.[0]?.inputData?.slide1BodyFontKey || "").trim();
+                                          const global = String(bodyFontKey || "").trim();
+                                          const local = String((callout as any)?.fontKey || "").trim();
+                                          return local || localBody || global || "";
+                                        })()}
+                                        disabled={disabledControls}
+                                        onChange={(e) => {
+                                          const nextKey = String(e.target.value || "").trim();
+                                          const localBody = String((slides as any)?.[0]?.inputData?.slide1BodyFontKey || "").trim();
+                                          const global = String(bodyFontKey || "").trim();
+                                          const effectiveDefault = localBody || global || "";
+                                          const next = callout && typeof callout === "object" ? { ...(callout as any) } : { text: curText };
+                                          next.text = curText;
+                                          next.fontSizePx = fontSizePx;
+                                          next.colorHex = colorHex;
+                                          next.fontKey = nextKey && nextKey !== effectiveDefault ? nextKey : null;
+                                          actions.onSetSlide1Callout?.(next as any);
+                                        }}
+                                        aria-label="Callout font"
+                                      >
+                                        <option value={String((slides as any)?.[0]?.inputData?.slide1BodyFontKey || "").trim() || String(bodyFontKey || "").trim() || ""}>
+                                          Default (Body)
+                                        </option>
+                                        {fontOptions.map((o: any) => (
+                                          <option
+                                            key={`${o.family}@@${o.weight}`}
+                                            value={`${o.family}@@${o.weight}`}
+                                            style={String(o?.label || "").startsWith("Slide —") ? { color: "#2563eb" } : undefined}
+                                          >
+                                            {o.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className={disabledControls ? "opacity-50 pointer-events-none" : ""}>
+                                      <div className="text-[11px] font-semibold text-slate-900 uppercase">Text noise</div>
+                                      {(() => {
+                                        const noise = (callout as any)?.textNoise || null;
+                                        const enabled = !!noise?.enabled;
+                                        const mode = String(noise?.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+                                        const opacityPct = Math.max(0, Math.min(40, Math.round(Number(noise?.opacityPct ?? 20) || 0)));
+                                        const intensityPct = Math.max(0, Math.min(100, Math.round(Number(noise?.intensityPct ?? 12) || 0)));
+                                        const tileSizePx = Math.max(32, Math.min(1024, Math.round(Number(noise?.tileSizePx ?? 256) || 0)));
+                                        const setNoise = (patch: any) => {
+                                          const base = callout && typeof callout === "object" ? { ...(callout as any) } : { text: curText };
+                                          base.text = curText;
+                                          base.fontSizePx = fontSizePx;
+                                          base.colorHex = colorHex;
+                                          base.textNoise = patch;
+                                          actions.onSetSlide1Callout?.(base as any);
+                                        };
+                                        return (
+                                          <div className="mt-2 space-y-3">
+                                            <button
+                                              type="button"
+                                              className={[
+                                                "w-full h-9 rounded-lg border text-sm font-semibold shadow-sm transition-colors",
+                                                enabled ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                                              ].join(" ")}
+                                              onClick={() => {
+                                                if (enabled) {
+                                                  setNoise(null);
+                                                  return;
+                                                }
+                                                setNoise({ enabled: true, mode: "neutral", opacityPct: 20, intensityPct: 12, tileSizePx: 256 });
+                                              }}
+                                              title={enabled ? "Text noise enabled" : "Text noise disabled"}
+                                            >
+                                              {enabled ? "Noise: On" : "Noise: Off"}
+                                            </button>
+
+                                            {enabled ? (
+                                              <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Mode</div>
+                                                  <div className="mt-1 flex items-center gap-2">
+                                                    {(["neutral", "tinted"] as const).map((m) => (
+                                                      <button
+                                                        key={m}
+                                                        type="button"
+                                                        className={[
+                                                          "flex-1 h-9 rounded-lg border text-xs font-semibold transition-colors",
+                                                          mode === m ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+                                                        ].join(" ")}
+                                                        onClick={() => setNoise({ enabled: true, mode: m, opacityPct, intensityPct, tileSizePx })}
+                                                      >
+                                                        {m === "neutral" ? "Neutral" : "Tinted"}
+                                                      </button>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                                <div>
+                                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Opacity</div>
+                                                  <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={40}
+                                                    step={1}
+                                                    className="mt-2 w-full"
+                                                    value={opacityPct}
+                                                    onChange={(e) => {
+                                                      const n = Math.max(0, Math.min(40, Math.round(Number(e.target.value) || 0)));
+                                                      setNoise({ enabled: true, mode, opacityPct: n, intensityPct, tileSizePx });
+                                                    }}
+                                                    aria-label="Callout noise opacity"
+                                                  />
+                                                  <div className="mt-1 text-[10px] text-slate-500">0–40%</div>
+                                                </div>
+                                                <div>
+                                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Intensity</div>
+                                                  <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={100}
+                                                    step={1}
+                                                    className="mt-2 w-full"
+                                                    value={intensityPct}
+                                                    onChange={(e) => {
+                                                      const n = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                                      setNoise({ enabled: true, mode, opacityPct, intensityPct: n, tileSizePx });
+                                                    }}
+                                                    aria-label="Callout noise intensity"
+                                                  />
+                                                  <div className="mt-1 text-[10px] text-slate-500">0–100</div>
+                                                </div>
+                                                <div>
+                                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Tile size</div>
+                                                  <input
+                                                    type="number"
+                                                    className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                                    value={tileSizePx}
+                                                    min={32}
+                                                    max={1024}
+                                                    onChange={(e) => {
+                                                      const n = Math.max(32, Math.min(1024, Math.round(Number(e.target.value) || 256)));
+                                                      setNoise({ enabled: true, mode, opacityPct, intensityPct, tileSizePx: n });
+                                                    }}
+                                                    aria-label="Callout noise tile size"
+                                                  />
+                                                </div>
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+
+                                    <div className={disabledControls ? "opacity-50 pointer-events-none" : ""}>
+                                      <div className="text-[11px] font-semibold text-slate-600 uppercase">Line gap</div>
+                                      <input
+                                        type="number"
+                                        className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                        value={Math.max(-80, Math.min(80, Math.round(Number((callout as any)?.lineGapPx ?? 0) || 0)))}
+                                        min={-80}
+                                        max={80}
+                                        step={1}
+                                        onChange={(e) => {
+                                          const n = Math.max(-80, Math.min(80, Math.round(Number(e.target.value) || 0)));
+                                          const next = callout && typeof callout === "object" ? { ...(callout as any) } : { text: curText };
+                                          next.text = curText;
+                                          next.fontSizePx = fontSizePx;
+                                          next.colorHex = colorHex;
+                                          next.lineGapPx = n;
+                                          actions.onSetSlide1Callout?.(next as any);
+                                        }}
+                                        aria-label="Callout line gap"
+                                      />
+                                      <div className="mt-1 text-[10px] text-slate-500">-80 to +80px</div>
+                                    </div>
+                                  </div>
+                                );
+                              })()
+                            ) : null}
+
+                            {slide1TextTarget === "body" ? (
                             <div className="mt-3 grid grid-cols-2 gap-3">
                               <div>
                                 <div className="text-[11px] font-semibold text-slate-600 uppercase">Body size</div>
@@ -1875,152 +2209,159 @@ export function EditorBottomPanel() {
                                 })()}
                               </div>
                             </div>
+                            ) : null}
 
-                            {/* Line gap (Slide 1 BODY only) */}
-                            {(() => {
-                              const raw = (slides as any)?.[0]?.inputData?.slide1BodyLineGapPx;
-                              const gapPx = Math.max(-80, Math.min(80, Math.round(Number(raw ?? 0) || 0)));
-                              const disabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
-                              return (
+                            {slide1TextTarget === "body" ? (
+                              <>
+                                {/* Line gap (Slide 1 BODY only) */}
+                                {(() => {
+                                  const raw = (slides as any)?.[0]?.inputData?.slide1BodyLineGapPx;
+                                  const gapPx = Math.max(-80, Math.min(80, Math.round(Number(raw ?? 0) || 0)));
+                                  const disabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                                  return (
+                                    <div className="mt-3">
+                                      <div className="text-[11px] font-semibold text-slate-600 uppercase">Line gap</div>
+                                      <div className="mt-1 flex items-stretch gap-2">
+                                        <input
+                                          type="text"
+                                          inputMode="numeric"
+                                          pattern="[0-9]*"
+                                          className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                          value={String(gapPx)}
+                                          disabled={disabled}
+                                          onChange={(e) => {
+                                            const cleaned = String(e.target.value || "").trim().replace(/[^\d-]/g, "");
+                                            // Keep only a single leading '-'
+                                            const norm = cleaned.startsWith("-")
+                                              ? "-" + cleaned.slice(1).replace(/-/g, "")
+                                              : cleaned.replace(/-/g, "");
+                                            const n = Math.max(-80, Math.min(80, Math.round(Number(norm) || 0)));
+                                            actions.onSetSlide1BodyLineGapPx?.(n);
+                                          }}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.();
+                                          }}
+                                          title="Extra px between lines (Slide 1 BODY only). Min 0, max 80."
+                                        />
+                                        <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                          {([
+                                            { dir: "up" as const, label: "Increase line gap", delta: +1, glyph: "▲" },
+                                            { dir: "down" as const, label: "Decrease line gap", delta: -1, glyph: "▼" },
+                                          ] as const).map((btn) => (
+                                            <button
+                                              key={btn.dir}
+                                              type="button"
+                                              className={[
+                                                "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                                btn.dir === "up" ? "border-b border-slate-200" : "",
+                                                disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                              ].join(" ")}
+                                              onMouseDown={(e) => e.preventDefault()}
+                                              onClick={() => {
+                                                if (disabled) return;
+                                                const next = Math.max(-80, Math.min(80, gapPx + btn.delta));
+                                                actions.onSetSlide1BodyLineGapPx?.(next);
+                                              }}
+                                              aria-label={btn.label}
+                                              aria-disabled={disabled}
+                                              title={btn.label}
+                                            >
+                                              {btn.glyph}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div className="mt-1 text-[10px] text-slate-500">-80 = tight · 0 = default · 80 = loose</div>
+                                    </div>
+                                  );
+                                })()}
+                              </>
+                            ) : null}
+
+                            {slide1TextTarget === "body" ? (
+                              <>
                                 <div className="mt-3">
-                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Line gap</div>
-                                  <div className="mt-1 flex items-stretch gap-2">
-                                    <input
-                                      type="text"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
-                                      value={String(gapPx)}
-                                      disabled={disabled}
-                                      onChange={(e) => {
-                                        const cleaned = String(e.target.value || "").trim().replace(/[^\d-]/g, "");
-                                        // Keep only a single leading '-'
-                                        const norm = cleaned.startsWith("-")
-                                          ? "-" + cleaned.slice(1).replace(/-/g, "")
-                                          : cleaned.replace(/-/g, "");
-                                        const n = Math.max(-80, Math.min(80, Math.round(Number(norm) || 0)));
-                                        actions.onSetSlide1BodyLineGapPx?.(n);
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") (e.target as HTMLInputElement | null)?.blur?.();
-                                      }}
-                                      title="Extra px between lines (Slide 1 BODY only). Min 0, max 80."
-                                    />
-                                    <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                                      {([
-                                        { dir: "up" as const, label: "Increase line gap", delta: +1, glyph: "▲" },
-                                        { dir: "down" as const, label: "Decrease line gap", delta: -1, glyph: "▼" },
-                                      ] as const).map((btn) => (
+                                  <div className="text-[11px] font-semibold text-slate-600 uppercase">Body font (Slide 1)</div>
+                                  <select
+                                    className="mt-1 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
+                                    value={(() => {
+                                      const local = String((slides as any)?.[0]?.inputData?.slide1BodyFontKey || "").trim();
+                                      const global = String(bodyFontKey || "").trim();
+                                      return local || global || "";
+                                    })()}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating}
+                                    onChange={(e) => {
+                                      const next = String(e.target.value || "").trim();
+                                      const global = String(bodyFontKey || "").trim();
+                                      actions.onSetSlide1BodyFontKey?.(next && next !== global ? next : null);
+                                    }}
+                                    aria-label="Slide 1 body font"
+                                  >
+                                    <option value={String(bodyFontKey || "").trim() || ""}>Global default</option>
+                                    {fontOptions.map((o: any) => (
+                                      <option
+                                        key={`${o.family}@@${o.weight}`}
+                                        value={`${o.family}@@${o.weight}`}
+                                        style={String(o?.label || "").startsWith("Slide —") ? { color: "#2563eb" } : undefined}
+                                      >
+                                        {o.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {/* Text Noise (Slide 1 BODY only) */}
+                                {(() => {
+                                  const tn = (slides as any)?.[0]?.inputData?.slide1TextNoise || null;
+                                  const enabled = !!(tn && typeof tn === "object" ? (tn as any).enabled : false);
+                                  const mode = String((tn as any)?.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+                                  const opacityPct = Math.max(0, Math.min(40, Math.round(Number((tn as any)?.opacityPct ?? 20) || 0)));
+                                  const intensityPct = Math.max(0, Math.min(100, Math.round(Number((tn as any)?.intensityPct ?? 12) || 0)));
+                                  const tileSizePx = Math.max(32, Math.min(1024, Math.round(Number((tn as any)?.tileSizePx ?? 256) || 0)));
+                                  const ariaDisabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                                  const ariaDisabledInner = ariaDisabled || !enabled;
+
+                                  return (
+                                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="text-[11px] font-semibold text-slate-900 uppercase">Text noise</div>
                                         <button
-                                          key={btn.dir}
                                           type="button"
                                           className={[
-                                            "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
-                                            btn.dir === "up" ? "border-b border-slate-200" : "",
-                                            disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                            "h-7 w-12 rounded-full transition-colors",
+                                            enabled ? "bg-black" : "bg-slate-300",
+                                            ariaDisabled ? "opacity-60" : "",
                                           ].join(" ")}
-                                          onMouseDown={(e) => e.preventDefault()}
+                                          aria-label={enabled ? "Disable text noise" : "Enable text noise"}
+                                          title={enabled ? "Text noise enabled" : "Text noise disabled"}
                                           onClick={() => {
-                                            if (disabled) return;
-                                            const next = Math.max(-80, Math.min(80, gapPx + btn.delta));
-                                            actions.onSetSlide1BodyLineGapPx?.(next);
+                                            if (ariaDisabled) return;
+                                            const base =
+                                              tn && typeof tn === "object"
+                                                ? { ...(tn as any) }
+                                                : {
+                                                    enabled: false,
+                                                    mode: "neutral",
+                                                    opacityPct: 20,
+                                                    intensityPct: 12,
+                                                    tileSizePx: 256,
+                                                  };
+                                            base.enabled = !enabled;
+                                            base.mode = String(base.mode || "neutral") === "tinted" ? "tinted" : "neutral";
+                                            base.opacityPct = Math.max(0, Math.min(40, Math.round(Number(base.opacityPct ?? 20) || 0)));
+                                            base.intensityPct = Math.max(0, Math.min(100, Math.round(Number(base.intensityPct ?? 12) || 0)));
+                                            base.tileSizePx = Math.max(32, Math.min(1024, Math.round(Number(base.tileSizePx ?? 256) || 0)));
+                                            actions.onSetSlide1TextNoise?.(base as any);
                                           }}
-                                          aria-label={btn.label}
-                                          aria-disabled={disabled}
-                                          title={btn.label}
                                         >
-                                          {btn.glyph}
+                                          <span
+                                            className={[
+                                              "block h-6 w-6 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                              enabled ? "translate-x-5" : "translate-x-1",
+                                            ].join(" ")}
+                                          />
                                         </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <div className="mt-1 text-[10px] text-slate-500">-80 = tight · 0 = default · 80 = loose</div>
-                                </div>
-                              );
-                            })()}
-
-                            <div className="mt-3">
-                              <div className="text-[11px] font-semibold text-slate-600 uppercase">Body font (Slide 1)</div>
-                              <select
-                                className="mt-1 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
-                                value={(() => {
-                                  const local = String((slides as any)?.[0]?.inputData?.slide1BodyFontKey || "").trim();
-                                  const global = String(bodyFontKey || "").trim();
-                                  return local || global || "";
-                                })()}
-                                disabled={!currentProjectId || switchingSlides || copyGenerating}
-                                onChange={(e) => {
-                                  const next = String(e.target.value || "").trim();
-                                  const global = String(bodyFontKey || "").trim();
-                                  actions.onSetSlide1BodyFontKey?.(next && next !== global ? next : null);
-                                }}
-                                aria-label="Slide 1 body font"
-                              >
-                                <option value={String(bodyFontKey || "").trim() || ""}>Global default</option>
-                                {fontOptions.map((o: any) => (
-                                  <option
-                                    key={`${o.family}@@${o.weight}`}
-                                    value={`${o.family}@@${o.weight}`}
-                                    style={String(o?.label || "").startsWith("Slide —") ? { color: "#2563eb" } : undefined}
-                                  >
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Text Noise (Slide 1 BODY only) */}
-                            {(() => {
-                              const tn = (slides as any)?.[0]?.inputData?.slide1TextNoise || null;
-                              const enabled = !!(tn && typeof tn === "object" ? (tn as any).enabled : false);
-                              const mode = String((tn as any)?.mode || "neutral") === "tinted" ? "tinted" : "neutral";
-                              const opacityPct = Math.max(0, Math.min(40, Math.round(Number((tn as any)?.opacityPct ?? 20) || 0)));
-                              const intensityPct = Math.max(0, Math.min(100, Math.round(Number((tn as any)?.intensityPct ?? 12) || 0)));
-                              const tileSizePx = Math.max(32, Math.min(1024, Math.round(Number((tn as any)?.tileSizePx ?? 256) || 0)));
-                              const ariaDisabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
-                              const ariaDisabledInner = ariaDisabled || !enabled;
-
-                              return (
-                                <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="text-[11px] font-semibold text-slate-900 uppercase">Text noise</div>
-                                    <button
-                                      type="button"
-                                      className={[
-                                        "h-7 w-12 rounded-full transition-colors",
-                                        enabled ? "bg-black" : "bg-slate-300",
-                                        ariaDisabled ? "opacity-60" : "",
-                                      ].join(" ")}
-                                      aria-label={enabled ? "Disable text noise" : "Enable text noise"}
-                                      title={enabled ? "Text noise enabled" : "Text noise disabled"}
-                                      onClick={() => {
-                                        if (ariaDisabled) return;
-                                        const base =
-                                          tn && typeof tn === "object"
-                                            ? { ...(tn as any) }
-                                            : {
-                                                enabled: false,
-                                                mode: "neutral",
-                                                opacityPct: 20,
-                                                intensityPct: 12,
-                                                tileSizePx: 256,
-                                              };
-                                        base.enabled = !enabled;
-                                        base.mode = String(base.mode || "neutral") === "tinted" ? "tinted" : "neutral";
-                                        base.opacityPct = Math.max(0, Math.min(40, Math.round(Number(base.opacityPct ?? 20) || 0)));
-                                        base.intensityPct = Math.max(0, Math.min(100, Math.round(Number(base.intensityPct ?? 12) || 0)));
-                                        base.tileSizePx = Math.max(32, Math.min(1024, Math.round(Number(base.tileSizePx ?? 256) || 0)));
-                                        actions.onSetSlide1TextNoise?.(base as any);
-                                      }}
-                                    >
-                                      <span
-                                        className={[
-                                          "block h-6 w-6 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
-                                          enabled ? "translate-x-5" : "translate-x-1",
-                                        ].join(" ")}
-                                      />
-                                    </button>
-                                  </div>
+                                      </div>
 
                                   <div className="mt-3 space-y-3">
                                     <div>
@@ -2191,8 +2532,10 @@ export function EditorBottomPanel() {
                                     </div>
                                   </div>
                                 </div>
-                              );
-                            })()}
+                                  );
+                                })()}
+                              </>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>

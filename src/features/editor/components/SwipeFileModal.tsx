@@ -76,7 +76,33 @@ export function SwipeFileModal() {
 
   const [repurposeFilter, setRepurposeFilter] = useState<"all" | "repurposed" | "not_repurposed">("all");
 
-  const selectedItem = useMemo(() => items.find((it) => it.id === selectedItemId) || null, [items, selectedItemId]);
+  const visibleItems = useMemo(() => {
+    const mode = repurposeFilter;
+    if (mode === "repurposed") return (items || []).filter((it) => !!String((it as any)?.createdProjectId || "").trim());
+    if (mode === "not_repurposed") return (items || []).filter((it) => !String((it as any)?.createdProjectId || "").trim());
+    return items || [];
+  }, [items, repurposeFilter]);
+
+  // Always keep the right-hand side populated on desktop:
+  // - Prefer explicit selection
+  // - Otherwise fall back to the first visible row
+  const effectiveSelectedItemId = useMemo(() => {
+    if (selectedItemId) return selectedItemId;
+    return visibleItems[0]?.id || null;
+  }, [selectedItemId, visibleItems]);
+
+  const selectedItem = useMemo(() => {
+    if (!effectiveSelectedItemId) return null;
+    return items.find((it) => it.id === effectiveSelectedItemId) || visibleItems.find((it) => it.id === effectiveSelectedItemId) || null;
+  }, [items, visibleItems, effectiveSelectedItemId]);
+  const isNarrowViewport = useMemo(() => {
+    try {
+      if (typeof window === "undefined") return false;
+      return window.innerWidth < 768;
+    } catch {
+      return false;
+    }
+  }, []);
   const [noteDraft, setNoteDraft] = useState<string>("");
   const noteDirty = useMemo(() => {
     const server = selectedItem?.note ?? "";
@@ -217,6 +243,7 @@ export function SwipeFileModal() {
       // Keep selection stable if possible.
       setSelectedItemId((prev) => {
         if (prev && nextItems.some((i) => i.id === prev)) return prev;
+        // Always keep the right-hand side populated on desktop: default to first row.
         return nextItems[0]?.id || null;
       });
       return nextItems;
@@ -265,13 +292,6 @@ export function SwipeFileModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCategoryId, open]);
 
-  const visibleItems = useMemo(() => {
-    const mode = repurposeFilter;
-    if (mode === "repurposed") return (items || []).filter((it) => !!String((it as any)?.createdProjectId || "").trim());
-    if (mode === "not_repurposed") return (items || []).filter((it) => !String((it as any)?.createdProjectId || "").trim());
-    return items || [];
-  }, [items, repurposeFilter]);
-
   useEffect(() => {
     // Keep selection consistent with current filter.
     if (!open) return;
@@ -280,6 +300,7 @@ export function SwipeFileModal() {
       return;
     }
     const ok = visibleItems.some((it) => it.id === selectedItemId);
+    // When switching filters, snap selection to the first visible row.
     if (!ok) setSelectedItemId(visibleItems[0]?.id || null);
   }, [open, selectedItemId, visibleItems]);
 
@@ -622,7 +643,8 @@ export function SwipeFileModal() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_1fr_360px]">
+        {/* Use minmax(0,1fr) so the middle column can shrink and the right panel never gets pushed outside/clipped. */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_360px]">
           {/* Left: categories */}
           <aside className="hidden md:block border-r border-slate-100 bg-slate-50/50 p-3 overflow-auto">
             <div className="text-xs font-semibold text-slate-600 uppercase mb-2">Categories</div>
@@ -655,7 +677,7 @@ export function SwipeFileModal() {
           </aside>
 
           {/* Middle: list */}
-          <main className="min-h-0 flex flex-col">
+          <main className="min-h-0 min-w-0 flex flex-col">
             <div className="p-3 border-b border-slate-100">
               <input
                 className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
@@ -758,7 +780,9 @@ export function SwipeFileModal() {
                             type="button"
                             className="min-w-0 flex-1 text-left"
                             onClick={() => {
-                              if (isMobile) {
+                              // Even if the store mistakenly marks desktop as "mobile", row-click should still
+                              // select and populate the right panel on wider viewports.
+                              if (isMobile && isNarrowViewport) {
                                 openLink(it.url);
                                 return;
                               }
@@ -1074,7 +1098,11 @@ export function SwipeFileModal() {
 
           {/* Right: detail (desktop only) */}
           <aside className="hidden md:block border-l border-slate-100 bg-white p-4 overflow-auto">
-            {!selectedItem ? (
+            {visibleItems.length === 0 ? (
+              <div className="text-sm text-slate-600">
+                {items.length === 0 ? "No items yet." : "No items match this filter."}
+              </div>
+            ) : !selectedItem ? (
               <div className="text-sm text-slate-600">Select an item to view details.</div>
             ) : (
               <>
@@ -1259,18 +1287,24 @@ export function SwipeFileModal() {
                     >
                       Generate ideas{ideasCount > 0 ? ` (${ideasCount})` : ""}
                     </button>
-                    {selectedItem.createdProjectId ? (
-                      <button
-                        type="button"
-                        className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors"
-                        onClick={() => {
-                          actions.onCloseSwipeFileModal?.();
-                          actions.onLoadProject?.(String(selectedItem.createdProjectId));
-                        }}
-                      >
-                        Open existing project
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className={[
+                        "w-full h-10 rounded-lg border text-sm font-semibold shadow-sm transition-colors",
+                        selectedItem.createdProjectId
+                          ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                          : "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed",
+                      ].join(" ")}
+                      disabled={!selectedItem.createdProjectId}
+                      onClick={() => {
+                        if (!selectedItem.createdProjectId) return;
+                        actions.onCloseSwipeFileModal?.();
+                        actions.onLoadProject?.(String(selectedItem.createdProjectId));
+                      }}
+                      title={selectedItem.createdProjectId ? "Open the project created from this Swipe item" : "No project yet (repurpose first)"}
+                    >
+                      {selectedItem.createdProjectId ? "Open existing project" : "No project yet"}
+                    </button>
                   </div>
                 </div>
 

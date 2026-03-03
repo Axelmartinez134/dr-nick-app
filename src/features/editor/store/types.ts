@@ -61,6 +61,18 @@ export type Slide1TextNoise = {
   tileSizePx: number;
 } | null;
 
+// Slide 1 Callout (Regular only): optional second text block.
+export type Slide1Callout = {
+  text: string;
+  fontSizePx: number; // default 28
+  // Font key in the same "family@@weight" format used elsewhere.
+  fontKey?: string | null;
+  // Solid-only v1.
+  colorHex: string;
+  textNoise?: Slide1TextNoise;
+  lineGapPx?: number; // -80..80
+} | null;
+
 export type SavedProjectListItem = {
   id: string;
   title: string;
@@ -84,6 +96,7 @@ export type EditorActions = {
   onSetSlide1Background: (next: Slide1Background) => void;
   onSetSlide1Card: (next: Slide1Card) => void;
   onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
+  onSetSlide1Callout: (next: Slide1Callout) => void;
   onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
   onSetSlide1BodyLineGapPx: (next: number) => void;
   onSetCurrentProjectSlide1TemplateIdSnapshot: (nextTemplateId: string | null) => Promise<boolean> | boolean;
