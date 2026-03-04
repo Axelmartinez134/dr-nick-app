@@ -285,6 +285,7 @@ export type EditorActions = {
   onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onChangeProjectReviewSource: (args: { projectId: string; next: string }) => Promise<boolean | void> | void;
+  onChangeProjectReviewDriveFolderUrl: (args: { projectId: string; next: string }) => Promise<boolean | void> | void;
 
   setShowDebugPreview: (next: boolean) => void;
 
@@ -311,6 +312,9 @@ export type EditorActions = {
   // Swipe File (Phase 1: superadmin-only)
   onOpenSwipeFileModal: () => void;
   onCloseSwipeFileModal: () => void;
+  // Script Chat (MVP: superadmin-only)
+  onOpenScriptChatModal: (projectId: string) => void;
+  onCloseScriptChatModal: () => void;
   // Brand Alignment (Phase 1)
   onClickRunBrandAlignmentCheck: () => void;
   fetchIdeaSourcesAndIdeas: (includeDismissed?: boolean) => Promise<
@@ -716,6 +720,8 @@ export type EditorState = {
   deleteAccountModalOpen: boolean;
   outreachModalOpen: boolean;
   swipeFileModalOpen: boolean;
+  scriptChatModalOpen: boolean;
+  scriptChatProjectId: string | null;
   brandAlignmentModalOpen: boolean;
   shareCarouselsModalOpen: boolean;
   slideStyleModalOpen: boolean;
@@ -761,6 +767,7 @@ export type EditorState = {
     review_posted: boolean;
     review_approved: boolean;
     review_scheduled: boolean;
+    review_drive_folder_url: string | null;
   }>;
   shareCarouselsSavingIds: Set<string>;
 

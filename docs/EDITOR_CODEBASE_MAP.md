@@ -947,6 +947,53 @@ Superadmin-only content library for saving links, enriching Instagram content, a
 - `POST /api/editor/projects/jobs/generate-copy`
   - If `source_swipe_idea_snapshot` exists, it is used as the Swipe “angle” input (preferred over Angle/Notes)
 
+## Script Chat (Create Script) — per project (MVP)
+Superadmin-only chat modal for collaboratively drafting a Reel script from the current project.
+
+### Superadmin-only UI (inside `/editor`)
+- **Canvas/workspace overlay button**: `src/features/editor/components/ScriptChatOverlayButton.tsx`
+  - Rendered in `src/app/editor/EditorShell.tsx` as an absolute overlay (**top-right**, desktop only)
+  - Mobile: overlay is hidden; “Copy Script Prompt” is available in the bottom **⚙️ Controls** card
+- **Modal**: `src/features/editor/components/ScriptChatModal.tsx`
+  - Plain-text chat (no markdown)
+  - One-click **Start new chat** (wipes thread/messages)
+  - “View prompt” shows the exact cached context block and supports Copy
+  - Uses a **frozen context snapshot** captured on thread creation:
+    - slide `layout_snapshot.textLines` (all 6 slides)
+    - project caption
+    - account Brand Voice (`editor_account_settings.brand_alignment_prompt_override`)
+  - Blocks if any slide is missing `layout_snapshot.textLines` → shows “Generate/Realign first.”
+
+### Superadmin-only APIs (authed)
+- `GET  /api/editor/projects/script-chat/thread?projectId=...` → `src/app/api/editor/projects/script-chat/thread/route.ts`
+- `POST /api/editor/projects/script-chat/messages` → `src/app/api/editor/projects/script-chat/messages/route.ts`
+- `POST /api/editor/projects/script-chat/reset` → `src/app/api/editor/projects/script-chat/reset/route.ts`
+- `GET  /api/editor/projects/script-chat/prompt-preview?projectId=...` → `src/app/api/editor/projects/script-chat/prompt-preview/route.ts`
+
+### Data model
+- **Migration**: `supabase/migrations/20260303_000001_add_editor_project_script_chat.sql`
+- **Tables**:
+  - `public.editor_project_script_threads` (1 per `account_id + project_id`; includes frozen `context_snapshot`)
+  - `public.editor_project_script_messages` (persisted chat history; `role in ('user','assistant')`)
+
+### Manual QA (Script Chat)
+- Open `/editor` as superadmin and load a project with deterministic layouts
+  - Desktop expected: **Create Script** button appears top-right on the dotted workspace
+- Click **Create Script**
+  - Expected: modal opens and shows existing messages (if any)
+- Send “Start with a hook about ___”
+  - Expected: assistant responds in **plain text** (no markdown formatting)
+- Close modal and reopen
+  - Expected: prior messages persist
+- Click **Start new chat**
+  - Expected: messages clear immediately; a new thread starts (no confirmation typing)
+- Click **View prompt** then **Copy**
+  - Expected: copied text includes frozen context and ends with `CAPTION:` block
+- Mobile: open `/editor` and scroll to the bottom **⚙️ Controls** card
+  - Expected: **Copy Script Prompt** button appears at the very bottom and successfully copies the same prompt preview text
+- Load a project where any slide is missing `layout_snapshot.textLines` (e.g. new/un-generated)
+  - Expected: modal shows error “Generate/Realign first.” and Send is blocked until layouts exist
+
 ## Caption Regenerate (History + Exclude)
 Caption regeneration persists run history and now supports superadmin-only exclusion of prior runs from future prompt context.
 
@@ -997,6 +1044,10 @@ Key tables used by `/editor`:
   - provider-agnostic logo metadata and variants used for fast search + tag filtering
 - `public.editor_logo_assets` (Phase 3: Logos raster cache; shared)
   - provider-agnostic cached PNGs for logo variants, stored in `editor-shared-assets`
+- `public.editor_project_script_threads` (Script Chat MVP; superadmin-only)
+  - One thread per `account_id + project_id`; stores frozen `context_snapshot`
+- `public.editor_project_script_messages` (Script Chat MVP; superadmin-only)
+  - Persisted chat history for a project’s script chat thread
 - `public.carousel_projects`
   - `account_id` (tenant boundary)
   - `template_type_id`

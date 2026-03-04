@@ -50,3 +50,6 @@ export { BodyEmphasisStylesModal } from './BodyEmphasisStylesModal';
 
 export { EmphasisAllModal } from './EmphasisAllModal';
 
+export { ScriptChatModal } from './ScriptChatModal';
+export { ScriptChatOverlayButton } from './ScriptChatOverlayButton';
+

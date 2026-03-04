@@ -31,6 +31,8 @@ import {
   OutreachModal,
   ShareCarouselsModal,
   PoppyPromptsLibraryModal,
+  ScriptChatModal,
+  ScriptChatOverlayButton,
 } from "@/features/editor/components";
 import { ImageLibraryModal } from "@/features/editor/components/ImageLibraryModal";
 import { SlideStyleModal } from "@/features/editor/components/SlideStyleModal";
@@ -1749,7 +1751,14 @@ export default function EditorShell() {
   const toggleReviewForProject = useCallback(
     async (args: {
       projectId: string;
-      patch: { reviewReady?: boolean; reviewPosted?: boolean; reviewApproved?: boolean; reviewScheduled?: boolean; reviewSource?: string };
+      patch: {
+        reviewReady?: boolean;
+        reviewPosted?: boolean;
+        reviewApproved?: boolean;
+        reviewScheduled?: boolean;
+        reviewSource?: string;
+        reviewDriveFolderUrl?: string;
+      };
     }) => {
       if (!isSuperadmin) return;
       const pid = String(args.projectId || '').trim();
@@ -1765,6 +1774,7 @@ export default function EditorShell() {
         if (typeof args.patch.reviewApproved === 'boolean') body.reviewApproved = args.patch.reviewApproved;
         if (typeof args.patch.reviewScheduled === 'boolean') body.reviewScheduled = args.patch.reviewScheduled;
         if (typeof args.patch.reviewSource === 'string') body.reviewSource = args.patch.reviewSource;
+        if (typeof args.patch.reviewDriveFolderUrl === 'string') body.reviewDriveFolderUrl = args.patch.reviewDriveFolderUrl;
         const j = await fetchJson('/api/editor/review/projects/update', { method: 'POST', body: JSON.stringify(body) });
         const updated = j?.project || null;
         if (updated?.id) {
@@ -1791,6 +1801,8 @@ export default function EditorShell() {
                     review_posted: !!updated.review_posted,
                     review_approved: !!updated.review_approved,
                     review_scheduled: !!updated.review_scheduled,
+                    review_drive_folder_url:
+                      updated.review_drive_folder_url !== undefined ? (updated.review_drive_folder_url ? String(updated.review_drive_folder_url) : null) : p?.review_drive_folder_url,
                     updated_at: String(updated.updated_at || p.updated_at || ''),
                   } as any)
             );
@@ -6902,6 +6914,8 @@ export default function EditorShell() {
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewScheduled: !!a?.next } }),
     onChangeProjectReviewSource: (a: any) =>
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewSource: String(a?.next ?? "") } }),
+    onChangeProjectReviewDriveFolderUrl: (a: any) =>
+      toggleReviewForProject({ projectId: a?.projectId, patch: { reviewDriveFolderUrl: String(a?.next ?? "") } }),
     onSetSlide1Style,
     onSetSlide1BodyFontKey,
     onSetSlide1Background,
@@ -7064,6 +7078,8 @@ export default function EditorShell() {
             onClickEditTemplate={onClickEditSlide1Template}
           />
 
+          <ScriptChatOverlayButton />
+
           {/* Mobile: manual left drawer */}
           {isMobile ? (
             <>
@@ -7177,6 +7193,8 @@ export default function EditorShell() {
       <DeleteAccountModal />
 
       <SwipeFileModal />
+
+      <ScriptChatModal />
 
       <OutreachModal />
 

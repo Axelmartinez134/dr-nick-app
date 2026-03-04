@@ -13,6 +13,7 @@ type ProjectRow = {
   review_posted: boolean;
   review_approved: boolean;
   review_scheduled: boolean;
+  review_drive_folder_url: string | null;
 };
 
 type Resp =
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('carousel_projects')
-    .select('id, title, updated_at, review_ready, review_posted, review_approved, review_scheduled')
+    .select('id, title, updated_at, review_ready, review_posted, review_approved, review_scheduled, review_drive_folder_url')
     .eq('account_id', accountId)
     .is('archived_at', null)
     .order('updated_at', { ascending: false });
@@ -54,6 +55,7 @@ export async function GET(req: NextRequest) {
     review_posted: !!r?.review_posted,
     review_approved: !!r?.review_approved,
     review_scheduled: !!r?.review_scheduled,
+    review_drive_folder_url: r?.review_drive_folder_url ? String(r.review_drive_folder_url) : null,
   }));
 
   return NextResponse.json({ success: true, projects } satisfies Resp);

@@ -77,6 +77,62 @@ export function ShareCarouselsModal() {
     return filteredProjects.length;
   }, [filteredProjects]);
 
+  const [driveDraftById, setDriveDraftById] = useState<Record<string, string>>({});
+  const driveTimerByIdRef = useRef<Record<string, number | null>>({});
+  const driveDirtyByIdRef = useRef<Record<string, boolean>>({});
+  const saveDriveNow = useMemo(() => {
+    return async (projectId: string, nextText: string) => {
+      const pid = String(projectId || "").trim();
+      if (!pid) return;
+      try {
+        const ok = await actions.onChangeProjectReviewDriveFolderUrl?.({ projectId: pid, next: nextText });
+        if (ok === false) throw new Error("Save failed");
+        driveDirtyByIdRef.current[pid] = false;
+      } catch {
+        // ignore; modal uses global "Saving..." disabled state like other Review fields
+      }
+    };
+  }, [actions]);
+
+  useEffect(() => {
+    if (!open) {
+      // Cleanup timers + drafts when closing (prevents stale debounced saves).
+      try {
+        Object.values(driveTimerByIdRef.current || {}).forEach((t) => {
+          if (t) window.clearTimeout(t);
+        });
+      } catch {
+        // ignore
+      }
+      driveTimerByIdRef.current = {};
+      driveDirtyByIdRef.current = {};
+      setDriveDraftById({});
+      return;
+    }
+
+    // Initialize / sync drafts from server unless user is mid-edit for that project.
+    setDriveDraftById((prev) => {
+      const out: Record<string, string> = { ...prev };
+      let changed = false;
+      (filteredProjects || []).forEach((p: any) => {
+        const pid = String(p?.id || "").trim();
+        if (!pid) return;
+        const serverText = String(p?.review_drive_folder_url || "");
+        const isDirty = !!driveDirtyByIdRef.current?.[pid];
+        if (out[pid] === undefined) {
+          out[pid] = serverText;
+          changed = true;
+          return;
+        }
+        if (!isDirty && out[pid] !== serverText) {
+          out[pid] = serverText;
+          changed = true;
+        }
+      });
+      return changed ? out : prev;
+    });
+  }, [filteredProjects, open]);
+
   const [copied, setCopied] = useState(false);
   const [manualCopyOpen, setManualCopyOpen] = useState(false);
   const manualCopyRef = useRef<HTMLInputElement | null>(null);
@@ -179,7 +235,7 @@ export function ShareCarouselsModal() {
     } catch {
       // ignore
     }
-  }, [currentProjectId, open, projects, workspaceRefs]);
+  }, [currentProjectId, filteredProjects, open, workspaceRefs]);
 
   if (!open || !isSuperadmin) return null;
 
@@ -295,6 +351,7 @@ export function ShareCarouselsModal() {
                 const pid = String(p?.id || "");
                 const busy = !!savingIds?.has?.(pid);
                 const showThumb = currentProjectId && pid === String(currentProjectId) && !!currentThumb;
+                const driveDraft = driveDraftById[pid] ?? String(p?.review_drive_folder_url || "");
                 return (
                   <div key={pid} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <div className="p-3 flex gap-3">
@@ -343,6 +400,31 @@ export function ShareCarouselsModal() {
                         disabled={busy}
                         onChange={(next) => actions.onToggleProjectReviewScheduled?.({ projectId: pid, next })}
                       />
+
+                      <div className="pt-1">
+                        <div className="text-[11px] font-semibold text-slate-700 mb-1">Google Drive folder link</div>
+                        <input
+                          className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] text-slate-900 shadow-sm disabled:opacity-60"
+                          value={driveDraft}
+                          disabled={busy}
+                          placeholder="Paste folder URL (optional)"
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            driveDirtyByIdRef.current[pid] = true;
+                            setDriveDraftById((prev) => ({ ...prev, [pid]: next }));
+                            const t0 = driveTimerByIdRef.current[pid];
+                            if (t0) window.clearTimeout(t0);
+                            driveTimerByIdRef.current[pid] = window.setTimeout(() => void saveDriveNow(pid, next), 600);
+                          }}
+                          onBlur={() => {
+                            const t0 = driveTimerByIdRef.current[pid];
+                            if (t0) window.clearTimeout(t0);
+                            driveTimerByIdRef.current[pid] = null;
+                            const cur = String((driveDraftById as any)?.[pid] ?? driveDraft ?? "");
+                            void saveDriveNow(pid, cur);
+                          }}
+                        />
+                      </div>
                       {busy ? <div className="text-[11px] text-slate-500">Saving…</div> : null}
                     </div>
                   </div>

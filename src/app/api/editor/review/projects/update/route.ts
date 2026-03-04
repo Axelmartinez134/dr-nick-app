@@ -12,6 +12,7 @@ type Body = {
   reviewApproved?: boolean;
   reviewScheduled?: boolean;
   reviewSource?: string | null;
+  reviewDriveFolderUrl?: string | null;
 };
 
 type Resp =
@@ -26,6 +27,7 @@ type Resp =
         review_approved: boolean;
         review_scheduled: boolean;
         review_source: string | null;
+        review_drive_folder_url: string | null;
       };
     }
   | { success: false; error: string };
@@ -33,6 +35,14 @@ type Resp =
 function cleanReviewSource(input: unknown): string | null {
   const raw = typeof input === 'string' ? input : input == null ? '' : String(input);
   // Allow notes + links, but keep it reasonably bounded.
+  const clipped = raw.length > 8000 ? raw.slice(0, 8000) : raw;
+  const trimmed = clipped.trim();
+  return trimmed ? trimmed : null;
+}
+
+function cleanReviewDriveFolderUrl(input: unknown): string | null {
+  const raw = typeof input === 'string' ? input : input == null ? '' : String(input);
+  // Accept any URL string (no validation), but keep it reasonably bounded.
   const clipped = raw.length > 8000 ? raw.slice(0, 8000) : raw;
   const trimmed = clipped.trim();
   return trimmed ? trimmed : null;
@@ -72,6 +82,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.reviewApproved === 'boolean') patch.review_approved = body.reviewApproved;
   if (typeof body.reviewScheduled === 'boolean') patch.review_scheduled = body.reviewScheduled;
   if (body.reviewSource !== undefined) patch.review_source = cleanReviewSource(body.reviewSource);
+  if (body.reviewDriveFolderUrl !== undefined) patch.review_drive_folder_url = cleanReviewDriveFolderUrl(body.reviewDriveFolderUrl);
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ success: false, error: 'No fields to update' } satisfies Resp, { status: 400 });
@@ -83,7 +94,9 @@ export async function POST(req: NextRequest) {
     .eq('id', projectId)
     .eq('account_id', accountId)
     .is('archived_at', null)
-    .select('id, title, updated_at, review_ready, review_posted, review_approved, review_scheduled, review_source')
+    .select(
+      'id, title, updated_at, review_ready, review_posted, review_approved, review_scheduled, review_source, review_drive_folder_url'
+    )
     .single();
 
   if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });

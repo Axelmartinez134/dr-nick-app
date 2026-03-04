@@ -188,6 +188,7 @@ type Args = {
   onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewScheduled: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onChangeProjectReviewSource: (args: { projectId: string; next: string }) => Promise<any> | void;
+  onChangeProjectReviewDriveFolderUrl: (args: { projectId: string; next: string }) => Promise<any> | void;
   onSetSlide1Style: (next: Slide1Style | null) => void;
   onSetSlide1BodyFontKey: (next: string | null) => void;
   onSetSlide1Background: (next: Slide1Background) => void;
@@ -387,6 +388,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleProjectReviewApproved,
     onToggleProjectReviewScheduled,
     onChangeProjectReviewSource,
+    onChangeProjectReviewDriveFolderUrl,
     onSetSlide1Style,
     onSetSlide1BodyFontKey,
     onSetSlide1Background,
@@ -532,6 +534,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onToggleProjectReviewApproved: (a: any) => onToggleProjectReviewApproved(a),
     onToggleProjectReviewScheduled: (a: any) => onToggleProjectReviewScheduled(a),
     onChangeProjectReviewSource: (a: any) => onChangeProjectReviewSource(a),
+    onChangeProjectReviewDriveFolderUrl: (a: any) => onChangeProjectReviewDriveFolderUrl(a),
 
     onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
       setNewProjectTemplateTypeId(next);
@@ -783,6 +786,14 @@ export function useEditorStoreActionsSync(args: Args) {
     onCloseSwipeFileModal: () => {
       editorStore.setState({ swipeFileModalOpen: false } as any);
     },
+    onOpenScriptChatModal: (projectId: string) => {
+      const pid = String(projectId || "").trim();
+      if (!pid) return;
+      editorStore.setState({ scriptChatModalOpen: true, scriptChatProjectId: pid } as any);
+    },
+    onCloseScriptChatModal: () => {
+      editorStore.setState({ scriptChatModalOpen: false, scriptChatProjectId: null } as any);
+    },
     onOpenPoppyPromptsLibrary: () => {
       editorStore.setState({ poppyPromptsLibraryOpen: true } as any);
     },
@@ -882,6 +893,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onToggleProjectReviewApproved: (a: any) => implRef.current?.onToggleProjectReviewApproved?.(a),
       onToggleProjectReviewScheduled: (a: any) => implRef.current?.onToggleProjectReviewScheduled?.(a),
       onChangeProjectReviewSource: (a: any) => implRef.current?.onChangeProjectReviewSource?.(a),
+      onChangeProjectReviewDriveFolderUrl: (a: any) => implRef.current?.onChangeProjectReviewDriveFolderUrl?.(a),
 
       onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") =>
         implRef.current?.onChangeNewProjectTemplateTypeId?.(next),
@@ -980,6 +992,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseOutreachModal: () => implRef.current?.onCloseOutreachModal?.(),
       onOpenSwipeFileModal: () => implRef.current?.onOpenSwipeFileModal?.(),
       onCloseSwipeFileModal: () => implRef.current?.onCloseSwipeFileModal?.(),
+      onOpenScriptChatModal: (projectId: string) => implRef.current?.onOpenScriptChatModal?.(projectId),
+      onCloseScriptChatModal: () => implRef.current?.onCloseScriptChatModal?.(),
       onOpenPoppyPromptsLibrary: () => implRef.current?.onOpenPoppyPromptsLibrary?.(),
       onClosePoppyPromptsLibrary: () => implRef.current?.onClosePoppyPromptsLibrary?.(),
       hydrateActivePoppyPrompt: (args: any) => implRef.current?.hydrateActivePoppyPrompt?.(args),

@@ -38,6 +38,7 @@ type ProjectDto = {
   review_scheduled: boolean;
   review_comment: string;
   review_source: string;
+  review_drive_folder_url: string;
   slides: SlideDto[];
 };
 
@@ -1030,26 +1031,40 @@ function ReviewProjectCard(props: {
         </div>
 
         {project.review_approved ? (
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              className="h-10 flex-1 rounded-xl bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-60"
-              onClick={() => void onDownloadZip()}
-              disabled={exportBusy}
-              title="Download all slides as a ZIP"
-            >
-              {zipBusy ? "Preparing…" : "Download All (ZIP)"}
-            </button>
-            <button
-              type="button"
-              className="h-10 flex-1 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
-              onClick={() => void onDownloadPdf()}
-              disabled={exportBusy}
-              title="Download all slides as a PDF"
-            >
-              {pdfBusy ? "Preparing…" : "Download PDF"}
-            </button>
-          </div>
+          <>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                className="h-10 flex-1 rounded-xl bg-[#6D28D9] text-white text-sm font-semibold shadow-sm disabled:opacity-60"
+                onClick={() => void onDownloadZip()}
+                disabled={exportBusy}
+                title="Download all slides as a ZIP"
+              >
+                {zipBusy ? "Preparing…" : "Download All (ZIP)"}
+              </button>
+              <button
+                type="button"
+                className="h-10 flex-1 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                onClick={() => void onDownloadPdf()}
+                disabled={exportBusy}
+                title="Download all slides as a PDF"
+              >
+                {pdfBusy ? "Preparing…" : "Download PDF"}
+              </button>
+            </div>
+            {String(project.review_drive_folder_url || "").trim() ? (
+              <div className="mt-2 text-[12px] text-slate-700 break-words">
+                <a
+                  href={String(project.review_drive_folder_url || "").trim()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline text-slate-900 hover:text-black"
+                >
+                  {String(project.review_drive_folder_url || "").trim()}
+                </a>
+              </div>
+            ) : null}
+          </>
         ) : null}
 
         <div className="mt-4">

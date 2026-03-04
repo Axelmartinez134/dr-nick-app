@@ -7,10 +7,15 @@ import { DebugCard } from "./DebugCard";
 import { useEditorSelector } from "@/features/editor/store";
 import { CaptionRegenHistoryModal } from "@/features/editor/components/CaptionRegenHistoryModal";
 import { SLIDE1_GRADIENTS, slide1GradientCss } from "@/features/editor/slide1StylePresets";
+import { supabase } from "@/app/components/auth/AuthContext";
 
 export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
+  const currentProjectIdForScriptPrompt = useEditorSelector((s: any) =>
+    (s as any)?.bottomPanelUi?.currentProjectId ? String((s as any).bottomPanelUi.currentProjectId) : null
+  );
   const fontOptions = useEditorSelector((s: any) => ((s as any).fontOptions || []) as Array<any>);
   const bodyFontKey = useEditorSelector((s: any) => String((s as any).bodyFontKey || ""));
   const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
@@ -30,6 +35,160 @@ export function EditorBottomPanel() {
   const slide1BodySizeEditingRef = useRef<boolean>(false);
   const slide1BodySizeHoldTimeoutRef = useRef<number | null>(null);
   const slide1BodySizeHoldIntervalRef = useRef<number | null>(null);
+
+  const [scriptPromptCopyStatus, setScriptPromptCopyStatus] = useState<"idle" | "copied" | "error" | "loading">("idle");
+  const [scriptPromptPrefetchStatus, setScriptPromptPrefetchStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [scriptPromptPrefetchError, setScriptPromptPrefetchError] = useState<string | null>(null);
+  const [scriptPromptCachedText, setScriptPromptCachedText] = useState<string>("");
+  const scriptPromptCachedProjectIdRef = useRef<string | null>(null);
+
+  const getActiveAccountHeader = (): Record<string, string> => {
+    try {
+      const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+      return id ? ({ "x-account-id": id } as Record<string, string>) : ({} as Record<string, string>);
+    } catch {
+      return {} as Record<string, string>;
+    }
+  };
+
+  const getToken = async (): Promise<string> => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || "";
+  };
+
+  const buildScriptPromptPreviewText = (args: { system: string; contextText: string }) => {
+    const sys = String(args.system || "").trim();
+    const ctx = String(args.contextText || "").trim();
+    const firstMsg = "<type your first message here>";
+    return [
+      `SYSTEM:\n${sys || "-"}`,
+      ``,
+      `CACHED_CONTEXT_BLOCK (frozen):\n${ctx || "-"}`,
+      ``,
+      `FIRST_USER_MESSAGE:\n${firstMsg}`,
+    ].join("\n");
+  };
+
+  const prefetchScriptPrompt = async (projectId: string) => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return;
+    // Avoid refetching if we already have a ready cache for this pid.
+    if (scriptPromptCachedProjectIdRef.current === pid && scriptPromptPrefetchStatus === "ready" && !!scriptPromptCachedText) return;
+    setScriptPromptPrefetchStatus("loading");
+    setScriptPromptPrefetchError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/editor/projects/script-chat/prompt-preview?projectId=${encodeURIComponent(pid)}`, { method: "GET", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompt (${res.status})`));
+      const text = buildScriptPromptPreviewText({ system: String(j?.system || ""), contextText: String(j?.contextText || "") });
+      scriptPromptCachedProjectIdRef.current = pid;
+      setScriptPromptCachedText(text);
+      setScriptPromptPrefetchStatus("ready");
+    } catch (e: any) {
+      scriptPromptCachedProjectIdRef.current = pid;
+      setScriptPromptCachedText("");
+      setScriptPromptPrefetchStatus("error");
+      setScriptPromptPrefetchError(String(e?.message || e || "Failed to prepare prompt"));
+    }
+  };
+
+  // Mobile browsers often block clipboard writes if we await network before copying.
+  // Prefetch the prompt preview in the background so the tap-to-copy can be synchronous.
+  useEffect(() => {
+    if (!isMobile || !isSuperadmin) return;
+    const pid = String(currentProjectIdForScriptPrompt || "").trim();
+    if (!pid) {
+      scriptPromptCachedProjectIdRef.current = null;
+      setScriptPromptCachedText("");
+      setScriptPromptPrefetchStatus("idle");
+      setScriptPromptPrefetchError(null);
+      return;
+    }
+    void prefetchScriptPrompt(pid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, isSuperadmin, currentProjectIdForScriptPrompt]);
+
+  const onCopyScriptPrompt = (projectId: string) => {
+    const pid = String(projectId || "").trim();
+    if (!pid) return;
+    if (scriptPromptCopyStatus === "loading") return;
+
+    // If we don't have the prompt cached yet, kick off prefetch and ask user to tap again.
+    if (!scriptPromptCachedText || scriptPromptCachedProjectIdRef.current !== pid) {
+      void prefetchScriptPrompt(pid);
+      setScriptPromptCopyStatus("error");
+      window.setTimeout(() => setScriptPromptCopyStatus("idle"), 1400);
+      return;
+    }
+
+    const text = scriptPromptCachedText;
+    setScriptPromptCopyStatus("loading");
+
+    const finishCopied = () => {
+      setScriptPromptCopyStatus("copied");
+      window.setTimeout(() => setScriptPromptCopyStatus("idle"), 1200);
+    };
+    const finishError = () => {
+      setScriptPromptCopyStatus("error");
+      window.setTimeout(() => setScriptPromptCopyStatus("idle"), 1600);
+    };
+
+    // IMPORTANT: no awaits before attempting clipboard write (mobile gesture requirement).
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        navigator.clipboard
+          .writeText(text)
+          .then(() => finishCopied())
+          .catch(() => {
+            try {
+              const ta = document.createElement("textarea");
+              ta.value = text;
+              ta.setAttribute("readonly", "true");
+              ta.style.position = "fixed";
+              ta.style.top = "0";
+              ta.style.left = "0";
+              ta.style.opacity = "0";
+              ta.style.pointerEvents = "none";
+              document.body.appendChild(ta);
+              ta.focus();
+              ta.select();
+              const ok = document.execCommand("copy");
+              document.body.removeChild(ta);
+              if (!ok) throw new Error("copy command failed");
+              finishCopied();
+            } catch {
+              finishError();
+            }
+          });
+        return;
+      }
+    } catch {
+      // fall through
+    }
+
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (!ok) throw new Error("copy command failed");
+      finishCopied();
+    } catch {
+      finishError();
+    }
+  };
 
   const stopSlide1BodySizeHold = () => {
     if (slide1BodySizeHoldTimeoutRef.current) window.clearTimeout(slide1BodySizeHoldTimeoutRef.current);
@@ -2986,6 +3145,41 @@ export function EditorBottomPanel() {
                   </button>
                 </div>
               )}
+
+              {/* Mobile-only: Script Chat prompt copy (moved from overlay) */}
+              {isMobile && isSuperadmin ? (
+                <div className="pt-1">
+                  <div className="flex items-center justify-end gap-2 mb-1">
+                    {scriptPromptCopyStatus === "copied" ? (
+                      <span className="text-xs text-emerald-700 font-medium">Copied!</span>
+                    ) : scriptPromptCopyStatus === "error" ? (
+                      <span className="text-xs text-red-600 font-medium">Copy failed</span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    onClick={() => void onCopyScriptPrompt(String(currentProjectId || ""))}
+                    disabled={
+                      !currentProjectId ||
+                      switchingSlides ||
+                      copyGenerating ||
+                      scriptPromptCopyStatus === "loading" ||
+                      scriptPromptPrefetchStatus === "loading"
+                    }
+                    title={!currentProjectId ? "Create or load a project first" : "Copy the full Script prompt preview"}
+                  >
+                    {scriptPromptPrefetchStatus === "loading"
+                      ? "Preparing prompt…"
+                      : scriptPromptCopyStatus === "loading"
+                        ? "Copying…"
+                        : "Copy Script Prompt"}
+                  </button>
+                  {scriptPromptPrefetchStatus === "error" && scriptPromptPrefetchError ? (
+                    <div className="mt-2 text-[11px] text-red-600">{scriptPromptPrefetchError}</div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

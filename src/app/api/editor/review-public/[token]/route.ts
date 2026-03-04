@@ -29,6 +29,7 @@ type Resp =
         review_scheduled: boolean;
         review_comment: string;
         review_source: string;
+        review_drive_folder_url: string;
         slides: Array<{
           slide_index: number;
           headline: string;
@@ -85,6 +86,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
         'review_scheduled',
         'review_comment',
         'review_source',
+        'review_drive_folder_url',
       ].join(', ')
     )
     .eq('account_id', accountId)
@@ -196,6 +198,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ token: stri
       review_scheduled: !!p?.review_scheduled,
       review_comment: String(p?.review_comment || ''),
       review_source: String(p?.review_source || ''),
+      review_drive_folder_url: String(p?.review_drive_folder_url || ''),
       slides,
     };
   });
