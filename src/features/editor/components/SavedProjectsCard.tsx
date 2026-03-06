@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useMemo, useState } from "react";
+
 export type SavedProjectListItem = {
   id: string;
   title: string;
@@ -22,6 +24,20 @@ export function SavedProjectsCard() {
   const archiveTarget = useEditorSelector((s) => s.archiveProjectTarget);
 
   const actions = useEditorSelector((s) => s.actions);
+
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (dropdownOpen) return;
+    // Clear search every time the dropdown closes.
+    setSearch("");
+  }, [dropdownOpen]);
+
+  const filteredProjects = useMemo(() => {
+    const q = String(search || "").trim().toLowerCase();
+    if (!q) return projects || [];
+    return (projects || []).filter((p) => String(p?.title || "").toLowerCase().includes(q));
+  }, [projects, search]);
 
   return (
     <>
@@ -47,11 +63,34 @@ export function SavedProjectsCard() {
 
         {dropdownOpen && (
           <div className="mt-2 w-full bg-white border border-slate-200 rounded-lg shadow-sm max-h-64 overflow-y-auto">
+            <div className="p-2 border-b border-slate-100 bg-white sticky top-0 z-[1]">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search projects…"
+                className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                aria-label="Search saved projects"
+                disabled={projectsLoading}
+              />
+            </div>
+
             {projects.length === 0 ? (
               <div className="p-3 text-sm text-slate-500">No projects yet</div>
+            ) : filteredProjects.length === 0 ? (
+              <div className="p-3">
+                <div className="text-sm text-slate-600">No matching projects.</div>
+                <button
+                  type="button"
+                  className="mt-2 h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => setSearch("")}
+                  disabled={projectsLoading}
+                >
+                  Clear search
+                </button>
+              </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {projects.map((p) => (
+                {filteredProjects.map((p) => (
                   <div key={p.id} className="flex items-stretch">
                     <button
                       className="flex-1 text-left px-3 py-2 hover:bg-slate-50 transition-colors"
