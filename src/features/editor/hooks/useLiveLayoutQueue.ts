@@ -16,6 +16,8 @@ type LiveLayoutWorkItem = {
   bodyRanges: any[];
   headlineFontSizePx: number;
   bodyFontSizePx: number;
+  // Regular-only: optional override for the BODY line fill color.
+  bodyTextColorHex?: string | null;
   headlineTextAlign: "left" | "center" | "right";
   bodyTextAlign: "left" | "center" | "right";
   lineOverridesByKey: any | null;
@@ -195,6 +197,7 @@ export function useLiveLayoutQueue(params: {
                 existingLayout: item.existingLayout,
                 bodyRanges: item.bodyRanges,
                 bodyFontSizePx: item.bodyFontSizePx,
+                bodyTextColorHex: item.bodyTextColorHex,
               })
             : computeDeterministic({
                 slideIndex,
@@ -438,6 +441,10 @@ export function useLiveLayoutQueue(params: {
         const bodyTextAlign: "left" | "center" | "right" = _bAlign === "center" || _bAlign === "right" ? _bAlign : "left";
 
         const prevInput = (slide as any)?.inputData || null;
+        const bodyTextColorHex =
+          templateTypeAtSchedule === "regular" && prevInput && typeof prevInput === "object"
+            ? (prevInput as any).bodyTextColorHex ?? null
+            : null;
         const lineOverridesByKey =
           prevInput && typeof prevInput === "object" && prevInput.lineOverridesByKey && typeof prevInput.lineOverridesByKey === "object"
             ? prevInput.lineOverridesByKey
@@ -460,6 +467,7 @@ export function useLiveLayoutQueue(params: {
           bodyRanges,
           headlineFontSizePx,
           bodyFontSizePx: bodyFontSizePxSnap,
+          bodyTextColorHex: bodyTextColorHex === null || bodyTextColorHex === undefined ? null : String(bodyTextColorHex || "").trim() || null,
           headlineTextAlign,
           bodyTextAlign,
           lineOverridesByKey,

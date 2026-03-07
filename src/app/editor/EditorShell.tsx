@@ -1892,6 +1892,29 @@ export default function EditorShell() {
     currentProjectId,
     setProjectSaveStatus,
     projectSaveTimeoutRef,
+    onProjectSaved: (p: any) => {
+      const pid = String(p?.id || "").trim();
+      if (!pid) return;
+      editorStore.setState((prev: any) => {
+        const items = Array.isArray(prev?.projects) ? (prev.projects as any[]) : [];
+        let found = false;
+        const patched = items.map((row: any) => {
+          if (String(row?.id || "") !== pid) return row;
+          found = true;
+          return {
+            ...row,
+            title: String(p?.title || row?.title || "Untitled Project"),
+            template_type_id: String(p?.template_type_id || row?.template_type_id || "regular"),
+            updated_at: String(p?.updated_at || row?.updated_at || ""),
+          };
+        });
+        if (!found) return {};
+        const sorted = [...patched].sort(
+          (a: any, b: any) => Date.parse(String(b?.updated_at || 0)) - Date.parse(String(a?.updated_at || 0))
+        );
+        return { projects: sorted } as any;
+      });
+    },
   });
 
   const saveProjectBackgroundEffectForProject = async (args: {
@@ -3206,6 +3229,267 @@ export default function EditorShell() {
     ]
   );
 
+  const onSetSlideCallout = useCallback(
+    (args: { slideIndex: number; next: any | null }) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = Math.max(0, Math.min(slideCount - 1, Math.round(Number(args?.slideIndex) || 0)));
+      // v1: Slide 1 continues to use `slide1Callout` for backward compatibility.
+      if (slideIndexNow === 0) return;
+
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = args?.next && typeof args.next === "object" ? args.next : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slideCallout: obj }
+          : { slideCallout: obj };
+
+      // Ensure the layout snapshot includes/excludes the callout line so exports/review render it.
+      let nextLayoutSnap = baseLayout;
+      try {
+        if (baseLayout && typeof baseLayout === "object" && Array.isArray((baseLayout as any).textLines)) {
+          const lines = ((baseLayout as any).textLines as any[]).slice();
+          const calloutIdx = lines.findIndex((l: any) => String(l?.block || "").toUpperCase() === "CALLOUT");
+
+          if (!obj || !String(obj.text || "").trim()) {
+            // Remove callout line if present.
+            if (calloutIdx >= 0) {
+              lines.splice(calloutIdx, 1);
+              nextLayoutSnap = { ...(baseLayout as any), textLines: lines };
+            }
+          } else {
+            const text = String(obj.text || "");
+            const fontSizePx = Math.max(8, Math.min(999, Math.round(Number(obj.fontSizePx ?? 28) || 28)));
+            const lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(obj.lineGapPx ?? 0) || 0)));
+            const baseLineHeight = 1.2;
+            const lineHeight = Math.max(0.6, Math.min(5, baseLineHeight + (lineGapPx / Math.max(1, fontSizePx))));
+            const colorHex = String(obj.colorHex || "").trim() || "#000000";
+            const fontKey = obj.fontKey == null ? null : String(obj.fontKey || "").trim() || null;
+            const [fam, wRaw] = fontKey ? String(fontKey).split("@@") : [String(bodyFontFamily || "Inter, sans-serif"), String(bodyFontWeight || 400)];
+            const w = Number(wRaw);
+            const fontFamily = String(fam || bodyFontFamily || "Inter, sans-serif");
+            const fontWeight = Number.isFinite(w as any) ? w : (Number.isFinite(bodyFontWeight as any) ? Number(bodyFontWeight) : 400);
+
+            // Default placement (bottom-left) only when creating for the first time.
+            const existingLine = calloutIdx >= 0 ? (lines[calloutIdx] as any) : null;
+            let x = Number((existingLine ? existingLine?.position?.x : NaN));
+            let y = Number((existingLine ? existingLine?.position?.y : NaN));
+            let maxWidth = Number((existingLine ? existingLine?.maxWidth : NaN));
+            const tidForFit = computeTemplateIdForSlide(slideIndexNow);
+            const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
+            const region = getTemplateContentRectInset(snapForFit || null);
+            if (region) {
+              const desiredW = Math.max(180, Math.min(Math.floor(region.width * 0.55), 460));
+              maxWidth = Number.isFinite(maxWidth as any) ? Math.max(80, Math.min(region.width, Math.floor(maxWidth))) : desiredW;
+              const measuredH =
+                typeof document === "undefined" ? Math.round(fontSizePx * 1.2) : measureRegularBodyHeightPx(text, maxWidth, fontSizePx, []);
+              const pad = 8;
+              if (!Number.isFinite(x as any)) x = region.x + pad;
+              if (!Number.isFinite(y as any)) y = (region.y + region.height) - pad - Math.max(1, measuredH);
+              x = Math.max(region.x, Math.min(region.x + region.width - 1, x));
+              y = Math.max(region.y, Math.min(region.y + region.height - 1, y));
+            } else {
+              if (!Number.isFinite(x as any)) x = 80;
+              if (!Number.isFinite(y as any)) y = 1200;
+              if (!Number.isFinite(maxWidth as any)) maxWidth = 420;
+            }
+
+            const calloutLine: any = {
+              ...(existingLine && typeof existingLine === "object" ? existingLine : {}),
+              block: "CALLOUT",
+              text,
+              baseSize: fontSizePx,
+              position: { x, y },
+              textAlign: "left",
+              lineHeight,
+              maxWidth,
+              styles: [
+                {
+                  start: 0,
+                  end: text.length,
+                  fill: colorHex,
+                  fontFamily,
+                  fontWeight,
+                },
+              ],
+            };
+            if (calloutIdx >= 0) {
+              lines[calloutIdx] = calloutLine;
+            } else {
+              // Insert after BODY block(s) when possible.
+              const lastBodyIdx = (() => {
+                let last = -1;
+                for (let i = 0; i < lines.length; i++) {
+                  const blk = String((lines[i] as any)?.block || "").toUpperCase();
+                  if (!blk || blk === "BODY") last = i;
+                }
+                return last;
+              })();
+              const insertAt = Math.max(0, Math.min(lines.length, (lastBodyIdx >= 0 ? lastBodyIdx + 1 : 1)));
+              lines.splice(insertAt, 0, calloutLine);
+            }
+            nextLayoutSnap = { ...(baseLayout as any), textLines: lines };
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      setSlides((prev: any) =>
+        prev.map((s: any, i: number) =>
+          i !== slideIndexNow
+            ? s
+            : ({
+                ...s,
+                inputData: updatedInput,
+                ...(nextLayoutSnap ? { layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } } : {}),
+              } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndexNow
+          ? s
+          : ({
+              ...s,
+              inputData: updatedInput,
+              ...(nextLayoutSnap ? { layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } } : {}),
+            } as any)
+      );
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+        if (nextLayoutSnap) setLayoutData({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || null } as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: nextLayoutSnap || baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [
+      activeSlideIndexRef,
+      bodyFontFamily,
+      bodyFontWeight,
+      computeTemplateIdForSlide,
+      initSlide,
+      inputData,
+      layoutData,
+      schedulePersistLayoutAndInput,
+      setInputData,
+      setLayoutData,
+      setSlides,
+      slideCount,
+      slidesRef,
+      currentProjectIdRef,
+      templateSnapshots,
+      templateTypeIdRef,
+    ]
+  );
+
+  const onSetSlideBodyTextColorHex = useCallback(
+    (args: { slideIndex: number; colorHex: string | null }) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = Math.max(0, Math.min(slideCount - 1, Math.round(Number(args?.slideIndex) || 0)));
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const hex = args?.colorHex == null ? null : String(args.colorHex || "").trim() || null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), bodyTextColorHex: hex }
+          : { bodyTextColorHex: hex };
+
+      let nextLayoutSnap = baseLayout;
+      try {
+        if (baseLayout && typeof baseLayout === "object" && Array.isArray((baseLayout as any).textLines)) {
+          const lines = ((baseLayout as any).textLines as any[]).map((l: any) => {
+            const blk = String(l?.block || "").toUpperCase();
+            if (blk === "CALLOUT" || blk === "HEADLINE") return l;
+            // Treat missing block as BODY for Regular.
+            const isBody = !blk || blk === "BODY";
+            if (!isBody) return l;
+            if (!hex) return l;
+            const styles = Array.isArray(l?.styles) ? l.styles : [];
+            const nextStyles =
+              styles.length
+                ? styles.map((s: any) => ({ ...s, fill: hex }))
+                : (String(l?.text || "").length ? [{ start: 0, end: String(l?.text || "").length, fill: hex }] : []);
+            return { ...l, styles: nextStyles };
+          });
+          nextLayoutSnap = { ...(baseLayout as any), textLines: lines };
+        }
+      } catch {
+        // ignore
+      }
+
+      setSlides((prev: any) =>
+        prev.map((s: any, i: number) =>
+          i !== slideIndexNow
+            ? s
+            : ({
+                ...s,
+                inputData: updatedInput,
+                ...(nextLayoutSnap ? { layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } } : {}),
+              } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndexNow
+          ? s
+          : ({
+              ...s,
+              inputData: updatedInput,
+              ...(nextLayoutSnap ? { layoutData: { success: true, layout: nextLayoutSnap, imageUrl: (s as any)?.layoutData?.imageUrl || null } } : {}),
+            } as any)
+      );
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+        if (nextLayoutSnap) setLayoutData({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || null } as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: nextLayoutSnap || baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [
+      activeSlideIndexRef,
+      initSlide,
+      inputData,
+      layoutData,
+      schedulePersistLayoutAndInput,
+      setInputData,
+      setLayoutData,
+      setSlides,
+      slideCount,
+      slidesRef,
+      currentProjectIdRef,
+      templateTypeIdRef,
+    ]
+  );
+
   const onSetSlide1CardAndAccent = useCallback(
     (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => {
       const pid = String(currentProjectIdRef.current || "").trim();
@@ -3470,6 +3754,7 @@ export default function EditorShell() {
     existingLayout?: any | null;
     bodyRanges?: InlineStyleRange[];
     bodyFontSizePx?: number;
+    bodyTextColorHex?: string | null;
   }): VisionLayoutDecision | null => {
     // Regular should fit inside the SAME "safe area" shown by the teal overlay (allowed/inset rect),
     // not the raw contentRegion.
@@ -3532,6 +3817,7 @@ export default function EditorShell() {
       textLines: [
         {
           text: params.body || "",
+          block: "BODY",
           baseSize: bodySize,
           position: { x, y: centerY },
           // Non-standard field (JSON snapshot only): used by renderer to interpret `position.y` as centerY.
@@ -3566,6 +3852,29 @@ export default function EditorShell() {
           }
         : {}),
     };
+
+    // Regular-only: apply BODY color override (never affects headline).
+    try {
+      const hex = String(params.bodyTextColorHex || "").trim();
+      if (hex) {
+        (layout as any).textLines = Array.isArray((layout as any).textLines)
+          ? (layout as any).textLines.map((l: any) => {
+              const blk = (l?.block === "HEADLINE" ? "HEADLINE" : (l?.block === "CALLOUT" ? "CALLOUT" : "BODY"));
+              if (blk !== "BODY") return l;
+              const styles = Array.isArray(l?.styles) ? l.styles : [];
+              const nextStyles =
+                styles.length
+                  ? styles.map((s: any) => ({ ...s, fill: hex }))
+                  : (String(l?.text || "").length
+                      ? [{ start: 0, end: String(l?.text || "").length, fill: hex }]
+                      : []);
+              return { ...l, styles: nextStyles };
+            })
+          : (layout as any).textLines;
+      }
+    } catch {
+      // ignore
+    }
 
     return layout;
   };
@@ -3664,6 +3973,30 @@ export default function EditorShell() {
     layoutData,
     setLayoutData,
     saveSlidePatchForProject,
+    onGenerateCopyApplied: ({ projectId, templateTypeId: ttid, slides: nextSlides }: any) => {
+      // Session-only: capture "Original" bodies right when Generate Copy applies them.
+      // Regular only (Body Regen is restricted to Regular).
+      if (String(ttid) !== "regular") return;
+      const pid = String(projectId || "").trim();
+      if (!pid) return;
+      editorStore.setState((prev: any) => {
+        const cur = (prev as any)?.bodyRegenOriginalByKey && typeof (prev as any).bodyRegenOriginalByKey === "object" ? (prev as any).bodyRegenOriginalByKey : {};
+        const out: any = { ...cur };
+        let changed = false;
+        const arr = Array.isArray(nextSlides) ? nextSlides : [];
+        for (let i = 0; i < Math.min(6, arr.length); i++) {
+          const k = `${pid}:${i}`;
+          if (out[k]) continue; // never overwrite once captured
+          const s = arr[i] || {};
+          out[k] = {
+            body: String((s as any)?.draftBody || ""),
+            bodyStyleRanges: Array.isArray((s as any)?.draftBodyRanges) ? (s as any).draftBodyRanges : [],
+          };
+          changed = true;
+        }
+        return changed ? ({ bodyRegenOriginalByKey: out } as any) : ({} as any);
+      });
+    },
   });
 
   // Stage 4B3: `wipeLineOverridesForActiveSlide` and `runRealignTextForActiveSlide` are extracted into `useLiveLayoutQueue`.
@@ -6922,6 +7255,8 @@ export default function EditorShell() {
     onSetSlide1Card,
     onSetSlide1TextNoise,
     onSetSlide1Callout,
+    onSetSlideCallout,
+    onSetSlideBodyTextColorHex,
     onSetSlide1CardAndAccent,
     onSetSlide1BodyLineGapPx,
     onSetCurrentProjectSlide1TemplateIdSnapshot,

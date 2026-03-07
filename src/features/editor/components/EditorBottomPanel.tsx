@@ -11,6 +11,12 @@ import { supabase } from "@/app/components/auth/AuthContext";
 
 export function EditorBottomPanel() {
   const templateTypeId = useEditorSelector((s) => s.templateTypeId);
+  // IMPORTANT: Use the canonical store value (not bottomPanelUi) so slide-index-gated controls
+  // can't disappear if bottomPanelUi publishing gets out of sync.
+  const activeSlideIndexCanonical = useEditorSelector((s: any) => {
+    const n = Number((s as any)?.activeSlideIndex);
+    return Number.isFinite(n) ? n : 0;
+  });
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const currentProjectIdForScriptPrompt = useEditorSelector((s: any) =>
@@ -21,6 +27,10 @@ export function EditorBottomPanel() {
   const ui = useEditorSelector((s: any) => (s as any).bottomPanelUi);
   const actions = useEditorSelector((s: any) => (s as any).actions);
   const aiSettingsPopoverRef = useRef<HTMLDivElement | null>(null);
+  const slide1CopyPastePopoverRef = useRef<HTMLDivElement | null>(null);
+  const slide1BgPopoverRef = useRef<HTMLDivElement | null>(null);
+  const slide1TextPopoverRef = useRef<HTMLDivElement | null>(null);
+  const slideNTextPopoverRef = useRef<HTMLDivElement | null>(null);
   const [captionHistoryOpen, setCaptionHistoryOpen] = useState(false);
   const [slide1TextOpen, setSlide1TextOpen] = useState(false);
   const [slide1BgOpen, setSlide1BgOpen] = useState(false);
@@ -35,6 +45,12 @@ export function EditorBottomPanel() {
   const slide1BodySizeEditingRef = useRef<boolean>(false);
   const slide1BodySizeHoldTimeoutRef = useRef<number | null>(null);
   const slide1BodySizeHoldIntervalRef = useRef<number | null>(null);
+
+  // Slide 2–6 text overrides (Regular only).
+  const [slideTextOpen, setSlideTextOpen] = useState(false);
+  const [slideCalloutDraft, setSlideCalloutDraft] = useState<string>("");
+  const [slideBodySizeDraft, setSlideBodySizeDraft] = useState<string>("");
+  const slideBodySizeEditingRef = useRef<boolean>(false);
 
   const [scriptPromptCopyStatus, setScriptPromptCopyStatus] = useState<"idle" | "copied" | "error" | "loading">("idle");
   const [scriptPromptPrefetchStatus, setScriptPromptPrefetchStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -226,6 +242,38 @@ export function EditorBottomPanel() {
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, [aiImageSettingsOpenForDismiss, actions]);
 
+  // Click-outside to close popovers (Slide 1 + Slide N).
+  useEffect(() => {
+    const anyOpen = slide1CopyPasteOpen || slide1BgOpen || slide1TextOpen || slideTextOpen;
+    if (!anyOpen) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // Clicking a trigger toggles; don't treat as outside.
+      if (target.closest?.('[data-popover-trigger="slide1-copy-paste"]')) return;
+      if (target.closest?.('[data-popover-trigger="slide1-bg"]')) return;
+      if (target.closest?.('[data-popover-trigger="slide1-text"]')) return;
+      if (target.closest?.('[data-popover-trigger="slide-n-text"]')) return;
+
+      // Clicking inside any open popover should not close it.
+      if (slide1CopyPastePopoverRef.current?.contains(target)) return;
+      if (slide1BgPopoverRef.current?.contains(target)) return;
+      if (slide1TextPopoverRef.current?.contains(target)) return;
+      if (slideNTextPopoverRef.current?.contains(target)) return;
+
+      // Outside click: close immediately.
+      if (slide1CopyPasteOpen) setSlide1CopyPasteOpen(false);
+      if (slide1BgOpen) setSlide1BgOpen(false);
+      if (slide1TextOpen) setSlide1TextOpen(false);
+      if (slideTextOpen) setSlideTextOpen(false);
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [slide1BgOpen, slide1CopyPasteOpen, slide1TextOpen, slideTextOpen]);
+
   // Hide Slide 1 text panel when it can't apply.
   const activeSlideIndexForSlide1Text = Number((ui as any)?.activeSlideIndex ?? -1);
   const slide1BodySizeCurrentForSync = Math.round(Number((ui as any)?.slides?.[0]?.draftBodyFontSizePx ?? 48)) || 48;
@@ -250,10 +298,25 @@ export function EditorBottomPanel() {
     setSlide1BodySizeDraft(String(slide1BodySizeCurrentForSync));
   }, [slide1BodySizeCurrentForSync, slide1TextOpen]);
 
+  // Slide 2–6: close popover if it can't apply.
+  useEffect(() => {
+    if (templateTypeId !== "regular" || activeSlideIndexForSlide1Text <= 0) setSlideTextOpen(false);
+  }, [activeSlideIndexForSlide1Text, templateTypeId]);
+
+  // Keep Slide 2–6 body size draft in sync when not actively typing.
+  useEffect(() => {
+    if (!slideTextOpen) {
+      slideBodySizeEditingRef.current = false;
+      return;
+    }
+    if (slideBodySizeEditingRef.current) return;
+    const s = (ui as any)?.slides?.[activeSlideIndexForSlide1Text] || null;
+    setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
+  }, [activeSlideIndexForSlide1Text, slideTextOpen, ui]);
+
   if (!ui || !actions) return null;
 
   const {
-    activeSlideIndex,
     slideCount,
     currentProjectId,
     loading,
@@ -274,6 +337,10 @@ export function EditorBottomPanel() {
     aiImageAspectRatio,
     aiImageSize,
   } = ui;
+
+  // Prefer the canonical store slide index; fall back to bottomPanelUi when sane.
+  const activeSlideIndex =
+    Number.isFinite(Number((ui as any)?.activeSlideIndex)) ? Number((ui as any).activeSlideIndex) : activeSlideIndexCanonical;
 
   const outreachMessageDraft = String((ui as any)?.outreachMessageDraft || "");
   const outreachMessageCopyStatus = String((ui as any)?.outreachMessageCopyStatus || "idle");
@@ -842,6 +909,7 @@ export function EditorBottomPanel() {
                             disabled={!currentProjectId || copyGenerating || switchingSlides || enhancedLockOn}
                             title="Copy/Paste Slide 1 setup (style + background + template)"
                             aria-label={slide1CopyPasteOpen ? "Close Copy/Paste" : "Open Copy/Paste"}
+                            data-popover-trigger="slide1-copy-paste"
                           >
                             Copy/Paste
                           </button>
@@ -862,6 +930,7 @@ export function EditorBottomPanel() {
                             disabled={!currentProjectId || copyGenerating || switchingSlides}
                             title={!currentProjectId ? "Create or load a project first" : "Slide 1 background (color + texture)"}
                             aria-label={slide1BgOpen ? "Close Slide 1 background controls" : "Open Slide 1 background controls"}
+                            data-popover-trigger="slide1-bg"
                           >
                             Background
                           </button>
@@ -879,13 +948,17 @@ export function EditorBottomPanel() {
                             disabled={!currentProjectId || copyGenerating || switchingSlides}
                             title={!currentProjectId ? "Create or load a project first" : "Slide 1 local text styling (size/font/color)"}
                             aria-label={slide1TextOpen ? "Close Slide 1 text controls" : "Open Slide 1 text controls"}
+                            data-popover-trigger="slide1-text"
                           >
                             Slide 1 text
                           </button>
                         </div>
 
                         {slide1CopyPasteOpen ? (
-                          <div className="absolute right-0 top-[calc(100%+8px)] z-[75] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+                          <div
+                            ref={slide1CopyPastePopoverRef}
+                            className="absolute right-0 top-[calc(100%+8px)] z-[75] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                          >
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="text-xs font-semibold text-slate-900">Slide 1 setup</div>
@@ -950,7 +1023,10 @@ export function EditorBottomPanel() {
                         ) : null}
 
                         {slide1BgOpen ? (
-                          <div className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+                          <div
+                            ref={slide1BgPopoverRef}
+                            className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                          >
                             <div className="text-xs font-semibold text-slate-900">Slide 1 background</div>
                             {(() => {
                               const bg = (slides as any)?.[0]?.inputData?.slide1Background || null;
@@ -1823,7 +1899,10 @@ export function EditorBottomPanel() {
                         ) : null}
 
                         {slide1TextOpen ? (
-                          <div className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[360px] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+                          <div
+                            ref={slide1TextPopoverRef}
+                            className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[360px] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                          >
                             <div className="text-xs font-semibold text-slate-900">Slide 1 only</div>
                             <div className="mt-3 flex items-center gap-2">
                               {(["body", "callout"] as const).map((t) => {
@@ -2696,6 +2775,410 @@ export function EditorBottomPanel() {
                                 })()}
                               </>
                             ) : null}
+                          </div>
+                    ) : null}
+                    {false && activeSlideIndex >= 1 ? (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                          onClick={() => {
+                            setSlideTextOpen((v) => {
+                              const next = !v;
+                              if (next) {
+                                const s = (slides as any)?.[activeSlideIndex] || null;
+                                const callout = (s as any)?.inputData?.slideCallout || null;
+                                const calloutText = String(callout?.text || "");
+                                setSlideCalloutDraft(calloutText);
+                                setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
+                              }
+                              return next;
+                            });
+                          }}
+                          disabled={!currentProjectId || copyGenerating || switchingSlides || enhancedLockOn}
+                          title={!currentProjectId ? "Create or load a project first" : `Slide ${activeSlideIndex + 1} text (callout + body size/color)`}
+                          aria-label={slideTextOpen ? "Close Slide text controls" : "Open Slide text controls"}
+                        >
+                          Slide {activeSlideIndex + 1} text
+                        </button>
+
+                        {slideTextOpen ? (
+                          <div className="absolute right-0 top-[calc(100%+8px)] z-[75] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold text-slate-900">Slide {activeSlideIndex + 1} text</div>
+                                <div className="mt-1 text-[10px] text-slate-500">
+                                  Regular-only. Callout is off by default (null) and appears only when you type.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50"
+                                onClick={() => setSlideTextOpen(false)}
+                                aria-label="Close"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                              <div className="col-span-2">
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout</div>
+                                <textarea
+                                  className="mt-1 w-full min-h-[76px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-semibold text-slate-800"
+                                  value={slideCalloutDraft}
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                  onChange={(e) => {
+                                    const v = String(e.target.value || "");
+                                    setSlideCalloutDraft(v);
+                                    const trimmed = v.trim();
+                                    const s = (slides as any)?.[activeSlideIndex] || null;
+                                    const prev = (s as any)?.inputData?.slideCallout || null;
+                                    if (!trimmed) {
+                                      actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next: null } as any);
+                                      return;
+                                    }
+                                    const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text: trimmed };
+                                    next.text = v;
+                                    next.fontSizePx = Math.max(8, Math.min(999, Math.round(Number(next.fontSizePx ?? 28) || 28)));
+                                    next.colorHex = String(next.colorHex || "").trim() || "#000000";
+                                    next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
+                                    actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
+                                  }}
+                                  placeholder="(optional) Type callout…"
+                                />
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout font size</div>
+                                <input
+                                  type="number"
+                                  className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                  value={(() => {
+                                    const s = (slides as any)?.[activeSlideIndex] || null;
+                                    const c = (s as any)?.inputData?.slideCallout || null;
+                                    return Math.max(8, Math.min(999, Math.round(Number(c?.fontSizePx ?? 28) || 28)));
+                                  })()}
+                                  min={8}
+                                  max={999}
+                                  step={1}
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim()}
+                                  onChange={(e) => {
+                                    const n = Math.max(8, Math.min(999, Math.round(Number(e.target.value) || 28)));
+                                    const s = (slides as any)?.[activeSlideIndex] || null;
+                                    const prev = (s as any)?.inputData?.slideCallout || null;
+                                    const text = String(slideCalloutDraft || "");
+                                    if (!text.trim()) return;
+                                    const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text };
+                                    next.text = text;
+                                    next.fontSizePx = n;
+                                    next.colorHex = String(next.colorHex || "").trim() || "#000000";
+                                    next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
+                                    actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
+                                  }}
+                                  title="Callout font size. Min 8, max 999."
+                                />
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout color</div>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                    value={(() => {
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const c = (s as any)?.inputData?.slideCallout || null;
+                                      return String(c?.colorHex || "").trim() || "#000000";
+                                    })()}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim()}
+                                    onChange={(e) => {
+                                      const nextHex = String(e.target.value || "").trim() || "#000000";
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const prev = (s as any)?.inputData?.slideCallout || null;
+                                      const text = String(slideCalloutDraft || "");
+                                      if (!text.trim()) return;
+                                      const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text };
+                                      next.text = text;
+                                      next.fontSizePx = Math.max(8, Math.min(999, Math.round(Number(next.fontSizePx ?? 28) || 28)));
+                                      next.colorHex = nextHex;
+                                      next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
+                                      actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
+                                    }}
+                                    aria-label="Callout color"
+                                  />
+                                  <div className="text-xs text-slate-600 tabular-nums">
+                                    {(() => {
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const c = (s as any)?.inputData?.slideCallout || null;
+                                      return String(c?.colorHex || "").trim() || "#000000";
+                                    })()}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Body size</div>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                  value={slideBodySizeDraft}
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                  onFocus={() => {
+                                    slideBodySizeEditingRef.current = true;
+                                  }}
+                                  onChange={(e) => {
+                                    const raw = String(e.target.value || "");
+                                    setSlideBodySizeDraft(raw.replace(/[^\d]/g, ""));
+                                  }}
+                                  onBlur={() => {
+                                    slideBodySizeEditingRef.current = false;
+                                    const raw = String(slideBodySizeDraft || "").trim();
+                                    const n = Math.round(Number(raw));
+                                    if (!Number.isFinite(n)) return;
+                                    actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
+                                  }}
+                                  title="Body font size (BODY only). Min 8, max 120."
+                                />
+                              </div>
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Body text color</div>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                    value={(() => {
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const hex = String((s as any)?.inputData?.bodyTextColorHex || "").trim();
+                                      return hex || String((ui as any)?.projectTextColor || "#000000");
+                                    })()}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                    onChange={(e) => {
+                                      const nextHex = String(e.target.value || "").trim() || "#000000";
+                                      actions.onSetSlideBodyTextColorHex?.({ slideIndex: activeSlideIndex, colorHex: nextHex } as any);
+                                    }}
+                                    aria-label="Body text color"
+                                  />
+                                  <div className="text-xs text-slate-600 tabular-nums">
+                                    {(() => {
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const hex = String((s as any)?.inputData?.bodyTextColorHex || "").trim();
+                                      return hex || String((ui as any)?.projectTextColor || "#000000");
+                                    })()}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                  onClick={() => actions.onSetSlideBodyTextColorHex?.({ slideIndex: activeSlideIndex, colorHex: null } as any)}
+                                  title="Reset to the project text color"
+                                >
+                                  Reset to default
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                      </div>
+                    ) : null}
+                    {templateTypeId === "regular" && activeSlideIndex >= 1 && activeSlideIndex <= 5 ? (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                          onClick={() => {
+                            setSlideTextOpen((v) => {
+                              const next = !v;
+                              if (next) {
+                                const s = (slides as any)?.[activeSlideIndex] || null;
+                                const callout = (s as any)?.inputData?.slideCallout || null;
+                                setSlideCalloutDraft(String(callout?.text || ""));
+                                setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
+                              }
+                              return next;
+                            });
+                          }}
+                          disabled={!currentProjectId || copyGenerating || switchingSlides || enhancedLockOn}
+                          title={`Slide ${activeSlideIndex + 1} text (callout + body size/color)`}
+                          data-popover-trigger="slide-n-text"
+                        >
+                          Slide {activeSlideIndex + 1} text
+                        </button>
+
+                        {slideTextOpen ? (
+                          <div
+                            ref={slideNTextPopoverRef}
+                            className="absolute right-0 top-[calc(100%+8px)] z-[75] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold text-slate-900">Slide {activeSlideIndex + 1} text</div>
+                                <div className="mt-1 text-[10px] text-slate-500">
+                                  Regular-only. Callout is off by default (null) and appears only when you type.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50"
+                                onClick={() => setSlideTextOpen(false)}
+                                aria-label="Close"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                              <div className="col-span-2">
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout</div>
+                                <textarea
+                                  className="mt-1 w-full min-h-[76px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-sm font-semibold text-slate-800"
+                                  value={slideCalloutDraft}
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                  onChange={(e) => {
+                                    const v = String(e.target.value || "");
+                                    setSlideCalloutDraft(v);
+                                    const trimmed = v.trim();
+                                    const s = (slides as any)?.[activeSlideIndex] || null;
+                                    const prev = (s as any)?.inputData?.slideCallout || null;
+                                    if (!trimmed) {
+                                      actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next: null } as any);
+                                      return;
+                                    }
+                                    const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text: trimmed };
+                                    next.text = v;
+                                    next.fontSizePx = Math.max(8, Math.min(999, Math.round(Number(next.fontSizePx ?? 28) || 28)));
+                                    next.colorHex = String(next.colorHex || "").trim() || "#000000";
+                                    next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
+                                    actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
+                                  }}
+                                  placeholder="(optional) Type callout…"
+                                />
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout font size</div>
+                                <input
+                                  type="number"
+                                  className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                  value={(() => {
+                                    const s = (slides as any)?.[activeSlideIndex] || null;
+                                    const c = (s as any)?.inputData?.slideCallout || null;
+                                    return Math.max(8, Math.min(999, Math.round(Number(c?.fontSizePx ?? 28) || 28)));
+                                  })()}
+                                  min={8}
+                                  max={999}
+                                  step={1}
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim()}
+                                  onChange={(e) => {
+                                    const n = Math.max(8, Math.min(999, Math.round(Number(e.target.value) || 28)));
+                                    const s = (slides as any)?.[activeSlideIndex] || null;
+                                    const prev = (s as any)?.inputData?.slideCallout || null;
+                                    const text = String(slideCalloutDraft || "");
+                                    if (!text.trim()) return;
+                                    const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text };
+                                    next.text = text;
+                                    next.fontSizePx = n;
+                                    next.colorHex = String(next.colorHex || "").trim() || "#000000";
+                                    next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
+                                    actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
+                                  }}
+                                />
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout color</div>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                    value={(() => {
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const c = (s as any)?.inputData?.slideCallout || null;
+                                      return String(c?.colorHex || "").trim() || "#000000";
+                                    })()}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim()}
+                                    onChange={(e) => {
+                                      const nextHex = String(e.target.value || "").trim() || "#000000";
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const prev = (s as any)?.inputData?.slideCallout || null;
+                                      const text = String(slideCalloutDraft || "");
+                                      if (!text.trim()) return;
+                                      const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text };
+                                      next.text = text;
+                                      next.fontSizePx = Math.max(8, Math.min(999, Math.round(Number(next.fontSizePx ?? 28) || 28)));
+                                      next.colorHex = nextHex;
+                                      next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
+                                      actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
+                                    }}
+                                    aria-label="Callout color"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Body size</div>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                  value={slideBodySizeDraft}
+                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                  onFocus={() => {
+                                    slideBodySizeEditingRef.current = true;
+                                  }}
+                                  onChange={(e) => {
+                                    const raw = String(e.target.value || "");
+                                    setSlideBodySizeDraft(raw.replace(/[^\d]/g, ""));
+                                  }}
+                                  onBlur={() => {
+                                    slideBodySizeEditingRef.current = false;
+                                    const raw = String(slideBodySizeDraft || "").trim();
+                                    const n = Math.round(Number(raw));
+                                    if (!Number.isFinite(n)) return;
+                                    actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
+                                  }}
+                                />
+                              </div>
+                              <div>
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase">Body text color</div>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <input
+                                    type="color"
+                                    className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                    value={(() => {
+                                      const s = (slides as any)?.[activeSlideIndex] || null;
+                                      const hex = String((s as any)?.inputData?.bodyTextColorHex || "").trim();
+                                      return hex || String((ui as any)?.projectTextColor || "#000000");
+                                    })()}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                    onChange={(e) => {
+                                      const nextHex = String(e.target.value || "").trim() || "#000000";
+                                      actions.onSetSlideBodyTextColorHex?.({ slideIndex: activeSlideIndex, colorHex: nextHex } as any);
+                                    }}
+                                    aria-label="Body text color"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="h-10 px-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                    onClick={() => actions.onSetSlideBodyTextColorHex?.({ slideIndex: activeSlideIndex, colorHex: null } as any)}
+                                    title="Reset to the project text color"
+                                  >
+                                    Reset
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         ) : null}
                       </div>

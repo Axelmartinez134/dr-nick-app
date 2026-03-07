@@ -46,6 +46,9 @@ export function useEditorJobs(params: {
   layoutData: any;
   setLayoutData: (next: any) => void;
   saveSlidePatchForProject: (projectId: string, slideIndex: number, patch: { layoutSnapshot?: any }) => Promise<boolean>;
+
+  // Optional: notify when Generate Copy applies slide text to state (session-only hooks).
+  onGenerateCopyApplied?: (args: { projectId: string; templateTypeId: 'regular' | 'enhanced'; slides: any[] }) => void;
 }) {
   const {
     runGenerateImagePrompts,
@@ -79,6 +82,7 @@ export function useEditorJobs(params: {
     runGenerateImagePrompts,
     fetchJson: params.fetchJson,
     addLog: params.addLog,
+    onGenerateCopyApplied: params.onGenerateCopyApplied,
   });
 
   const { runGenerateAiImage, aiImageGeneratingThis, aiImageProgressThis, aiImageStatusThis, aiImageErrorThis } =

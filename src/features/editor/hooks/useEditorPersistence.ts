@@ -15,8 +15,11 @@ export function useEditorPersistence(params: {
 
   // Shared debounce timer used by both title and caption
   projectSaveTimeoutRef: { current: number | null };
+
+  // Optional hook for updating client-side project lists after successful saves.
+  onProjectSaved?: (project: any) => void;
 }) {
-  const { fetchJson, currentProjectId, setProjectSaveStatus, projectSaveTimeoutRef } = params;
+  const { fetchJson, currentProjectId, setProjectSaveStatus, projectSaveTimeoutRef, onProjectSaved } = params;
 
   // Keep track of the most recent "idle reset" timers so new saves don't race old timeouts.
   const idleResetRef = useRef<number | null>(null);
@@ -33,10 +36,19 @@ export function useEditorPersistence(params: {
       clearIdleReset();
       setProjectSaveStatus('saving');
       try {
-        await fetchJson('/api/editor/projects/update', {
+        const resp = await fetchJson('/api/editor/projects/update', {
           method: 'POST',
           body: JSON.stringify({ projectId: pid, ...patch }),
         });
+        // Title-only: keep Saved Projects list in sync after rename.
+        if (Object.prototype.hasOwnProperty.call(patch, 'title')) {
+          try {
+            const project = (resp as any)?.project ?? null;
+            if (project?.id) onProjectSaved?.(project);
+          } catch {
+            // ignore
+          }
+        }
         setProjectSaveStatus('saved');
         idleResetRef.current = window.setTimeout(() => setProjectSaveStatus('idle'), 1200);
       } catch {
@@ -44,7 +56,7 @@ export function useEditorPersistence(params: {
         idleResetRef.current = window.setTimeout(() => setProjectSaveStatus('idle'), 2000);
       }
     },
-    [clearIdleReset, fetchJson, setProjectSaveStatus]
+    [clearIdleReset, fetchJson, onProjectSaved, setProjectSaveStatus]
   );
 
   const saveProjectMeta = useCallback(

@@ -30,6 +30,7 @@ export function BodyRegenModal() {
   const targetSlideIndex = useEditorSelector((s: any) =>
     Number.isInteger((s as any).bodyRegenTargetSlideIndex) ? Number((s as any).bodyRegenTargetSlideIndex) : null
   );
+  const originalByKey = useEditorSelector((s: any) => ((s as any).bodyRegenOriginalByKey && typeof (s as any).bodyRegenOriginalByKey === "object" ? (s as any).bodyRegenOriginalByKey : {}));
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
   const [attempts, setAttempts] = useState<Attempt[]>([]);
@@ -43,6 +44,27 @@ export function BodyRegenModal() {
 
   const canInteract = useMemo(() => !generating, [generating]);
   const effectiveSlideNumber = targetSlideIndex !== null ? targetSlideIndex + 1 : null;
+  const originalKey = useMemo(() => {
+    if (!targetProjectId || targetSlideIndex === null) return null;
+    return `${String(targetProjectId)}:${Number(targetSlideIndex)}`;
+  }, [targetProjectId, targetSlideIndex]);
+  const original = useMemo(() => {
+    if (!originalKey) return null;
+    const row = (originalByKey as any)?.[originalKey] || null;
+    if (!row) return null;
+    return {
+      id: "__original__",
+      createdAt: null,
+      guidanceText: null,
+      body: String((row as any)?.body || ""),
+      bodyStyleRanges: Array.isArray((row as any)?.bodyStyleRanges) ? (row as any).bodyStyleRanges : [],
+    } as Attempt;
+  }, [originalByKey, originalKey]);
+  const attemptsWithOriginal = useMemo(() => {
+    // Keep newest-first ordering for real attempts; append Original as a distinct entry at the bottom.
+    const base = Array.isArray(attempts) ? attempts : [];
+    return original ? [...base, original] : base;
+  }, [attempts, original]);
 
   useEffect(() => {
     if (!open) return;
@@ -192,7 +214,7 @@ export function BodyRegenModal() {
             >
               <span>Previous attempts</span>
               <span className="text-xs text-slate-500">
-                {attemptsLoading ? "Loading…" : `${attempts.length}`}
+                {attemptsLoading ? "Loading…" : `${attemptsWithOriginal.length}`}
                 <span className="ml-2">{expanded ? "▲" : "▼"}</span>
               </span>
             </button>
@@ -201,17 +223,19 @@ export function BodyRegenModal() {
 
             {expanded ? (
               <div className="mt-3 space-y-3">
-                {attempts.length === 0 ? (
+                {attemptsWithOriginal.length === 0 ? (
                   <div className="text-xs text-slate-500">No attempts yet.</div>
                 ) : (
-                  attempts.map((a) => (
+                  attemptsWithOriginal.map((a) => (
                     <div key={a.id} className="rounded-lg border border-slate-200 bg-white p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-xs font-semibold text-slate-700">
-                            {formatWhen(a.createdAt) || "Attempt"}
+                            {a.id === "__original__" ? "Original" : formatWhen(a.createdAt) || "Attempt"}
                           </div>
-                          {a.guidanceText ? (
+                          {a.id === "__original__" ? (
+                            <div className="mt-1 text-[11px] text-slate-400">First version (captured when Generate Copy applied).</div>
+                          ) : a.guidanceText ? (
                             <div className="mt-1 text-[11px] text-slate-500 truncate">
                               Guidance: {a.guidanceText}
                             </div>

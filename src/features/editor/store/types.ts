@@ -73,6 +73,10 @@ export type Slide1Callout = {
   lineGapPx?: number; // -80..80
 } | null;
 
+// Slide Callout (Regular only): optional second text block (any slide).
+// v1 scope: used by slides 2–6. Slide 1 continues to use `slide1Callout` for backward compatibility.
+export type SlideCallout = Slide1Callout;
+
 export type SavedProjectListItem = {
   id: string;
   title: string;
@@ -97,6 +101,8 @@ export type EditorActions = {
   onSetSlide1Card: (next: Slide1Card) => void;
   onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
   onSetSlide1Callout: (next: Slide1Callout) => void;
+  onSetSlideCallout: (args: { slideIndex: number; next: SlideCallout }) => void;
+  onSetSlideBodyTextColorHex: (args: { slideIndex: number; colorHex: string | null }) => void;
   onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
   onSetSlide1BodyLineGapPx: (next: number) => void;
   onSetCurrentProjectSlide1TemplateIdSnapshot: (nextTemplateId: string | null) => Promise<boolean> | boolean;
@@ -728,6 +734,9 @@ export type EditorState = {
   bodyRegenModalOpen: boolean;
   bodyRegenTargetProjectId: string | null;
   bodyRegenTargetSlideIndex: number | null;
+  // Session-only snapshot of "Original" body per project+slide, captured when Generate Copy completes.
+  // Key format: `${projectId}:${slideIndex}`
+  bodyRegenOriginalByKey: Record<string, { body: string; bodyStyleRanges: any[] }>;
   bodyEmphasisModalOpen: boolean;
   bodyEmphasisTargetProjectId: string | null;
   bodyEmphasisTargetSlideIndex: number | null;

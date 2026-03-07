@@ -20,6 +20,7 @@ export function useGenerateCopy(params: {
   runGenerateImagePrompts: (slideIndexOverride?: number) => Promise<void>;
   fetchJson: (path: string, init?: RequestInit) => Promise<any>;
   addLog: (msg: string) => void;
+  onGenerateCopyApplied?: (args: { projectId: string; templateTypeId: 'regular' | 'enhanced'; slides: SlideState[] }) => void;
 }) {
   const {
     currentProjectId,
@@ -35,6 +36,7 @@ export function useGenerateCopy(params: {
     runGenerateImagePrompts,
     fetchJson,
     addLog,
+    onGenerateCopyApplied,
   } = params;
 
   const [copyByProject, setCopyByProject] = useState<Record<string, CopyUi>>({});
@@ -241,6 +243,11 @@ export function useGenerateCopy(params: {
       if (currentProjectIdRef.current === projectIdAtStart) {
         setSlides(nextSlides);
         slidesRef.current = nextSlides;
+        try {
+          onGenerateCopyApplied?.({ projectId: projectIdAtStart, templateTypeId: typeOut, slides: nextSlides });
+        } catch {
+          // ignore
+        }
         if (typeof data.caption === 'string') setCaptionDraft(data.caption);
         void refreshProjectsList();
         // Auto-layout all 6 slides sequentially (queued).
