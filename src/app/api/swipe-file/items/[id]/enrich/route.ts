@@ -2,6 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { scrapeInstagramReelViaApify } from '@/app/api/editor/outreach/_apify';
+import { scrapeYoutubeViaApifyKaramelo } from '@/app/api/swipe-file/_apify';
 import {
   downloadMp4FromUrl,
   requireOpenAiKey,
@@ -9,7 +10,14 @@ import {
   uploadMp4ToReelsBucket,
   whisperTranscribeMp4Bytes,
 } from '@/app/api/_shared/reel_media';
-import { canonicalizeInstagramUrl, getAuthedSwipeSuperadminContext, isInstagramReelOrPostUrl } from '../../../_utils';
+import {
+  canonicalizeInstagramUrl,
+  canonicalizeYoutubeWatchUrl,
+  getAuthedSwipeSuperadminContext,
+  isInstagramReelOrPostUrl,
+  isYoutubeWatchUrl,
+  s,
+} from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 210;
@@ -18,6 +26,47 @@ type Resp = { success: true } | { success: false; error: string };
 
 function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(v);
+}
+
+function decodeHtmlEntities(input: string): string {
+  const raw = String(input || '');
+  if (!raw) return '';
+  return raw
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_m, num) => {
+      const code = Number.parseInt(String(num), 10);
+      if (!Number.isFinite(code)) return _m;
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return _m;
+      }
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => {
+      const code = Number.parseInt(String(hex), 16);
+      if (!Number.isFinite(code)) return _m;
+      try {
+        return String.fromCodePoint(code);
+      } catch {
+        return _m;
+      }
+    });
+}
+
+function cleanTranscriptText(input: string): string {
+  let t = decodeHtmlEntities(input);
+  // Strip simple HTML tags (e.g. <i>...</i>).
+  t = t.replace(/<[^>]*>/g, '');
+  // Remove common “quote” markers that appear in some transcripts.
+  t = t.replace(/\s*>>\s*/g, ' ');
+  // Normalize whitespace.
+  t = t.replace(/\s+/g, ' ').trim();
+  return t;
 }
 
 function log(...args: any[]) {
@@ -55,13 +104,24 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const platform = String((item as any)?.platform || 'unknown').trim();
   const urlRaw = String((item as any)?.url || '').trim();
-  const url = platform === 'instagram' ? canonicalizeInstagramUrl(urlRaw) : urlRaw;
+  const url =
+    platform === 'instagram'
+      ? canonicalizeInstagramUrl(urlRaw)
+      : platform === 'youtube'
+        ? canonicalizeYoutubeWatchUrl(urlRaw)
+        : urlRaw;
   log('loaded', { platform, url, enrichStatus: String((item as any)?.enrich_status || '') });
-  if (platform !== 'instagram') {
-    return NextResponse.json({ success: false, error: 'Enrichment V2 (Instagram-only in V1)' } satisfies Resp, { status: 400 });
+  if (platform !== 'instagram' && platform !== 'youtube') {
+    return NextResponse.json({ success: false, error: 'Enrichment V2 only supports Instagram + YouTube' } satisfies Resp, { status: 400 });
   }
-  if (!isInstagramReelOrPostUrl(url)) {
+  if (platform === 'instagram' && !isInstagramReelOrPostUrl(url)) {
     return NextResponse.json({ success: false, error: 'Invalid Instagram Reel/Post URL' } satisfies Resp, { status: 400 });
+  }
+  if (platform === 'youtube' && !isYoutubeWatchUrl(url)) {
+    return NextResponse.json(
+      { success: false, error: 'Only youtube.com/watch?v=... video URLs are supported right now.' } satisfies Resp,
+      { status: 400 }
+    );
   }
 
   // Mark running (best-effort; ignore if it fails).
@@ -73,6 +133,62 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     .eq('account_id', accountId);
 
   try {
+    if (platform === 'youtube') {
+      log('apify begin (youtube karamelo)', { outputFormat: 'captions' });
+
+      const raw = await scrapeYoutubeViaApifyKaramelo({ videoUrl: url });
+      const title = s((raw as any)?.title);
+      const channelName = s((raw as any)?.channelName);
+      const thumbnailUrl = s((raw as any)?.thumbnailUrl);
+      const description = s((raw as any)?.description);
+
+      const captionsAny = (raw as any)?.captions ?? null;
+      let transcriptRaw: string | null = null;
+
+      if (Array.isArray(captionsAny)) {
+        // Most common: array of strings.
+        const strings = (captionsAny as any[])
+          .map((x) => (typeof x === 'string' ? x : typeof (x as any)?.text === 'string' ? String((x as any).text) : ''))
+          .map((x) => String(x || '').trim())
+          .filter(Boolean);
+        transcriptRaw = strings.length ? strings.join(' ') : null;
+      } else if (typeof captionsAny === 'string') {
+        transcriptRaw = String(captionsAny || '').trim() || null;
+      }
+
+      const transcript = transcriptRaw ? cleanTranscriptText(transcriptRaw) : null;
+      if (!transcript) {
+        throw new Error('English transcript not available for this YouTube video.');
+      }
+
+      const { error: upErr } = await supabase
+        .from('swipe_file_items')
+        .update({
+          url,
+          enrich_status: 'ok',
+          enrich_error: null,
+          enriched_at: new Date().toISOString(),
+          caption: description || null,
+          transcript,
+          author_handle: channelName,
+          title,
+          thumb_url: thumbnailUrl,
+          raw_json: raw ?? null,
+          source_captions_json: captionsAny ?? null,
+          // Ensure YouTube never looks like it used the IG reel media pipeline.
+          source_post_shortcode: null,
+          source_post_video_storage_bucket: null,
+          source_post_video_storage_path: null,
+          source_post_whisper_used: null,
+        } as any)
+        .eq('id', itemId)
+        .eq('account_id', accountId);
+      if (upErr) throw new Error(upErr.message);
+
+      log('done (youtube)', { itemId });
+      return NextResponse.json({ success: true } satisfies Resp);
+    }
+
     // 1) Apify scrape (metadata)
     log('apify begin', { includeTranscript: true, includeDownloadedVideo: true });
     const scraped = await scrapeInstagramReelViaApify({ reelUrl: url, includeTranscript: true, includeDownloadedVideo: true });

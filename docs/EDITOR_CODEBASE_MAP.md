@@ -912,14 +912,14 @@ Superadmin-only workflow to speed up outreach setup for creators. Input an Insta
   - Used to attach Whisper transcript + reel video storage path after the initial record is persisted
 
 ## Swipe File (Linkwarden-inspired library)
-Superadmin-only content library for saving links, enriching Instagram content, and repurposing into carousels.
+Superadmin-only content library for saving links, enriching Instagram/YouTube content, and repurposing into carousels.
 
 ### Superadmin-only UI (inside `/editor`)
 - **Top bar button**: `src/features/editor/components/EditorTopBar.tsx`
   - “Swipe File” (superadmin-only)
 - **Modal**: `src/features/editor/components/SwipeFileModal.tsx`
   - Categories + saved items (account-scoped)
-  - Enrich (Instagram-only in V1) + Repurpose into a new project
+  - Enrich (Instagram + YouTube) + Repurpose into a new project
   - **Ideas Chat (Phase 1)**: “Generate ideas” button opens `SwipeIdeasChatModal`
 - **Ideas Chat modal**: `src/features/editor/components/SwipeIdeasChatModal.tsx`
   - Persisted per-item chat thread and saved Idea cards

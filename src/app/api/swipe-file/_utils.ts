@@ -86,6 +86,36 @@ export function derivePlatformFromUrl(urlRaw: string): SwipePlatform {
   return 'unknown';
 }
 
+export function isYoutubeWatchUrl(urlRaw: string): boolean {
+  const raw = String(urlRaw || '').trim();
+  if (!raw) return false;
+  try {
+    const u = new URL(raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`);
+    const host = String(u.hostname || '').toLowerCase();
+    // Accept mobile subdomains, but enforce watch URLs.
+    const isYoutubeHost = host === 'youtube.com' || host.endsWith('.youtube.com');
+    if (!isYoutubeHost) return false;
+    if (String(u.pathname || '') !== '/watch') return false;
+    const v = String(u.searchParams.get('v') || '').trim();
+    return !!v;
+  } catch {
+    return false;
+  }
+}
+
+export function canonicalizeYoutubeWatchUrl(urlRaw: string): string {
+  const raw = String(urlRaw || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw.startsWith('http://') || raw.startsWith('https://') ? raw : `https://${raw}`);
+    const v = String(u.searchParams.get('v') || '').trim();
+    if (!v) return '';
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(v)}`;
+  } catch {
+    return raw;
+  }
+}
+
 export function canonicalizeInstagramUrl(input: string): string {
   const raw = String(input || '').trim();
   if (!raw) return '';

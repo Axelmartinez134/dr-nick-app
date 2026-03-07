@@ -3,9 +3,11 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   canonicalizeInstagramUrl,
+  canonicalizeYoutubeWatchUrl,
   derivePlatformFromUrl,
   getAuthedSwipeContext,
   isInstagramReelOrPostUrl,
+  isYoutubeWatchUrl,
   s,
   type SwipePlatform,
 } from '../_utils';
@@ -141,7 +143,18 @@ export async function POST(request: NextRequest) {
   if (!categoryId) return NextResponse.json({ success: false, error: 'categoryId is required' } satisfies Resp, { status: 400 });
 
   const platform = derivePlatformFromUrl(urlRaw);
-  const url = platform === 'instagram' ? canonicalizeInstagramUrl(urlRaw) : String(urlRaw || '').trim();
+  if (platform === 'youtube' && !isYoutubeWatchUrl(urlRaw)) {
+    return NextResponse.json(
+      { success: false, error: 'Only youtube.com/watch?v=... video URLs are supported right now.' } satisfies Resp,
+      { status: 400 }
+    );
+  }
+  const url =
+    platform === 'instagram'
+      ? canonicalizeInstagramUrl(urlRaw)
+      : platform === 'youtube'
+        ? canonicalizeYoutubeWatchUrl(urlRaw)
+        : String(urlRaw || '').trim();
   const tags = normalizeTags((body as any)?.tags);
   const noteIn = typeof (body as any)?.note === 'string' ? String((body as any).note) : (body as any)?.note ?? null;
   const note = noteIn && typeof noteIn === 'string' ? String(noteIn).trim() || null : null;

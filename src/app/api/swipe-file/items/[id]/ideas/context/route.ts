@@ -46,7 +46,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
   const transcript = String((item as any)?.transcript || '').trim();
   if (!transcript) return NextResponse.json({ success: false, error: 'Transcript missing. Enrich first.' } satisfies Resp, { status: 400 });
-  if (transcript.length > 25_000) {
+  if (transcript.length > 80_000) {
     return NextResponse.json({ success: false, error: 'Transcript too long, can’t chat.' } satisfies Resp, { status: 400 });
   }
 

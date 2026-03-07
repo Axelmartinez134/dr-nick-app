@@ -349,7 +349,10 @@ export function SwipeFileModal() {
   if (!actions) return null;
 
   const enrichableIds = items
-    .filter((it) => String(it.platform || "").toLowerCase() === "instagram")
+    .filter((it) => {
+      const p = String(it.platform || "").toLowerCase();
+      return p === "instagram" || p === "youtube";
+    })
     .filter((it) => {
       const st = String(it.enrichStatus || "idle").toLowerCase();
       return st !== "ok" && st !== "running";
@@ -430,7 +433,10 @@ export function SwipeFileModal() {
     setActionError(null);
     try {
       const pendingItems = items
-        .filter((it) => String(it.platform || "").toLowerCase() === "instagram")
+        .filter((it) => {
+          const p = String(it.platform || "").toLowerCase();
+          return p === "instagram" || p === "youtube";
+        })
         .filter((it) => {
           const st = String(it.enrichStatus || "idle").toLowerCase();
           return st !== "ok" && st !== "running";
@@ -442,8 +448,9 @@ export function SwipeFileModal() {
       for (const it of pendingItems) {
         idx += 1;
         const st = String(it.enrichStatus || "idle").toLowerCase();
+        const platform = String(it.platform || "").toLowerCase();
 
-        if (st === "needs_transcript") {
+        if (st === "needs_transcript" && platform === "instagram") {
           setNotice(`Transcribing ${idx}/${total} (Whisper)…`);
           await runTranscribeOne(it.id);
           await refresh({ setSpinner: false });
@@ -454,7 +461,7 @@ export function SwipeFileModal() {
         await runEnrichOne(it.id);
         const nextItems = await refresh({ setSpinner: false });
         const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === it.id) : null;
-        if (String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+        if (platform === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
           setNotice(`Transcript missing — transcribing ${idx}/${total} (Whisper)…`);
           await runTranscribeOne(it.id);
           await refresh({ setSpinner: false });
@@ -755,7 +762,8 @@ export function SwipeFileModal() {
                   {visibleItems.map((it) => {
                     const selected = it.id === selectedItemId;
                     const canIdeasChat = !!String(it.transcript || "").trim();
-                    const canEnrich = String(it.platform || "").toLowerCase() === "instagram";
+                    const platform = String(it.platform || "").toLowerCase();
+                    const canEnrich = platform === "instagram" || platform === "youtube";
                     const enrichStatus = String(it.enrichStatus || "idle").toLowerCase();
                     const enrichDone = enrichStatus === "ok";
                     const enrichRunning = enrichStatus === "running";
@@ -894,7 +902,7 @@ export function SwipeFileModal() {
                                       await runEnrichOne(it.id);
                                       const nextItems = await refresh({ setSpinner: false });
                                       const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === it.id) : null;
-                                      if (String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+                                      if (platform === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
                                         setNotice("Transcript missing — transcribing (Whisper)…");
                                         await runTranscribeOne(it.id);
                                         await refresh({ setSpinner: false });
@@ -910,7 +918,7 @@ export function SwipeFileModal() {
                                   }}
                                   title={
                                     !canEnrich
-                                      ? "Enrich is only available for Instagram items right now"
+                                      ? "Enrich is only available for Instagram + YouTube items right now"
                                       : enrichDone
                                         ? "Already enriched"
                                         : enrichRunning
@@ -1155,7 +1163,12 @@ export function SwipeFileModal() {
                     <button
                       type="button"
                       className="h-9 px-3 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                      disabled={String(selectedItem.platform || "").toLowerCase() !== "instagram" || loading}
+                      disabled={
+                        (() => {
+                          const p = String(selectedItem.platform || "").toLowerCase();
+                          return !(p === "instagram" || p === "youtube") || loading;
+                        })()
+                      }
                       onClick={async () => {
                         try {
                           setLoading(true);
@@ -1165,7 +1178,7 @@ export function SwipeFileModal() {
                           await runEnrichOne(selectedItem.id);
                           const nextItems = await refresh({ setSpinner: false });
                           const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === selectedItem.id) : null;
-                          if (String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+                          if (String(selectedItem.platform || "").toLowerCase() === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
                             setNotice("Transcript missing — transcribing (Whisper)…");
                             await runTranscribeOne(selectedItem.id);
                             await refresh({ setSpinner: false });
@@ -1179,7 +1192,12 @@ export function SwipeFileModal() {
                           setLoading(false);
                         }
                       }}
-                      title={String(selectedItem.platform || "").toLowerCase() === "instagram" ? "Enrich (Apify)" : "Enrich (V2)"}
+                      title={
+                        (() => {
+                          const p = String(selectedItem.platform || "").toLowerCase();
+                          return p === "instagram" || p === "youtube" ? "Enrich (Apify)" : "Enrich (V2)";
+                        })()
+                      }
                     >
                       Enrich
                     </button>
@@ -1187,7 +1205,8 @@ export function SwipeFileModal() {
                   {notice ? <div className="text-xs text-amber-700">{notice}</div> : null}
                   {actionError ? <div className="text-xs text-red-600">❌ {actionError}</div> : null}
                   {selectedItem.enrichError ? <div className="text-xs text-red-600">❌ {selectedItem.enrichError}</div> : null}
-                  {String(selectedItem.enrichStatus || "").toLowerCase() === "needs_transcript" ? (
+                  {String(selectedItem.platform || "").toLowerCase() === "instagram" &&
+                  String(selectedItem.enrichStatus || "").toLowerCase() === "needs_transcript" ? (
                     <div className="text-xs text-amber-700">
                       Transcript missing. If you click Enrich, it will auto-transcribe via Whisper.
                     </div>

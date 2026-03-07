@@ -89,7 +89,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     if (!transcriptTrim) {
       return NextResponse.json({ success: false, error: 'Transcript missing. Enrich first.' } satisfies Resp, { status: 400 });
     }
-    if (transcriptTrim.length > 25_000) {
+    if (transcriptTrim.length > 80_000) {
       return NextResponse.json({ success: false, error: 'Transcript too long, can’t chat.' } satisfies Resp, { status: 400 });
     }
 
