@@ -1,4 +1,5 @@
 import 'server-only';
+import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getAuthedSupabase, resolveActiveAccountId } from '../../../../_utils';
@@ -116,7 +117,6 @@ export async function POST(req: NextRequest) {
   // IMPORTANT: keep legacy fallback candidates for pre-Phase-H paths.
   const baseDir = `accounts/${accountId}/projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
   const legacyBaseDir = `projects/${projectId}/slides/${slideIndex}`.replace(/^\/+/, '');
-  const processedPath = `${baseDir}/image.png`;
   const v = String(Date.now());
 
   // Prefer the stored original.* (Phase 3), but fall back to old image.* if needed.
@@ -146,6 +146,10 @@ export async function POST(req: NextRequest) {
   if (!found) {
     return NextResponse.json({ success: false, error: 'No source image found for this slide' } satisfies Resp, { status: 404 });
   }
+
+  // Multi-image safe: write the processed output next to the source image, not to a fixed per-slide path.
+  // This prevents multiple stickers on the same slide from clobbering each other's processed PNG.
+  const processedPath = `${path.posix.dirname(found.path)}/processed.png`.replace(/^\/+/, '');
 
   const originalUrl = withVersion(svc.storage.from(BUCKET).getPublicUrl(found.path).data.publicUrl, v);
   const original = { bucket: BUCKET, path: found.path, url: originalUrl, contentType: found.contentType };

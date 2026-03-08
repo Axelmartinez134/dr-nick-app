@@ -795,6 +795,8 @@ export default function EditorShell() {
   const [imageBusy, setImageBusy] = useState(false);
   const [bgRemovalBusyKeys, setBgRemovalBusyKeys] = useState<Set<string>>(new Set());
   const [activeImageSelected, setActiveImageSelected] = useState(false);
+  const [selectedImageTarget, setSelectedImageTarget] = useState<null | { kind: "primary" } | { kind: "sticker"; stickerId: string }>(null);
+  const selectedImageTargetRef = useRef<null | { kind: "primary" } | { kind: "sticker"; stickerId: string }>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const imageLongPressRef = useRef<number | null>(null);
   const mobileGestureRef = useRef<{
@@ -5136,10 +5138,93 @@ export default function EditorShell() {
     }
   }, [activeSlideIndexRef, slideCanvasRefs]);
 
+  const computeSelectedImageTargetFromActiveCanvas = useCallback(() => {
+    try {
+      const c = (canvasRef as any)?.current?.canvas || null;
+      const obj = c?.getActiveObject?.() || null;
+      const t = String(obj?.type || "").toLowerCase();
+      const isSelection = t === "activeselection" || t === "group";
+      const items: any[] = isSelection
+        ? ((typeof (obj as any)?.getObjects === "function" ? (obj as any).getObjects() : null) ||
+            (Array.isArray((obj as any)?._objects) ? (obj as any)._objects : []) ||
+            [])
+        : (obj ? [obj] : []);
+
+      let selectedPrimary = false;
+      const stickerIds: string[] = [];
+      for (const it of items) {
+        const role = it?.data?.role;
+        if (role === "user-image") selectedPrimary = true;
+        if (role === "user-image-sticker") {
+          const id = String(it?.data?.imageId || "").trim();
+          if (id) stickerIds.push(id);
+        }
+      }
+
+      // Exactly one image target:
+      // - primary only
+      if (selectedPrimary && stickerIds.length === 0) return { kind: "primary" as const };
+      // - exactly one sticker (no primary)
+      if (!selectedPrimary && stickerIds.length === 1) return { kind: "sticker" as const, stickerId: stickerIds[0] };
+      return null;
+    } catch {
+      return null;
+    }
+  }, [canvasRef]);
+
+  // Track which image is selected (primary vs single sticker) from the ACTIVE canvas selection.
+  // This must use the same canvasRef as other selection-dependent UI, otherwise the toggle can become non-responsive.
+  useEffect(() => {
+    const c = (canvasRef as any)?.current?.canvas;
+    if (!c || typeof c.on !== "function") {
+      selectedImageTargetRef.current = null;
+      setSelectedImageTarget(null);
+      return;
+    }
+
+    const sync = () => {
+      const target = computeSelectedImageTargetFromActiveCanvas();
+      selectedImageTargetRef.current = target;
+      setSelectedImageTarget(target);
+    };
+
+    const onSel = () => sync();
+    try {
+      c.on("selection:created", onSel);
+      c.on("selection:updated", onSel);
+      c.on("selection:cleared", onSel);
+      c.on("mouse:down", onSel);
+    } catch {
+      // ignore
+    }
+    // Initial sync
+    sync();
+    return () => {
+      try {
+        c.off("selection:created", onSel);
+        c.off("selection:updated", onSel);
+        c.off("selection:cleared", onSel);
+        c.off("mouse:down", onSel);
+      } catch {
+        // ignore
+      }
+    };
+    // Re-attach when canvas swaps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSlideIndex, activeCanvasNonce, (layoutData as any)?.layout]);
+
   const openImageMenu = (x: number, y: number) => {
     setImageMenuInfo(computeImageMenuInfo());
     setImageMenuPos({ x, y });
     setImageMenuOpen(true);
+    // Keep selection tracking fresh when the menu opens.
+    try {
+      const target = computeSelectedImageTargetFromActiveCanvas();
+      selectedImageTargetRef.current = target;
+      setSelectedImageTarget(target);
+    } catch {
+      // ignore
+    }
   };
 
   const closeImageMenu = () => {
@@ -5174,6 +5259,7 @@ export default function EditorShell() {
     layoutData,
     setLayoutData,
     setActiveImageSelected,
+    getSelectedImageTarget: () => selectedImageTargetRef.current,
     setImageBusy,
     closeImageMenu,
     setBgRemovalBusyKeys,
@@ -7028,6 +7114,7 @@ export default function EditorShell() {
         captionCopyStatus,
         captionRegenGenerating,
         captionRegenError,
+        selectedImageTarget,
         outreachMessageDraft: outreachMessageDraft || "",
         isOutreachProject: !!isOutreachProject,
         outreachMessageCopyStatus,

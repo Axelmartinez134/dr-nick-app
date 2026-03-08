@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/app/components/auth/AuthContext";
 import { useEditorSelector } from "@/features/editor/store";
 
 type Attempt = {
@@ -9,6 +10,14 @@ type Attempt = {
   guidanceText: string | null;
   body: string;
   bodyStyleRanges: any[];
+};
+
+type ChatMsg = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  suggestions?: Array<{ id: string; idx: number; body: string; createdAt: string }>;
 };
 
 function formatWhen(iso: string | null) {
@@ -38,11 +47,16 @@ export function BodyRegenModal() {
   const [attemptsError, setAttemptsError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const [guidance, setGuidance] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [regenError, setRegenError] = useState<string | null>(null);
+  // Chat state (persisted server-side per project+slide)
+  const [chatStatus, setChatStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [draft, setDraft] = useState("");
+  const [sendBusy, setSendBusy] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const canInteract = useMemo(() => !generating, [generating]);
+  const canInteract = useMemo(() => !sendBusy, [sendBusy]);
   const effectiveSlideNumber = targetSlideIndex !== null ? targetSlideIndex + 1 : null;
   const originalKey = useMemo(() => {
     if (!targetProjectId || targetSlideIndex === null) return null;
@@ -84,14 +98,10 @@ export function BodyRegenModal() {
         if (cancelled) return;
         const next = Array.isArray(rows) ? rows : [];
         setAttempts(next);
-        // Prefill guidance with last-used guidance (per project+slide) when available.
-        const last = next[0]?.guidanceText;
-        setGuidance(String(last || ""));
       } catch (e: any) {
         if (cancelled) return;
         setAttemptsError(String(e?.message || e || "Failed to load attempts"));
         setAttempts([]);
-        setGuidance("");
       } finally {
         if (!cancelled) setAttemptsLoading(false);
       }
@@ -102,6 +112,134 @@ export function BodyRegenModal() {
       cancelled = true;
     };
   }, [actions, open, targetProjectId, targetSlideIndex]);
+
+  async function getToken(): Promise<string> {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || "";
+  }
+
+  function getActiveAccountHeader(): Record<string, string> {
+    try {
+      const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+      return id ? ({ "x-account-id": id } as Record<string, string>) : ({} as Record<string, string>);
+    } catch {
+      return {} as Record<string, string>;
+    }
+  }
+
+  // Load thread/messages on open (resume).
+  useEffect(() => {
+    if (!open) return;
+    const pid = String(targetProjectId || "").trim();
+    const si = Number.isInteger(targetSlideIndex as any) ? Number(targetSlideIndex) : null;
+    if (!pid || si === null) return;
+
+    let cancelled = false;
+    void (async () => {
+      setChatStatus("loading");
+      setChatError(null);
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("Missing auth token");
+        const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+        const url = `/api/editor/projects/body-regen-chat/thread?projectId=${encodeURIComponent(pid)}&slideIndex=${encodeURIComponent(String(si))}`;
+        const res = await fetch(url, { method: "GET", headers });
+        const j = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load thread (${res.status})`));
+        setThreadId(String(j?.threadId || "").trim() || null);
+        const msgs: any[] = Array.isArray(j?.messages) ? j.messages : [];
+        setMessages(
+          msgs.map((m) => ({
+            id: String(m.id),
+            role: String(m.role) === "assistant" ? "assistant" : "user",
+            content: String(m.content || ""),
+            createdAt: String(m.createdAt || ""),
+            suggestions: Array.isArray((m as any)?.suggestions)
+              ? (m as any).suggestions.map((sug: any) => ({
+                  id: String(sug.id),
+                  idx: Number(sug.idx),
+                  body: String(sug.body || ""),
+                  createdAt: String(sug.createdAt || ""),
+                }))
+              : undefined,
+          }))
+        );
+        setChatStatus("ready");
+      } catch (e: any) {
+        if (!cancelled) {
+          setChatStatus("error");
+          setChatError(String(e?.message || e || "Failed to load chat"));
+          setThreadId(null);
+          setMessages([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, targetProjectId, targetSlideIndex]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Auto-scroll to bottom when messages change.
+    try {
+      const el = scrollRef.current;
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
+    } catch {
+      // ignore
+    }
+  }, [open, messages.length]);
+
+  const sendMessage = async (provider: "poppy" | "claude") => {
+    const pid = String(targetProjectId || "").trim();
+    const si = Number.isInteger(targetSlideIndex as any) ? Number(targetSlideIndex) : null;
+    const text = String(draft || "").trim();
+    if (!pid || si === null || !text) return;
+    if (sendBusy) return;
+    if (templateTypeId !== "regular") return;
+
+    setSendBusy(true);
+    setChatError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+
+      const optimisticId = `local-${Date.now()}`;
+      setMessages((prev) => [...prev, { id: optimisticId, role: "user", content: text, createdAt: new Date().toISOString() }]);
+      setDraft("");
+
+      const res = await fetch(`/api/editor/projects/body-regen-chat/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ projectId: pid, slideIndex: si, content: text, provider }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Send failed (${res.status})`));
+
+      const assistantMessage = String(j?.assistantMessage || "").trim();
+      const srcMsgId = String(j?.sourceMessageId || "").trim();
+      const candidatesIn = Array.isArray(j?.candidates) ? j.candidates : [];
+      const suggestions = candidatesIn
+        .slice(0, 3)
+        .map((c: any, idx: number) => ({ id: `local-${srcMsgId}-${idx}`, idx, body: String(c?.body || ""), createdAt: new Date().toISOString() }));
+
+      setThreadId(String(j?.threadId || "").trim() || null);
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== optimisticId),
+        { id: optimisticId, role: "user", content: text, createdAt: new Date().toISOString() },
+        { id: srcMsgId || `assistant-${Date.now()}`, role: "assistant", content: assistantMessage || "…", createdAt: new Date().toISOString(), suggestions },
+      ]);
+    } catch (e: any) {
+      setChatError(String(e?.message || e || "Send failed"));
+    } finally {
+      setSendBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -128,7 +266,7 @@ export function BodyRegenModal() {
         if (e.target === e.currentTarget) actions?.onCloseBodyRegenModal?.();
       }}
     >
-      <div className="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-slate-200">
+      <div className="w-full max-w-5xl bg-white rounded-xl shadow-xl border border-slate-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <div className="text-base font-semibold text-slate-900">
             Regenerate Body{effectiveSlideNumber ? ` (Slide ${effectiveSlideNumber})` : ""}
@@ -152,57 +290,153 @@ export function BodyRegenModal() {
             </div>
           ) : null}
 
-          <div className="mt-3">
-            <div className="text-sm font-semibold text-slate-900">How would you like to change it?</div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              Optional. You can regenerate without adding guidance.
+          <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
+            <div className="min-h-[420px] rounded-lg border border-slate-200 bg-white flex flex-col overflow-hidden">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <div className="text-sm font-semibold text-slate-900">Chat</div>
+                <div className="mt-0.5 text-xs text-slate-500">
+                  Ask for improvements. Each reply includes 3 options you can apply to the slide body.
+                </div>
+              </div>
+
+              <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto p-4 space-y-3">
+                {chatStatus === "loading" ? <div className="text-sm text-slate-600">Loading…</div> : null}
+                {chatStatus === "error" ? <div className="text-sm text-red-600">❌ {chatError || "Failed to load chat"}</div> : null}
+                {chatStatus === "ready" && messages.length === 0 ? (
+                  <div className="text-sm text-slate-600">
+                    Describe what you want to change about the slide body. For example: “Make it shorter and more punchy.”
+                  </div>
+                ) : null}
+
+                {messages.map((m) => (
+                  <div key={m.id} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                    <div className="max-w-[85%]">
+                      <div
+                        className={[
+                          "rounded-xl px-3 py-2 text-sm whitespace-pre-wrap",
+                          m.role === "user" ? "bg-black text-white" : "bg-slate-100 text-slate-900",
+                        ].join(" ")}
+                      >
+                        {m.content}
+                      </div>
+                      {m.role === "assistant" && Array.isArray(m.suggestions) && m.suggestions.length > 0 ? (
+                        <div className="mt-2 grid grid-cols-1 gap-2">
+                          {m.suggestions.slice(0, 3).map((sug) => (
+                            <div key={sug.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="text-[11px] font-semibold text-slate-600">Option {Number(sug.idx) + 1}</div>
+                                <button
+                                  type="button"
+                                  className="shrink-0 h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-50"
+                                  disabled={!canInteract || disabledBecauseType || disabledBecauseTarget}
+                                  onClick={async () => {
+                                    try {
+                                      // V1: plain body text only. We intentionally clear ranges.
+                                      await actions?.onRestoreBodyRegenAttempt?.({ body: String(sug.body || ""), bodyStyleRanges: [] });
+                                    } catch {
+                                      // ignore; slide save errors surface elsewhere
+                                    }
+                                  }}
+                                  title="Apply this option to the slide body"
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                              <pre className="mt-2 whitespace-pre-wrap text-sm text-slate-900 leading-relaxed">{String(sug.body || "")}</pre>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-slate-100 p-3">
+                {chatStatus === "ready" && chatError ? <div className="mb-2 text-xs text-red-600">❌ {chatError}</div> : null}
+                <div className="flex items-end gap-2">
+                  <textarea
+                    className="flex-1 min-h-[44px] max-h-[160px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                    rows={2}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Message the AI…"
+                    disabled={!canInteract || disabledBecauseType || disabledBecauseTarget || chatStatus !== "ready"}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendMessage("poppy");
+                      }
+                    }}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-10 px-4 rounded-lg bg-indigo-600 text-white text-sm font-semibold shadow-sm hover:bg-indigo-500 disabled:opacity-50"
+                      onClick={() => void sendMessage("poppy")}
+                      disabled={
+                        !canInteract ||
+                        disabledBecauseType ||
+                        disabledBecauseTarget ||
+                        chatStatus !== "ready" ||
+                        !String(draft || "").trim()
+                      }
+                      title="Send with Poppy (uses your knowledge base)"
+                    >
+                      {sendBusy ? "Sending…" : "Send with Poppy"}
+                    </button>
+                    <button
+                      type="button"
+                      className="h-10 px-4 rounded-lg bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-50"
+                      onClick={() => void sendMessage("claude")}
+                      disabled={
+                        !canInteract ||
+                        disabledBecauseType ||
+                        disabledBecauseTarget ||
+                        chatStatus !== "ready" ||
+                        !String(draft || "").trim()
+                      }
+                      title="Send with Claude (direct)"
+                    >
+                      {sendBusy ? "Sending…" : "Send with Claude"}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="text-[11px] text-slate-500">
+                    Plain text only. Includes full carousel context (all slides textLines + caption + brand voice + attempts).
+                  </div>
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                    onClick={() => actions?.onCloseBodyRegenModal?.()}
+                    disabled={!canInteract}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
-            <textarea
-              className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-900"
-              rows={5}
-              value={guidance}
-              onChange={(e) => setGuidance(e.target.value)}
-              placeholder="e.g. Make it shorter, add more contrast, make it more tactical..."
-              disabled={!canInteract || disabledBecauseType || disabledBecauseTarget}
-            />
-          </div>
 
-          <div className="mt-4 flex items-center justify-end gap-2">
-            {generating ? <span className="text-xs text-slate-500">Regenerating…</span> : null}
-            <button
-              type="button"
-              className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-              onClick={() => actions?.onCloseBodyRegenModal?.()}
-              disabled={!canInteract}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="h-9 px-3 rounded-lg bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-50"
-              disabled={!canInteract || disabledBecauseType || disabledBecauseTarget}
-              onClick={async () => {
-                if (!actions?.onRunBodyRegen) return;
-                if (disabledBecauseType || disabledBecauseTarget) return;
-                setGenerating(true);
-                setRegenError(null);
-                try {
-                  await actions.onRunBodyRegen({ guidanceText: String(guidance || "").trim() || null });
-                  // Close on success (less confusing; body is now updated on the slide).
-                  actions?.onCloseBodyRegenModal?.();
-                } catch (e: any) {
-                  setRegenError(String(e?.message || e || "Body regeneration failed"));
-                } finally {
-                  setGenerating(false);
-                }
-              }}
-              title="Regenerate body with Claude"
-            >
-              {generating ? "Regenerating…" : "Regenerate"}
-            </button>
+            <aside className="space-y-3">
+              {chatStatus === "ready" && threadId ? (
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="text-xs font-semibold text-slate-700">Thread</div>
+                  <div className="mt-1 text-[11px] text-slate-500 break-all">{threadId}</div>
+                </div>
+              ) : null}
+              {disabledBecauseTarget ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  Select a project and slide to use Body Regenerate.
+                </div>
+              ) : null}
+              {chatStatus === "error" && chatError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {chatError}
+                </div>
+              ) : null}
+            </aside>
           </div>
-
-          {regenError ? <div className="mt-2 text-xs text-red-600">❌ {regenError}</div> : null}
 
           <div className="mt-5 border-t border-slate-100 pt-4">
             <button

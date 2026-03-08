@@ -68,6 +68,7 @@ export function useImageOps(params: {
   layoutData: any;
   setLayoutData: (next: any) => void;
   setActiveImageSelected: (v: boolean) => void;
+  getSelectedImageTarget: () => null | { kind: 'primary' } | { kind: 'sticker'; stickerId: string };
 
   // UI state
   setImageBusy: (v: boolean) => void;
@@ -389,6 +390,8 @@ export function useImageOps(params: {
     async (nextEnabled: boolean) => {
       if (!currentProjectId) throw new Error('Create or load a project first.');
       if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
+      const target = params.getSelectedImageTarget?.() || null;
+      if (!target) return;
       const projectIdAtStart = currentProjectId;
       const slideIndexAtStart = activeSlideIndex;
       const opKey = aiKey(projectIdAtStart, slideIndexAtStart);
@@ -402,8 +405,35 @@ export function useImageOps(params: {
       imageOpRunIdByKeyRef.current[opKey] = runId;
       const baseLayoutAtStart = (layoutData as any)?.layout ? { ...(layoutData as any).layout } : null;
       const baseLayout = baseLayoutAtStart;
-      const img = baseLayout?.image ? { ...(baseLayout.image as any) } : null;
-      if (!img || !String(img?.url || '').trim()) return;
+      if (!baseLayout) return;
+
+      const locate = (layout: any) => {
+        if (!layout || typeof layout !== 'object') return null;
+        if (target.kind === 'primary') {
+          const img = layout?.image ? { ...(layout.image as any) } : null;
+          if (!img || !String(img?.url || '').trim()) return null;
+          return { mode: 'primary' as const, img };
+        }
+        const stickerId = String((target as any).stickerId || '').trim();
+        if (!stickerId) return null;
+        // If this sticker was promoted to primary, its id may still be present on layout.image.
+        const primaryId = String(layout?.image?.id || '').trim();
+        if (primaryId && primaryId === stickerId) {
+          const img = layout?.image ? { ...(layout.image as any) } : null;
+          if (!img || !String(img?.url || '').trim()) return null;
+          return { mode: 'primary' as const, img };
+        }
+        const extras = Array.isArray(layout?.extraImages) ? (layout.extraImages as any[]) : [];
+        const idx = extras.findIndex((x) => String(x?.id || '') === stickerId);
+        if (idx < 0) return null;
+        const img = extras[idx] ? { ...(extras[idx] as any) } : null;
+        if (!img || !String(img?.url || '').trim()) return null;
+        return { mode: 'sticker' as const, idx, img };
+      };
+
+      const found = locate(baseLayout);
+      if (!found) return;
+      const img = found.img;
 
       // Ensure we always keep a pointer to the original upload for retries.
       const orig = (img as any).original || null;
@@ -428,7 +458,14 @@ export function useImageOps(params: {
         (img as any).bgRemovalStatus = 'processing';
       }
 
-      const nextLayout = { ...baseLayout, image: img };
+      const nextLayout =
+        found.mode === 'primary'
+          ? { ...baseLayout, image: img }
+          : (() => {
+              const prevExtras = Array.isArray((baseLayout as any)?.extraImages) ? ([...((baseLayout as any).extraImages as any[])] as any[]) : [];
+              prevExtras[(found as any).idx] = img;
+              return { ...baseLayout, extraImages: prevExtras };
+            })();
       if (currentProjectIdRef.current === projectIdAtStart) {
         setSlides((prev: any[]) =>
           prev.map((s, i) =>
@@ -468,8 +505,9 @@ export function useImageOps(params: {
                   ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
                   : ({ ...EMPTY_LAYOUT } as any))
               : ({ ...EMPTY_LAYOUT } as any);
-          const prevImg = (base2 as any)?.image ? { ...(base2 as any).image } : null;
-          if (!prevImg) return;
+          const found2 = locate(base2);
+          if (!found2) return;
+          const prevImg = found2.img;
 
           const nextImg = {
             ...prevImg,
@@ -485,7 +523,14 @@ export function useImageOps(params: {
               : { url: processedUrl, storage: processedPath ? { bucket: 'carousel-project-images', path: processedPath } : prevImg.storage },
             ...(mask ? { mask } : {}),
           };
-          const nextLayout2 = { ...base2, image: nextImg };
+          const nextLayout2 =
+            found2.mode === 'primary'
+              ? { ...base2, image: nextImg }
+              : (() => {
+                  const prevExtras = Array.isArray((base2 as any)?.extraImages) ? ([...((base2 as any).extraImages as any[])] as any[]) : [];
+                  prevExtras[(found2 as any).idx] = nextImg;
+                  return { ...base2, extraImages: prevExtras };
+                })();
           if (currentProjectIdRef.current === projectIdAtStart) {
             setSlides((prev: any[]) =>
               prev.map((s, i) =>
@@ -512,15 +557,24 @@ export function useImageOps(params: {
                   ? { ...((slidesRef.current?.[slideIndexAtStart] as any)?.layoutData?.layout as any) }
                   : null)
               : null;
-          const prevImg = base2?.image ? { ...(base2.image as any) } : null;
-          if (!base2 || !prevImg) return;
+          if (!base2) return;
+          const found2 = locate(base2);
+          if (!found2) return;
+          const prevImg = found2.img;
           const o = (prevImg as any).original || null;
           const failedImg: any = { ...prevImg, bgRemovalEnabled: true, bgRemovalStatus: 'failed' };
           if (o?.url) failedImg.url = String(o.url);
           if (o?.storage) failedImg.storage = o.storage;
           if (failedImg.mask) delete failedImg.mask;
           if (failedImg.processed) delete failedImg.processed;
-          const nextLayout2 = { ...base2, image: failedImg };
+          const nextLayout2 =
+            found2.mode === 'primary'
+              ? { ...base2, image: failedImg }
+              : (() => {
+                  const prevExtras = Array.isArray((base2 as any)?.extraImages) ? ([...((base2 as any).extraImages as any[])] as any[]) : [];
+                  prevExtras[(found2 as any).idx] = failedImg;
+                  return { ...base2, extraImages: prevExtras };
+                })();
           if (currentProjectIdRef.current === projectIdAtStart) {
             setSlides((prev: any[]) =>
               prev.map((s, i) =>
@@ -558,6 +612,7 @@ export function useImageOps(params: {
       fetchJson,
       imageOpRunIdByKeyRef,
       layoutData,
+      params,
       saveSlidePatchForProject,
       setBgRemovalBusyKeys,
       setLayoutData,
@@ -667,8 +722,7 @@ export function useImageOps(params: {
           if (activeSlideIndexRef.current === slideIndexAtStart) {
             setLayoutData({ success: true, layout: nextLayout, imageUrl: hasPrimary ? primaryUrl : url } as any);
           }
-          // Only mark "active image selected" when setting the primary slot.
-          if (!hasPrimary) setActiveImageSelected(true);
+          // Selection-based UI should drive image controls; don't force "selected" here.
         }
 
         await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
@@ -688,12 +742,8 @@ export function useImageOps(params: {
           // ignore
         }
 
-        if (bgRemovalEnabledAtInsert && !hasPrimary) {
-          if (!(storageBucket && storagePath)) {
-            throw new Error('Cannot run background removal for this recent image (missing stored source path).');
-          }
-          await setActiveSlideImageBgRemoval(true);
-        }
+        // Do not auto-run bg removal via the toggle here. Insert-time bg removal should be handled
+        // by the upload pipeline for the inserted image itself.
       } finally {
         setImageBusy(false);
       }
@@ -1145,7 +1195,6 @@ export function useImageOps(params: {
 
       await saveSlidePatchForProject(projectIdAtStart, slideIndex, { layoutSnapshot: nextLayout });
       addLog(`⭐ Set sticker as primary (slide ${slideIndex + 1})`);
-      setActiveImageSelected(true);
     },
     [
       EMPTY_LAYOUT,

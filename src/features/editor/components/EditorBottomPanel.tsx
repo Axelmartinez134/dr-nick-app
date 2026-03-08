@@ -3489,75 +3489,95 @@ export function EditorBottomPanel() {
 
               {ui.activeImageSelected ? (
                 <>
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                    {(() => {
+                  {(ui as any)?.selectedImageTarget ? (
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                      {(() => {
                       const pid = currentProjectId;
                       const key = pid ? ui.aiKey(pid, activeSlideIndex) : "";
                       const busy = key ? ui.bgRemovalBusyKeys.has(key) : false;
-                      const enabled = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
-                      const statusRaw = String((layoutData as any)?.layout?.image?.bgRemovalStatus || (enabled ? "idle" : "disabled"));
+                      const target = (ui as any)?.selectedImageTarget || null;
+                      const layout = (layoutData as any)?.layout || null;
+                      const selectedImg = (() => {
+                        if (!layout) return null;
+                        if (!target) return (layout as any)?.image || null;
+                        if (String(target?.kind || "") === "sticker") {
+                          const id = String((target as any)?.stickerId || "").trim();
+                          const extras = Array.isArray((layout as any)?.extraImages) ? ((layout as any).extraImages as any[]) : [];
+                          const hit = extras.find((x: any) => String(x?.id || "") === id) || null;
+                          if (!hit && String((layout as any)?.image?.id || "") === id) return (layout as any)?.image || null;
+                          return hit;
+                        }
+                        return (layout as any)?.image || null;
+                      })();
+
+                      const enabled = ((selectedImg as any)?.bgRemovalEnabled ?? true) as boolean;
+                      const statusRaw = String((selectedImg as any)?.bgRemovalStatus || (enabled ? "idle" : "disabled"));
                       const statusLabel = busy ? (enabled ? "processing" : "saving") : statusRaw;
+
                       return (
+                        <>
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="text-xs text-slate-500">
                             BG removal: <span className="font-semibold text-slate-800">{statusLabel}</span>
                           </div>
                           {busy ? <div className="text-[11px] text-slate-500">Working…</div> : null}
                         </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">Background removal</div>
+                            <div className="text-xs text-slate-500">Improves text wrapping around subject.</div>
+                          </div>
+                          <button
+                            type="button"
+                            className={[
+                              "h-8 w-14 rounded-full transition-colors",
+                              ((selectedImg as any)?.bgRemovalEnabled ?? true) ? "bg-black" : "bg-slate-300",
+                            ].join(" ")}
+                            onClick={() => {
+                              const cur = ((selectedImg as any)?.bgRemovalEnabled ?? true) as boolean;
+                              actions.setActiveSlideImageBgRemoval(!cur);
+                            }}
+                            disabled={
+                              ui.imageBusy ||
+                              switchingSlides ||
+                              copyGenerating ||
+                              !currentProjectId ||
+                              (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
+                            }
+                            title="Toggle background removal for this image (persists per slide)"
+                          >
+                            <span
+                              className={[
+                                "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                ((selectedImg as any)?.bgRemovalEnabled ?? true) ? "translate-x-6" : "translate-x-1",
+                              ].join(" ")}
+                            />
+                          </button>
+                        </div>
+                        {String((selectedImg as any)?.bgRemovalStatus || "") === "failed" ? (
+                          <button
+                            type="button"
+                            className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
+                            onClick={() => actions.setActiveSlideImageBgRemoval(true)}
+                            disabled={
+                              ui.imageBusy ||
+                              switchingSlides ||
+                              copyGenerating ||
+                              !currentProjectId ||
+                              (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
+                            }
+                            title="Try background removal again"
+                          >
+                            {currentProjectId && ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex))
+                              ? "Processing…"
+                              : "Try again"}
+                          </button>
+                        ) : null}
+                        </>
                       );
-                    })()}
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">Background removal</div>
-                        <div className="text-xs text-slate-500">Improves text wrapping around subject.</div>
-                      </div>
-                      <button
-                        type="button"
-                        className={[
-                          "h-8 w-14 rounded-full transition-colors",
-                          ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "bg-black" : "bg-slate-300",
-                        ].join(" ")}
-                        onClick={() => {
-                          const cur = ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) as boolean;
-                          actions.setActiveSlideImageBgRemoval(!cur);
-                        }}
-                        disabled={
-                          ui.imageBusy ||
-                          switchingSlides ||
-                          copyGenerating ||
-                          !currentProjectId ||
-                          (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
-                        }
-                        title="Toggle background removal for this image (persists per slide)"
-                      >
-                        <span
-                          className={[
-                            "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
-                            ((layoutData as any)?.layout?.image?.bgRemovalEnabled ?? true) ? "translate-x-6" : "translate-x-1",
-                          ].join(" ")}
-                        />
-                      </button>
+                      })()}
                     </div>
-                    {String((layoutData as any)?.layout?.image?.bgRemovalStatus || "") === "failed" ? (
-                      <button
-                        type="button"
-                        className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
-                        onClick={() => actions.setActiveSlideImageBgRemoval(true)}
-                        disabled={
-                          ui.imageBusy ||
-                          switchingSlides ||
-                          copyGenerating ||
-                          !currentProjectId ||
-                          (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
-                        }
-                        title="Try background removal again"
-                      >
-                        {currentProjectId && ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex))
-                          ? "Processing…"
-                          : "Try again"}
-                      </button>
-                    ) : null}
-                  </div>
+                  ) : null}
                   <button
                     className="w-full h-10 rounded-lg border border-red-200 bg-white text-red-700 text-sm font-semibold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50"
                     onClick={() => actions.deleteImageForActiveSlide("button")}
