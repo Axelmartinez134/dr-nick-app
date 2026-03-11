@@ -1278,10 +1278,17 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           backgroundColor,
         });
 
-        // Set zoom for display (keep in sync with CSS sizing; no parent transforms)
-        const z = computeDisplayZoom();
-        canvas.setZoom(z);
-        console.log('[Preview Vision] 🔍 Canvas zoom set to', z, 'for display');
+        // IMPORTANT: Display scaling is handled via CSS sizing of the canvas element.
+        // Do NOT also apply Fabric zoom; double-scaling causes cross-device (mobile vs desktop) mismatches.
+        try {
+          if (typeof canvas.setZoom === 'function') canvas.setZoom(1.0);
+          if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
+            canvas.viewportTransform[4] = 0;
+            canvas.viewportTransform[5] = 0;
+          }
+        } catch {
+          // ignore
+        }
         try {
           canvas.calcOffset?.();
         } catch {
@@ -2081,10 +2088,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       const canvas = fabricCanvasRef.current;
       if (!canvas) return;
       try {
-        const z = computeDisplayZoom();
-        if (typeof canvas.setZoom === 'function') {
-          canvas.setZoom(z);
-        }
+        // Display scale is CSS-only. Keep Fabric in a stable identity viewport so behavior is consistent across devices.
+        if (typeof canvas.setZoom === 'function') canvas.setZoom(1.0);
         if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
           canvas.viewportTransform[4] = 0;
           canvas.viewportTransform[5] = 0;
@@ -2396,10 +2401,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Clear canvas
       canvas.clear();
       // IMPORTANT: fabric.Canvas#clear() can reset viewportTransform/zoom depending on Fabric version.
-      // Re-apply display zoom deterministically every render so coordinates & hit-testing remain stable.
-      if (typeof canvas.setZoom === 'function') {
-        canvas.setZoom(computeDisplayZoom());
-      }
+      // We keep Fabric at identity viewport; display scale is CSS-only.
+      if (typeof canvas.setZoom === 'function') canvas.setZoom(1.0);
       if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
         // Ensure no translation drift
         canvas.viewportTransform[4] = 0;
