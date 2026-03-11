@@ -1278,17 +1278,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           backgroundColor,
         });
 
-        // IMPORTANT: Display scaling is handled via CSS sizing of the canvas element.
-        // Do NOT also apply Fabric zoom; double-scaling causes cross-device (mobile vs desktop) mismatches.
-        try {
-          if (typeof canvas.setZoom === 'function') canvas.setZoom(1.0);
-          if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
-            canvas.viewportTransform[4] = 0;
-            canvas.viewportTransform[5] = 0;
-          }
-        } catch {
-          // ignore
-        }
+        // Set zoom for display (keep in sync with display sizing; no parent transforms)
+        const z = computeDisplayZoom();
+        canvas.setZoom(z);
+        console.log('[Preview Vision] 🔍 Canvas zoom set to', z, 'for display');
         try {
           canvas.calcOffset?.();
         } catch {
@@ -2088,8 +2081,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       const canvas = fabricCanvasRef.current;
       if (!canvas) return;
       try {
-        // Display scale is CSS-only. Keep Fabric in a stable identity viewport so behavior is consistent across devices.
-        if (typeof canvas.setZoom === 'function') canvas.setZoom(1.0);
+        const z = computeDisplayZoom();
+        if (typeof canvas.setZoom === 'function') {
+          canvas.setZoom(z);
+        }
         if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
           canvas.viewportTransform[4] = 0;
           canvas.viewportTransform[5] = 0;
@@ -2401,7 +2396,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Clear canvas
       canvas.clear();
       // IMPORTANT: fabric.Canvas#clear() can reset viewportTransform/zoom depending on Fabric version.
-      // We keep Fabric at identity viewport; display scale is CSS-only.
+      // OPTION A (wrap stability): compute Textbox wraps at zoom=1 (matches export path),
+      // then restore display zoom at the very end before renderAll().
+      const displayZoom = computeDisplayZoom();
       if (typeof canvas.setZoom === 'function') canvas.setZoom(1.0);
       if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
         // Ensure no translation drift
@@ -4314,6 +4311,16 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         // ignore
       }
 
+      // Restore display zoom AFTER all objects/text wraps are created.
+      try {
+        if (typeof canvas.setZoom === "function") canvas.setZoom(displayZoom);
+        if (canvas.viewportTransform && Array.isArray(canvas.viewportTransform)) {
+          canvas.viewportTransform[4] = 0;
+          canvas.viewportTransform[5] = 0;
+        }
+      } catch {
+        // ignore
+      }
       canvas.renderAll();
       try {
         canvas.calcOffset?.();
@@ -4359,8 +4366,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             height={INTERNAL_H}
             style={{ 
               display: 'block',
-              width: `${displayW}px`,
-              height: `${displayH}px`,
+              // IMPORTANT: avoid CSS downscaling the canvas element itself.
+              // We scale visually via Fabric zoom only (computeDisplayZoom) to keep desktop/mobile consistent.
+              width: `${INTERNAL_W}px`,
+              height: `${INTERNAL_H}px`,
             }} 
           />
         </div>
