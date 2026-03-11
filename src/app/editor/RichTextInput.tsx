@@ -6,6 +6,8 @@ export type InlineStyleRange = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  // Hex color like "#00A3FF"
+  fill?: string;
 };
 
 type Props = {
@@ -18,10 +20,17 @@ type Props = {
   placeholder?: string;
   className?: string;
   minHeightPx?: number;
+  // Optional: expose the underlying contentEditable root element to parent UI (e.g., selection popovers).
+  rootElRef?: React.MutableRefObject<HTMLDivElement | null>;
 };
 
 function sameMarks(a: InlineStyleRange, b: InlineStyleRange) {
-  return !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.underline === !!b.underline;
+  return (
+    !!a.bold === !!b.bold &&
+    !!a.italic === !!b.italic &&
+    !!a.underline === !!b.underline &&
+    String(a.fill || "").trim().toLowerCase() === String(b.fill || "").trim().toLowerCase()
+  );
 }
 
 function mergeRanges(ranges: InlineStyleRange[]) {
@@ -63,10 +72,10 @@ function renderHtmlFromTextAndRanges(text: string, ranges: InlineStyleRange[]) {
     const paraEnd = paraStart + paraText.length;
 
     // Build segments for this paragraph only (ranges are global indices in full text).
-    const segs: Array<{ start: number; end: number; marks: { b: boolean; i: boolean; u: boolean } }> = [];
+    const segs: Array<{ start: number; end: number; marks: { b: boolean; i: boolean; u: boolean; fill: string | null } }> = [];
     const relevant = merged.filter((r) => r.end > paraStart && r.start < paraEnd);
     if (relevant.length === 0) {
-      segs.push({ start: paraStart, end: paraEnd, marks: { b: false, i: false, u: false } });
+      segs.push({ start: paraStart, end: paraEnd, marks: { b: false, i: false, u: false, fill: null } });
     } else {
       // Sweep-line over boundaries within the paragraph.
       const cuts = new Set<number>([paraStart, paraEnd]);
@@ -83,6 +92,13 @@ function renderHtmlFromTextAndRanges(text: string, ranges: InlineStyleRange[]) {
           b: active.some((r) => !!r.bold),
           i: active.some((r) => !!r.italic),
           u: active.some((r) => !!r.underline),
+          fill: (() => {
+            const withFill = active.filter((r: any) => typeof r?.fill === "string" && String(r.fill).trim());
+            if (!withFill.length) return null;
+            const last = withFill[withFill.length - 1];
+            const v = String((last as any).fill || "").trim();
+            return v || null;
+          })(),
         };
         segs.push({ start: a, end: b, marks });
       }
@@ -93,6 +109,7 @@ function renderHtmlFromTextAndRanges(text: string, ranges: InlineStyleRange[]) {
         const slice = text.slice(s.start, s.end);
         const parts = escapeHtml(slice).split("\n").join("<br/>");
         let inner = parts;
+        if (s.marks.fill) inner = `<span style="color:${escapeHtml(String(s.marks.fill))}">${inner}</span>`;
         if (s.marks.u) inner = `<u>${inner}</u>`;
         if (s.marks.i) inner = `<em>${inner}</em>`;
         if (s.marks.b) inner = `<strong>${inner}</strong>`;
@@ -140,13 +157,28 @@ function parseDomToTextAndRanges(root: HTMLElement): { text: string; ranges: Inl
     let idx = 0;
     // NOTE: paragraph ranges are shifted later when we merge paragraphs; no per-paragraph base needed here.
 
-    const walk = (node: Node, marks: { b: boolean; i: boolean; u: boolean }) => {
+    const walk = (node: Node, marks: { b: boolean; i: boolean; u: boolean; fill: string | null }) => {
       if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = (node as HTMLElement).tagName.toLowerCase();
+        const el = node as HTMLElement;
+        const colorFromEl = (() => {
+          try {
+            if (tag === "font") {
+              const c = String(el.getAttribute("color") || "").trim();
+              return c || null;
+            }
+            const style = (el as any)?.style;
+            const c2 = style && typeof style.color === "string" ? String(style.color || "").trim() : "";
+            return c2 || null;
+          } catch {
+            return null;
+          }
+        })();
         const nextMarks = {
           b: marks.b || tag === "b" || tag === "strong",
           i: marks.i || tag === "i" || tag === "em",
           u: marks.u || tag === "u",
+          fill: colorFromEl || marks.fill || null,
         };
         if (tag === "br") {
           idx += 1; // newline char
@@ -160,20 +192,21 @@ function parseDomToTextAndRanges(root: HTMLElement): { text: string; ranges: Inl
         const start = idx;
         idx += t.length;
         const end = idx;
-        if (t.length && (marks.b || marks.i || marks.u)) {
+        if (t.length && (marks.b || marks.i || marks.u || !!marks.fill)) {
           ranges.push({
             start,
             end,
             bold: marks.b || undefined,
             italic: marks.i || undefined,
             underline: marks.u || undefined,
+            fill: marks.fill || undefined,
           });
         }
         return;
       }
     };
 
-    walk(el, { b: false, i: false, u: false });
+    walk(el, { b: false, i: false, u: false, fill: null });
 
     // Build text: we can use innerText, but it collapses some whitespace. Instead, build from DOM:
     // We'll rebuild by walking again and capturing text + "\n" on <br>.
@@ -214,7 +247,7 @@ function parseDomToTextAndRanges(root: HTMLElement): { text: string; ranges: Inl
 }
 
 export function RichTextInput(props: Props) {
-  const { valueText, valueRanges, onChange, onDebugLog, debugId, disabled, placeholder, className, minHeightPx } = props;
+  const { valueText, valueRanges, onChange, onDebugLog, debugId, disabled, placeholder, className, minHeightPx, rootElRef } = props;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const isFocusedRef = useRef(false);
   const lastCommittedRef = useRef<{ text: string; rangesKey: string } | null>(null);
@@ -235,7 +268,10 @@ export function RichTextInput(props: Props) {
 
   return (
     <div
-      ref={rootRef}
+      ref={(node) => {
+        rootRef.current = node;
+        if (rootElRef) rootElRef.current = node;
+      }}
       className={className}
       contentEditable={!disabled}
       suppressContentEditableWarning

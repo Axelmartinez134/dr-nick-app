@@ -1,5 +1,15 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { Slide1Background, Slide1Callout, Slide1Card, Slide1Style, Slide1TextNoise, SlideCallout } from "@/features/editor/store/types";
+import type {
+  Slide1Background,
+  Slide1Callout,
+  Slide1Card,
+  Slide1BodyTextShadow,
+  Slide1FadeLayer,
+  Slide1Layering,
+  Slide1Style,
+  Slide1TextNoise,
+  SlideCallout,
+} from "@/features/editor/store/types";
 
 type Args = {
   editorStore: any;
@@ -194,7 +204,13 @@ type Args = {
   onSetSlide1Background: (next: Slide1Background) => void;
   onSetSlide1Card: (next: Slide1Card) => void;
   onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
+  onSetSlide1BodyTextShadow: (next: Slide1BodyTextShadow) => void;
+  onSetSlide1FadeLayer: (next: Slide1FadeLayer) => void;
+  onSetSlide1Layering: (next: Slide1Layering) => void;
   onSetSlide1Callout: (next: Slide1Callout) => void;
+  onOpenSlide1TemplateTextEditor: (args: { assetId: string; text: string }) => void;
+  onCloseSlide1TemplateTextEditor: () => void;
+  onApplySlide1TemplateTextFill: (args: { assetId: string; selectionStart: number; selectionEnd: number; fill: string }) => void;
   onSetSlideCallout: (args: { slideIndex: number; next: SlideCallout }) => void;
   onSetSlideBodyTextColorHex: (args: { slideIndex: number; colorHex: string | null }) => void;
   onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
@@ -396,7 +412,13 @@ export function useEditorStoreActionsSync(args: Args) {
     onSetSlide1Background,
     onSetSlide1Card,
     onSetSlide1TextNoise,
+    onSetSlide1BodyTextShadow,
+    onSetSlide1FadeLayer,
+    onSetSlide1Layering,
     onSetSlide1Callout,
+  onOpenSlide1TemplateTextEditor,
+  onCloseSlide1TemplateTextEditor,
+  onApplySlide1TemplateTextFill,
     onSetSlideCallout,
     onSetSlideBodyTextColorHex,
     onSetSlide1CardAndAccent,
@@ -495,6 +517,48 @@ export function useEditorStoreActionsSync(args: Args) {
         // ignore
       }
     },
+  onSetSlide1BodyTextShadow: (a: Slide1BodyTextShadow) => {
+    try {
+      onSetSlide1BodyTextShadow(a);
+    } catch {
+      // ignore
+    }
+  },
+    onSetSlide1FadeLayer: (next: Slide1FadeLayer) => {
+      try {
+        onSetSlide1FadeLayer(next);
+      } catch {
+        // ignore
+      }
+    },
+    onSetSlide1Layering: (next: Slide1Layering) => {
+      try {
+        onSetSlide1Layering(next);
+      } catch {
+        // ignore
+      }
+    },
+  onOpenSlide1TemplateTextEditor: (a: any) => {
+    try {
+      onOpenSlide1TemplateTextEditor(a);
+    } catch {
+      // ignore
+    }
+  },
+  onCloseSlide1TemplateTextEditor: () => {
+    try {
+      onCloseSlide1TemplateTextEditor();
+    } catch {
+      // ignore
+    }
+  },
+  onApplySlide1TemplateTextFill: (a: any) => {
+    try {
+      onApplySlide1TemplateTextFill(a);
+    } catch {
+      // ignore
+    }
+  },
     onSetSlide1Callout: (next: Slide1Callout) => {
       try {
         onSetSlide1Callout(next);
@@ -895,6 +959,12 @@ export function useEditorStoreActionsSync(args: Args) {
       onSetSlide1Background: (next: Slide1Background) => implRef.current?.onSetSlide1Background?.(next),
       onSetSlide1Card: (next: Slide1Card) => implRef.current?.onSetSlide1Card?.(next),
       onSetSlide1TextNoise: (next: Slide1TextNoise) => implRef.current?.onSetSlide1TextNoise?.(next),
+      onSetSlide1BodyTextShadow: (a: Slide1BodyTextShadow) => implRef.current?.onSetSlide1BodyTextShadow?.(a),
+      onSetSlide1FadeLayer: (next: Slide1FadeLayer) => implRef.current?.onSetSlide1FadeLayer?.(next),
+      onSetSlide1Layering: (next: Slide1Layering) => implRef.current?.onSetSlide1Layering?.(next),
+      onOpenSlide1TemplateTextEditor: (a: any) => implRef.current?.onOpenSlide1TemplateTextEditor?.(a),
+      onCloseSlide1TemplateTextEditor: () => implRef.current?.onCloseSlide1TemplateTextEditor?.(),
+      onApplySlide1TemplateTextFill: (a: any) => implRef.current?.onApplySlide1TemplateTextFill?.(a),
       onSetSlide1Callout: (next: Slide1Callout) => implRef.current?.onSetSlide1Callout?.(next),
       onSetSlideCallout: (a: any) => implRef.current?.onSetSlideCallout?.(a),
       onSetSlideBodyTextColorHex: (a: any) => implRef.current?.onSetSlideBodyTextColorHex?.(a),

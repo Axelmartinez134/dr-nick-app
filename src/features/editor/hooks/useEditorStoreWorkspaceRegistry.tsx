@@ -49,6 +49,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     // Canvas inline styling pills
     canvasTextSelection,
     applyCanvasInlineMark,
+    applyCanvasInlineFill,
     clearCanvasInlineMarks,
 
     // Workspace slice values
@@ -397,6 +398,9 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
                 e.preventDefault();
                 e.stopPropagation();
               };
+              const stopOnly = (e: any) => {
+                e.stopPropagation();
+              };
               return (
                 <>
                   <button
@@ -459,6 +463,41 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
                   >
                     Clear
                   </button>
+                  <div className={disabled ? "opacity-40 pointer-events-none" : ""} onMouseDown={stopOnly} onClick={stopOnly}>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs font-semibold text-slate-700">Color</div>
+                      <input
+                        type="color"
+                        className="h-8 w-10 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                        value={(() => {
+                          const f = String((canvasTextSelection as any)?.fill || "").trim();
+                          return /^#[0-9a-fA-F]{6}$/.test(f) ? f : "#000000";
+                        })()}
+                        onMouseDown={stopOnly}
+                        onClick={stopOnly}
+                        onChange={(e) => {
+                          const hex = String(e.target.value || "#000000").trim() || "#000000";
+                          applyCanvasInlineFill?.(hex);
+                        }}
+                        aria-label="Text color"
+                      />
+                      <button
+                        type="button"
+                        className={btn(false)}
+                        disabled={disabled}
+                        tabIndex={-1}
+                        aria-label="Reset text color to black"
+                        title="Reset color to black"
+                        onMouseDown={stop}
+                        onClick={(e) => {
+                          stop(e);
+                          applyCanvasInlineFill?.("#000000");
+                        }}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
                 </>
               );
             })()}

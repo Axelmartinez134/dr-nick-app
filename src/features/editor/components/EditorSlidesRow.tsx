@@ -178,6 +178,50 @@ export function EditorSlidesRow() {
             style={{ left: imageMenuPos.x, top: imageMenuPos.y }}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {(() => {
+              const allowLayering = templateTypeId === "regular" && activeSlideIndex === 0;
+              const selectedPrimary = !!imageMenuInfo?.selectedPrimary;
+              const stickerId = String(imageMenuInfo?.singleStickerId || "").trim() || null;
+              const canApply = allowLayering && (selectedPrimary || !!stickerId);
+              const setSide = (side: "front" | "back") => {
+                if (!canApply) return;
+                const slide0 = (slides as any)?.[0] || null;
+                const input0 = (slide0 as any)?.inputData || null;
+                const cur = (input0 as any)?.slide1Layering || null;
+                const base = cur && typeof cur === "object" ? { ...(cur as any) } : {};
+                if (selectedPrimary) {
+                  base.primary = side;
+                } else if (stickerId) {
+                  const prevMap = (base.stickers && typeof base.stickers === "object") ? { ...(base.stickers as any) } : {};
+                  prevMap[stickerId] = side;
+                  base.stickers = prevMap;
+                }
+                actions?.onSetSlide1Layering?.(base as any);
+              };
+              if (!allowLayering) return null;
+              return (
+                <>
+                  <div className="px-3 py-1 text-[10px] font-semibold text-slate-500 uppercase">Layer</div>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
+                    disabled={imageBusy || !canApply}
+                    onClick={() => setSide("back")}
+                  >
+                    Send to back
+                  </button>
+                  <button
+                    type="button"
+                    className="mt-1 w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
+                    disabled={imageBusy || !canApply}
+                    onClick={() => setSide("front")}
+                  >
+                    Bring to front
+                  </button>
+                  <div className="my-1 h-px bg-slate-200" />
+                </>
+              );
+            })()}
             <button
               type="button"
               className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-50 text-sm text-slate-900 disabled:opacity-50"
@@ -284,12 +328,17 @@ export function EditorSlidesRow() {
                         slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
                         slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                         slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
+                        slide1FadeLayer={(slides as any)?.[0]?.inputData?.slide1FadeLayer || null}
+                        slide1Layering={(slides as any)?.[0]?.inputData?.slide1Layering || null}
+                        slide1TemplateTextStyleRangesByAssetId={(slides as any)?.[0]?.inputData?.slide1TemplateTextStyleRangesByAssetId || null}
+                        slide1BodyTextShadow={(slides as any)?.[0]?.inputData?.slide1BodyTextShadow || null}
                         slide1TextNoise={(slides as any)?.[0]?.inputData?.slide1TextNoise || null}
                         slide1CalloutTextNoise={(slides as any)?.[0]?.inputData?.slide1Callout?.textNoise || null}
                         slide1BodyLineGapPx={(slides as any)?.[0]?.inputData?.slide1BodyLineGapPx ?? 0}
                         layout={layoutForThisCard}
                         backgroundColor={projectBackgroundColor}
                         textColor={projectTextColor}
+                        bodyStyleRanges={(slides as any)?.[i]?.draftBodyRanges || []}
                         deferInit={false}
                         backgroundEffectEnabled={projectBackgroundEffectEnabled}
                         backgroundEffectType={projectBackgroundEffectType}
@@ -315,7 +364,32 @@ export function EditorSlidesRow() {
                         onUserTextChange={templateTypeId === "regular" ? onUserTextChangeRegular : onUserTextChangeEnhanced}
                         onUserImageChange={handleUserImageChange}
                         onUserExtraImageChange={handleUserExtraImageChange}
+                        onSlide1FadeLayerChange={(chg: any) => {
+                          try {
+                            if (templateTypeId !== "regular") return;
+                            if (i !== 0) return;
+                            const cur = (slides as any)?.[0]?.inputData?.slide1FadeLayer;
+                            if (!cur || typeof cur !== "object") return;
+                            const x = Math.round(Number(chg?.x ?? (cur as any)?.rect?.x ?? 0) || 0);
+                            const y = Math.round(Number(chg?.y ?? (cur as any)?.rect?.y ?? 0) || 0);
+                            const width = Math.max(1, Math.round(Number(chg?.width ?? (cur as any)?.rect?.width ?? 1) || 1));
+                            const height = Math.max(1, Math.round(Number(chg?.height ?? (cur as any)?.rect?.height ?? 1) || 1));
+                            const next = { ...(cur as any), rect: { x, y, width, height } };
+                            actions?.onSetSlide1FadeLayer?.(next as any);
+                          } catch {
+                            // ignore
+                          }
+                        }}
                         onOpenImageMenu={openImageMenu}
+                        onOpenSlide1TemplateTextEditor={(a: any) => {
+                          try {
+                            if (templateTypeId !== "regular") return;
+                            if (i !== 0) return;
+                            actions?.onOpenSlide1TemplateTextEditor?.({ assetId: String(a?.assetId || ""), text: String(a?.text || "") });
+                          } catch {
+                            // ignore
+                          }
+                        }}
                       />
                     )}
                   </div>
@@ -340,12 +414,17 @@ export function EditorSlidesRow() {
                     slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
                     slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                     slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
+                    slide1FadeLayer={(slides as any)?.[0]?.inputData?.slide1FadeLayer || null}
+                    slide1Layering={(slides as any)?.[0]?.inputData?.slide1Layering || null}
+                    slide1TemplateTextStyleRangesByAssetId={(slides as any)?.[0]?.inputData?.slide1TemplateTextStyleRangesByAssetId || null}
+                    slide1BodyTextShadow={(slides as any)?.[0]?.inputData?.slide1BodyTextShadow || null}
                     slide1TextNoise={(slides as any)?.[0]?.inputData?.slide1TextNoise || null}
                     slide1CalloutTextNoise={(slides as any)?.[0]?.inputData?.slide1Callout?.textNoise || null}
                     slide1BodyLineGapPx={(slides as any)?.[0]?.inputData?.slide1BodyLineGapPx ?? 0}
                     layout={layoutForThisCard}
                     backgroundColor={projectBackgroundColor}
                     textColor={projectTextColor}
+                    bodyStyleRanges={(slides as any)?.[i]?.draftBodyRanges || []}
                     deferInit={true}
                     backgroundEffectEnabled={projectBackgroundEffectEnabled}
                     backgroundEffectType={projectBackgroundEffectType}
@@ -464,12 +543,17 @@ export function EditorSlidesRow() {
                                 slide1Style={(slides as any)?.[0]?.inputData?.slide1Style || null}
                                 slide1Background={(slides as any)?.[0]?.inputData?.slide1Background || null}
                                 slide1Card={(slides as any)?.[0]?.inputData?.slide1Card || null}
+                                slide1FadeLayer={(slides as any)?.[0]?.inputData?.slide1FadeLayer || null}
+                                slide1Layering={(slides as any)?.[0]?.inputData?.slide1Layering || null}
+                                slide1TemplateTextStyleRangesByAssetId={(slides as any)?.[0]?.inputData?.slide1TemplateTextStyleRangesByAssetId || null}
+                                slide1BodyTextShadow={(slides as any)?.[0]?.inputData?.slide1BodyTextShadow || null}
                                 slide1TextNoise={(slides as any)?.[0]?.inputData?.slide1TextNoise || null}
                                 slide1CalloutTextNoise={(slides as any)?.[0]?.inputData?.slide1Callout?.textNoise || null}
                                 slide1BodyLineGapPx={(slides as any)?.[0]?.inputData?.slide1BodyLineGapPx ?? 0}
                                 layout={layoutForThisCard}
                                 backgroundColor={projectBackgroundColor}
                                 textColor={projectTextColor}
+                                bodyStyleRanges={(slides as any)?.[i]?.draftBodyRanges || []}
                                 deferInit={i !== activeSlideIndex}
                                 backgroundEffectEnabled={projectBackgroundEffectEnabled}
                                 backgroundEffectType={projectBackgroundEffectType}
@@ -505,7 +589,32 @@ export function EditorSlidesRow() {
                                 // Passing a noop avoids "preserve Fabric position" behavior across project switches.
                                 onUserImageChange={i === activeSlideIndex ? handleUserImageChange : (noop as any)}
                                 onUserExtraImageChange={i === activeSlideIndex ? handleUserExtraImageChange : (noop as any)}
+                                onSlide1FadeLayerChange={i === activeSlideIndex ? ((chg: any) => {
+                                  try {
+                                    if (templateTypeId !== "regular") return;
+                                    if (i !== 0) return;
+                                    const cur = (slides as any)?.[0]?.inputData?.slide1FadeLayer;
+                                    if (!cur || typeof cur !== "object") return;
+                                    const x = Math.round(Number(chg?.x ?? (cur as any)?.rect?.x ?? 0) || 0);
+                                    const y = Math.round(Number(chg?.y ?? (cur as any)?.rect?.y ?? 0) || 0);
+                                    const width = Math.max(1, Math.round(Number(chg?.width ?? (cur as any)?.rect?.width ?? 1) || 1));
+                                    const height = Math.max(1, Math.round(Number(chg?.height ?? (cur as any)?.rect?.height ?? 1) || 1));
+                                    const next = { ...(cur as any), rect: { x, y, width, height } };
+                                    actions?.onSetSlide1FadeLayer?.(next as any);
+                                  } catch {
+                                    // ignore
+                                  }
+                                }) : undefined}
                                 onOpenImageMenu={i === activeSlideIndex ? openImageMenu : undefined}
+                                onOpenSlide1TemplateTextEditor={i === activeSlideIndex ? ((a: any) => {
+                                  try {
+                                    if (templateTypeId !== "regular") return;
+                                    if (i !== 0) return;
+                                    actions?.onOpenSlide1TemplateTextEditor?.({ assetId: String(a?.assetId || ""), text: String(a?.text || "") });
+                                  } catch {
+                                    // ignore
+                                  }
+                                }) : undefined}
                               />
                             );
                           })()}

@@ -572,9 +572,24 @@ function ReviewProjectCard(props: {
   const slide1Style = (slide1InputSnap as any)?.slide1Style ?? null;
   const slide1Background = (slide1InputSnap as any)?.slide1Background ?? null;
   const slide1Card = (slide1InputSnap as any)?.slide1Card ?? null;
+  const slide1FadeLayer = (slide1InputSnap as any)?.slide1FadeLayer ?? null;
+  const slide1Layering = (slide1InputSnap as any)?.slide1Layering ?? null;
+  const slide1TemplateTextStyleRangesByAssetId = (slide1InputSnap as any)?.slide1TemplateTextStyleRangesByAssetId ?? null;
   const slide1TextNoise = (slide1InputSnap as any)?.slide1TextNoise ?? null;
   const slide1CalloutTextNoise = (slide1InputSnap as any)?.slide1Callout?.textNoise ?? null;
   const slide1BodyLineGapPx = (slide1InputSnap as any)?.slide1BodyLineGapPx ?? 0;
+  const slide1BodyTextShadow = (slide1InputSnap as any)?.slide1BodyTextShadow ?? null;
+  const [slide1BodyFontFamily, slide1BodyFontWeight] = useMemo(() => {
+    try {
+      const keyRaw = (slide1InputSnap as any)?.slide1BodyFontKey;
+      const key = keyRaw == null ? "" : String(keyRaw);
+      const [family, w] = key.split("@@");
+      const weight = Number(w);
+      return [family?.trim() || "Inter, sans-serif", Number.isFinite(weight) ? weight : 400] as const;
+    } catch {
+      return ["Inter, sans-serif", 400] as const;
+    }
+  }, [slide1InputSnap]);
   const isEnhanced = project.template_type_id === "enhanced";
   const lockTextLayout = !!(inputSnap as any)?.editor?.layoutLocked;
   // Important: CarouselPreviewVision has a "preserve user-image position" fallback that can drift across re-renders
@@ -868,9 +883,16 @@ function ReviewProjectCard(props: {
               layout={lay}
               backgroundColor={project.project_background_color}
               textColor={project.project_text_color}
+              bodyStyleRanges={(((project.slides?.[i]?.input_snapshot as any) || null)?.bodyStyleRanges as any[]) || []}
+              bodyFontFamily={project.template_type_id === "regular" && i === 0 ? slide1BodyFontFamily : undefined}
+              bodyFontWeight={project.template_type_id === "regular" && i === 0 ? slide1BodyFontWeight : undefined}
               slide1Style={slide1Style}
               slide1Background={slide1Background}
               slide1Card={slide1Card}
+              slide1FadeLayer={slide1FadeLayer}
+              slide1Layering={slide1Layering}
+              slide1TemplateTextStyleRangesByAssetId={slide1TemplateTextStyleRangesByAssetId}
+              slide1BodyTextShadow={slide1BodyTextShadow}
               slide1TextNoise={slide1TextNoise}
               slide1CalloutTextNoise={slide1CalloutTextNoise}
               slide1BodyLineGapPx={slide1BodyLineGapPx}
@@ -949,9 +971,16 @@ function ReviewProjectCard(props: {
                   layout={layout}
                   backgroundColor={project.project_background_color}
                   textColor={project.project_text_color}
+                  bodyStyleRanges={(((project.slides?.[activeSlide]?.input_snapshot as any) || null)?.bodyStyleRanges as any[]) || []}
+                  bodyFontFamily={project.template_type_id === "regular" && activeSlide === 0 ? slide1BodyFontFamily : undefined}
+                  bodyFontWeight={project.template_type_id === "regular" && activeSlide === 0 ? slide1BodyFontWeight : undefined}
                   slide1Style={slide1Style}
                   slide1Background={slide1Background}
                   slide1Card={slide1Card}
+                  slide1FadeLayer={slide1FadeLayer}
+                  slide1Layering={slide1Layering}
+                  slide1TemplateTextStyleRangesByAssetId={slide1TemplateTextStyleRangesByAssetId}
+                  slide1BodyTextShadow={slide1BodyTextShadow}
                   slide1TextNoise={slide1TextNoise}
                   slide1CalloutTextNoise={slide1CalloutTextNoise}
                   slide1BodyLineGapPx={slide1BodyLineGapPx}

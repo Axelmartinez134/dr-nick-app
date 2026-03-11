@@ -19,6 +19,7 @@ const FONT_OPTIONS = [
   { label: 'Noto Serif (Regular)', family: 'Noto Serif', weight: 400 },
   { label: 'Droid Serif (Regular)', family: 'Droid Serif', weight: 400 },
   { label: 'Noto Serif Condensed (Medium)', family: 'Noto Serif Condensed', weight: 500 },
+  { label: 'Bebas Neue (Regular)', family: 'Bebas Neue', weight: 400 },
 ];
 
 const fontKey = (family: string, weight: number) => `${family}@@${weight}`;

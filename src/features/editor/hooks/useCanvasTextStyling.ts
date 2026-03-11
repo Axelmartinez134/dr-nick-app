@@ -4,7 +4,7 @@ export type CanvasTextSelectionState = {
   active: boolean;
   lineKey?: string;
   lineIndex?: number;
-  block: "HEADLINE" | "BODY";
+  block: "HEADLINE" | "BODY" | "CALLOUT";
   // Raw Fabric selection (cursor or highlight)
   selectionStart: number;
   selectionEnd: number;
@@ -14,6 +14,8 @@ export type CanvasTextSelectionState = {
   isBold: boolean;
   isItalic: boolean;
   isUnderline: boolean;
+  // If all selected chars share the same fill, report it (hex/rgb string).
+  fill?: string | null;
 };
 
 export function useCanvasTextStyling(params: {
@@ -24,11 +26,12 @@ export function useCanvasTextStyling(params: {
   applyInlineStyleFromCanvas: (args: {
     lineKey?: string;
     lineIndex?: number;
-    block?: "HEADLINE" | "BODY";
+    block?: "HEADLINE" | "BODY" | "CALLOUT";
     selectionStart: number;
     selectionEnd: number;
-    mark: "bold" | "italic" | "underline";
-    enabled: boolean;
+    mark: "bold" | "italic" | "underline" | "fill";
+    enabled?: boolean;
+    fill?: string;
     preserveCanvasEditing?: boolean;
   }) => void;
 }) {
@@ -85,12 +88,24 @@ export function useCanvasTextStyling(params: {
       const allBold = styles.length ? styles.every(getBoldForStyle) : baseBold;
       const allItalic = styles.length ? styles.every(getItalicForStyle) : baseItalic;
       const allUnderline = styles.length ? styles.every(getUnderlineForStyle) : baseUnderline;
+      const baseFill = typeof obj?.fill === "string" ? String(obj.fill) : null;
+      const getFillForStyle = (s: any) => {
+        const f = s?.fill;
+        if (f == null) return baseFill;
+        return typeof f === "string" ? String(f) : baseFill;
+      };
+      const allFill = styles.length ? (styles.every((s: any) => String(getFillForStyle(s) || "") === String(getFillForStyle(styles[0]) || "")) ? getFillForStyle(styles[0]) : null) : baseFill;
 
       setCanvasTextSelection({
         active: true,
         lineKey: obj?.data?.lineKey,
         lineIndex: obj?.data?.lineIndex,
-        block: String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+        block: (() => {
+          const b = String(obj?.data?.block || "").toUpperCase();
+          if (b === "HEADLINE") return "HEADLINE";
+          if (b === "CALLOUT") return "CALLOUT";
+          return "BODY";
+        })(),
         selectionStart: selA,
         selectionEnd: selB,
         rangeStart,
@@ -98,6 +113,7 @@ export function useCanvasTextStyling(params: {
         isBold: allBold,
         isItalic: allItalic,
         isUnderline: allUnderline,
+        fill: allFill,
       });
     } catch {
       setCanvasTextSelection(null);
@@ -143,7 +159,7 @@ export function useCanvasTextStyling(params: {
     (opts: {
       lineKey?: string;
       lineIndex?: number;
-      block?: "HEADLINE" | "BODY";
+      block?: "HEADLINE" | "BODY" | "CALLOUT";
       // If the user was actively editing, preserve editing + selection range.
       wasEditing: boolean;
       selectionStart: number;
@@ -156,7 +172,8 @@ export function useCanvasTextStyling(params: {
         if (!c || typeof c.getObjects !== "function" || typeof c.setActiveObject !== "function") return false;
         const objects: any[] = c.getObjects() || [];
 
-        const wantBlock = String(block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+        const b = String(block || "").toUpperCase();
+        const wantBlock = b === "HEADLINE" ? "HEADLINE" : (b === "CALLOUT" ? "CALLOUT" : "BODY");
         const match =
           (lineKey
             ? objects.find(
@@ -249,7 +266,12 @@ export function useCanvasTextStyling(params: {
       applyInlineStyleFromCanvas({
         lineKey: obj?.data?.lineKey,
         lineIndex: obj?.data?.lineIndex,
-        block: String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+        block: (() => {
+          const b = String(obj?.data?.block || "").toUpperCase();
+          if (b === "HEADLINE") return "HEADLINE";
+          if (b === "CALLOUT") return "CALLOUT";
+          return "BODY";
+        })(),
         selectionStart: rangeStart,
         selectionEnd: rangeEnd,
         mark,
@@ -264,7 +286,85 @@ export function useCanvasTextStyling(params: {
         reselectUserTextObjectSoon({
           lineKey: obj?.data?.lineKey,
           lineIndex: obj?.data?.lineIndex,
-          block: String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY",
+          block: (() => {
+            const b = String(obj?.data?.block || "").toUpperCase();
+            if (b === "HEADLINE") return "HEADLINE";
+            if (b === "CALLOUT") return "CALLOUT";
+            return "BODY";
+          })(),
+          wasEditing: false,
+          selectionStart: prevSelStart,
+          selectionEnd: prevSelEnd,
+        });
+      }
+    },
+    [applyInlineStyleFromCanvas, canvasRef, canvasTextSelection, computeCanvasTextSelectionState, reselectUserTextObjectSoon]
+  );
+
+  const applyCanvasInlineFill = useCallback(
+    (fill: string) => {
+      const c = (canvasRef as any)?.current?.canvas;
+      if (!c || typeof c.getActiveObject !== "function") return;
+      const obj = c.getActiveObject();
+      const t = String(obj?.type || "").toLowerCase();
+      const isTextObj = !!obj && (t === "i-text" || t === "textbox" || t === "text");
+      const isUserText = String(obj?.data?.role || "") === "user-text";
+      if (!isTextObj || !isUserText) return;
+
+      const state = canvasTextSelection;
+      const text = String(obj?.text || "");
+      const prevSelStart =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.selectionStart) || 0))) : 0;
+      const prevSelEnd =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.selectionEnd) || 0))) : prevSelStart;
+      const wasEditing = !!(obj as any)?.isEditing;
+      const rangeStart =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.rangeStart) || 0))) : 0;
+      const rangeEnd =
+        state && state.active ? Math.max(0, Math.min(text.length, Math.floor(Number(state.rangeEnd) || 0))) : text.length;
+      if (rangeEnd <= rangeStart) return;
+
+      const nextFill = String(fill || "").trim();
+      if (!nextFill) return;
+
+      obj.setSelectionStyles?.({ fill: nextFill }, rangeStart, rangeEnd);
+      try {
+        if (typeof c.setActiveObject === "function") c.setActiveObject(obj);
+        if (wasEditing && typeof (obj as any).enterEditing === "function") (obj as any).enterEditing();
+        if (typeof (obj as any).setSelectionStart === "function") (obj as any).setSelectionStart(prevSelStart);
+        if (typeof (obj as any).setSelectionEnd === "function") (obj as any).setSelectionEnd(prevSelEnd);
+        c.requestRenderAll?.();
+      } catch {
+        // ignore
+      }
+
+      applyInlineStyleFromCanvas({
+        lineKey: obj?.data?.lineKey,
+        lineIndex: obj?.data?.lineIndex,
+        block: (() => {
+          const b = String(obj?.data?.block || "").toUpperCase();
+          if (b === "HEADLINE") return "HEADLINE";
+          if (b === "CALLOUT") return "CALLOUT";
+          return "BODY";
+        })(),
+        selectionStart: rangeStart,
+        selectionEnd: rangeEnd,
+        mark: "fill",
+        fill: nextFill,
+        preserveCanvasEditing: wasEditing,
+      });
+      computeCanvasTextSelectionState();
+
+      if (!wasEditing) {
+        reselectUserTextObjectSoon({
+          lineKey: obj?.data?.lineKey,
+          lineIndex: obj?.data?.lineIndex,
+          block: (() => {
+            const b = String(obj?.data?.block || "").toUpperCase();
+            if (b === "HEADLINE") return "HEADLINE";
+            if (b === "CALLOUT") return "CALLOUT";
+            return "BODY";
+          })(),
           wasEditing: false,
           selectionStart: prevSelStart,
           selectionEnd: prevSelEnd,
@@ -306,7 +406,12 @@ export function useCanvasTextStyling(params: {
     } catch {
       // ignore
     }
-    const block: "HEADLINE" | "BODY" = String(obj?.data?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+    const block: "HEADLINE" | "BODY" | "CALLOUT" = (() => {
+      const b = String(obj?.data?.block || "").toUpperCase();
+      if (b === "HEADLINE") return "HEADLINE";
+      if (b === "CALLOUT") return "CALLOUT";
+      return "BODY";
+    })();
     applyInlineStyleFromCanvas({
       lineKey: obj?.data?.lineKey,
       lineIndex: obj?.data?.lineIndex,
@@ -351,6 +456,6 @@ export function useCanvasTextStyling(params: {
     }
   }, [applyInlineStyleFromCanvas, canvasRef, canvasTextSelection, computeCanvasTextSelectionState, reselectUserTextObjectSoon]);
 
-  return { canvasTextSelection, applyCanvasInlineMark, clearCanvasInlineMarks };
+  return { canvasTextSelection, applyCanvasInlineMark, applyCanvasInlineFill, clearCanvasInlineMarks };
 }
 

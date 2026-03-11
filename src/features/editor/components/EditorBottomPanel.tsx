@@ -30,11 +30,13 @@ export function EditorBottomPanel() {
   const slide1CopyPastePopoverRef = useRef<HTMLDivElement | null>(null);
   const slide1BgPopoverRef = useRef<HTMLDivElement | null>(null);
   const slide1TextPopoverRef = useRef<HTMLDivElement | null>(null);
+  const slide1FadePopoverRef = useRef<HTMLDivElement | null>(null);
   const slideNTextPopoverRef = useRef<HTMLDivElement | null>(null);
   const [captionHistoryOpen, setCaptionHistoryOpen] = useState(false);
   const [slide1TextOpen, setSlide1TextOpen] = useState(false);
   const [slide1BgOpen, setSlide1BgOpen] = useState(false);
   const [slide1CopyPasteOpen, setSlide1CopyPasteOpen] = useState(false);
+  const [slide1FadeOpen, setSlide1FadeOpen] = useState(false);
   const [slide1CopyPasteDraft, setSlide1CopyPasteDraft] = useState<string>("");
   const [slide1CopyPasteStatus, setSlide1CopyPasteStatus] = useState<"idle" | "copied" | "applied" | "error">("idle");
   const [slide1CopyPasteError, setSlide1CopyPasteError] = useState<string | null>(null);
@@ -45,6 +47,16 @@ export function EditorBottomPanel() {
   const slide1BodySizeEditingRef = useRef<boolean>(false);
   const slide1BodySizeHoldTimeoutRef = useRef<number | null>(null);
   const slide1BodySizeHoldIntervalRef = useRef<number | null>(null);
+  const slide1TemplateTextEditorOpen = !!(ui as any)?.slide1TemplateTextEditorOpen;
+  const slide1TemplateTextEditorTarget = ((ui as any)?.slide1TemplateTextEditorTarget as any) || null;
+  const slide1TemplateTextEditorText = String(slide1TemplateTextEditorTarget?.text || "");
+  const slide1TemplateTextEditorAssetId = String(slide1TemplateTextEditorTarget?.assetId || "");
+  const slide1TemplateTextTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [slide1TemplateTextSel, setSlide1TemplateTextSel] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
+
+  // Slide 1 BODY editor: inline selection color control (Regular + Slide 1 only).
+  const slide1BodyRteRootRef = useRef<HTMLDivElement | null>(null);
+  const [slide1BodyColorHexDraft, setSlide1BodyColorHexDraft] = useState<string>("#000000");
 
   // Slide 2–6 text overrides (Regular only).
   const [slideTextOpen, setSlideTextOpen] = useState(false);
@@ -244,7 +256,7 @@ export function EditorBottomPanel() {
 
   // Click-outside to close popovers (Slide 1 + Slide N).
   useEffect(() => {
-    const anyOpen = slide1CopyPasteOpen || slide1BgOpen || slide1TextOpen || slideTextOpen;
+    const anyOpen = slide1CopyPasteOpen || slide1BgOpen || slide1TextOpen || slide1FadeOpen || slideTextOpen;
     if (!anyOpen) return;
 
     const onPointerDown = (e: PointerEvent) => {
@@ -255,24 +267,27 @@ export function EditorBottomPanel() {
       if (target.closest?.('[data-popover-trigger="slide1-copy-paste"]')) return;
       if (target.closest?.('[data-popover-trigger="slide1-bg"]')) return;
       if (target.closest?.('[data-popover-trigger="slide1-text"]')) return;
+      if (target.closest?.('[data-popover-trigger="slide1-fade"]')) return;
       if (target.closest?.('[data-popover-trigger="slide-n-text"]')) return;
 
       // Clicking inside any open popover should not close it.
       if (slide1CopyPastePopoverRef.current?.contains(target)) return;
       if (slide1BgPopoverRef.current?.contains(target)) return;
       if (slide1TextPopoverRef.current?.contains(target)) return;
+      if (slide1FadePopoverRef.current?.contains(target)) return;
       if (slideNTextPopoverRef.current?.contains(target)) return;
 
       // Outside click: close immediately.
       if (slide1CopyPasteOpen) setSlide1CopyPasteOpen(false);
       if (slide1BgOpen) setSlide1BgOpen(false);
       if (slide1TextOpen) setSlide1TextOpen(false);
+      if (slide1FadeOpen) setSlide1FadeOpen(false);
       if (slideTextOpen) setSlideTextOpen(false);
     };
 
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [slide1BgOpen, slide1CopyPasteOpen, slide1TextOpen, slideTextOpen]);
+  }, [slide1BgOpen, slide1CopyPasteOpen, slide1TextOpen, slide1FadeOpen, slideTextOpen]);
 
   // Hide Slide 1 text panel when it can't apply.
   const activeSlideIndexForSlide1Text = Number((ui as any)?.activeSlideIndex ?? -1);
@@ -285,6 +300,9 @@ export function EditorBottomPanel() {
   }, [slide1TextOpen]);
   useEffect(() => {
     if (templateTypeId !== "regular" || activeSlideIndexForSlide1Text !== 0) setSlide1BgOpen(false);
+  }, [activeSlideIndexForSlide1Text, templateTypeId]);
+  useEffect(() => {
+    if (templateTypeId !== "regular" || activeSlideIndexForSlide1Text !== 0) setSlide1FadeOpen(false);
   }, [activeSlideIndexForSlide1Text, templateTypeId]);
 
   // Keep the input draft in sync when not actively typing.
@@ -313,6 +331,41 @@ export function EditorBottomPanel() {
     const s = (ui as any)?.slides?.[activeSlideIndexForSlide1Text] || null;
     setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
   }, [activeSlideIndexForSlide1Text, slideTextOpen, ui]);
+
+  const applySlide1BodySelectionColor = (hex: string) => {
+    try {
+      const enabled = templateTypeId === "regular" && activeSlideIndexCanonical === 0;
+      if (!enabled) return;
+      const root = slide1BodyRteRootRef.current;
+      if (!root) return;
+      const nextHex = String(hex || "").trim();
+      if (!/^#[0-9a-fA-F]{6}$/.test(nextHex)) return;
+
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      if (!range || range.collapsed) return;
+      const anchorOk = root.contains(sel.anchorNode);
+      const focusOk = root.contains(sel.focusNode);
+      if (!anchorOk || !focusOk) return;
+
+      root.focus?.();
+      try {
+        document.execCommand("styleWithCSS", true);
+      } catch {
+        // ignore
+      }
+      document.execCommand("foreColor", false, nextHex);
+      // Ensure React's onInput handler runs so ranges persist immediately.
+      try {
+        root.dispatchEvent(new Event("input", { bubbles: true }));
+      } catch {
+        // ignore
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   if (!ui || !actions) return null;
 
@@ -370,13 +423,26 @@ export function EditorBottomPanel() {
       createdAt: new Date().toISOString(),
       templateId,
       slide1: {
+        bodyTextAlign:
+          String((input0 as any)?.bodyTextAlign || slide0?.draftBodyTextAlign || "left") === "center"
+            ? "center"
+            : String((input0 as any)?.bodyTextAlign || slide0?.draftBodyTextAlign || "left") === "right"
+              ? "right"
+              : "left",
         slide1Background: (input0 as any)?.slide1Background ?? null,
         slide1Card: (input0 as any)?.slide1Card ?? null,
         slide1Style: (input0 as any)?.slide1Style ?? null,
+        slide1FadeLayer: (input0 as any)?.slide1FadeLayer ?? null,
         slide1BodyFontKey: (input0 as any)?.slide1BodyFontKey ?? null,
         slide1TextNoise: (input0 as any)?.slide1TextNoise ?? null,
         slide1BodyLineGapPx: (input0 as any)?.slide1BodyLineGapPx ?? 0,
         bodyFontSizePx,
+          // Inline style ranges (color / emphasis)
+          headlineStyleRanges: (input0 as any)?.headlineStyleRanges ?? [],
+          bodyStyleRanges: (input0 as any)?.bodyStyleRanges ?? [],
+          slide1Callout: (input0 as any)?.slide1Callout ?? null,
+          slide1TemplateTextStyleRangesByAssetId: (input0 as any)?.slide1TemplateTextStyleRangesByAssetId ?? null,
+          slide1BodyTextShadow: (input0 as any)?.slide1BodyTextShadow ?? null,
       },
     };
     return JSON.stringify(payload, null, 2);
@@ -448,13 +514,20 @@ export function EditorBottomPanel() {
         addLog?.(
           `📋 Slide 1 preset: applying input keys=` +
             [
+              has("bodyTextAlign") ? "align" : null,
               has("slide1Background") ? "bg" : null,
               has("slide1Card") ? "card" : null,
               has("slide1Style") ? "style" : null,
+              has("slide1FadeLayer") ? "fade" : null,
               has("slide1BodyFontKey") ? "font" : null,
               has("slide1TextNoise") ? "textNoise" : null,
               has("slide1BodyLineGapPx") ? "lineGap" : null,
               has("bodyFontSizePx") ? "bodySize" : null,
+              has("headlineStyleRanges") ? "headlineRanges" : null,
+              has("bodyStyleRanges") ? "bodyRanges" : null,
+              has("slide1Callout") ? "callout" : null,
+              has("slide1TemplateTextStyleRangesByAssetId") ? "templateTextRanges" : null,
+              has("slide1BodyTextShadow") ? "shadow" : null,
             ]
               .filter(Boolean)
               .join(",")
@@ -466,15 +539,30 @@ export function EditorBottomPanel() {
         slide1Background: s1.slide1Background ?? undefined,
         slide1Card: s1.slide1Card ?? undefined,
         slide1Style: s1.slide1Style ?? undefined,
+        slide1FadeLayer: s1.slide1FadeLayer ?? undefined,
         slide1BodyFontKey: s1.slide1BodyFontKey ?? undefined,
         slide1TextNoise: s1.slide1TextNoise ?? undefined,
         slide1BodyLineGapPx:
           s1.slide1BodyLineGapPx == null ? undefined : Math.max(-80, Math.min(80, Math.round(Number(s1.slide1BodyLineGapPx) || 0))),
+        headlineStyleRanges: s1.headlineStyleRanges ?? undefined,
+        bodyStyleRanges: s1.bodyStyleRanges ?? undefined,
+        slide1Callout: s1.slide1Callout ?? undefined,
+        slide1TemplateTextStyleRangesByAssetId: s1.slide1TemplateTextStyleRangesByAssetId ?? undefined,
+        slide1BodyTextShadow: s1.slide1BodyTextShadow ?? undefined,
       } as any);
 
       if (Number.isFinite(Number(s1.bodyFontSizePx))) {
         const n = Math.max(8, Math.min(999, Math.round(Number(s1.bodyFontSizePx))));
         actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
+      }
+
+      // Slide 1 preset: BODY alignment (stored at input_snapshot.bodyTextAlign)
+      try {
+        const a = String((s1 as any).bodyTextAlign || "").trim();
+        const align = a === "center" ? "center" : a === "right" ? "right" : a === "left" ? "left" : null;
+        if (align) actions.onClickBodyAlign?.(align);
+      } catch {
+        // ignore
       }
 
       try {
@@ -903,6 +991,7 @@ export function EditorBottomPanel() {
                             onClick={() => {
                               setSlide1BgOpen(false);
                               setSlide1TextOpen(false);
+                              setSlide1FadeOpen(false);
                               setSlide1GradientPickerOpen(false);
                               setSlide1CopyPasteOpen((v) => !v);
                             }}
@@ -926,7 +1015,13 @@ export function EditorBottomPanel() {
                           <button
                             type="button"
                             className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                            onClick={() => setSlide1BgOpen((v) => !v)}
+                            onClick={() => {
+                              setSlide1CopyPasteOpen(false);
+                              setSlide1TextOpen(false);
+                              setSlide1FadeOpen(false);
+                              setSlide1GradientPickerOpen(false);
+                              setSlide1BgOpen((v) => !v);
+                            }}
                             disabled={!currentProjectId || copyGenerating || switchingSlides}
                             title={!currentProjectId ? "Create or load a project first" : "Slide 1 background (color + texture)"}
                             aria-label={slide1BgOpen ? "Close Slide 1 background controls" : "Open Slide 1 background controls"}
@@ -939,11 +1034,33 @@ export function EditorBottomPanel() {
                             type="button"
                             className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                             onClick={() => {
+                              setSlide1BgOpen(false);
+                              setSlide1TextOpen(false);
+                              setSlide1CopyPasteOpen(false);
+                              setSlide1GradientPickerOpen(false);
+                              setSlide1FadeOpen((v) => !v);
+                            }}
+                            disabled={!currentProjectId || copyGenerating || switchingSlides}
+                            title={!currentProjectId ? "Create or load a project first" : "Bottom fade layer (Slide 1 only)"}
+                            aria-label={slide1FadeOpen ? "Close Bottom fade controls" : "Open Bottom fade controls"}
+                            data-popover-trigger="slide1-fade"
+                          >
+                            Bottom fade
+                          </button>
+
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            onClick={() => {
                               setSlide1TextOpen((v) => {
                                 const next = !v;
                                 if (next) setSlide1BodySizeDraft(String(slide1BodySizeCurrentForSync));
                                 return next;
                               });
+                              setSlide1BgOpen(false);
+                              setSlide1CopyPasteOpen(false);
+                              setSlide1FadeOpen(false);
+                              setSlide1GradientPickerOpen(false);
                             }}
                             disabled={!currentProjectId || copyGenerating || switchingSlides}
                             title={!currentProjectId ? "Create or load a project first" : "Slide 1 local text styling (size/font/color)"}
@@ -1891,6 +2008,190 @@ export function EditorBottomPanel() {
                                     ) : (
                                       <div className="mt-2 text-[10px] text-slate-500">Textures are neutral (black/white) so your color stays vivid.</div>
                                     )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : null}
+
+                        {slide1FadeOpen ? (
+                          <div
+                            ref={slide1FadePopoverRef}
+                            className="absolute right-0 top-[calc(100%+8px)] z-[70] w-[520px] max-w-[92vw] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold text-slate-900">Bottom fade</div>
+                                <div className="mt-1 text-[10px] text-slate-500">Slide 1 only. Sits above the image and behind text.</div>
+                              </div>
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold hover:bg-slate-50"
+                                onClick={() => setSlide1FadeOpen(false)}
+                                aria-label="Close"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
+                            {(() => {
+                              const raw = (slides as any)?.[0]?.inputData?.slide1FadeLayer || null;
+                              const layer = raw && typeof raw === "object" ? (raw as any) : null;
+                              const disabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                              const clampPct = (n: any) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+                              const clampAt = (n: any) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+                              const clampHex = (s: any) => {
+                                const v = String(s || "").trim();
+                                return v && /^#[0-9a-fA-F]{6}$/.test(v) ? v : "#000000";
+                              };
+                              const apply = (next: any | null) => {
+                                try {
+                                  actions.onSetSlide1FadeLayer?.(next as any);
+                                } catch {
+                                  // ignore
+                                }
+                              };
+
+                              const defaultLayer = {
+                                rect: { x: 0, y: 720, width: 1080, height: 720 },
+                                stops: [
+                                  { at: 0, colorHex: "#050505", opacityPct: 100 },
+                                  { at: 77, colorHex: "#000000", opacityPct: 100 },
+                                  { at: 100, colorHex: "#000000", opacityPct: 0 },
+                                ],
+                              };
+
+                              if (!layer) {
+                                return (
+                                  <div className="mt-3">
+                                    <button
+                                      type="button"
+                                      className="h-10 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50"
+                                      disabled={disabled}
+                                      onClick={() => apply(defaultLayer)}
+                                      title={disabled ? "Create or load a project first" : "Add a bottom fade layer to Slide 1"}
+                                    >
+                                      Add bottom fade
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              const rect = layer?.rect && typeof layer.rect === "object" ? layer.rect : defaultLayer.rect;
+                              const stopsRaw = Array.isArray(layer?.stops) ? (layer.stops as any[]) : defaultLayer.stops;
+                              const stops = (stopsRaw.length >= 3 ? stopsRaw.slice(0, 3) : [...stopsRaw, ...defaultLayer.stops].slice(0, 3)).map((s) => ({
+                                at: clampAt((s as any)?.at),
+                                colorHex: clampHex((s as any)?.colorHex),
+                                opacityPct: clampPct((s as any)?.opacityPct),
+                              }));
+
+                              const setStops = (nextStops: any[]) => {
+                                apply({
+                                  ...layer,
+                                  rect: {
+                                    x: Number(rect?.x || 0) || 0,
+                                    y: Number(rect?.y || 0) || 0,
+                                    width: Math.max(1, Math.round(Number(rect?.width || 1) || 1)),
+                                    height: Math.max(1, Math.round(Number(rect?.height || 1) || 1)),
+                                  },
+                                  stops: nextStops,
+                                });
+                              };
+
+                              return (
+                                <div className="mt-3 space-y-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-[11px] font-semibold text-slate-600 uppercase">Stops</div>
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-[10px] text-slate-500">Stop % is bottom(0) → top(100)</div>
+                                      <button
+                                        type="button"
+                                        className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                        disabled={disabled}
+                                        onClick={() => apply(defaultLayer)}
+                                        title="Reset to defaults"
+                                      >
+                                        Reset
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="h-9 px-3 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-50"
+                                        disabled={disabled}
+                                        onClick={() => apply(null)}
+                                        title="Remove bottom fade"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    {stops.map((s, idx) => (
+                                      <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="text-xs font-semibold text-slate-900">Stop {idx + 1}</div>
+                                          <div className="text-[10px] text-slate-500">
+                                            {idx === 0 ? "Bottom" : idx === 2 ? "Top" : "Mid"}
+                                          </div>
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-[120px_1fr_1fr] gap-2 items-center">
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="color"
+                                              className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                                              value={s.colorHex}
+                                              disabled={disabled}
+                                              onChange={(e) => {
+                                                const nextHex = clampHex(String(e.target.value || s.colorHex));
+                                                const next = stops.map((x, i) => (i !== idx ? x : { ...x, colorHex: nextHex }));
+                                                setStops(next);
+                                              }}
+                                              aria-label={`Stop ${idx + 1} color`}
+                                            />
+                                            <div className="text-[11px] text-slate-600 tabular-nums">{s.colorHex}</div>
+                                          </div>
+                                          <div>
+                                            <div className="text-[10px] font-semibold text-slate-600 uppercase">Stop %</div>
+                                            <input
+                                              type="number"
+                                              className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                              value={s.at}
+                                              disabled={disabled}
+                                              min={0}
+                                              max={100}
+                                              step={1}
+                                              onChange={(e) => {
+                                                const nextAt = clampAt(e.target.value);
+                                                const next = stops.map((x, i) => (i !== idx ? x : { ...x, at: nextAt }));
+                                                setStops(next);
+                                              }}
+                                            />
+                                          </div>
+                                          <div>
+                                            <div className="text-[10px] font-semibold text-slate-600 uppercase">Opacity %</div>
+                                            <input
+                                              type="number"
+                                              className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                              value={s.opacityPct}
+                                              disabled={disabled}
+                                              min={0}
+                                              max={100}
+                                              step={1}
+                                              onChange={(e) => {
+                                                const nextOp = clampPct(e.target.value);
+                                                const next = stops.map((x, i) => (i !== idx ? x : { ...x, opacityPct: nextOp }));
+                                                setStops(next);
+                                              }}
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="text-[10px] text-slate-500">
+                                    Tip: to move/resize the fade rectangle, click it on the canvas (bottom half by default) and drag the handles.
                                   </div>
                                 </div>
                               );
@@ -3216,8 +3517,134 @@ export function EditorBottomPanel() {
                   placeholder={enhancedLockOn ? "Body locked" : "Enter body..."}
                   minHeightPx={96}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm"
+                  rootElRef={slide1BodyRteRootRef as any}
                 />
               </div>
+
+              {/* Regular Slide 1: selection color control for BODY editor (always visible) */}
+              {templateTypeId === "regular" && activeSlideIndexCanonical === 0 ? (
+                <div className="mt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="text-[11px] font-semibold text-slate-600 uppercase">Selection color</div>
+                    <input
+                      type="color"
+                      className="h-9 w-11 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                      value={/^#[0-9a-fA-F]{6}$/.test(String(slide1BodyColorHexDraft || "").trim()) ? String(slide1BodyColorHexDraft).trim() : "#000000"}
+                      onChange={(e) => {
+                        const v = String(e.target.value || "#000000").trim() || "#000000";
+                        setSlide1BodyColorHexDraft(v);
+                        applySlide1BodySelectionColor(v);
+                      }}
+                      aria-label="Pick selection text color"
+                    />
+                    <input
+                      type="text"
+                      inputMode="text"
+                      spellCheck={false}
+                      className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-800"
+                      value={slide1BodyColorHexDraft}
+                      onChange={(e) => {
+                        const raw = String(e.target.value || "");
+                        const cleaned = raw.replace(/[^#0-9a-fA-F]/g, "").slice(0, 7);
+                        const normalized = cleaned.startsWith("#") ? cleaned : ("#" + cleaned).slice(0, 7);
+                        setSlide1BodyColorHexDraft(normalized);
+                        if (/^#[0-9a-fA-F]{6}$/.test(normalized)) applySlide1BodySelectionColor(normalized);
+                      }}
+                      aria-label="Hex selection color"
+                      placeholder="#000000"
+                    />
+                    <button
+                      type="button"
+                      className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setSlide1BodyColorHexDraft("#000000");
+                        applySlide1BodySelectionColor("#000000");
+                      }}
+                      title="Reset selection to black"
+                    >
+                      Reset
+                    </button>
+                    <div className="text-[11px] text-slate-500">Highlight text above, then pick a color.</div>
+                  </div>
+
+                  {/* Regular Slide 1: BODY-only shadow toggle + strength */}
+                  {(() => {
+                    const shadow = ((slides as any)?.[0]?.inputData?.slide1BodyTextShadow ?? null) as any;
+                    const enabled = !!shadow?.enabled;
+                    const strength = Math.max(0, Math.min(100, Math.round(Number(shadow?.strengthPct) || 60)));
+                    return (
+                      <div className="flex items-center gap-3">
+                        <div className="text-[11px] font-semibold text-slate-600 uppercase">Text shadow</div>
+                        <button
+                          type="button"
+                          className={["h-8 w-14 rounded-full transition-colors", enabled ? "bg-black" : "bg-slate-300"].join(" ")}
+                          onClick={() => {
+                            if (!currentProjectId || copyGenerating || switchingSlides) return;
+                            actions.onSetSlide1BodyTextShadow?.(enabled ? null : { enabled: true, strengthPct: strength });
+                          }}
+                          disabled={!currentProjectId || copyGenerating || switchingSlides}
+                          title="Toggle subtle shadow behind BODY text (Slide 1 Regular)"
+                        >
+                          <span
+                            className={[
+                              "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                              enabled ? "translate-x-6" : "translate-x-1",
+                            ].join(" ")}
+                          />
+                        </button>
+
+                        {enabled ? (
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="text-[11px] font-semibold text-slate-600 uppercase whitespace-nowrap">Strength</div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={strength}
+                              className="flex-1 min-w-0"
+                              onChange={(e) => {
+                                const n = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                                actions.onSetSlide1BodyTextShadow?.({ enabled: true, strengthPct: n });
+                              }}
+                              aria-label="Text shadow strength"
+                              disabled={!currentProjectId || copyGenerating || switchingSlides}
+                            />
+                            <div className="w-10 text-right text-[11px] font-semibold text-slate-700 tabular-nums">{strength}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Regular Slide 1: BODY alignment (Left / Center / Right) */}
+                  <div className="flex items-center gap-3">
+                    <div className="text-[11px] font-semibold text-slate-600 uppercase">Align</div>
+                    <div className="inline-flex rounded-md border border-slate-200 bg-white overflow-hidden shadow-sm">
+                      {(["left", "center", "right"] as const).map((a) => {
+                        const active = (slides?.[0] as any)?.draftBodyTextAlign === a || ((slides?.[0] as any)?.draftBodyTextAlign == null && a === "left");
+                        const label = a === "left" ? "L" : a === "center" ? "C" : "R";
+                        return (
+                          <button
+                            key={a}
+                            type="button"
+                            className={[
+                              "h-8 w-8 text-xs font-semibold transition-colors",
+                              active ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100",
+                            ].join(" ")}
+                            disabled={!currentProjectId || copyGenerating || switchingSlides}
+                            title={a === "left" ? "Align Left" : a === "center" ? "Align Center" : "Align Right"}
+                            onClick={() => actions.onClickBodyAlign?.(a)}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {enhancedLockOn ? (
                 <div
@@ -3770,6 +4197,84 @@ export function EditorBottomPanel() {
           setShowDebugPreview={actions.setShowDebugPreview}
           debugLogs={Array.isArray(ui.debugLogs) ? ui.debugLogs : []}
         />
+
+        {/* Slide 1 Regular: Template text inline color editor (opened via right-click on template text). */}
+        {templateTypeId === "regular" && activeSlideIndexCanonical === 0 && slide1TemplateTextEditorOpen && slide1TemplateTextEditorTarget ? (
+          <div className="fixed right-6 bottom-[92px] z-[60] w-[440px] max-w-[92vw] rounded-xl border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-900 truncate">Template text color</div>
+                <div className="text-[11px] font-medium text-slate-500 truncate">Highlight words below, then pick a color</div>
+              </div>
+              <button
+                type="button"
+                className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+                onClick={() => actions?.onCloseSlide1TemplateTextEditor?.()}
+                aria-label="Close template text color editor"
+                title="Close"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <textarea
+                ref={slide1TemplateTextTextareaRef}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-900 shadow-sm text-sm leading-relaxed"
+                rows={5}
+                readOnly
+                value={slide1TemplateTextEditorText}
+                onSelect={(e) => {
+                  try {
+                    const el = e.currentTarget;
+                    setSlide1TemplateTextSel({ start: Number(el.selectionStart || 0), end: Number(el.selectionEnd || 0) });
+                  } catch {
+                    // ignore
+                  }
+                }}
+              />
+              <div className="flex items-center gap-2">
+                <div className="text-xs font-semibold text-slate-700">Color</div>
+                <input
+                  type="color"
+                  className="h-8 w-10 rounded-lg border border-slate-200 bg-white p-1 shadow-sm cursor-pointer"
+                  value="#000000"
+                  onChange={(e) => {
+                    try {
+                      const fill = String(e.target.value || "#000000").trim() || "#000000";
+                      actions?.onApplySlide1TemplateTextFill?.({
+                        assetId: slide1TemplateTextEditorAssetId,
+                        selectionStart: slide1TemplateTextSel.start,
+                        selectionEnd: slide1TemplateTextSel.end,
+                        fill,
+                      });
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  aria-label="Pick text color"
+                />
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors"
+                  onClick={() => {
+                    actions?.onApplySlide1TemplateTextFill?.({
+                      assetId: slide1TemplateTextEditorAssetId,
+                      selectionStart: slide1TemplateTextSel.start,
+                      selectionEnd: slide1TemplateTextSel.end,
+                      fill: "#000000",
+                    });
+                  }}
+                  title="Reset selection to black"
+                >
+                  Reset to black
+                </button>
+              </div>
+              {slide1TemplateTextSel.end <= slide1TemplateTextSel.start ? (
+                <div className="text-[11px] text-slate-500">Tip: highlight a word (or span) first.</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

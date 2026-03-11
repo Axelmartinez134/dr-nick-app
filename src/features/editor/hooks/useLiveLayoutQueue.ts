@@ -198,6 +198,7 @@ export function useLiveLayoutQueue(params: {
                 bodyRanges: item.bodyRanges,
                 bodyFontSizePx: item.bodyFontSizePx,
                 bodyTextColorHex: item.bodyTextColorHex,
+                bodyTextAlign,
               })
             : computeDeterministic({
                 slideIndex,

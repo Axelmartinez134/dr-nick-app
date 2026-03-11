@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState, type CSSProperties } from 'react';
 import { VisionLayoutDecision } from '@/lib/carousel-types';
+import type { InlineStyleRange } from '@/app/editor/RichTextInput';
 import type {
   CarouselTemplateDefinitionV1,
   TemplateAsset,
@@ -24,6 +25,9 @@ interface CarouselPreviewProps {
   layout: VisionLayoutDecision;
   backgroundColor: string;
   textColor: string;
+  // /editor + share/review: source-of-truth inline styles for BODY text (bold/italic/underline/fill).
+  // When provided, these ranges are applied at render-time (independent of layout_snapshot).
+  bodyStyleRanges?: InlineStyleRange[] | null;
   // When true, delay Fabric init until the browser is idle.
   // Used by /editor to init only the active slide immediately (big first-paint speed win).
   deferInit?: boolean;
@@ -80,6 +84,16 @@ interface CarouselPreviewProps {
   } | null;
   // /editor-only: Slide 1 BODY line spacing tweak (extra px between baselines)
   slide1BodyLineGapPx?: number | null;
+  // /editor-only: Slide 1 bottom fade layer (selectable rectangle with gradient fill).
+  slide1FadeLayer?: {
+    rect: { x: number; y: number; width: number; height: number };
+    stops: Array<{ at: number; colorHex: string; opacityPct: number }>;
+  } | null;
+  // /editor-only: Slide 1 manual layering overrides (Regular only).
+  slide1Layering?: {
+    primary?: "front" | "back" | null;
+    stickers?: Record<string, "front" | "back" | null>;
+  } | null;
   hasHeadline?: boolean; // if false, treat ALL lines as body lines (used for /editor Regular)
   // When true, shrink each user text object's width to hug the rendered text (plus small padding),
   // instead of filling the full lane width. Intended for /editor Enhanced so selection boxes aren't huge.
@@ -131,7 +145,13 @@ interface CarouselPreviewProps {
     height: number;
     angle?: number;
   }) => void;
+  onSlide1FadeLayerChange?: (change: { canvasSlideIndex?: number; x: number; y: number; width: number; height: number }) => void;
   onOpenImageMenu?: (x: number, y: number) => void;
+  // /editor-only: inline fill overrides for template text assets (Slide 1 Regular).
+  slide1TemplateTextStyleRangesByAssetId?: Record<string, any[]> | null;
+  // /editor-only: Slide 1 Regular BODY text shadow settings.
+  slide1BodyTextShadow?: { enabled: boolean; strengthPct: number } | null;
+  onOpenSlide1TemplateTextEditor?: (args: { assetId: string; text: string }) => void;
   // Display sizing (CSS pixels). The canvas internal resolution remains 1080×1440.
   // Avoid using parent CSS transforms for scaling; they break Fabric hit-testing.
   displayWidthPx?: number;  // default 540
@@ -173,7 +193,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       slide1TextNoise,
       slide1CalloutTextNoise,
       slide1BodyLineGapPx,
+      slide1FadeLayer,
+      slide1Layering,
       hasHeadline,
+      slide1BodyTextShadow,
+      bodyStyleRanges,
       headlineFontFamily,
       bodyFontFamily,
       headlineFontWeight,
@@ -190,7 +214,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       onUserTextChange,
       onUserImageChange,
       onUserExtraImageChange,
+      onSlide1FadeLayerChange,
       onOpenImageMenu,
+      slide1TemplateTextStyleRangesByAssetId,
+      onOpenSlide1TemplateTextEditor,
       displayWidthPx,
       displayHeightPx,
       frameStyle: frameStyleProp,
@@ -210,7 +237,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const onUserTextChangeRef = useRef<CarouselPreviewProps["onUserTextChange"]>(undefined);
     const onUserImageChangeRef = useRef<CarouselPreviewProps["onUserImageChange"]>(undefined);
     const onUserExtraImageChangeRef = useRef<CarouselPreviewProps["onUserExtraImageChange"]>(undefined);
+    const onSlide1FadeLayerChangeRef = useRef<CarouselPreviewProps["onSlide1FadeLayerChange"]>(undefined);
     const onOpenImageMenuRef = useRef<CarouselPreviewProps["onOpenImageMenu"]>(undefined);
+    const onOpenSlide1TemplateTextEditorRef = useRef<CarouselPreviewProps["onOpenSlide1TemplateTextEditor"]>(undefined);
     // When the user moves a single line, we should NOT auto-move other lines (editor-like behavior).
     // IMPORTANT: This must NOT be time-based because renders are async (font/image loads) and may exceed any small window.
     // Instead, treat it as a one-shot "next render only" restriction and clear after enforcement runs.
@@ -348,8 +377,14 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       onUserExtraImageChangeRef.current = onUserExtraImageChange;
     }, [onUserExtraImageChange]);
     useEffect(() => {
+      onSlide1FadeLayerChangeRef.current = onSlide1FadeLayerChange;
+    }, [onSlide1FadeLayerChange]);
+    useEffect(() => {
       onOpenImageMenuRef.current = onOpenImageMenu;
     }, [onOpenImageMenu]);
+    useEffect(() => {
+      onOpenSlide1TemplateTextEditorRef.current = onOpenSlide1TemplateTextEditor;
+    }, [onOpenSlide1TemplateTextEditor]);
     useEffect(() => {
       showLayoutOverlaysRef.current = !!showLayoutOverlays;
     }, [showLayoutOverlays]);
@@ -1024,6 +1059,119 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       }
     };
 
+    const applyInlineStyleRangesToBodyLine = (args: {
+      textObj: any;
+      line: any;
+      baseWeight: number;
+      isHeadlineLine: boolean;
+      baseFill: string;
+      ranges: InlineStyleRange[];
+    }) => {
+      const { textObj, line, baseWeight, isHeadlineLine, baseFill, ranges } = args;
+      try {
+        if (isHeadlineLine) return;
+        if (!textObj || typeof textObj?.setSelectionStyles !== "function") return;
+        const text = String(line?.text || "");
+        if (!text.length) return;
+        if (!Array.isArray(ranges) || ranges.length === 0) return;
+
+        // Reset to base styles across the whole line so stale layout_snapshot styles can't "stick".
+        try {
+          textObj.setSelectionStyles(
+            { fontWeight: baseWeight, fontStyle: "normal", underline: false, fill: baseFill },
+            0,
+            text.length
+          );
+        } catch {
+          // ignore
+        }
+
+        const parts = Array.isArray((line as any)?.__sourceParts) ? ((line as any).__sourceParts as any[]) : null;
+        const mapped: InlineStyleRange[] = [];
+
+        const clampInt = (n: any, lo: number, hi: number) => {
+          const x = Math.floor(Number(n));
+          if (!Number.isFinite(x)) return lo;
+          return Math.max(lo, Math.min(hi, x));
+        };
+
+        const pushMapped = (r: InlineStyleRange, start: number, end: number) => {
+          const s = clampInt(start, 0, text.length);
+          const e = clampInt(end, 0, text.length);
+          if (e <= s) return;
+          mapped.push({ start: s, end: e, bold: !!r.bold, italic: !!r.italic, underline: !!r.underline, fill: r.fill });
+        };
+
+        if (parts && parts.length) {
+          for (const p of parts) {
+            const sourceStart = clampInt((p as any)?.sourceStart, 0, Number.MAX_SAFE_INTEGER);
+            const sourceEnd = clampInt((p as any)?.sourceEnd, 0, Number.MAX_SAFE_INTEGER);
+            const lineStart = clampInt((p as any)?.lineStart, 0, text.length);
+            // NOTE: lineEnd isn't required for mapping; we trust sourceStart/sourceEnd width.
+            if (sourceEnd <= sourceStart) continue;
+
+            for (const r of ranges) {
+              const rs = clampInt((r as any)?.start, 0, Number.MAX_SAFE_INTEGER);
+              const re = clampInt((r as any)?.end, 0, Number.MAX_SAFE_INTEGER);
+              if (re <= rs) continue;
+              const a1 = Math.max(rs, sourceStart);
+              const a2 = Math.min(re, sourceEnd);
+              if (a2 <= a1) continue;
+              const ls = lineStart + (a1 - sourceStart);
+              const le = lineStart + (a2 - sourceStart);
+              pushMapped(r, ls, le);
+            }
+          }
+        } else {
+          for (const r of ranges) {
+            pushMapped(r, (r as any)?.start, (r as any)?.end);
+          }
+        }
+
+        for (const r of mapped) {
+          const styleObj: any = {};
+          if (r.bold) styleObj.fontWeight = 700;
+          if (r.italic) styleObj.fontStyle = "italic";
+          if (r.underline) styleObj.underline = true;
+          if (typeof r.fill === "string" && r.fill.trim()) styleObj.fill = r.fill.trim();
+          if (Object.keys(styleObj).length) {
+            try {
+              textObj.setSelectionStyles(styleObj, r.start, r.end);
+            } catch {
+              // ignore per-range
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    const enforceTemplateAssetsTopmostNow = (canvas: any) => {
+      try {
+        const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
+        const isRegularSlide1 = si === 0 && !hasHeadline;
+        if (!isRegularSlide1) return;
+        if (!canvas || typeof canvas.getObjects !== "function") return;
+        const objs = (canvas.getObjects?.() || []) as any[];
+        const templateAssets = objs.filter((o) => String(o?.data?.role || "") === "template-asset");
+        if (!templateAssets.length) return;
+        // Preserve internal template order by iterating in current canvas order.
+        for (const o of templateAssets) {
+          try {
+            if (typeof canvas.bringObjectToFront === "function") canvas.bringObjectToFront(o);
+            else if (typeof (canvas as any).bringToFront === "function") (canvas as any).bringToFront(o);
+            else if (typeof canvas.moveTo === "function") canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+            else if (typeof o?.moveTo === "function") o.moveTo((canvas.getObjects?.().length || 1) - 1);
+          } catch {
+            // ignore per-object
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     const getAABBTopLeft = (obj: any) => {
       const width = (typeof obj.getScaledWidth === 'function'
         ? obj.getScaledWidth()
@@ -1519,6 +1667,20 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           });
         };
 
+        const notifySlide1FadeLayer = (obj: any) => {
+          const cb = onSlide1FadeLayerChangeRef.current;
+          if (!cb) return;
+          if (!obj || obj?.data?.role !== 'slide1-fade') return;
+          const aabb = getAABBTopLeft(obj);
+          cb({
+            canvasSlideIndex,
+            x: aabb.x,
+            y: aabb.y,
+            width: Math.max(1, aabb.width),
+            height: Math.max(1, aabb.height),
+          });
+        };
+
         const onObjectModified = (e: any) => {
           const obj = e?.target;
           if (!obj) return;
@@ -1536,7 +1698,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               const childrenText = childrenAll.filter((c: any) => c?.data?.role === 'user-text');
               const childrenImages = childrenAll.filter((c: any) => c?.data?.role === 'user-image');
               const childrenStickers = childrenAll.filter((c: any) => c?.data?.role === 'user-image-sticker');
-              const childrenAny = [...childrenText, ...childrenImages, ...childrenStickers];
+              const childrenFade = childrenAll.filter((c: any) => c?.data?.role === 'slide1-fade');
+              const childrenAny = [...childrenText, ...childrenImages, ...childrenStickers, ...childrenFade];
               if (childrenAny.length > 0) {
                 // Skip global enforcement once after this commit so nothing else snaps.
                 skipNextGlobalInvariantEnforcementRef.current = true;
@@ -1568,6 +1731,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 childrenStickers.forEach((child: any) => {
                   try {
                     notifyUserImageSticker(child);
+                  } catch {
+                    // ignore per-child
+                  }
+                });
+                childrenFade.forEach((child: any) => {
+                  try {
+                    notifySlide1FadeLayer(child);
                   } catch {
                     // ignore per-child
                   }
@@ -1656,7 +1826,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             notifyUserImage(obj);
           } else if (obj?.data?.role === 'user-image-sticker') {
             notifyUserImageSticker(obj);
+          } else if (obj?.data?.role === 'slide1-fade') {
+            notifySlide1FadeLayer(obj);
           }
+
+          // Hard rule: Regular Slide 1 template assets are always topmost.
+          enforceTemplateAssetsTopmostNow(canvas);
+          canvas.requestRenderAll?.();
         };
         // IMPORTANT: Do NOT persist on every keystroke (text:changed) because it triggers React updates
         // that rebuild the Fabric canvas and kick the user out of edit mode.
@@ -1756,8 +1932,22 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }
             const target = opt?.target || null;
             const role = target?.data?.role || null;
+            const assetType = String(target?.data?.assetType || "");
             const t = String(target?.type || '').toLowerCase();
             const isSelection = t === 'activeselection' || t === 'group';
+            if (role === "template-asset" && assetType === "text") {
+              try {
+                const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
+                const isRegularSlide1 = si === 0 && !hasHeadline;
+                const cb = onOpenSlide1TemplateTextEditorRef.current;
+                if (isRegularSlide1 && cb) {
+                  cb({ assetId: String(target?.data?.assetId || ""), text: String(target?.text || "") });
+                }
+              } catch {
+                // ignore
+              }
+              return;
+            }
             if (role === 'user-image' || role === 'user-image-sticker') {
               try {
                 canvas.setActiveObject?.(target);
@@ -2514,16 +2704,27 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 // ignore
               }
               const objs = (canvas.getObjects?.() || []) as any[];
-              for (const o of objs) {
-                const role = String(o?.data?.role || "");
-                if (role === "user-text" || role === "user-image" || role === "user-image-sticker") {
-                  if (typeof canvas.bringObjectToFront === "function") {
-                    canvas.bringObjectToFront(o);
-                  } else if (typeof (canvas as any).bringToFront === "function") {
-                    (canvas as any).bringToFront(o);
-                  }
-                }
-              }
+              const bringFront = (o: any) => {
+                if (!o) return;
+                if (typeof canvas.bringObjectToFront === "function") canvas.bringObjectToFront(o);
+                else if (typeof (canvas as any).bringToFront === "function") (canvas as any).bringToFront(o);
+              };
+
+              // Keep desired stack:
+              // template/card (back) → images → fade → text (front)
+              const fades = objs.filter((o) => String(o?.data?.role || "") === "slide1-fade");
+              const images = objs.filter((o) => {
+                const r = String(o?.data?.role || "");
+                return r === "user-image" || r === "user-image-sticker";
+              });
+              const texts = objs.filter((o) => String(o?.data?.role || "") === "user-text");
+
+              images.forEach((o) => bringFront(o));
+              fades.forEach((o) => bringFront(o));
+              texts.forEach((o) => bringFront(o));
+
+              // Hard rule: Regular Slide 1 template assets are always topmost (even above user text).
+              enforceTemplateAssetsTopmostNow(canvas);
             } catch {
               // ignore
             }
@@ -2983,10 +3184,34 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 originY: 'top',
                 selectable: false,
                 editable: false,
-                evented: false,
+                // Allow right-click targeting without making it selectable.
+                evented: true,
               });
               (obj as any).data = { role: 'template-asset', assetId: t.id, assetKind: t.kind, assetType: 'text' };
               disableRotationControls(obj);
+              // Optional: apply inline style overrides (Slide 1 Regular).
+              try {
+                const map = slide1TemplateTextStyleRangesByAssetId && typeof slide1TemplateTextStyleRangesByAssetId === "object"
+                  ? (slide1TemplateTextStyleRangesByAssetId as any)
+                  : null;
+                const ranges = map && Array.isArray(map?.[t.id]) ? (map[t.id] as any[]) : [];
+                if (ranges.length && typeof obj?.setSelectionStyles === "function") {
+                  for (const r of ranges) {
+                    const start = Math.max(0, Math.min(String(t.text || "").length, Math.floor(Number((r as any)?.start) || 0)));
+                    const end = Math.max(0, Math.min(String(t.text || "").length, Math.floor(Number((r as any)?.end) || 0)));
+                    if (end <= start) continue;
+                    const styleObj: any = {};
+                    if ((r as any)?.bold) styleObj.fontWeight = 700;
+                    if ((r as any)?.italic) styleObj.fontStyle = "italic";
+                    if ((r as any)?.underline) styleObj.underline = true;
+                    const f = String((r as any)?.fill || "").trim();
+                    if (f) styleObj.fill = f;
+                    if (Object.keys(styleObj).length) obj.setSelectionStyles(styleObj, start, end);
+                  }
+                }
+              } catch {
+                // ignore
+              }
               canvas.add(obj);
             } else if (asset.type === 'image') {
               const imgA = asset as TemplateImageAsset;
@@ -3281,6 +3506,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             } catch (e) {
               console.warn('[Preview Vision] ⚠️ Could not force text to front:', e);
             }
+
+            // Apply any Slide 1 manual layering overrides (send-to-back / bring-to-front).
+            try {
+              applySlide1LayeringNow();
+            } catch {
+              // ignore
+            }
             
             console.log('[Preview Vision] ✅ Image added to canvas');
             canvas.renderAll();
@@ -3390,6 +3622,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               } catch {
                 // ignore
               }
+
+              // Apply any Slide 1 manual layering overrides (send-to-back / bring-to-front).
+              try {
+                applySlide1LayeringNow();
+              } catch {
+                // ignore
+              }
             } catch (e) {
               console.warn('[Preview Vision] ⚠️ Failed to add extra image sticker:', e);
             }
@@ -3402,6 +3641,142 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       } catch {
         // ignore
       }
+
+      // STEP 1C: Slide 1 bottom fade layer (Regular-only; behind text, above images).
+      try {
+        const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
+        const canUse = si === 0 && !hasHeadline;
+        const raw = canUse && slide1FadeLayer && typeof slide1FadeLayer === "object" ? (slide1FadeLayer as any) : null;
+        const rectRaw = raw?.rect && typeof raw.rect === "object" ? (raw.rect as any) : null;
+        const stopsRaw = Array.isArray(raw?.stops) ? (raw.stops as any[]) : [];
+        if (raw && rectRaw && stopsRaw.length >= 3) {
+          const x = Number(rectRaw.x || 0) || 0;
+          const y = Number(rectRaw.y || 0) || 0;
+          const w = Math.max(1, Number(rectRaw.width || 1) || 1);
+          const h = Math.max(1, Number(rectRaw.height || 1) || 1);
+
+          const clampPct = (n: any) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+          const clampAt = (n: any) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+          const clampHex = (s: any) => {
+            const v = String(s || "").trim();
+            return v && /^#[0-9a-fA-F]{6}$/.test(v) ? v : "#000000";
+          };
+          const hexToRgba = (hex: string, opacityPct: number) => {
+            const h = clampHex(hex).slice(1);
+            const r = parseInt(h.slice(0, 2), 16);
+            const g = parseInt(h.slice(2, 4), 16);
+            const b = parseInt(h.slice(4, 6), 16);
+            const a = Math.max(0, Math.min(1, clampPct(opacityPct) / 100));
+            return `rgba(${r}, ${g}, ${b}, ${a})`;
+          };
+
+          // Stops are interpreted as bottom(0) → top(100) to match the Bottom Fade UX.
+          const stops = stopsRaw
+            .slice(0, 3)
+            .map((s: any) => ({
+              offset: clampAt(s?.at) / 100,
+              color: hexToRgba(clampHex(s?.colorHex), clampPct(s?.opacityPct)),
+            }))
+            .filter((s: any) => typeof s.color === "string" && Number.isFinite(Number(s.offset)));
+
+          if (stops.length >= 2) {
+            const grad = new fabric.Gradient({
+              type: "linear",
+              gradientUnits: "pixels",
+              // Vertical: bottom → top
+              coords: { x1: 0, y1: h, x2: 0, y2: 0 },
+              colorStops: stops,
+            } as any);
+
+            const fadeRect = new fabric.Rect({
+              left: x,
+              top: y,
+              width: w,
+              height: h,
+              originX: "left",
+              originY: "top",
+              fill: grad,
+              selectable: true,
+              evented: true,
+              objectCaching: false,
+            } as any);
+            (fadeRect as any).data = { role: "slide1-fade" };
+            disableRotationControls(fadeRect);
+            try {
+              (fadeRect as any).lockRotation = true;
+              (fadeRect as any).hasRotatingPoint = false;
+              (fadeRect as any).rotationLocked = true;
+            } catch {
+              // ignore
+            }
+            canvas.add(fadeRect);
+
+            // Stack the fade above all template assets (and card), but keep it below user text (added later).
+            try {
+              const templateCount = (canvas.getObjects?.() || []).filter((o: any) => o?.data?.role === "template-asset").length;
+              const targetIdx = Math.max(0, templateCount + 1);
+              if (typeof canvas.moveTo === "function") canvas.moveTo(fadeRect, targetIdx);
+              else (fadeRect as any)?.moveTo?.(targetIdx);
+            } catch {
+              // ignore
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const applySlide1LayeringNow = () => {
+        try {
+          const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
+          const canUse = si === 0 && !hasHeadline;
+          if (!canUse) return;
+          const l = slide1Layering && typeof slide1Layering === "object" ? (slide1Layering as any) : null;
+          if (!l) return;
+
+          const objs = (canvas.getObjects?.() || []) as any[];
+          const primary = objs.find((o) => o?.type === "image" && String(o?.data?.role || "") === "user-image") || null;
+          const sendBack = (o: any) => {
+            if (!o) return;
+            if (typeof canvas.sendObjectToBack === "function") canvas.sendObjectToBack(o);
+            else if (typeof canvas.moveTo === "function") canvas.moveTo(o, 0);
+            else if (typeof o?.moveTo === "function") o.moveTo(0);
+          };
+          const bringFront = (o: any) => {
+            if (!o) return;
+            if (typeof canvas.bringObjectToFront === "function") canvas.bringObjectToFront(o);
+            else if (typeof canvas.bringToFront === "function") canvas.bringToFront(o);
+            else if (typeof canvas.moveTo === "function") canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+            else if (typeof o?.moveTo === "function") o.moveTo((canvas.getObjects?.().length || 1) - 1);
+          };
+
+          const sidePrimary = String(l?.primary || "");
+          if (primary && (sidePrimary === "front" || sidePrimary === "back")) {
+            if (sidePrimary === "front") bringFront(primary);
+            else sendBack(primary);
+          }
+
+          const stickersMap = l?.stickers && typeof l.stickers === "object" ? (l.stickers as any) : null;
+          if (stickersMap) {
+            for (const [id, side] of Object.entries(stickersMap)) {
+              const sid = String(id || "").trim();
+              if (!sid) continue;
+              const s = String(side || "");
+              if (s !== "front" && s !== "back") continue;
+              const sticker = objs.find((o) => String(o?.data?.role || "") === "user-image-sticker" && String(o?.data?.imageId || "") === sid) || null;
+              if (!sticker) continue;
+              if (s === "front") bringFront(sticker);
+              else sendBack(sticker);
+            }
+          }
+
+          // Hard rule: Regular Slide 1 template assets are always topmost.
+          enforceTemplateAssetsTopmostNow(canvas);
+          canvas.requestRenderAll?.();
+        } catch {
+          // ignore
+        }
+      };
 
       // STEP 2: Add text lines with mixed formatting
       console.log('[Preview Vision] ✍️ Adding text lines...');
@@ -3447,9 +3822,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           //
           // Therefore:
           // - For HEADLINE: force originX='left' always; alignment is handled via `textAlign` within the box.
-          // - For BODY: keep the existing behavior (origin follows textAlign).
+          // - For Regular Slide 1 BODY: ALSO force originX='left' so changing align doesn't change the coordinate system.
+          // - For other BODY: keep the existing behavior (origin follows textAlign).
           const isHeadlineBlock = String((line as any)?.block || '').toUpperCase() === 'HEADLINE';
-          const originX = isHeadlineBlock
+          const isRegularSlide1 = Number.isFinite(slideIndex as any) ? Number(slideIndex) === 0 : false;
+          const isRegularTemplate = !effectiveHasHeadline;
+          const isRegularSlide1Body = isRegularSlide1 && isRegularTemplate && !isHeadlineBlock;
+          const originX = (isHeadlineBlock || isRegularSlide1Body)
             ? 'left'
             : (line.textAlign === 'center' ? 'center' : line.textAlign === 'right' ? 'right' : 'left');
 
@@ -3533,6 +3912,30 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           (textObj as any).data = { role: 'user-text', lineIndex: index, lineKey: (line as any)?.lineKey, block: (line as any)?.block };
           disableRotationControls(textObj);
 
+          // Regular Slide 1: optional BODY-only legibility shadow behind the text.
+          try {
+            const isRegularSlide1 = slideIndex === 0 && !hasHeadline;
+            const blk = String((line as any)?.block || "");
+            const s = slide1BodyTextShadow && typeof slide1BodyTextShadow === "object" ? slide1BodyTextShadow : null;
+            const enabled = !!s?.enabled;
+            const strengthPct = Math.max(0, Math.min(100, Math.round(Number((s as any)?.strengthPct) || 0)));
+            if (isRegularSlide1 && blk === "BODY" && enabled && strengthPct > 0) {
+              const t = strengthPct / 100;
+              const alpha = 0.12 + 0.45 * t;
+              const blur = 4 + 12 * t;
+              const offY = 1 + 4 * t;
+              const shadowObj =
+                typeof (fabric as any).Shadow === "function"
+                  ? new (fabric as any).Shadow({ color: `rgba(0,0,0,${alpha})`, blur, offsetX: 0, offsetY: offY })
+                  : (`rgba(0,0,0,${alpha}) 0px ${offY}px ${blur}px` as any);
+              (textObj as any).set?.("shadow", shadowObj);
+            } else {
+              (textObj as any).set?.("shadow", null);
+            }
+          } catch {
+            // ignore
+          }
+
           // Hard clamp on render: if a layout produced an out-of-bounds position (common when
           // image wrap lanes get tight), keep the text inside the allowed rect so it never "disappears".
           // This is independent of drag-time clamping and runs even on Realign re-renders.
@@ -3552,7 +3955,19 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // across Fabric object types/versions.
 
           // Apply style ranges (bold, italic, etc.)
-          if (line.styles && line.styles.length > 0) {
+          const inputBodyRanges = Array.isArray(bodyStyleRanges) ? bodyStyleRanges : [];
+          const shouldUseInputBodyRanges = !isHeadlineLine && inputBodyRanges.length > 0;
+
+          if (shouldUseInputBodyRanges) {
+            applyInlineStyleRangesToBodyLine({
+              textObj,
+              line,
+              baseWeight,
+              isHeadlineLine,
+              baseFill: textColor,
+              ranges: inputBodyRanges,
+            });
+          } else if (line.styles && line.styles.length > 0) {
             console.log(`[Preview Vision] 🎨 Applying ${line.styles.length} style range(s) to line ${index + 1}`);
             
             line.styles.forEach((style, styleIndex) => {
@@ -3656,6 +4071,23 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                     if (style.underline) styleObj.underline = style.underline;
                     tb.setSelectionStyles(styleObj, style.start, style.end);
                   });
+                }
+                // Apply BODY source-of-truth ranges (wins over layout_snapshot styles).
+                try {
+                  const inputBodyRanges = Array.isArray(bodyStyleRanges) ? bodyStyleRanges : [];
+                  const shouldUseInputBodyRanges = !isHeadlineLine && inputBodyRanges.length > 0;
+                  if (shouldUseInputBodyRanges) {
+                    applyInlineStyleRangesToBodyLine({
+                      textObj: tb,
+                      line,
+                      baseWeight,
+                      isHeadlineLine,
+                      baseFill: textColor,
+                      ranges: inputBodyRanges,
+                    });
+                  }
+                } catch {
+                  // ignore
                 }
                 canvas.add(tb);
                 console.log(`[Preview Vision] ✅ Line ${index + 1} added to canvas (fallback textbox)`);
@@ -3872,6 +4304,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Apply Slide 1 style overrides (background + accent fill/gradient).
       applySlide1Style();
 
+      // Apply any Slide 1 manual layering overrides (send-to-back / bring-to-front).
+      try {
+        applySlide1LayeringNow();
+      } catch {
+        // ignore
+      }
+
       canvas.renderAll();
       try {
         canvas.calcOffset?.();
@@ -3892,7 +4331,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           // ignore
         }
       };
-    }, [layout, backgroundColor, textColor, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, slide1TextNoise, slide1CalloutTextNoise, slide1BodyLineGapPx, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
+    }, [layout, backgroundColor, textColor, bodyStyleRanges, backgroundEffectEnabled, backgroundEffectType, fabricLoaded, templateSnapshot, slideIndex, slide1Style, slide1Background, slide1Card, slide1TextNoise, slide1CalloutTextNoise, slide1BodyLineGapPx, slide1FadeLayer, slide1Layering, slide1TemplateTextStyleRangesByAssetId, slide1BodyTextShadow, headlineFontFamily, bodyFontFamily, headlineFontWeight, bodyFontWeight, contentPaddingPx, tightUserTextWidth, hasHeadline, onDebugLog, showLayoutOverlays, displayW, displayH]);
 
     const defaultFrameStyle: CSSProperties = {
       boxSizing: 'content-box',

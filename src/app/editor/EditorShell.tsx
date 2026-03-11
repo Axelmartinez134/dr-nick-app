@@ -595,6 +595,7 @@ export default function EditorShell() {
       if (!!x.bold !== !!y.bold) return false;
       if (!!x.italic !== !!y.italic) return false;
       if (!!x.underline !== !!y.underline) return false;
+      if (String(x.fill || "").trim().toLowerCase() !== String(y.fill || "").trim().toLowerCase()) return false;
     }
     return true;
   };
@@ -603,8 +604,9 @@ export default function EditorShell() {
     textLen: number;
     existing: InlineStyleRange[];
     segments: Array<{ start: number; end: number }>;
-    mark: "bold" | "italic" | "underline";
-    enabled: boolean;
+    mark: "bold" | "italic" | "underline" | "fill";
+    enabled?: boolean;
+    fill?: string;
   }): InlineStyleRange[] => {
     const textLen = Math.max(0, Math.floor(Number(params.textLen) || 0));
     const existing = Array.isArray(params.existing) ? params.existing : [];
@@ -635,10 +637,18 @@ export default function EditorShell() {
         const re = Number((r as any).end ?? -1);
         return re > a && rs < b;
       });
+      const fill = (() => {
+        const withFill = active.filter((r: any) => typeof r?.fill === "string" && String(r.fill).trim());
+        if (!withFill.length) return null;
+        const last = withFill[withFill.length - 1];
+        const v = String((last as any).fill || "").trim();
+        return v || null;
+      })();
       return {
         bold: active.some((r: any) => !!r.bold),
         italic: active.some((r: any) => !!r.italic),
         underline: active.some((r: any) => !!r.underline),
+        fill,
       };
     };
 
@@ -649,22 +659,30 @@ export default function EditorShell() {
       if (b <= a) continue;
       const marks = marksForInterval(a, b);
       if (overlapsAnySeg(a, b)) {
-        (marks as any)[params.mark] = params.enabled;
+        if (params.mark === "fill") {
+          (marks as any).fill = String(params.fill || "").trim() || null;
+        } else {
+          (marks as any)[params.mark] = !!params.enabled;
+        }
       }
-      if (marks.bold || marks.italic || marks.underline) {
+      if (marks.bold || marks.italic || marks.underline || !!marks.fill) {
         out.push({
           start: a,
           end: b,
           bold: marks.bold || undefined,
           italic: marks.italic || undefined,
           underline: marks.underline || undefined,
+          fill: marks.fill || undefined,
         });
       }
     }
     // Merge adjacent identical marks
     const merged: InlineStyleRange[] = [];
     const same = (x: InlineStyleRange, y: InlineStyleRange) =>
-      !!x.bold === !!y.bold && !!x.italic === !!y.italic && !!x.underline === !!y.underline;
+      !!x.bold === !!y.bold &&
+      !!x.italic === !!y.italic &&
+      !!x.underline === !!y.underline &&
+      String((x as any).fill || "").trim().toLowerCase() === String((y as any).fill || "").trim().toLowerCase();
     for (const r of out) {
       const prev = merged[merged.length - 1];
       if (prev && same(prev, r) && r.start <= prev.end) {
@@ -797,6 +815,8 @@ export default function EditorShell() {
   const [activeImageSelected, setActiveImageSelected] = useState(false);
   const [selectedImageTarget, setSelectedImageTarget] = useState<null | { kind: "primary" } | { kind: "sticker"; stickerId: string }>(null);
   const selectedImageTargetRef = useRef<null | { kind: "primary" } | { kind: "sticker"; stickerId: string }>(null);
+  const [slide1TemplateTextEditorOpen, setSlide1TemplateTextEditorOpen] = useState(false);
+  const [slide1TemplateTextEditorTarget, setSlide1TemplateTextEditorTarget] = useState<null | { assetId: string; text: string }>(null);
   const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const imageLongPressRef = useRef<number | null>(null);
   const mobileGestureRef = useRef<{
@@ -842,6 +862,7 @@ export default function EditorShell() {
       { label: "Noto Serif (Regular)", family: "\"Noto Serif\", serif", weight: 400 },
       { label: "Droid Serif (Regular)", family: "\"Droid Serif\", serif", weight: 400 },
       { label: "Noto Serif Condensed (Medium)", family: "\"Noto Serif Condensed\", serif", weight: 500 },
+      { label: "Bebas Neue (Regular)", family: "\"Bebas Neue\", sans-serif", weight: 400 },
     ],
     []
   );
@@ -959,18 +980,20 @@ export default function EditorShell() {
   const applyInlineStyleFromCanvas = (args: {
     lineKey?: string;
     lineIndex?: number;
-    block?: "HEADLINE" | "BODY";
+    block?: "HEADLINE" | "BODY" | "CALLOUT";
     selectionStart: number;
     selectionEnd: number;
-    mark: "bold" | "italic" | "underline";
-    enabled: boolean;
+    mark: "bold" | "italic" | "underline" | "fill";
+    enabled?: boolean;
+    fill?: string;
     // If true, do NOT update engine layout/input state immediately (prevents Fabric editing from exiting).
     preserveCanvasEditing?: boolean;
   }) => {
     if (!currentProjectId) return;
     const slideIndex = activeSlideIndexRef.current;
     const curSlide = slidesRef.current[slideIndex] || initSlide();
-    const block: "HEADLINE" | "BODY" = args.block === "HEADLINE" ? "HEADLINE" : "BODY";
+    const block: "HEADLINE" | "BODY" | "CALLOUT" =
+      args.block === "HEADLINE" ? "HEADLINE" : (args.block === "CALLOUT" ? "CALLOUT" : "BODY");
 
     const baseLayout =
       (slideIndex === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
@@ -1079,11 +1102,42 @@ export default function EditorShell() {
       }
     }
 
-    const segs = mapLineSelectionToSourceSegments({
+    let segs = mapLineSelectionToSourceSegments({
       parts,
       selectionStart: args.selectionStart,
       selectionEnd: args.selectionEnd,
     });
+    if (!segs.length) {
+      // Fallback: if __sourceParts are sparse (e.g., exclude punctuation/spaces), we can still
+      // approximate by mapping selection offsets into the best-effort line start in the block text.
+      try {
+        const headlineText0 = String(curSlide.draftHeadline || "");
+        const bodyText0 = String(curSlide.draftBody || "");
+        const calloutText0 = (() => {
+          try {
+            const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
+            const co = snap?.slide1Callout;
+            return co && typeof co === "object" ? String(co?.text || "") : "";
+          } catch {
+            return "";
+          }
+        })();
+        const blockText0 = block === "HEADLINE" ? headlineText0 : (block === "CALLOUT" ? calloutText0 : bodyText0);
+        const lineText0 = String((line as any)?.text || "");
+        const hintFromLine0 = Number((line as any)?.__hintStart ?? (line as any)?.hintStart ?? NaN);
+        const hintStart0 = Number.isFinite(hintFromLine0) ? hintFromLine0 : undefined;
+        const start0 = bestEffortFindLineStartInBlock({ blockText: blockText0, lineText: lineText0, hintStart: hintStart0 });
+        const selA0 = Math.max(0, Math.min(lineText0.length, Math.floor(Number(args.selectionStart) || 0)));
+        const selB0 = Math.max(0, Math.min(lineText0.length, Math.floor(Number(args.selectionEnd) || 0)));
+        const a0 = Math.min(selA0, selB0);
+        const b0 = Math.max(selA0, selB0);
+        if (start0 != null && start0 >= 0 && b0 > a0) {
+          segs = [{ start: start0 + a0, end: start0 + b0 }];
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (!segs.length) return;
 
     // IMPORTANT: __sourceParts typically map only the "word" spans, not the inter-word spaces.
@@ -1098,22 +1152,52 @@ export default function EditorShell() {
     const bodyText = String(curSlide.draftBody || "");
     const headlineRanges = Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [];
     const bodyRanges = Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [];
+    const calloutText = (() => {
+      try {
+        const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
+        const co = snap?.slide1Callout;
+        return co && typeof co === "object" ? String(co?.text || "") : "";
+      } catch {
+        return "";
+      }
+    })();
+    const calloutRanges = (() => {
+      try {
+        const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
+        const co = snap?.slide1Callout;
+        const arr = co && typeof co === "object" ? (co as any).styleRanges : null;
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    })();
 
     const nextHeadlineRanges =
       block === "HEADLINE"
-        ? applyMarkToRanges({ textLen: headlineText.length, existing: headlineRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled })
+        ? applyMarkToRanges({ textLen: headlineText.length, existing: headlineRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled, fill: args.fill })
         : headlineRanges;
     const nextBodyRanges =
       block === "BODY"
-        ? applyMarkToRanges({ textLen: bodyText.length, existing: bodyRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled })
+        ? applyMarkToRanges({ textLen: bodyText.length, existing: bodyRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled, fill: args.fill })
         : bodyRanges;
+    const nextCalloutRanges =
+      block === "CALLOUT"
+        ? applyMarkToRanges({ textLen: calloutText.length, existing: calloutRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled, fill: args.fill })
+        : calloutRanges;
 
+    const prevInputObj = (baseInput && typeof baseInput === "object") ? (baseInput as any) : {};
+    const prevCallout = prevInputObj?.slide1Callout;
+    const nextCallout =
+      prevCallout && typeof prevCallout === "object"
+        ? { ...(prevCallout as any), ...(block === "CALLOUT" ? { styleRanges: nextCalloutRanges } : null) }
+        : (block === "CALLOUT" ? { text: calloutText, fontSizePx: 28, colorHex: "#000000", styleRanges: nextCalloutRanges } : prevCallout);
     const nextInput = {
-      ...(baseInput && typeof baseInput === "object" ? baseInput : {}),
+      ...prevInputObj,
       headline: headlineText,
       body: bodyText,
       headlineStyleRanges: nextHeadlineRanges,
       bodyStyleRanges: nextBodyRanges,
+      ...(block === "CALLOUT" ? { slide1Callout: nextCallout } : null),
     };
 
     const nextLayout = {
@@ -1125,8 +1209,9 @@ export default function EditorShell() {
             : // If we just synthesized parts for this line, keep them so the next render/persist has a stable mapping.
               (l === line ? parts : null);
         if (!p) return l;
-        const blk = String(l?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
-        const ranges = blk === "HEADLINE" ? nextHeadlineRanges : nextBodyRanges;
+        const blkRaw = String(l?.block || "").toUpperCase();
+        const blk: "HEADLINE" | "BODY" | "CALLOUT" = blkRaw === "HEADLINE" ? "HEADLINE" : (blkRaw === "CALLOUT" ? "CALLOUT" : "BODY");
+        const ranges = blk === "HEADLINE" ? nextHeadlineRanges : (blk === "CALLOUT" ? nextCalloutRanges : nextBodyRanges);
         const next: any = { ...l, styles: buildTextStylesForLine(p, ranges) };
         if (!Array.isArray((l as any).__sourceParts) && l === line) next.__sourceParts = p;
         return next;
@@ -1232,7 +1317,7 @@ export default function EditorShell() {
   const [showLayoutOverlays, setShowLayoutOverlays] = useState(false);
   const [showAdvancedLayoutControls, setShowAdvancedLayoutControls] = useState(false);
 
-  const { canvasTextSelection, applyCanvasInlineMark, clearCanvasInlineMarks } = useCanvasTextStyling({
+  const { canvasTextSelection, applyCanvasInlineMark, applyCanvasInlineFill, clearCanvasInlineMarks } = useCanvasTextStyling({
     canvasRef,
     activeSlideIndex,
     currentProjectId,
@@ -1978,6 +2063,18 @@ export default function EditorShell() {
     });
   };
 
+  const extractFillOnlyRanges = (ranges: any[]) => {
+    if (!Array.isArray(ranges) || ranges.length === 0) return [];
+    return ranges
+      .filter((r: any) => r && typeof r === "object" && typeof r.fill === "string" && String(r.fill).trim())
+      .map((r: any) => ({
+        start: Number(r.start) || 0,
+        end: Number(r.end) || 0,
+        fill: String(r.fill || "").trim(),
+      }))
+      .filter((r: any) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start);
+  };
+
   const wipeAllSlideFillOverrides = async (opts: { bg: string; text: string }) => {
     const pid = String(currentProjectIdRef.current || "").trim();
     if (!pid) return;
@@ -2266,7 +2363,10 @@ export default function EditorShell() {
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const out: InlineStyleRange[] = [];
     const same = (a: InlineStyleRange, b: InlineStyleRange) =>
-      !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.underline === !!b.underline;
+      !!a.bold === !!b.bold &&
+      !!a.italic === !!b.italic &&
+      !!a.underline === !!b.underline &&
+      String((a as any).fill || "").trim().toLowerCase() === String((b as any).fill || "").trim().toLowerCase();
     for (const r of sorted) {
       const prev = out[out.length - 1];
       if (prev && same(prev, r) && r.start <= prev.end) {
@@ -2370,6 +2470,7 @@ export default function EditorShell() {
         if (r.bold) style.fontWeight = "bold";
         if (r.italic) style.fontStyle = "italic";
         if (r.underline) style.underline = true;
+        if ((r as any).fill) style.fill = String((r as any).fill);
         out.push(style);
       }
     }
@@ -3080,6 +3181,120 @@ export default function EditorShell() {
     [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
   );
 
+  const onSetSlide1BodyTextShadow = useCallback(
+    (nextShadow: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextShadow && typeof nextShadow === "object" ? nextShadow : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1BodyTextShadow: obj }
+          : { slide1BodyTextShadow: obj };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetSlide1FadeLayer = useCallback(
+    (nextLayer: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextLayer && typeof nextLayer === "object" ? nextLayer : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1FadeLayer: obj }
+          : { slide1FadeLayer: obj };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
+  const onSetSlide1Layering = useCallback(
+    (nextLayering: any | null) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const obj = nextLayering && typeof nextLayering === "object" ? nextLayering : null;
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), slide1Layering: obj }
+          : { slide1Layering: obj };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [activeSlideIndexRef, initSlide, inputData, layoutData, schedulePersistLayoutAndInput, setInputData, setSlides, slidesRef, currentProjectIdRef, templateTypeIdRef]
+  );
+
   const onSetSlide1Callout = useCallback(
     (nextCallout: any | null) => {
       const pid = String(currentProjectIdRef.current || "").trim();
@@ -3125,6 +3340,24 @@ export default function EditorShell() {
             const w = Number(wRaw);
             const fontFamily = String(fam || bodyFontFamily || "Inter, sans-serif");
             const fontWeight = Number.isFinite(w as any) ? w : (Number.isFinite(bodyFontWeight as any) ? Number(bodyFontWeight) : 400);
+            const styleRanges = Array.isArray((obj as any)?.styleRanges) ? ((obj as any).styleRanges as any[]) : [];
+            const calloutStyles = [
+              { start: 0, end: text.length, fill: colorHex, fontFamily, fontWeight },
+              ...styleRanges
+                .map((r: any) => {
+                  const start = Math.max(0, Math.min(text.length, Math.floor(Number(r?.start) || 0)));
+                  const end = Math.max(0, Math.min(text.length, Math.floor(Number(r?.end) || 0)));
+                  if (end <= start) return null;
+                  const st: any = { start, end, fontFamily, fontWeight };
+                  if (r?.bold) st.fontWeight = "bold";
+                  if (r?.italic) st.fontStyle = "italic";
+                  if (r?.underline) st.underline = true;
+                  const f = String(r?.fill || "").trim();
+                  if (f) st.fill = f;
+                  return st;
+                })
+                .filter(Boolean),
+            ];
 
             // Default placement (bottom-left) only when creating for the first time.
             let x = Number((hasCalloutLine ? (lines[1] as any)?.position?.x : NaN));
@@ -3160,15 +3393,7 @@ export default function EditorShell() {
               textAlign: "left",
               lineHeight,
               maxWidth,
-              styles: [
-                {
-                  start: 0,
-                  end: text.length,
-                  fill: colorHex,
-                  fontFamily,
-                  fontWeight,
-                },
-              ],
+              styles: calloutStyles,
             };
             if (hasCalloutLine) lines[1] = calloutLine;
             else lines.splice(1, 0, calloutLine);
@@ -3231,6 +3456,100 @@ export default function EditorShell() {
     ]
   );
 
+  const onOpenSlide1TemplateTextEditor = useCallback((args: { assetId: string; text: string }) => {
+    try {
+      const assetId = String(args?.assetId || "").trim();
+      const text = String(args?.text || "");
+      if (!assetId) return;
+      setSlide1TemplateTextEditorTarget({ assetId, text });
+      setSlide1TemplateTextEditorOpen(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const onCloseSlide1TemplateTextEditor = useCallback(() => {
+    try {
+      setSlide1TemplateTextEditorOpen(false);
+      setSlide1TemplateTextEditorTarget(null);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const onApplySlide1TemplateTextFill = useCallback(
+    (args: { assetId: string; selectionStart: number; selectionEnd: number; fill: string }) => {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+      if (templateTypeIdRef.current !== "regular") return;
+
+      const assetId = String(args?.assetId || "").trim();
+      if (!assetId) return;
+      const text =
+        slide1TemplateTextEditorTarget?.assetId === assetId ? String(slide1TemplateTextEditorTarget?.text || "") : "";
+      if (!text) return;
+
+      const a = Math.max(0, Math.min(text.length, Math.floor(Number(args?.selectionStart) || 0)));
+      const b = Math.max(0, Math.min(text.length, Math.floor(Number(args?.selectionEnd) || 0)));
+      const start = Math.min(a, b);
+      const end = Math.max(a, b);
+      if (end <= start) return;
+
+      const fill = String(args?.fill || "").trim() || "#000000";
+
+      const slideIndexNow = 0;
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+      const baseObj = baseInput && typeof baseInput === "object" ? (baseInput as any) : {};
+
+      const mapPrev = (baseObj as any).slide1TemplateTextStyleRangesByAssetId;
+      const byId = mapPrev && typeof mapPrev === "object" ? { ...(mapPrev as any) } : {};
+      const prevRanges = Array.isArray(byId[assetId]) ? (byId[assetId] as any[]) : [];
+      const nextRanges = applyMarkToRanges({
+        textLen: text.length,
+        existing: prevRanges as any,
+        segments: [{ start, end }],
+        mark: "fill",
+        fill,
+      } as any);
+      byId[assetId] = nextRanges;
+
+      const updatedInput = { ...baseObj, slide1TemplateTextStyleRangesByAssetId: byId };
+
+      setSlides((prev: any) => prev.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any))));
+      slidesRef.current = slidesRef.current.map((s: any, i: number) => (i !== slideIndexNow ? s : ({ ...s, inputData: updatedInput } as any)));
+
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: baseLayout,
+        inputSnapshot: updatedInput,
+      });
+    },
+    [
+      activeSlideIndexRef,
+      initSlide,
+      inputData,
+      layoutData,
+      schedulePersistLayoutAndInput,
+      setInputData,
+      setSlides,
+      slidesRef,
+      currentProjectIdRef,
+      templateTypeIdRef,
+      slide1TemplateTextEditorTarget,
+    ]
+  );
+
   const onSetSlideCallout = useCallback(
     (args: { slideIndex: number; next: any | null }) => {
       const pid = String(currentProjectIdRef.current || "").trim();
@@ -3280,6 +3599,24 @@ export default function EditorShell() {
             const w = Number(wRaw);
             const fontFamily = String(fam || bodyFontFamily || "Inter, sans-serif");
             const fontWeight = Number.isFinite(w as any) ? w : (Number.isFinite(bodyFontWeight as any) ? Number(bodyFontWeight) : 400);
+            const styleRanges = Array.isArray((obj as any)?.styleRanges) ? ((obj as any).styleRanges as any[]) : [];
+            const calloutStyles = [
+              { start: 0, end: text.length, fill: colorHex, fontFamily, fontWeight },
+              ...styleRanges
+                .map((r: any) => {
+                  const start = Math.max(0, Math.min(text.length, Math.floor(Number(r?.start) || 0)));
+                  const end = Math.max(0, Math.min(text.length, Math.floor(Number(r?.end) || 0)));
+                  if (end <= start) return null;
+                  const st: any = { start, end, fontFamily, fontWeight };
+                  if (r?.bold) st.fontWeight = "bold";
+                  if (r?.italic) st.fontStyle = "italic";
+                  if (r?.underline) st.underline = true;
+                  const f = String(r?.fill || "").trim();
+                  if (f) st.fill = f;
+                  return st;
+                })
+                .filter(Boolean),
+            ];
 
             // Default placement (bottom-left) only when creating for the first time.
             const existingLine = calloutIdx >= 0 ? (lines[calloutIdx] as any) : null;
@@ -3314,15 +3651,7 @@ export default function EditorShell() {
               textAlign: "left",
               lineHeight,
               maxWidth,
-              styles: [
-                {
-                  start: 0,
-                  end: text.length,
-                  fill: colorHex,
-                  fontFamily,
-                  fontWeight,
-                },
-              ],
+              styles: calloutStyles,
             };
             if (calloutIdx >= 0) {
               lines[calloutIdx] = calloutLine;
@@ -3671,7 +4000,15 @@ export default function EditorShell() {
               ...(patch.slide1Style !== undefined ? { slide1Style: patch.slide1Style } : null),
               ...(patch.slide1BodyFontKey !== undefined ? { slide1BodyFontKey: patch.slide1BodyFontKey } : null),
               ...(patch.slide1TextNoise !== undefined ? { slide1TextNoise: patch.slide1TextNoise } : null),
+              ...(patch.slide1BodyTextShadow !== undefined ? { slide1BodyTextShadow: patch.slide1BodyTextShadow } : null),
+              ...(patch.slide1FadeLayer !== undefined ? { slide1FadeLayer: patch.slide1FadeLayer } : null),
               ...(patch.slide1BodyLineGapPx !== undefined ? { slide1BodyLineGapPx: patch.slide1BodyLineGapPx } : null),
+              ...(patch.headlineStyleRanges !== undefined ? { headlineStyleRanges: patch.headlineStyleRanges } : null),
+              ...(patch.bodyStyleRanges !== undefined ? { bodyStyleRanges: patch.bodyStyleRanges } : null),
+              ...(patch.slide1Callout !== undefined ? { slide1Callout: patch.slide1Callout } : null),
+              ...(patch.slide1TemplateTextStyleRangesByAssetId !== undefined
+                ? { slide1TemplateTextStyleRangesByAssetId: patch.slide1TemplateTextStyleRangesByAssetId }
+                : null),
             }
           : {
               ...(patch.slide1Background !== undefined ? { slide1Background: patch.slide1Background } : null),
@@ -3679,7 +4016,15 @@ export default function EditorShell() {
               ...(patch.slide1Style !== undefined ? { slide1Style: patch.slide1Style } : null),
               ...(patch.slide1BodyFontKey !== undefined ? { slide1BodyFontKey: patch.slide1BodyFontKey } : null),
               ...(patch.slide1TextNoise !== undefined ? { slide1TextNoise: patch.slide1TextNoise } : null),
+              ...(patch.slide1BodyTextShadow !== undefined ? { slide1BodyTextShadow: patch.slide1BodyTextShadow } : null),
+              ...(patch.slide1FadeLayer !== undefined ? { slide1FadeLayer: patch.slide1FadeLayer } : null),
               ...(patch.slide1BodyLineGapPx !== undefined ? { slide1BodyLineGapPx: patch.slide1BodyLineGapPx } : null),
+              ...(patch.headlineStyleRanges !== undefined ? { headlineStyleRanges: patch.headlineStyleRanges } : null),
+              ...(patch.bodyStyleRanges !== undefined ? { bodyStyleRanges: patch.bodyStyleRanges } : null),
+              ...(patch.slide1Callout !== undefined ? { slide1Callout: patch.slide1Callout } : null),
+              ...(patch.slide1TemplateTextStyleRangesByAssetId !== undefined
+                ? { slide1TemplateTextStyleRangesByAssetId: patch.slide1TemplateTextStyleRangesByAssetId }
+                : null),
             };
 
       try {
@@ -3692,7 +4037,13 @@ export default function EditorShell() {
               has("slide1Style") ? "style" : null,
               has("slide1BodyFontKey") ? "font" : null,
               has("slide1TextNoise") ? "textNoise" : null,
+              has("slide1BodyTextShadow") ? "shadow" : null,
+              has("slide1FadeLayer") ? "fade" : null,
               has("slide1BodyLineGapPx") ? "lineGap" : null,
+              has("headlineStyleRanges") ? "headlineRanges" : null,
+              has("bodyStyleRanges") ? "bodyRanges" : null,
+              has("slide1Callout") ? "callout" : null,
+              has("slide1TemplateTextStyleRangesByAssetId") ? "templateTextRanges" : null,
             ]
               .filter(Boolean)
               .join(",")
@@ -3757,6 +4108,7 @@ export default function EditorShell() {
     bodyRanges?: InlineStyleRange[];
     bodyFontSizePx?: number;
     bodyTextColorHex?: string | null;
+    bodyTextAlign?: "left" | "center" | "right";
   }): VisionLayoutDecision | null => {
     // Regular should fit inside the SAME "safe area" shown by the teal overlay (allowed/inset rect),
     // not the raw contentRegion.
@@ -3824,7 +4176,7 @@ export default function EditorShell() {
           position: { x, y: centerY },
           // Non-standard field (JSON snapshot only): used by renderer to interpret `position.y` as centerY.
           positionAnchorY: "center",
-          textAlign: "left",
+          textAlign: (params.bodyTextAlign === "center" ? "center" : params.bodyTextAlign === "right" ? "right" : "left"),
           lineHeight: 1.2,
           maxWidth: width,
           styles: buildTextStylesForLine(
@@ -3863,14 +4215,12 @@ export default function EditorShell() {
           ? (layout as any).textLines.map((l: any) => {
               const blk = (l?.block === "HEADLINE" ? "HEADLINE" : (l?.block === "CALLOUT" ? "CALLOUT" : "BODY"));
               if (blk !== "BODY") return l;
+              const textLen = String(l?.text || "").length;
               const styles = Array.isArray(l?.styles) ? l.styles : [];
-              const nextStyles =
-                styles.length
-                  ? styles.map((s: any) => ({ ...s, fill: hex }))
-                  : (String(l?.text || "").length
-                      ? [{ start: 0, end: String(l?.text || "").length, fill: hex }]
-                      : []);
-              return { ...l, styles: nextStyles };
+              // IMPORTANT: bodyTextColorHex should behave like a "default" text color, not clobber
+              // inline per-range fills (word coloring).
+              const base = textLen ? [{ start: 0, end: textLen, fill: hex }] : [];
+              return { ...l, styles: [...base, ...styles] };
             })
           : (layout as any).textLines;
       }
@@ -4042,14 +4392,17 @@ export default function EditorShell() {
     }
 
     // Enable Undo after on-canvas commits (move/resize/text edit). Only push when something truly changed.
+    let didMove = false;
+    let didResize = false;
+    let didEditText = false;
     try {
       const curLine = baseLayout.textLines?.[change.lineIndex] as any;
       const eps = 0.5;
-      const didMove =
+      didMove =
         Math.abs(Number(curLine?.position?.x ?? 0) - Number(change.x ?? 0)) > eps ||
         Math.abs(Number(curLine?.position?.y ?? 0) - Number(change.y ?? 0)) > eps;
-      const didResize = Math.abs(Number(curLine?.maxWidth ?? 0) - Number(change.maxWidth ?? 0)) > eps;
-      const didEditText = typeof change.text === "string" && String(change.text) !== String(curLine?.text ?? "");
+      didResize = Math.abs(Number(curLine?.maxWidth ?? 0) - Number(change.maxWidth ?? 0)) > eps;
+      didEditText = typeof change.text === "string" && String(change.text) !== String(curLine?.text ?? "");
       if (didMove || didResize || didEditText) pushUndoSnapshot();
     } catch {
       // If diffing fails for any reason, err on the side of enabling Undo.
@@ -4077,10 +4430,13 @@ export default function EditorShell() {
       // ignore
     }
     // Regular: shrink-to-fit after release (do NOT run full reflow here; preserve manual move/resize).
+    // IMPORTANT: For Slide 1 Regular, moving the BODY textbox should NOT change its size/structure.
+    // Only run shrink-to-fit when the user resized the box or edited text.
     let nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
     let fittedSizeForUi = Number((curSlide as any)?.draftBodyFontSizePx ?? 48);
     if (change.lineIndex === 0) {
       try {
+        const shouldShrinkToFit = didResize || didEditText;
         const tidForFit = computeTemplateIdForSlide(slideIndex);
         const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
         const region = getTemplateContentRectInset(snapForFit || null);
@@ -4088,46 +4444,64 @@ export default function EditorShell() {
         const line0 = (nextLayoutSnap as any)?.textLines?.[0] || null;
         if (region && line0) {
           const rawX = Number(line0?.position?.x ?? region.x) || region.x;
-          const x = Math.max(region.x, Math.min(region.x + region.width - 1, rawX));
-          const maxW = Math.max(1, Math.floor((region.x + region.width) - x));
-          const width = Math.max(1, Math.min(maxW, Math.floor(Number(line0?.maxWidth ?? region.width) || region.width)));
-          const fitted = fitRegularBodyFontSizePx({
-            text: nextBodyForFit,
-            maxWidthPx: width,
-            maxHeightPx: region.height,
-            bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
-            // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
-            // Other slides: keep legacy cap for now.
-            maxFontSizePx:
-              slideIndex === 0
-                ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
-                : 56,
-          });
-          const measuredH = measureRegularBodyHeightPx(
-            nextBodyForFit,
-            width,
-            fitted,
-            Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : []
-          );
-          const halfH = Math.max(1, Math.floor(measuredH / 2));
-          const minCenterY = region.y + halfH;
-          const maxCenterY = (region.y + region.height) - halfH;
           const rawCenterY = Number(line0?.position?.y ?? (region.y + region.height / 2));
-          const centerY = Math.max(minCenterY, Math.min(maxCenterY, rawCenterY));
-          fittedSizeForUi = fitted;
-          const rest = Array.isArray((nextLayoutSnap as any)?.textLines) ? (nextLayoutSnap as any).textLines.slice(1) : [];
-          nextLayoutSnap = {
-            ...nextLayoutSnap,
-            textLines: [
-              {
-                ...line0,
-                position: { ...(line0.position || {}), x, y: centerY },
-                maxWidth: width,
-                baseSize: fitted,
-              },
-              ...(rest.length ? rest : []),
-            ],
-          } as any;
+
+          // Preserve width on move: clamp x to keep the box inside region, instead of shrinking width.
+          const widthFixed = Math.max(1, Math.min(region.width, Math.floor(Number(line0?.maxWidth ?? region.width) || region.width)));
+          const xFixed = Math.max(region.x, Math.min(region.x + region.width - widthFixed, rawX));
+
+          if (!shouldShrinkToFit && slideIndex === 0) {
+            const rest = Array.isArray((nextLayoutSnap as any)?.textLines) ? (nextLayoutSnap as any).textLines.slice(1) : [];
+            nextLayoutSnap = {
+              ...nextLayoutSnap,
+              textLines: [
+                {
+                  ...line0,
+                  position: { ...(line0.position || {}), x: xFixed, y: rawCenterY },
+                  maxWidth: widthFixed,
+                  // keep baseSize unchanged on move-only
+                },
+                ...(rest.length ? rest : []),
+              ],
+            } as any;
+          } else {
+            const fitted = fitRegularBodyFontSizePx({
+              text: nextBodyForFit,
+              maxWidthPx: widthFixed,
+              maxHeightPx: region.height,
+              bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
+              // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
+              // Other slides: keep legacy cap for now.
+              maxFontSizePx:
+                slideIndex === 0
+                  ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
+                  : 56,
+            });
+            const measuredH = measureRegularBodyHeightPx(
+              nextBodyForFit,
+              widthFixed,
+              fitted,
+              Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : []
+            );
+            const halfH = Math.max(1, Math.floor(measuredH / 2));
+            const minCenterY = region.y + halfH;
+            const maxCenterY = (region.y + region.height) - halfH;
+            const centerY = Math.max(minCenterY, Math.min(maxCenterY, rawCenterY));
+            fittedSizeForUi = fitted;
+            const rest = Array.isArray((nextLayoutSnap as any)?.textLines) ? (nextLayoutSnap as any).textLines.slice(1) : [];
+            nextLayoutSnap = {
+              ...nextLayoutSnap,
+              textLines: [
+                {
+                  ...line0,
+                  position: { ...(line0.position || {}), x: xFixed, y: centerY },
+                  maxWidth: widthFixed,
+                  baseSize: fitted,
+                },
+                ...(rest.length ? rest : []),
+              ],
+            } as any;
+          }
         }
       } catch {
         // ignore
@@ -6416,6 +6790,72 @@ export default function EditorShell() {
   const onClickBodyAlign = (a: "left" | "center" | "right") => {
     const nextAlign = a;
     pushUndoSnapshot();
+
+    // Regular Slide 1: alignment-only update (no reflow). Keeps the same textbox geometry.
+    const slideIndexNow = activeSlideIndexRef.current;
+    const isRegularSlide1 = templateTypeIdRef.current === "regular" && slideIndexNow === 0;
+    if (isRegularSlide1) {
+      const pid = String(currentProjectIdRef.current || "").trim();
+      if (!pid) return;
+
+      const baseSlide = slidesRef.current[slideIndexNow] || initSlide();
+      const baseLayout =
+        (slideIndexNow === activeSlideIndexRef.current ? (layoutData as any)?.layout : null) ||
+        (baseSlide as any)?.layoutData?.layout ||
+        null;
+      const baseInput =
+        (slideIndexNow === activeSlideIndexRef.current ? (inputData as any) : null) || (baseSlide as any)?.inputData || null;
+
+      const updatedInput =
+        baseInput && typeof baseInput === "object"
+          ? { ...(baseInput as any), bodyTextAlign: nextAlign }
+          : { bodyTextAlign: nextAlign };
+
+      const nextLayoutSnap = (() => {
+        if (!baseLayout || typeof baseLayout !== "object") return baseLayout;
+        const textLines = Array.isArray((baseLayout as any).textLines) ? ((baseLayout as any).textLines as any[]) : [];
+        if (!textLines.length) return baseLayout;
+        const nextTextLines = textLines.map((l: any) => {
+          const blk = String(l?.block || "BODY").toUpperCase();
+          if (blk !== "BODY") return l;
+          return { ...l, textAlign: nextAlign };
+        });
+        return { ...(baseLayout as any), textLines: nextTextLines };
+      })();
+
+      const nextLayoutData = baseLayout
+        ? ({ success: true, layout: nextLayoutSnap, imageUrl: (layoutData as any)?.imageUrl || (baseSlide as any)?.layoutData?.imageUrl || null } as any)
+        : (baseSlide as any)?.layoutData || ({ success: true, layout: nextLayoutSnap, imageUrl: null } as any);
+
+      setSlides((prev: any) =>
+        prev.map((s: any, i: number) =>
+          i !== slideIndexNow
+            ? s
+            : ({
+                ...s,
+                draftBodyTextAlign: nextAlign,
+                layoutData: nextLayoutData,
+                inputData: updatedInput,
+              } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s: any, i: number) =>
+        i !== slideIndexNow ? s : ({ ...s, draftBodyTextAlign: nextAlign, layoutData: nextLayoutData, inputData: updatedInput } as any)
+      );
+      if (slideIndexNow === activeSlideIndexRef.current) {
+        setLayoutData(nextLayoutData);
+        setInputData(updatedInput as any);
+      }
+
+      schedulePersistLayoutAndInput({
+        projectId: pid,
+        slideIndex: slideIndexNow,
+        layoutSnapshot: nextLayoutSnap,
+        inputSnapshot: updatedInput,
+      });
+      return;
+    }
+
     setSlides((prev: any) =>
       prev.map((s: any, i: number) =>
         i !== activeSlideIndex
@@ -6917,23 +7357,49 @@ export default function EditorShell() {
       });
       if (!j?.success) throw new Error(j?.error || "Failed to regenerate emphasis styles");
 
-      const nextRanges = Array.isArray(j?.bodyStyleRanges) ? j.bodyStyleRanges : [];
+      const curSlide = slidesRef.current?.[slideIndex] || initSlide();
+      const prevRanges = Array.isArray((curSlide as any)?.draftBodyRanges) ? (curSlide as any).draftBodyRanges : [];
+      const prevFillRanges = extractFillOnlyRanges(prevRanges);
+      const serverRanges = Array.isArray(j?.bodyStyleRanges) ? j.bodyStyleRanges : [];
+      // Preserve any existing inline fills (user word colors) while replacing emphasis marks.
+      const nextRanges = mergeInlineRanges([...(stripFillFromRanges(serverRanges) as any), ...(prevFillRanges as any)]);
 
       // IMPORTANT: styles-only. Never modify draftBody here.
       setSlides((prev: any[]) =>
-        prev.map((s: any, i: number) => (i !== slideIndex ? s : ({ ...s, draftBodyRanges: nextRanges } as any)))
+        prev.map((s: any, i: number) => {
+          if (i !== slideIndex) return s;
+          const baseInput = s?.inputData && typeof s.inputData === "object" ? (s.inputData as any) : null;
+          const nextInput = baseInput ? { ...baseInput, bodyStyleRanges: nextRanges } : { bodyStyleRanges: nextRanges };
+          return { ...s, draftBodyRanges: nextRanges, inputData: nextInput } as any;
+        })
       );
       slidesRef.current = slidesRef.current.map((s: any, i: number) =>
-        i !== slideIndex ? s : ({ ...s, draftBodyRanges: nextRanges } as any)
+        i !== slideIndex
+          ? s
+          : (() => {
+              const baseInput = s?.inputData && typeof s.inputData === "object" ? (s.inputData as any) : null;
+              const nextInput = baseInput ? { ...baseInput, bodyStyleRanges: nextRanges } : { bodyStyleRanges: nextRanges };
+              return { ...s, draftBodyRanges: nextRanges, inputData: nextInput } as any;
+            })()
       );
 
-      // Recompute + persist layout/input snapshots so canvas reflects new styles and refresh keeps them.
+      // Persist input_snapshot immediately so refresh/share/review always reflects the new styles,
+      // even if a later live-layout run is cancelled/invalidated.
+      try {
+        const baseInput = (curSlide as any)?.inputData && typeof (curSlide as any).inputData === "object" ? (curSlide as any).inputData : null;
+        const nextInput = baseInput ? { ...(baseInput as any), bodyStyleRanges: nextRanges } : { bodyStyleRanges: nextRanges };
+        await saveSlidePatchForProject(pid, slideIndex, { inputSnapshot: nextInput });
+      } catch {
+        // ignore; live-layout persist will still run
+      }
+
+      // Recompute layout (geometry/fitting) as a best-effort follow-up. Rendering no longer depends on it for emphasis.
       enqueueLiveLayoutForProject(pid, [slideIndex]);
 
       addLog?.(`✅ Emphasis styles updated (slide ${slideIndex + 1})`);
       return { bodyStyleRanges: nextRanges };
     },
-    [addLog, copyGenerating, editorStore, enqueueLiveLayoutForProject, fetchJson, setSlides, slidesRef, switchingSlides, templateTypeId]
+    [addLog, copyGenerating, editorStore, enqueueLiveLayoutForProject, fetchJson, saveSlidePatchForProject, setSlides, slidesRef, switchingSlides, templateTypeId]
   );
 
   const onRestoreBodyEmphasisAttempt = useCallback(
@@ -6999,21 +7465,46 @@ export default function EditorShell() {
         prev.map((s: any, i: number) => {
           const body = String(s?.draftBody || "").trim();
           if (!body) return s; // leave empty slides untouched
-          const nextRanges = Array.isArray(rangesBySlide?.[i]) ? rangesBySlide[i] : [];
-          return { ...s, draftBodyRanges: nextRanges } as any;
+          const prevRanges = Array.isArray((s as any)?.draftBodyRanges) ? (s as any).draftBodyRanges : [];
+          const prevFillRanges = extractFillOnlyRanges(prevRanges);
+          const serverRanges = Array.isArray(rangesBySlide?.[i]) ? rangesBySlide[i] : [];
+          const nextRanges = mergeInlineRanges([...(stripFillFromRanges(serverRanges) as any), ...(prevFillRanges as any)]);
+          const baseInput = s?.inputData && typeof s.inputData === "object" ? (s.inputData as any) : null;
+          const nextInput = baseInput ? { ...baseInput, bodyStyleRanges: nextRanges } : { bodyStyleRanges: nextRanges };
+          return { ...s, draftBodyRanges: nextRanges, inputData: nextInput } as any;
         })
       );
       slidesRef.current = slidesRef.current.map((s: any, i: number) => {
         const body = String(s?.draftBody || "").trim();
         if (!body) return s;
-        const nextRanges = Array.isArray(rangesBySlide?.[i]) ? rangesBySlide[i] : [];
-        return { ...s, draftBodyRanges: nextRanges } as any;
+        const prevRanges = Array.isArray((s as any)?.draftBodyRanges) ? (s as any).draftBodyRanges : [];
+        const prevFillRanges = extractFillOnlyRanges(prevRanges);
+        const serverRanges = Array.isArray(rangesBySlide?.[i]) ? rangesBySlide[i] : [];
+        const nextRanges = mergeInlineRanges([...(stripFillFromRanges(serverRanges) as any), ...(prevFillRanges as any)]);
+        const baseInput = s?.inputData && typeof s.inputData === "object" ? (s.inputData as any) : null;
+        const nextInput = baseInput ? { ...baseInput, bodyStyleRanges: nextRanges } : { bodyStyleRanges: nextRanges };
+        return { ...s, draftBodyRanges: nextRanges, inputData: nextInput } as any;
       });
+
+      // Persist all bodyStyleRanges immediately (small fan-out: max 6 slides).
+      try {
+        const curSlidesNow = Array.isArray(slidesRef.current) ? slidesRef.current : [];
+        const ops = eligibleIndices.map(async (i: number) => {
+          const s = curSlidesNow[i] || initSlide();
+          const nextRanges = Array.isArray((s as any)?.draftBodyRanges) ? (s as any).draftBodyRanges : [];
+          const baseInput = (s as any)?.inputData && typeof (s as any).inputData === "object" ? (s as any).inputData : null;
+          const nextInput = baseInput ? { ...(baseInput as any), bodyStyleRanges: nextRanges } : { bodyStyleRanges: nextRanges };
+          await saveSlidePatchForProject(pid, i, { inputSnapshot: nextInput });
+        });
+        await Promise.all(ops);
+      } catch {
+        // ignore; live-layout persist will still run
+      }
 
       enqueueLiveLayoutForProject(pid, eligibleIndices);
       addLog?.(`✅ Emphasis styles updated (slides ${eligibleIndices.map((i) => i + 1).join(", ")})`);
     },
-    [addLog, copyGenerating, currentProjectIdRef, enqueueLiveLayoutForProject, fetchJson, setSlides, slidesRef, switchingSlides, templateTypeId]
+    [addLog, copyGenerating, currentProjectIdRef, enqueueLiveLayoutForProject, fetchJson, saveSlidePatchForProject, setSlides, slidesRef, switchingSlides, templateTypeId]
   );
   const onClickCopyCaption = async () => {
     const ok = await copyToClipboard(captionDraft || "");
@@ -7115,6 +7606,8 @@ export default function EditorShell() {
         captionRegenGenerating,
         captionRegenError,
         selectedImageTarget,
+        slide1TemplateTextEditorOpen,
+        slide1TemplateTextEditorTarget,
         outreachMessageDraft: outreachMessageDraft || "",
         isOutreachProject: !!isOutreachProject,
         outreachMessageCopyStatus,
@@ -7166,6 +7659,8 @@ export default function EditorShell() {
     slides,
     switchingSlides,
     copyCompletedOnceByProjectId,
+    slide1TemplateTextEditorOpen,
+    slide1TemplateTextEditorTarget,
   ]);
 
   useEditorStoreActionsSync({
@@ -7341,7 +7836,13 @@ export default function EditorShell() {
     onSetSlide1Background,
     onSetSlide1Card,
     onSetSlide1TextNoise,
+    onSetSlide1BodyTextShadow,
+    onSetSlide1FadeLayer,
+    onSetSlide1Layering,
     onSetSlide1Callout,
+    onOpenSlide1TemplateTextEditor,
+    onCloseSlide1TemplateTextEditor,
+    onApplySlide1TemplateTextFill,
     onSetSlideCallout,
     onSetSlideBodyTextColorHex,
     onSetSlide1CardAndAccent,
@@ -7391,6 +7892,7 @@ export default function EditorShell() {
     handleUserExtraImageChange,
     canvasTextSelection,
     applyCanvasInlineMark,
+    applyCanvasInlineFill,
     clearCanvasInlineMarks,
     slideCount,
     viewportWidth,

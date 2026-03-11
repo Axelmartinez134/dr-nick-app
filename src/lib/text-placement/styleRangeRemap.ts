@@ -4,6 +4,7 @@ export type InlineStyleRange = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  fill?: string;
 };
 
 type DiffOp = -1 | 0 | 1; // delete, equal, insert
@@ -11,7 +12,12 @@ type DiffOp = -1 | 0 | 1; // delete, equal, insert
 import diff from 'fast-diff';
 
 function sameMarks(a: InlineStyleRange, b: InlineStyleRange) {
-  return !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.underline === !!b.underline;
+  return (
+    !!a.bold === !!b.bold &&
+    !!a.italic === !!b.italic &&
+    !!a.underline === !!b.underline &&
+    String(a.fill || "").trim().toLowerCase() === String(b.fill || "").trim().toLowerCase()
+  );
 }
 
 function mergeRanges(ranges: InlineStyleRange[]) {

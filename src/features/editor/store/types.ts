@@ -61,6 +61,36 @@ export type Slide1TextNoise = {
   tileSizePx: number;
 } | null;
 
+// Slide 1 Body Text shadow (Regular only): subtle legibility lift behind letters.
+export type Slide1BodyTextShadow = {
+  enabled: boolean;
+  // 0–100 (strength)
+  strengthPct: number;
+} | null;
+
+export type Slide1FadeStop = {
+  // 0–100, interpreted as bottom(0) → top(100)
+  at: number;
+  colorHex: string;
+  // 0–100
+  opacityPct: number;
+};
+
+// Slide 1 Bottom Fade layer (Regular only): a selectable rectangle with a vertical gradient fill.
+export type Slide1FadeLayer = {
+  rect: { x: number; y: number; width: number; height: number };
+  stops: [Slide1FadeStop, Slide1FadeStop, Slide1FadeStop];
+} | null;
+
+export type Slide1LayerSide = "front" | "back";
+
+// Slide 1 manual layering overrides (Regular only).
+// v1 is intentionally minimal: images can be sent to back / brought to front.
+export type Slide1Layering = {
+  primary?: Slide1LayerSide | null;
+  stickers?: Record<string, Slide1LayerSide | null>;
+} | null;
+
 // Slide 1 Callout (Regular only): optional second text block.
 export type Slide1Callout = {
   text: string;
@@ -71,7 +101,11 @@ export type Slide1Callout = {
   colorHex: string;
   textNoise?: Slide1TextNoise;
   lineGapPx?: number; // -80..80
+  // Inline styles (bold/italic/underline/fill) for range coloring.
+  styleRanges?: any[];
 } | null;
+
+export type Slide1TemplateTextStyleRangesByAssetId = Record<string, any[]>;
 
 // Slide Callout (Regular only): optional second text block (any slide).
 // v1 scope: used by slides 2–6. Slide 1 continues to use `slide1Callout` for backward compatibility.
@@ -100,7 +134,13 @@ export type EditorActions = {
   onSetSlide1Background: (next: Slide1Background) => void;
   onSetSlide1Card: (next: Slide1Card) => void;
   onSetSlide1TextNoise: (next: Slide1TextNoise) => void;
+  onSetSlide1BodyTextShadow: (next: Slide1BodyTextShadow) => void;
+  onSetSlide1FadeLayer: (next: Slide1FadeLayer) => void;
+  onSetSlide1Layering: (next: Slide1Layering) => void;
   onSetSlide1Callout: (next: Slide1Callout) => void;
+  onOpenSlide1TemplateTextEditor: (args: { assetId: string; text: string }) => void;
+  onCloseSlide1TemplateTextEditor: () => void;
+  onApplySlide1TemplateTextFill: (args: { assetId: string; selectionStart: number; selectionEnd: number; fill: string }) => void;
   onSetSlideCallout: (args: { slideIndex: number; next: SlideCallout }) => void;
   onSetSlideBodyTextColorHex: (args: { slideIndex: number; colorHex: string | null }) => void;
   onSetSlide1CardAndAccent: (args: { cardHex: string; accentMode: "solid" | "gradient"; accentSolidHex?: string | null; gradientId?: string | null }) => void;
@@ -112,7 +152,13 @@ export type EditorActions = {
     slide1Style?: Slide1Style | null;
     slide1BodyFontKey?: string | null;
     slide1TextNoise?: Slide1TextNoise;
+    slide1BodyTextShadow?: Slide1BodyTextShadow;
+    slide1FadeLayer?: Slide1FadeLayer;
     slide1BodyLineGapPx?: number;
+    headlineStyleRanges?: any[];
+    bodyStyleRanges?: any[];
+    slide1Callout?: Slide1Callout;
+    slide1TemplateTextStyleRangesByAssetId?: Slide1TemplateTextStyleRangesByAssetId | null;
   }) => void;
   onSignOut: () => void;
 
