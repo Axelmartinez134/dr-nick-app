@@ -57,6 +57,7 @@ export function EditorBottomPanel() {
   // Slide 1 BODY editor: inline selection color control (Regular + Slide 1 only).
   const slide1BodyRteRootRef = useRef<HTMLDivElement | null>(null);
   const [slide1BodyColorHexDraft, setSlide1BodyColorHexDraft] = useState<string>("#000000");
+  const [slide1BodySelectionColorInfo, setSlide1BodySelectionColorInfo] = useState<{ hex: string; rgb: string } | null>(null);
 
   // Slide 2–6 text overrides (Regular only).
   const [slideTextOpen, setSlideTextOpen] = useState(false);
@@ -366,6 +367,149 @@ export function EditorBottomPanel() {
       // ignore
     }
   };
+
+  const toHexColor = (raw: string | null | undefined) => {
+    const s = String(raw || "").trim();
+    if (!s) return null;
+    if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toUpperCase();
+    const m = s.match(/^rgba?\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})/i);
+    if (m) {
+      const r = Math.max(0, Math.min(255, Number(m[1] || 0)));
+      const g = Math.max(0, Math.min(255, Number(m[2] || 0)));
+      const b = Math.max(0, Math.min(255, Number(m[3] || 0)));
+      const h = (n: number) => n.toString(16).padStart(2, "0").toUpperCase();
+      return `#${h(r)}${h(g)}${h(b)}`;
+    }
+    return null;
+  };
+
+  const hexToRgbString = (hex: string) => {
+    const s = String(hex || "").trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(s)) return "rgb(0, 0, 0)";
+    const r = parseInt(s.slice(1, 3), 16);
+    const g = parseInt(s.slice(3, 5), 16);
+    const b = parseInt(s.slice(5, 7), 16);
+    return `rgb(${r}, ${g}, ${b})`;
+  };
+
+  const getSlide1BodyBaseTextColorHex = () => {
+    try {
+      const input0 = (ui as any)?.slides?.[0]?.inputData || null;
+      const base = String(input0?.bodyTextColorHex || "").trim();
+      const fromProject = String((ui as any)?.projectTextColor || "").trim();
+      const v = base || fromProject || "#000000";
+      return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : "#000000";
+    } catch {
+      return "#000000";
+    }
+  };
+
+  // Slide 1 BODY editor: when selection/caret changes, reflect the selected word's fill in the picker.
+  useEffect(() => {
+    const enabled = templateTypeId === "regular" && activeSlideIndexCanonical === 0;
+    if (!enabled) return;
+
+    const readFillAtSelectionStart = () => {
+      try {
+        const root = slide1BodyRteRootRef.current;
+        if (!root) return;
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const anchorOk = root.contains(sel.anchorNode);
+        const focusOk = root.contains(sel.focusNode);
+        if (!anchorOk || !focusOk) return;
+
+        const range = sel.getRangeAt(0);
+        const resolveStartNode = () => {
+          const c = (range?.startContainer || sel.anchorNode) as any;
+          const off = Number.isFinite(range?.startOffset as any) ? Number(range.startOffset) : Number(sel.anchorOffset || 0);
+          if (!c) return null;
+          if (c.nodeType === Node.TEXT_NODE) return c as Node;
+          if (c.nodeType === Node.ELEMENT_NODE) {
+            const el = c as Element;
+            const kids = el.childNodes || [];
+            if (!kids.length) return el;
+            // Offset is a boundary between children. If at end, use the last child.
+            const idx = Math.max(0, Math.min(kids.length - 1, Math.floor(off)));
+            const picked = kids[idx] || kids[kids.length - 1] || el;
+            return picked;
+          }
+          return c as Node;
+        };
+        const startNode = resolveStartNode();
+        if (!startNode) return;
+
+        // Walk up from the resolved node, looking for explicit color, then fall back to computed color.
+        let cur: any = startNode.nodeType === Node.ELEMENT_NODE ? (startNode as any) : (startNode.parentElement as any);
+        let fill: string | null = null;
+        while (cur && cur !== root) {
+          try {
+            const tag = String(cur?.tagName || "").toLowerCase();
+            if (tag === "font") {
+              const c = String(cur.getAttribute?.("color") || "").trim();
+              if (c) {
+                fill = c;
+                break;
+              }
+            }
+            const inline = cur?.style && typeof cur.style.color === "string" ? String(cur.style.color || "").trim() : "";
+            if (inline) {
+              fill = inline;
+              break;
+            }
+          } catch {
+            // ignore
+          }
+          cur = cur.parentElement;
+        }
+        let rgb: string | null = null;
+        if (!fill) {
+          try {
+            const el =
+              startNode.nodeType === Node.ELEMENT_NODE
+                ? (startNode as any as HTMLElement)
+                : ((startNode as any).parentElement as HTMLElement | null);
+            if (el) {
+              const cssColor = window.getComputedStyle(el).color;
+              const c = String(cssColor || "").trim() || null;
+              fill = c;
+              rgb = c;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        const next = toHexColor(fill) || getSlide1BodyBaseTextColorHex();
+        setSlide1BodyColorHexDraft((prev) => (String(prev || "").trim().toUpperCase() === next ? prev : next));
+        const nextRgb = (() => {
+          const rr = String(rgb || "").trim();
+          if (rr) return rr;
+          const fromFill = toHexColor(fill);
+          if (fromFill) return hexToRgbString(fromFill);
+          return hexToRgbString(next);
+        })();
+        setSlide1BodySelectionColorInfo((prev) => (prev?.hex === next && prev?.rgb === nextRgb ? prev : { hex: next, rgb: nextRgb }));
+      } catch {
+        // ignore
+      }
+    };
+
+    // selectionchange covers caret moves + highlight drags. keyup/pointerup are extra safety.
+    document.addEventListener("selectionchange", readFillAtSelectionStart);
+    // Use document-level events so we don't miss attachment if the root ref is set after mount.
+    document.addEventListener("keyup", readFillAtSelectionStart, true);
+    document.addEventListener("mouseup", readFillAtSelectionStart, true);
+    document.addEventListener("pointerup", readFillAtSelectionStart, true);
+    // Initialize once when enabled (e.g., project load).
+    window.setTimeout(readFillAtSelectionStart, 0);
+    return () => {
+      document.removeEventListener("selectionchange", readFillAtSelectionStart);
+      document.removeEventListener("keyup", readFillAtSelectionStart, true as any);
+      document.removeEventListener("mouseup", readFillAtSelectionStart, true as any);
+      document.removeEventListener("pointerup", readFillAtSelectionStart, true as any);
+    };
+  }, [activeSlideIndexCanonical, templateTypeId, ui]);
 
   if (!ui || !actions) return null;
 
@@ -3566,6 +3710,19 @@ export function EditorBottomPanel() {
                       Reset
                     </button>
                     <div className="text-[11px] text-slate-500">Highlight text above, then pick a color.</div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-600 tabular-nums">
+                    {(() => {
+                      const baseHex = getSlide1BodyBaseTextColorHex();
+                      const info = slide1BodySelectionColorInfo || { hex: baseHex, rgb: hexToRgbString(baseHex) };
+                      return (
+                        <span>
+                          Current: <span className="font-semibold text-slate-900">{info.hex}</span>{" "}
+                          <span className="text-slate-400">•</span> {info.rgb}
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Regular Slide 1: BODY-only shadow toggle + strength */}

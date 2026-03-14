@@ -225,6 +225,36 @@ When enabled, you’ll see Debug panel entries prefixed with:
   - Tracks Fabric `user-text` selection + applies bold/italic/underline/clear without dropping selection
   - Persists marks into `input_snapshot.*StyleRanges` via the existing `applyInlineStyleFromCanvas` path
 
+### 2026-03 session notes: canvas emphasis, emoji edits, undo, and inline color
+- **Canvas emphasis blur persistence fixed**
+  - Files: `src/app/editor/EditorShell.tsx`, `src/features/editor/hooks/useCanvasTextStyling.ts`
+  - Problem: applying bold on-canvas could look correct while editing, then disappear or revert after blur.
+  - Fixes:
+    - rebuild fallback `__sourceParts` when a line's source mapping is stale or incomplete before translating Fabric selections back into source ranges
+    - keep a synchronous `pendingCanvasInlineRangesRef` so blur commits/remaps read the newest inline ranges instead of stale React state
+    - object-level toolbar state now ignores whitespace-only chars when deciding whether bold/italic/underline are active
+- **Emoji/non-BMP inline style drift fixed**
+  - Files: `src/lib/text-placement/styleRangeRemap.ts`, `src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx`, `src/app/editor/EditorShell.tsx`
+  - Problem: inserting emoji on the canvas could shift inline emphasis away from the intended words, including on other lines in the same BODY block.
+  - Fixes:
+    - `remapRangesByDiff(...)` now treats insertions at styled boundaries conservatively so newly inserted emoji do not get absorbed into adjacent styled spans
+    - Fabric render/apply path converts code-unit offsets to grapheme offsets for lines containing non-BMP characters before calling `setSelectionStyles(...)`
+    - after a BODY text edit, the editor rebuilds `__sourceParts` and per-line styles for all lines in the edited block, not just the edited line
+- **Canvas undo draft-sync patch kept, but emoji undo history is still a known caveat**
+  - Files: `src/app/editor/EditorShell.tsx`, `src/app/components/health/marketing/ai-carousel/useCarouselEditorEngine.ts`
+  - Improvement kept: undo now synchronizes the active slide draft fields (`draftHeadline`, `draftBody`, style ranges, `layoutData`, `inputData`) with the restored engine snapshot so the canvas and bottom panel do not trivially desync.
+  - Known deferred caveat: emoji add/delete undo can still walk through polluted intermediate history snapshots for Enhanced BODY text. If revisited, inspect post-edit `object:modified` churn and snapshot creation before changing style logic again.
+- **Inline color (`fill`) is not architecturally the same as emphasis**
+  - Files: `src/features/editor/hooks/useCanvasTextStyling.ts`, `src/app/editor/EditorShell.tsx`
+  - Current reality:
+    - `fill` shares the same inline-range persistence pipeline as `bold`/`italic`/`underline`
+    - but `fill` also doubles as a default/theme/body text color carrier in several paths, so it is not a pure “inline emphasis” mark
+  - Consequence: color selection/persistence can behave differently from boolean emphasis marks.
+  - If this is revisited later, the safer design is:
+    - keep default/project/theme text color outside inline ranges
+    - use `fill` in `InlineStyleRange[]` only for explicit inline color overrides
+    - add a true “clear inline color override” path, separate from theme/default text color changes
+
 ## Editor feature modules (what was extracted)
 ### Bootstrap + hydration (Stage 3A)
 - **Hook**: `src/features/editor/hooks/useEditorBootstrap.ts`

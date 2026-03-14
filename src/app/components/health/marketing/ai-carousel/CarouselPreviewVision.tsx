@@ -1128,6 +1128,35 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           }
         }
 
+        const lineText0 = String(line?.text || "");
+        const graphemeSegments = (() => {
+          try {
+            if (typeof Intl !== "undefined" && typeof (Intl as any).Segmenter === "function") {
+              const seg = new (Intl as any).Segmenter(undefined, { granularity: "grapheme" });
+              return Array.from(seg.segment(lineText0), (x: any) => ({
+                segment: String(x?.segment || ""),
+                index: Number(x?.index || 0),
+              }));
+            }
+          } catch {
+            // ignore
+          }
+          return Array.from(lineText0).map((segment, idx) => ({ segment, index: idx }));
+        })();
+        const hasNonBmpLine = /[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(lineText0);
+        const codeUnitToGraphemeIndex = (codeUnitIndex: number) => {
+          const idx = Math.max(0, Math.min(lineText0.length, Math.floor(Number(codeUnitIndex) || 0)));
+          let g = 0;
+          for (let i = 0; i < graphemeSegments.length; i++) {
+            const start = Number(graphemeSegments[i]?.index ?? 0);
+            const next = i + 1 < graphemeSegments.length ? Number(graphemeSegments[i + 1]?.index ?? lineText0.length) : lineText0.length;
+            if (idx <= start) return i;
+            if (idx > start && idx < next) return i + 1;
+            g = i + 1;
+          }
+          return g;
+        };
+
         for (const r of mapped) {
           const styleObj: any = {};
           if (r.bold) styleObj.fontWeight = 700;
@@ -1136,7 +1165,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (typeof r.fill === "string" && r.fill.trim()) styleObj.fill = r.fill.trim();
           if (Object.keys(styleObj).length) {
             try {
-              textObj.setSelectionStyles(styleObj, r.start, r.end);
+              const applyStart = hasNonBmpLine ? codeUnitToGraphemeIndex(Number(r.start || 0)) : Number(r.start || 0);
+              const applyEnd = hasNonBmpLine ? codeUnitToGraphemeIndex(Number(r.end || 0)) : Number(r.end || 0);
+              textObj.setSelectionStyles(styleObj, applyStart, applyEnd);
             } catch {
               // ignore per-range
             }
@@ -1196,6 +1227,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
     const clampObjectToRect = (obj: any, rect: { x: number; y: number; width: number; height: number }) => {
       if (!obj) return;
+      const isRegularSlide1ForLog = (canvasSlideIndex === 0 && hasHeadline === false);
+      const isSlide1BodyLineForLog = isRegularSlide1ForLog && Number(obj?.data?.lineIndex ?? -1) === 0;
+      const beforeLog = isSlide1BodyLineForLog ? getAABBTopLeft(obj) : null;
       const { x: tlx, y: tly, width, height, originOffsetX, originOffsetY } = getAABBTopLeft(obj);
       const left = rect.x;
       const top = rect.y;
@@ -1230,6 +1264,23 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       obj.left = newTlx + aabb.originOffsetX;
       obj.top = newTly + aabb.originOffsetY;
       if (typeof obj.setCoords === 'function') obj.setCoords();
+
+      if (beforeLog) {
+        try {
+          const afterLog = getAABBTopLeft(obj);
+          const moved = Math.abs(afterLog.x - beforeLog.x) > 0.5 || Math.abs(afterLog.y - beforeLog.y) > 0.5;
+          if (moved) {
+            console.log(
+              `[Slide1BodyBounce] clampObjectToRect moved BODY: ` +
+                `before=(${Math.round(beforeLog.x)},${Math.round(beforeLog.y)}) ` +
+                `after=(${Math.round(afterLog.x)},${Math.round(afterLog.y)}) ` +
+                `allowed=(${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}x${Math.round(rect.height)})`
+            );
+          }
+        } catch {
+          // ignore
+        }
+      }
     };
 
     // Initialize Fabric canvas once
@@ -1617,6 +1668,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           if (!obj || obj?.data?.role !== 'user-text') return;
           const lineIndex = Number(obj?.data?.lineIndex ?? 0);
           const aabb = getAABBTopLeft(obj);
+          const isRegularSlide1Body = (canvasSlideIndex === 0 && hasHeadline === false && lineIndex === 0);
+          const stableMaxWidth =
+            isRegularSlide1Body
+              ? Math.max(1, Math.round(Number(obj?.width || 0) * Number(obj?.scaleX || 1)))
+              : Math.max(1, aabb.width);
           const next: any = {
             canvasSlideIndex,
             lineIndex,
@@ -1626,7 +1682,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             // - Otherwise store AABB top-left y.
             x: typeof obj?.left === 'number' ? obj.left : aabb.x,
             y: (obj?.originY === 'center' && typeof obj?.top === 'number') ? obj.top : aabb.y,
-            maxWidth: Math.max(1, aabb.width),
+            maxWidth: stableMaxWidth,
           };
           if (includeText) next.text = obj.text || '';
           cb(next);
@@ -1795,7 +1851,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }
             // If this modification was caused by finishing text editing, skip the geometry-only
             // persist so we don't accidentally re-save stale text from the pre-edit snapshot.
-            if (Date.now() - (editStateRef.lastExitAt || 0) > 250) {
+            const msSinceExit = Date.now() - (editStateRef.lastExitAt || 0);
+            if (msSinceExit > 250) {
               notifyUserText(obj, false);
             }
           }
@@ -3956,7 +4013,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
           // Apply style ranges (bold, italic, etc.)
           const inputBodyRanges = Array.isArray(bodyStyleRanges) ? bodyStyleRanges : [];
-          const shouldUseInputBodyRanges = !isHeadlineLine && inputBodyRanges.length > 0;
+          const blkUpper = String((line as any)?.block || "").toUpperCase();
+          const isBodyBlockForRanges = blkUpper === "" || blkUpper === "BODY";
+          const shouldUseInputBodyRanges = isBodyBlockForRanges && !isHeadlineLine && inputBodyRanges.length > 0;
 
           if (shouldUseInputBodyRanges) {
             applyInlineStyleRangesToBodyLine({
@@ -4075,7 +4134,9 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 // Apply BODY source-of-truth ranges (wins over layout_snapshot styles).
                 try {
                   const inputBodyRanges = Array.isArray(bodyStyleRanges) ? bodyStyleRanges : [];
-                  const shouldUseInputBodyRanges = !isHeadlineLine && inputBodyRanges.length > 0;
+                  const blkUpper = String((line as any)?.block || "").toUpperCase();
+                  const isBodyBlockForRanges = blkUpper === "" || blkUpper === "BODY";
+                  const shouldUseInputBodyRanges = isBodyBlockForRanges && !isHeadlineLine && inputBodyRanges.length > 0;
                   if (shouldUseInputBodyRanges) {
                     applyInlineStyleRangesToBodyLine({
                       textObj: tb,
@@ -4270,15 +4331,43 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               const moved = Math.abs(after.x - before.x) > 0.5 || Math.abs(after.y - before.y) > 0.5;
               if (moved) {
                 changed = true;
+
+                // Debug: Slide 1 Regular BODY bouncing after drag release.
+                try {
+                  const isRegularSlide1 = (canvasSlideIndex === 0 && hasHeadline === false);
+                  const lineIndex = Number(o?.data?.lineIndex ?? -1);
+                  if (isRegularSlide1 && lineIndex === 0) {
+                    const ir = getCurrentUserImageRect(canvas) || overlayDataRef.current.imageRect;
+                    const irSig = ir ? `${Math.round(ir.x)},${Math.round(ir.y)} ${Math.round(ir.width)}x${Math.round(ir.height)}` : 'null';
+                    const allowedSig = allowed ? `${Math.round(allowed.x)},${Math.round(allowed.y)} ${Math.round(allowed.width)}x${Math.round(allowed.height)}` : 'null';
+                    console.log(
+                      `[Slide1BodyBounce] enforceTextInvariantsSequential moved BODY: ` +
+                        `onlyId=${onlyId ? String(onlyId) : 'null'} id=${String(r.id)} ` +
+                        `before=(${Math.round(before.x)},${Math.round(before.y)}) ` +
+                        `after=(${Math.round(after.x)},${Math.round(after.y)}) ` +
+                        `w=${Math.round(before.width)}→${Math.round(after.width)} ` +
+                        `allowed=${allowedSig} imageRect=${irSig} mask=${mask ? '1' : '0'}`
+                    );
+                  }
+                } catch {
+                  // ignore
+                }
+
                 if (cb) {
                   try {
-                    const lineIndex = Number(o?.data?.lineIndex ?? 0);
                     cb({
-                      lineIndex,
+                      lineIndex: Number(o?.data?.lineIndex ?? 0),
                       lineKey: typeof o?.data?.lineKey === 'string' ? o.data.lineKey : undefined,
                       x: typeof o?.left === 'number' ? o.left : after.x,
                       y: (o?.originY === 'center' && typeof o?.top === 'number') ? o.top : after.y,
-                      maxWidth: Math.max(1, after.width),
+                      maxWidth: (() => {
+                        const li = Number(o?.data?.lineIndex ?? 0);
+                        const isRegularSlide1Body = (canvasSlideIndex === 0 && hasHeadline === false && li === 0);
+                        if (isRegularSlide1Body) {
+                          return Math.max(1, Math.round(Number(o?.width || 0) * Number(o?.scaleX || 1)));
+                        }
+                        return Math.max(1, after.width);
+                      })(),
                     } as any);
                   } catch {
                     // ignore

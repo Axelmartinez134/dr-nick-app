@@ -737,6 +737,81 @@ export default function EditorShell() {
     return `IDX:${fallbackIndex}`;
   };
 
+  const partsNeedFallbackMapping = (
+    parts: Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> | null | undefined,
+    lineText: string
+  ) => {
+    const text = String(lineText || "");
+    if (!Array.isArray(parts) || parts.length === 0) return true;
+    const valid = parts
+      .map((p) => ({
+        lineStart: Number((p as any)?.lineStart ?? NaN),
+        lineEnd: Number((p as any)?.lineEnd ?? NaN),
+        sourceStart: Number((p as any)?.sourceStart ?? NaN),
+        sourceEnd: Number((p as any)?.sourceEnd ?? NaN),
+      }))
+      .filter((p) => Number.isFinite(p.lineStart) && Number.isFinite(p.lineEnd) && Number.isFinite(p.sourceStart) && Number.isFinite(p.sourceEnd) && p.lineEnd > p.lineStart && p.sourceEnd > p.sourceStart)
+      .sort((a, b) => a.lineStart - b.lineStart || a.lineEnd - b.lineEnd);
+    if (!valid.length) return true;
+    if (valid[0]!.lineStart !== 0) return true;
+    const maxLineEnd = Math.max(...valid.map((p) => p.lineEnd));
+    return maxLineEnd !== text.length;
+  };
+
+  const rebuildSingleSpanPartsForLine = (params: {
+    blockText: string;
+    lineText: string;
+    hintStart?: number;
+  }): Array<{ lineStart: number; lineEnd: number; sourceStart: number; sourceEnd: number }> | null => {
+    const blockText = String(params.blockText || "");
+    const lineText = String(params.lineText || "");
+    if (!blockText || !lineText) return null;
+
+    const findAll = (haystack: string, needle: string): number[] => {
+      const out: number[] = [];
+      if (!needle) return out;
+      let idx = 0;
+      while (idx <= haystack.length) {
+        const hit = haystack.indexOf(needle, idx);
+        if (hit < 0) break;
+        out.push(hit);
+        idx = hit + Math.max(1, needle.length);
+      }
+      return out;
+    };
+
+    let cands = findAll(blockText, lineText);
+    if (!cands.length) {
+      const trimmed = lineText.trim();
+      if (trimmed && trimmed !== lineText) cands = findAll(blockText, trimmed);
+    }
+    if (!cands.length) {
+      const words = lineText.trim().split(/\s+/g).filter(Boolean);
+      if (words.length) {
+        try {
+          const re = new RegExp(words.map((w) => String(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
+          const matches: number[] = [];
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(blockText))) {
+            matches.push(Number(m.index) || 0);
+            if (re.lastIndex === m.index) re.lastIndex++;
+          }
+          cands = matches;
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (!cands.length) return null;
+    const hint = Number(params.hintStart);
+    const start =
+      Number.isFinite(hint)
+        ? (cands.slice().sort((a, b) => Math.abs(a - hint) - Math.abs(b - hint))[0] ?? null)
+        : (cands[0] ?? null);
+    if (start == null || start < 0) return null;
+    return [{ lineStart: 0, lineEnd: lineText.length, sourceStart: start, sourceEnd: start + lineText.length }];
+  };
+
   // Current project snapshots (so projects don't morph unexpectedly)
   const [projectPromptSnapshot, setProjectPromptSnapshot] = useState<string>("");
   const [projectMappingSlide1, setProjectMappingSlide1] = useState<string | null>(null);
@@ -1004,6 +1079,18 @@ export default function EditorShell() {
       (curSlide as any)?.inputData ||
       null;
     if (!baseLayout || !Array.isArray((baseLayout as any).textLines)) return;
+    const headlineText = String(curSlide.draftHeadline || "");
+    const bodyText = String(curSlide.draftBody || "");
+    const calloutText = (() => {
+      try {
+        const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
+        const co = snap?.slide1Callout;
+        return co && typeof co === "object" ? String(co?.text || "") : "";
+      } catch {
+        return "";
+      }
+    })();
+    const blockTextForParts = block === "HEADLINE" ? headlineText : (block === "CALLOUT" ? calloutText : bodyText);
 
     const lines = (baseLayout as any).textLines as any[];
     const line =
@@ -1011,95 +1098,39 @@ export default function EditorShell() {
       (Number.isFinite(args.lineIndex as any) ? lines[Number(args.lineIndex)] : null) ||
       null;
     if (!line) return;
-    const escapeRegExp = (s: string) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const findAll = (haystack: string, needle: string): number[] => {
-      const out: number[] = [];
-      const h = String(haystack || "");
-      const n = String(needle || "");
-      if (!n) return out;
-      let idx = 0;
-      while (idx <= h.length) {
-        const hit = h.indexOf(n, idx);
-        if (hit < 0) break;
-        out.push(hit);
-        idx = hit + Math.max(1, n.length);
-      }
-      return out;
-    };
-    const bestEffortFindLineStartInBlock = (params: {
-      blockText: string;
-      lineText: string;
-      hintStart?: number;
-    }): number | null => {
-      const blockText = String(params.blockText || "");
-      const lineText = String(params.lineText || "");
-      if (!blockText || !lineText) return null;
-
-      // 1) Exact match
-      let cands = findAll(blockText, lineText);
-
-      // 2) Trimmed match (common if generator trimmed but source has leading/trailing whitespace)
-      if (!cands.length) {
-        const trimmed = lineText.trim();
-        if (trimmed && trimmed !== lineText) cands = findAll(blockText, trimmed);
-      }
-
-      // 3) Whitespace-flex regex match
-      if (!cands.length) {
-        const words = lineText.trim().split(/\s+/g).filter(Boolean);
-        if (words.length) {
-          try {
-            const re = new RegExp(words.map(escapeRegExp).join("\\s+"), "g");
-            const matches: number[] = [];
-            let m: RegExpExecArray | null;
-            while ((m = re.exec(blockText))) {
-              matches.push(Number(m.index) || 0);
-              // Avoid infinite loops on zero-length (shouldn't happen here, but be safe).
-              if (re.lastIndex === m.index) re.lastIndex++;
-            }
-            cands = matches;
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (!cands.length) return null;
-      const hint = Number(params.hintStart);
-      if (!Number.isFinite(hint)) return cands[0] ?? null;
-      return (
-        cands
-          .slice()
-          .sort((a, b) => Math.abs(a - hint) - Math.abs(b - hint))[0] ?? null
-      );
-    };
 
     let parts = Array.isArray((line as any).__sourceParts) ? (line as any).__sourceParts : null;
+    const lineText = String((line as any)?.text || "");
+    const hintStartFromLine = Number((line as any)?.__hintStart ?? (line as any)?.hintStart ?? NaN);
+    const hintStartFromOverrides = (() => {
+      try {
+        const lk = String((line as any)?.lineKey || args.lineKey || "");
+        const ov = (baseInput && typeof baseInput === "object" ? (baseInput as any).lineOverridesByKey : null) || null;
+        const hs = ov && lk && typeof ov?.[lk]?.hintStart !== "undefined" ? Number(ov[lk].hintStart) : NaN;
+        return hs;
+      } catch {
+        return NaN;
+      }
+    })();
+    const hintStart = Number.isFinite(hintStartFromLine) ? hintStartFromLine : (Number.isFinite(hintStartFromOverrides) ? hintStartFromOverrides : undefined);
+    if (partsNeedFallbackMapping(parts, lineText)) {
+      const rebuiltParts = rebuildSingleSpanPartsForLine({
+        blockText: blockTextForParts,
+        lineText,
+        hintStart,
+      });
+      if (rebuiltParts) parts = rebuiltParts;
+    }
     if (!parts) {
       // Fallback: try to reconstruct a minimal source mapping so inline marks can persist even if
       // the layout snapshot was generated without `__sourceParts` (e.g., older snapshots).
-      const headlineText = String(curSlide.draftHeadline || "");
-      const bodyText = String(curSlide.draftBody || "");
-      const blockText = block === "HEADLINE" ? headlineText : bodyText;
-      const lineText = String((line as any)?.text || "");
-      const hintFromLine = Number((line as any)?.__hintStart ?? (line as any)?.hintStart ?? NaN);
-      const hintFromOverrides = (() => {
-        try {
-          const lk = String((line as any)?.lineKey || args.lineKey || "");
-          const ov = (baseInput && typeof baseInput === "object" ? (baseInput as any).lineOverridesByKey : null) || null;
-          const hs = ov && lk && typeof ov?.[lk]?.hintStart !== "undefined" ? Number(ov[lk].hintStart) : NaN;
-          return hs;
-        } catch {
-          return NaN;
-        }
-      })();
-      const hintStart = Number.isFinite(hintFromLine) ? hintFromLine : (Number.isFinite(hintFromOverrides) ? hintFromOverrides : undefined);
-      const start = bestEffortFindLineStartInBlock({ blockText, lineText, hintStart });
-      if (start != null && start >= 0) {
-        parts = [{ lineStart: 0, lineEnd: lineText.length, sourceStart: start, sourceEnd: start + lineText.length }];
-      } else {
-        return;
-      }
+      const rebuiltParts = rebuildSingleSpanPartsForLine({
+        blockText: blockTextForParts,
+        lineText,
+        hintStart,
+      });
+      if (rebuiltParts) parts = rebuiltParts;
+      else return;
     }
 
     let segs = mapLineSelectionToSourceSegments({
@@ -1111,28 +1142,18 @@ export default function EditorShell() {
       // Fallback: if __sourceParts are sparse (e.g., exclude punctuation/spaces), we can still
       // approximate by mapping selection offsets into the best-effort line start in the block text.
       try {
-        const headlineText0 = String(curSlide.draftHeadline || "");
-        const bodyText0 = String(curSlide.draftBody || "");
-        const calloutText0 = (() => {
-          try {
-            const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
-            const co = snap?.slide1Callout;
-            return co && typeof co === "object" ? String(co?.text || "") : "";
-          } catch {
-            return "";
-          }
-        })();
-        const blockText0 = block === "HEADLINE" ? headlineText0 : (block === "CALLOUT" ? calloutText0 : bodyText0);
         const lineText0 = String((line as any)?.text || "");
-        const hintFromLine0 = Number((line as any)?.__hintStart ?? (line as any)?.hintStart ?? NaN);
-        const hintStart0 = Number.isFinite(hintFromLine0) ? hintFromLine0 : undefined;
-        const start0 = bestEffortFindLineStartInBlock({ blockText: blockText0, lineText: lineText0, hintStart: hintStart0 });
+        const rebuiltParts0 = rebuildSingleSpanPartsForLine({
+          blockText: blockTextForParts,
+          lineText: lineText0,
+          hintStart,
+        });
         const selA0 = Math.max(0, Math.min(lineText0.length, Math.floor(Number(args.selectionStart) || 0)));
         const selB0 = Math.max(0, Math.min(lineText0.length, Math.floor(Number(args.selectionEnd) || 0)));
         const a0 = Math.min(selA0, selB0);
         const b0 = Math.max(selA0, selB0);
-        if (start0 != null && start0 >= 0 && b0 > a0) {
-          segs = [{ start: start0 + a0, end: start0 + b0 }];
+        if (rebuiltParts0?.[0] && b0 > a0) {
+          segs = [{ start: Number(rebuiltParts0[0].sourceStart) + a0, end: Number(rebuiltParts0[0].sourceStart) + b0 }];
         }
       } catch {
         // ignore
@@ -1148,19 +1169,8 @@ export default function EditorShell() {
     const mergedSegs = [{ start: segMin, end: segMax }].filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start);
     if (!mergedSegs.length) return;
 
-    const headlineText = String(curSlide.draftHeadline || "");
-    const bodyText = String(curSlide.draftBody || "");
     const headlineRanges = Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [];
     const bodyRanges = Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [];
-    const calloutText = (() => {
-      try {
-        const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
-        const co = snap?.slide1Callout;
-        return co && typeof co === "object" ? String(co?.text || "") : "";
-      } catch {
-        return "";
-      }
-    })();
     const calloutRanges = (() => {
       try {
         const snap = (baseInput && typeof baseInput === "object") ? (baseInput as any) : null;
@@ -1184,7 +1194,6 @@ export default function EditorShell() {
       block === "CALLOUT"
         ? applyMarkToRanges({ textLen: calloutText.length, existing: calloutRanges, segments: mergedSegs, mark: args.mark, enabled: args.enabled, fill: args.fill })
         : calloutRanges;
-
     const prevInputObj = (baseInput && typeof baseInput === "object") ? (baseInput as any) : {};
     const prevCallout = prevInputObj?.slide1Callout;
     const nextCallout =
@@ -1232,7 +1241,11 @@ export default function EditorShell() {
             inputData: nextInput,
           } as any)
     );
-
+    pendingCanvasInlineRangesRef.current[slideIndex] = {
+      headlineRanges: Array.isArray(nextHeadlineRanges) ? nextHeadlineRanges : [],
+      bodyRanges: Array.isArray(nextBodyRanges) ? nextBodyRanges : [],
+      calloutRanges: Array.isArray(nextCalloutRanges) ? nextCalloutRanges : [],
+    };
     // IMPORTANT: while Fabric is actively editing text, updating the engine/layout props
     // can cause a re-render that recreates text objects and exits editing/selection.
     // So we defer UI/engine updates until editing is done, but still persist snapshots.
@@ -1375,6 +1388,9 @@ export default function EditorShell() {
     () => Array.from({ length: slideCount }, () => initSlide())
   );
   const slidesRef = useRef<SlideState[]>(slides);
+  const pendingCanvasInlineRangesRef = useRef<
+    Record<number, { headlineRanges: InlineStyleRange[]; bodyRanges: InlineStyleRange[]; calloutRanges: InlineStyleRange[] }>
+  >({});
   useEffect(() => {
     slidesRef.current = slides;
   }, [slides]);
@@ -1461,6 +1477,20 @@ export default function EditorShell() {
     enqueueLiveLayoutForProject(currentProjectId, [slideIndex]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProjectId, activeSlideIndex, templateTypeId, templateSnapshots, switchingSlides]);
+
+  useEffect(() => {
+    try {
+      const slide = slides?.[activeSlideIndex];
+      const draftBody = String((slide as any)?.draftBody || "");
+      const inputBody = String((inputData as any)?.body || "");
+      const draftRanges = Array.isArray((slide as any)?.draftBodyRanges) ? (slide as any).draftBodyRanges : [];
+      const inputRanges = Array.isArray((inputData as any)?.bodyStyleRanges) ? (inputData as any).bodyStyleRanges : [];
+      if (!draftBody && !inputBody && !draftRanges.length && !inputRanges.length) return;
+      if (draftBody === inputBody && rangesEqual(draftRanges, inputRanges)) return;
+    } catch {
+      // ignore
+    }
+  }, [activeSlideIndex, currentProjectId, inputData, slides]);
 
   // When a project is opened, if some slides have text but no layout snapshot yet, queue live layout for them in the background.
   // This makes the slide strip canvases populate even before you click each slide.
@@ -3363,6 +3393,21 @@ export default function EditorShell() {
             let x = Number((hasCalloutLine ? (lines[1] as any)?.position?.x : NaN));
             let y = Number((hasCalloutLine ? (lines[1] as any)?.position?.y : NaN));
             let maxWidth = Number((hasCalloutLine ? (lines[1] as any)?.maxWidth : NaN));
+            // Prefer anchoring near the BODY line (more visible than bottom-left).
+            const bodyAnchorY = (() => {
+              if (hasCalloutLine) return null;
+              const bodyLine = lines.find((l: any) => {
+                const blk = String(l?.block || "").toUpperCase();
+                return blk === "" || blk === "BODY";
+              }) as any;
+              const by = Number(bodyLine?.position?.y);
+              if (!Number.isFinite(by as any)) return null;
+              const bx = Number(bodyLine?.position?.x);
+              const bw = Number(bodyLine?.maxWidth);
+              if (!Number.isFinite(x as any) && Number.isFinite(bx as any)) x = bx;
+              if (!Number.isFinite(maxWidth as any) && Number.isFinite(bw as any)) maxWidth = bw;
+              return by;
+            })();
             const tidForFit = computeTemplateIdForSlide(slideIndexNow);
             const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
             const region = getTemplateContentRectInset(snapForFit || null);
@@ -3374,6 +3419,7 @@ export default function EditorShell() {
                 typeof document === "undefined" ? Math.round(fontSizePx * 1.2) : measureRegularBodyHeightPx(text, maxWidth, fontSizePx, []);
               const pad = 8;
               if (!Number.isFinite(x as any)) x = region.x + pad;
+              if (!Number.isFinite(y as any) && bodyAnchorY != null) y = bodyAnchorY - pad - Math.max(1, measuredH);
               if (!Number.isFinite(y as any)) y = (region.y + region.height) - pad - Math.max(1, measuredH);
               // Clamp inside region
               x = Math.max(region.x, Math.min(region.x + region.width - 1, x));
@@ -3623,6 +3669,21 @@ export default function EditorShell() {
             let x = Number((existingLine ? existingLine?.position?.x : NaN));
             let y = Number((existingLine ? existingLine?.position?.y : NaN));
             let maxWidth = Number((existingLine ? existingLine?.maxWidth : NaN));
+            // Prefer anchoring near the BODY line when creating.
+            const bodyAnchorY = (() => {
+              if (existingLine) return null;
+              const bodyLine = lines.find((l: any) => {
+                const blk = String(l?.block || "").toUpperCase();
+                return blk === "" || blk === "BODY";
+              }) as any;
+              const by = Number(bodyLine?.position?.y);
+              if (!Number.isFinite(by as any)) return null;
+              const bx = Number(bodyLine?.position?.x);
+              const bw = Number(bodyLine?.maxWidth);
+              if (!Number.isFinite(x as any) && Number.isFinite(bx as any)) x = bx;
+              if (!Number.isFinite(maxWidth as any) && Number.isFinite(bw as any)) maxWidth = bw;
+              return by;
+            })();
             const tidForFit = computeTemplateIdForSlide(slideIndexNow);
             const snapForFit = tidForFit ? templateSnapshots[tidForFit] : null;
             const region = getTemplateContentRectInset(snapForFit || null);
@@ -3633,6 +3694,7 @@ export default function EditorShell() {
                 typeof document === "undefined" ? Math.round(fontSizePx * 1.2) : measureRegularBodyHeightPx(text, maxWidth, fontSizePx, []);
               const pad = 8;
               if (!Number.isFinite(x as any)) x = region.x + pad;
+              if (!Number.isFinite(y as any) && bodyAnchorY != null) y = bodyAnchorY - pad - Math.max(1, measuredH);
               if (!Number.isFinite(y as any)) y = (region.y + region.height) - pad - Math.max(1, measuredH);
               x = Math.max(region.x, Math.min(region.x + region.width - 1, x));
               y = Math.max(region.y, Math.min(region.y + region.height - 1, y));
@@ -4674,6 +4736,16 @@ export default function EditorShell() {
       };
     });
     const nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
+    const changedLineBefore = (
+      (changeKey && Array.isArray(baseLayout.textLines)
+        ? baseLayout.textLines.find((l: any) => String((l as any)?.lineKey || "") === String(changeKey))
+        : null) || baseLayout.textLines?.[change.lineIndex]
+    ) as any;
+    const changedLineAfter = (
+      (changeKey && Array.isArray(nextTextLines)
+        ? nextTextLines.find((l: any) => String((l as any)?.lineKey || "") === String(changeKey))
+        : null) || nextTextLines?.[change.lineIndex]
+    ) as any;
 
     // Phase 4: persist per-line overrides keyed by stable lineKey into input_snapshot.
     // IMPORTANT: Prefer the sync ref snapshot over React state for the same reason as Regular:
@@ -4707,11 +4779,16 @@ export default function EditorShell() {
     const editedLine = nextTextLines?.[change.lineIndex] as any;
     const editedBlock: "HEADLINE" | "BODY" = (editedLine?.block === "HEADLINE" ? "HEADLINE" : "BODY");
     const didEditText = typeof change.text === "string";
-
     const rebuildBlock = (block: "HEADLINE" | "BODY") => {
       // Preserve paragraph breaks when rebuilding the underlying source-of-truth text from positioned lines.
-      // We can infer paragraph boundaries from the stable lineKey format: `${BLOCK}:${paragraphIndex}:...`
+      // Prefer the original source spans between adjacent lines; lineKey paragraph indices are not always reliable
+      // after block-wide repacks around canvas text edits.
       const lines = nextTextLines.filter((l: any) => (l?.block === "HEADLINE" ? "HEADLINE" : "BODY") === block);
+      const prevBlockText = String(
+        block === "HEADLINE"
+          ? ((curInput && typeof curInput === "object" ? (curInput as any).headline : null) ?? (curSlide.draftHeadline || ""))
+          : ((curInput && typeof curInput === "object" ? (curInput as any).body : null) ?? (curSlide.draftBody || ""))
+      );
       const parseParagraphIndex = (lineKey: any) => {
         try {
           const s = String(lineKey || "");
@@ -4722,20 +4799,58 @@ export default function EditorShell() {
         }
         return 0;
       };
+      const getLineSourceBounds = (line: any) => {
+        const parts = Array.isArray(line?.__sourceParts) ? line.__sourceParts : [];
+        const validParts = parts
+          .map((p: any) => ({
+            sourceStart: Number(p?.sourceStart ?? NaN),
+            sourceEnd: Number(p?.sourceEnd ?? NaN),
+          }))
+          .filter((p: any) => Number.isFinite(p.sourceStart) && Number.isFinite(p.sourceEnd));
+        if (validParts.length > 0) {
+          return {
+            start: Math.min(...validParts.map((p: any) => p.sourceStart)),
+            end: Math.max(...validParts.map((p: any) => p.sourceEnd)),
+          };
+        }
+        const hint = Number(line?.__hintStart ?? line?.hintStart ?? NaN);
+        const raw = String(line?.text ?? "");
+        const trimmed = raw.replace(/[ \t]+$/g, "").replace(/^[ \t]+/g, "");
+        if (Number.isFinite(hint) && trimmed) {
+          return { start: hint, end: hint + trimmed.length };
+        }
+        return null;
+      };
+      const inferJoinerFromSource = (prevLine: any, nextLine: any) => {
+        try {
+          const prevBounds = getLineSourceBounds(prevLine);
+          const nextBounds = getLineSourceBounds(nextLine);
+          if (prevBounds && nextBounds && prevBlockText) {
+            const gapStart = Math.max(0, Math.min(prevBlockText.length, prevBounds.end));
+            const gapEnd = Math.max(gapStart, Math.min(prevBlockText.length, nextBounds.start));
+            const gap = prevBlockText.slice(gapStart, gapEnd);
+            if (/\n\s*\n/.test(gap)) return "\n\n";
+            if (/\n/.test(gap)) return " ";
+          }
+        } catch {
+          // ignore
+        }
+        const prevPara = parseParagraphIndex((prevLine as any)?.lineKey);
+        const nextPara = parseParagraphIndex((nextLine as any)?.lineKey);
+        return prevPara !== nextPara ? "\n\n" : " ";
+      };
 
       let out = "";
-      let prevPara: number | null = null;
+      let prevLine: any = null;
       for (const l of lines) {
         const raw = String(l?.text ?? "");
         const text = raw.replace(/[ \t]+$/g, "").replace(/^[ \t]+/g, "");
         if (!text) continue;
-        const para = parseParagraphIndex((l as any)?.lineKey);
         if (out.length > 0) {
-          // Paragraph change → blank line; otherwise normal line continuation.
-          out += (prevPara != null && para !== prevPara) ? "\n\n" : " ";
+          out += inferJoinerFromSource(prevLine, l);
         }
         out += text;
-        prevPara = para;
+        prevLine = l;
       }
       return out;
     };
@@ -4749,11 +4864,15 @@ export default function EditorShell() {
       : String((curInput && typeof curInput === "object" ? (curInput as any).body : null) ?? (curSlide.draftBody || ""));
 
     // v1 styling behavior: if the user edits a block on-canvas, drop styling ranges for that block.
-    const prevHeadlineRanges = Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : [];
-    const prevBodyRanges = Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [];
+    const pendingInlineRanges = pendingCanvasInlineRangesRef.current[slideIndex];
+    const prevHeadlineRanges = Array.isArray(pendingInlineRanges?.headlineRanges)
+      ? pendingInlineRanges.headlineRanges
+      : (Array.isArray(curSlide.draftHeadlineRanges) ? curSlide.draftHeadlineRanges : []);
+    const prevBodyRanges = Array.isArray(pendingInlineRanges?.bodyRanges)
+      ? pendingInlineRanges.bodyRanges
+      : (Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : []);
     const prevHeadlineText = String((curInput && typeof curInput === "object" ? (curInput as any).headline : null) ?? (curSlide.draftHeadline || ""));
     const prevBodyText = String((curInput && typeof curInput === "object" ? (curInput as any).body : null) ?? (curSlide.draftBody || ""));
-
     const nextHeadlineRanges =
       didEditText && editedBlock === "HEADLINE"
         ? remapRangesByDiff({ oldText: prevHeadlineText, newText: nextHeadlineText, ranges: prevHeadlineRanges })
@@ -4762,7 +4881,49 @@ export default function EditorShell() {
       didEditText && editedBlock === "BODY"
         ? remapRangesByDiff({ oldText: prevBodyText, newText: nextBodyText, ranges: prevBodyRanges })
         : prevBodyRanges;
-
+    try {
+      const rebuiltBlockLineSummaries: Array<{
+        lineKey: string;
+        textPreview: string;
+        oldSourceStart: number | null;
+        newSourceStart: number | null;
+      }> = [];
+      for (let idx = 0; idx < (nextLayoutSnap.textLines?.length || 0); idx++) {
+        const targetLine = nextLayoutSnap.textLines?.[idx] as any;
+        if (!targetLine) continue;
+        const targetBlock = String(targetLine?.block || "").toUpperCase() === "HEADLINE" ? "HEADLINE" : "BODY";
+        if (!didEditText || targetBlock !== editedBlock) continue;
+        const targetText = String(targetLine?.text || "");
+        if (!targetText) continue;
+        const hintStartTarget = Number(
+          targetLine?.__hintStart ??
+          baseLayout.textLines?.[idx]?.__hintStart ??
+          ((curInput && typeof curInput === "object" ? (curInput as any).lineOverridesByKey : null)?.[String(targetLine?.lineKey || "")]?.hintStart) ??
+          NaN
+        );
+        const rebuiltPartsTarget = rebuildSingleSpanPartsForLine({
+          blockText: targetBlock === "HEADLINE" ? nextHeadlineText : nextBodyText,
+          lineText: targetText,
+          hintStart: Number.isFinite(hintStartTarget) ? hintStartTarget : undefined,
+        });
+        if (!rebuiltPartsTarget) continue;
+        const prevPartsTarget = Array.isArray((targetLine as any)?.__sourceParts) ? (targetLine as any).__sourceParts : [];
+        targetLine.__sourceParts = rebuiltPartsTarget;
+        targetLine.__hintStart = Number(rebuiltPartsTarget?.[0]?.sourceStart ?? hintStartTarget ?? 0);
+        targetLine.styles = buildTextStylesForLine(
+          rebuiltPartsTarget,
+          targetBlock === "HEADLINE" ? nextHeadlineRanges : nextBodyRanges
+        );
+        rebuiltBlockLineSummaries.push({
+          lineKey: String(targetLine?.lineKey || ""),
+          textPreview: targetText.slice(0, 80),
+          oldSourceStart: Number.isFinite(Number(prevPartsTarget?.[0]?.sourceStart)) ? Number(prevPartsTarget[0].sourceStart) : null,
+          newSourceStart: Number.isFinite(Number(rebuiltPartsTarget?.[0]?.sourceStart)) ? Number(rebuiltPartsTarget[0].sourceStart) : null,
+        });
+      }
+    } catch {
+      // ignore
+    }
     // Best-effort cleanup: once we move to block-level text as source-of-truth, strip any legacy per-line
     // text overrides so they don't fight future repacks.
     if (didEditText) {
@@ -4784,6 +4945,11 @@ export default function EditorShell() {
         ? { headlineStyleRanges: nextHeadlineRanges, bodyStyleRanges: nextBodyRanges }
         : {}),
       lineOverridesByKey: nextOverridesByKey,
+    };
+    pendingCanvasInlineRangesRef.current[slideIndex] = {
+      headlineRanges: Array.isArray(nextHeadlineRanges) ? nextHeadlineRanges : [],
+      bodyRanges: Array.isArray(nextBodyRanges) ? nextBodyRanges : [],
+      calloutRanges: Array.isArray(pendingInlineRanges?.calloutRanges) ? pendingInlineRanges.calloutRanges : [],
     };
 
     // Keep state in sync so the current slide preserves the nudged position immediately.
@@ -7182,6 +7348,50 @@ export default function EditorShell() {
   const onClickRealignText = () => runRealignTextForActiveSlide({ pushHistory: true });
   const onClickUndo = () => {
     layoutDirtyRef.current = true;
+    const previous = Array.isArray(layoutHistory) && layoutHistory.length ? layoutHistory[layoutHistory.length - 1] : null;
+    if (previous) {
+      const restoredInput = (previous as any)?.inputData || null;
+      const restoredLayout = (previous as any)?.layoutData || null;
+      const restoredHeadline = String((restoredInput as any)?.headline || "");
+      const restoredBody = String((restoredInput as any)?.body || "");
+      const restoredHeadlineRanges = Array.isArray((restoredInput as any)?.headlineStyleRanges) ? (restoredInput as any).headlineStyleRanges : [];
+      const restoredBodyRanges = Array.isArray((restoredInput as any)?.bodyStyleRanges) ? (restoredInput as any).bodyStyleRanges : [];
+      setSlides((prev) =>
+        prev.map((s, i) =>
+          i !== activeSlideIndex
+            ? s
+            : ({
+                ...s,
+                draftHeadline: restoredHeadline,
+                draftBody: restoredBody,
+                draftHeadlineRanges: restoredHeadlineRanges,
+                draftBodyRanges: restoredBodyRanges,
+                layoutData: restoredLayout || (s as any)?.layoutData,
+                inputData: restoredInput || (s as any)?.inputData,
+              } as any)
+        )
+      );
+      slidesRef.current = slidesRef.current.map((s, i) =>
+        i !== activeSlideIndex
+          ? s
+          : ({
+              ...s,
+              draftHeadline: restoredHeadline,
+              draftBody: restoredBody,
+              draftHeadlineRanges: restoredHeadlineRanges,
+              draftBodyRanges: restoredBodyRanges,
+              layoutData: restoredLayout || (s as any)?.layoutData,
+              inputData: restoredInput || (s as any)?.inputData,
+            } as any)
+      );
+      pendingCanvasInlineRangesRef.current[activeSlideIndex] = {
+        headlineRanges: restoredHeadlineRanges,
+        bodyRanges: restoredBodyRanges,
+        calloutRanges: Array.isArray(pendingCanvasInlineRangesRef.current[activeSlideIndex]?.calloutRanges)
+          ? pendingCanvasInlineRangesRef.current[activeSlideIndex]!.calloutRanges
+          : [],
+      };
+    }
     handleUndo();
   };
 

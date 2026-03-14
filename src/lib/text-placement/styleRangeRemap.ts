@@ -124,6 +124,7 @@ export function remapRangesByDiff(params: {
   // - highBias: after inserts at that boundary
   const low = new Array<number>(oldLen + 1);
   const high = new Array<number>(oldLen + 1);
+  const insertedAtBoundary = new Array<number>(oldLen + 1).fill(0);
 
   let o = 0;
   let n = 0;
@@ -163,6 +164,7 @@ export function remapRangesByDiff(params: {
       // insert: new advances, old stays; affects the boundary at `o`
       if (typeof low[o] !== 'number') low[o] = n;
       if (typeof high[o] !== 'number') high[o] = n;
+      insertedAtBoundary[o] = (insertedAtBoundary[o] || 0) + len;
       high[o] = (high[o] as number) + len; // after inserts
       n += len;
       continue;
@@ -187,14 +189,14 @@ export function remapRangesByDiff(params: {
     const e0 = Math.max(0, Math.min(oldLen, Math.floor(r.end)));
     if (e0 <= s0) continue;
 
-    // LOW bias for start (before inserts), HIGH bias for end (after inserts)
-    const s1 = Math.max(0, Math.min(newLen, low[s0]!));
-    const e1 = Math.max(0, Math.min(newLen, high[e0]!));
+    // Insertions at exact range boundaries should stay outside the styled span so
+    // styles continue to follow the original words rather than swallowing new chars.
+    const s1 = Math.max(0, Math.min(newLen, (insertedAtBoundary[s0] || 0) > 0 ? high[s0]! : low[s0]!));
+    const e1 = Math.max(0, Math.min(newLen, (insertedAtBoundary[e0] || 0) > 0 ? low[e0]! : high[e0]!));
     if (e1 <= s1) continue;
 
     out.push({ ...r, start: s1, end: e1 });
   }
-
   return mergeRanges(out);
 }
 

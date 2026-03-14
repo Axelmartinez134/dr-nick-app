@@ -85,17 +85,22 @@ export function useCanvasTextStyling(params: {
         if (u == null) return baseUnderline;
         return !!u;
       };
-      const allBold = styles.length ? styles.every(getBoldForStyle) : baseBold;
-      const allItalic = styles.length ? styles.every(getItalicForStyle) : baseItalic;
-      const allUnderline = styles.length ? styles.every(getUnderlineForStyle) : baseUnderline;
+      const selectedText = String(text.slice(rangeStart, rangeEnd) || "");
+      const comparableStyles =
+        styles.length === selectedText.length
+          ? styles.filter((_, idx) => !/\s/u.test(selectedText.charAt(idx)))
+          : styles;
+      const styleBasis = comparableStyles.length ? comparableStyles : styles;
+      const allBold = styleBasis.length ? styleBasis.every(getBoldForStyle) : baseBold;
+      const allItalic = styleBasis.length ? styleBasis.every(getItalicForStyle) : baseItalic;
+      const allUnderline = styleBasis.length ? styleBasis.every(getUnderlineForStyle) : baseUnderline;
       const baseFill = typeof obj?.fill === "string" ? String(obj.fill) : null;
       const getFillForStyle = (s: any) => {
         const f = s?.fill;
         if (f == null) return baseFill;
         return typeof f === "string" ? String(f) : baseFill;
       };
-      const allFill = styles.length ? (styles.every((s: any) => String(getFillForStyle(s) || "") === String(getFillForStyle(styles[0]) || "")) ? getFillForStyle(styles[0]) : null) : baseFill;
-
+      const allFill = styleBasis.length ? (styleBasis.every((s: any) => String(getFillForStyle(s) || "") === String(getFillForStyle(styleBasis[0]) || "")) ? getFillForStyle(styleBasis[0]) : null) : baseFill;
       setCanvasTextSelection({
         active: true,
         lineKey: obj?.data?.lineKey,
