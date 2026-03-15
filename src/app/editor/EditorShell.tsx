@@ -1228,17 +1228,6 @@ export default function EditorShell() {
     };
 
     const nextLayoutData = { success: true, layout: nextLayout, imageUrl: (layoutData as any)?.imageUrl || null } as any;
-    try {
-      if (templateTypeIdRef.current === "regular") {
-        const nextRangesForLog = block === "BODY" ? nextBodyRanges : (block === "HEADLINE" ? nextHeadlineRanges : nextCalloutRanges);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-inline-style-detail',hypothesisId:'R3',location:'src/app/editor/EditorShell.tsx:1203',message:'Regular inline style persistence computed next ranges from canvas selection',data:{projectId:currentProjectIdRef.current,slideIndex,block,mark:args.mark,enabled:typeof args.enabled==='boolean'?args.enabled:null,fill:typeof args.fill==='string'?args.fill:null,selectionStart:Number(args.selectionStart||0),selectionEnd:Number(args.selectionEnd||0),mergedSegments:mergedSegs.slice(0,4),nextRangesSample:Array.isArray(nextRangesForLog)?nextRangesForLog.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined})):[],preserveCanvasEditing:!!args.preserveCanvasEditing},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      }
-    } catch {
-      // ignore
-    }
-
     // Always update the ref so background jobs / persistence sees latest ranges.
     slidesRef.current = slidesRef.current.map((s, i) =>
       i !== slideIndex
@@ -1256,15 +1245,6 @@ export default function EditorShell() {
       bodyRanges: Array.isArray(nextBodyRanges) ? nextBodyRanges : [],
       calloutRanges: Array.isArray(nextCalloutRanges) ? nextCalloutRanges : [],
     };
-    try {
-      if (templateTypeIdRef.current === "regular") {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-inline-style-write',hypothesisId:'R1',location:'src/app/editor/EditorShell.tsx:1232',message:'Regular inline style write updated pending canvas ranges before text commit',data:{projectId:currentProjectIdRef.current,slideIndex,block,selectionStart:Number(args.selectionStart||0),selectionEnd:Number(args.selectionEnd||0),bodyRangesCount:Array.isArray(nextBodyRanges)?nextBodyRanges.length:0,headlineRangesCount:Array.isArray(nextHeadlineRanges)?nextHeadlineRanges.length:0,preserveCanvasEditing:!!args.preserveCanvasEditing},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      }
-    } catch {
-      // ignore
-    }
     // IMPORTANT: while Fabric is actively editing text, updating the engine/layout props
     // can cause a re-render that recreates text objects and exits editing/selection.
     // So we defer UI/engine updates until editing is done, but still persist snapshots.
@@ -4648,17 +4628,6 @@ export default function EditorShell() {
         // ignore
       }
     }
-    try {
-      if (didEditText && change.lineIndex === 0) {
-        const prevBody = String(curSlide.draftBody || "");
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-text-edit-ranges',hypothesisId:'R6',location:'src/app/editor/EditorShell.tsx:4620',message:'Regular canvas text edit remapped body ranges and rebuilt line source parts',data:{projectId:currentProjectId,slideIndex,lineIndex:Number(change.lineIndex||0),previousBodyPreview:prevBody.slice(0,160),nextBodyPreview:String(nextBody||'').slice(0,160),previousBodyLength:prevBody.length,nextBodyLength:String(nextBody||'').length,previousBodyCodePoints:Array.from(prevBody).length,nextBodyCodePoints:Array.from(String(nextBody||'')).length,resolvedBodyRangesSample:Array.isArray(resolvedBodyRanges)?resolvedBodyRanges.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined})):[],nextBodyRangesSample:Array.isArray(nextRegularBodyRanges)?nextRegularBodyRanges.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined})):[],pendingBodyRangesCount:Array.isArray(pendingInlineRanges?.bodyRanges)?pendingInlineRanges.bodyRanges.length:0,line0Parts:Array.isArray((nextTextLines as any)?.[0]?.__sourceParts)?(nextTextLines as any)[0].__sourceParts.slice(0,4).map((p:any)=>({lineStart:Number(p?.lineStart??0),lineEnd:Number(p?.lineEnd??0),sourceStart:Number(p?.sourceStart??0),sourceEnd:Number(p?.sourceEnd??0)})):[]},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      }
-    } catch {
-      // ignore
-    }
-
     const req: any = {
       ...(mergedBaseObj as any),
       headline: "",
@@ -4673,14 +4642,6 @@ export default function EditorShell() {
       headlineStyleRanges: resolvedHeadlineRanges,
       bodyStyleRanges: nextRegularBodyRanges,
     } satisfies CarouselTextRequest as any;
-    try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-text-commit',hypothesisId:'R2',location:'src/app/editor/EditorShell.tsx:4602',message:'Regular canvas text commit built input snapshot from resolved inline ranges',data:{projectId:currentProjectId,slideIndex,lineIndex:Number(change.lineIndex||0),didEditText,changeHasText:typeof change.text==='string',draftBodyRangesCount:Array.isArray(curSlide.draftBodyRanges)?curSlide.draftBodyRanges.length:0,pendingBodyRangesCount:Array.isArray(pendingInlineRanges?.bodyRanges)?pendingInlineRanges.bodyRanges.length:0,resolvedBodyRangesCount:Array.isArray(resolvedBodyRanges)?resolvedBodyRanges.length:0,nextBodyRangesCount:Array.isArray(nextRegularBodyRanges)?nextRegularBodyRanges.length:0,reqBodyRangesCount:Array.isArray((req as any)?.bodyStyleRanges)?(req as any).bodyStyleRanges.length:0,draftHeadlineRangesCount:Array.isArray(curSlide.draftHeadlineRanges)?curSlide.draftHeadlineRanges.length:0,pendingHeadlineRangesCount:Array.isArray(pendingInlineRanges?.headlineRanges)?pendingInlineRanges.headlineRanges.length:0,resolvedHeadlineRangesCount:Array.isArray(resolvedHeadlineRanges)?resolvedHeadlineRanges.length:0,reqHeadlineRangesCount:Array.isArray((req as any)?.headlineStyleRanges)?(req as any).headlineStyleRanges.length:0,nextBodyPreview:String(nextBody||'').slice(0,120)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-    } catch {
-      // ignore
-    }
-
     pendingCanvasInlineRangesRef.current[slideIndex] = {
       headlineRanges: Array.isArray(resolvedHeadlineRanges) ? resolvedHeadlineRanges : [],
       bodyRanges: Array.isArray(nextRegularBodyRanges) ? nextRegularBodyRanges : [],

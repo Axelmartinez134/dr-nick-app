@@ -19,7 +19,6 @@ import {
   findNearestValidTopLeft as findNearestValidTopLeftPure,
   enforceTextInvariantsSequential,
 } from '@/lib/text-placement';
-import { remapRangesByDiff } from '@/lib/text-placement/styleRangeRemap';
 import { attachHorizontalSmartGuides, drawHorizontalSmartGuide, type HorizontalSmartGuideState } from './smartGuides';
 
 interface CarouselPreviewProps {
@@ -241,7 +240,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
     const onSlide1FadeLayerChangeRef = useRef<CarouselPreviewProps["onSlide1FadeLayerChange"]>(undefined);
     const onOpenImageMenuRef = useRef<CarouselPreviewProps["onOpenImageMenu"]>(undefined);
     const onOpenSlide1TemplateTextEditorRef = useRef<CarouselPreviewProps["onOpenSlide1TemplateTextEditor"]>(undefined);
-    const liveRegularTextStyleStateRef = useRef<Record<string, { text: string; ranges: InlineStyleRange[] }>>({});
     // When the user moves a single line, we should NOT auto-move other lines (editor-like behavior).
     // IMPORTANT: This must NOT be time-based because renders are async (font/image loads) and may exceed any small window.
     // Instead, treat it as a one-shot "next render only" restriction and clear after enforcement runs.
@@ -1129,16 +1127,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             pushMapped(r, (r as any)?.start, (r as any)?.end);
           }
         }
-        try {
-          if (Number(slideIndex) === 1) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-render-map',hypothesisId:'R4',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:1089',message:'Regular slide render mapped BODY input ranges onto a rendered line',data:{slideIndex:Number(slideIndex||0),lineKey:String((line as any)?.lineKey||''),lineTextPreview:text.slice(0,120),lineLength:text.length,sourceParts:Array.isArray(parts)?parts.slice(0,6).map((p:any)=>({lineStart:Number(p?.lineStart??0),lineEnd:Number(p?.lineEnd??0),sourceStart:Number(p?.sourceStart??0),sourceEnd:Number(p?.sourceEnd??0)})):[],inputRangesSample:Array.isArray(ranges)?ranges.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined})):[],mappedRangesSample:mapped.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined}))},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-          }
-        } catch {
-          // ignore
-        }
-
         const lineText0 = String(line?.text || "");
         const graphemeSegments = (() => {
           try {
@@ -1186,49 +1174,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         }
       } catch {
         // ignore
-      }
-    };
-
-    const getLiveRegularTextStateKey = (obj: any) => {
-      const lineKey = String(obj?.data?.lineKey || "").trim();
-      const lineIndex = Number(obj?.data?.lineIndex ?? 0);
-      return lineKey ? `LK:${lineKey}` : `IDX:${lineIndex}`;
-    };
-
-    const extractInlineStyleRangesFromTextObject = (obj: any): InlineStyleRange[] => {
-      try {
-        const text = String(obj?.text || "");
-        if (!text.length || typeof obj?.getSelectionStyles !== "function") return [];
-        const styles = obj.getSelectionStyles(0, text.length) || [];
-        const baseFill = String(obj?.fill || "").trim().toLowerCase();
-        const out: InlineStyleRange[] = [];
-        const same = (a: InlineStyleRange, b: InlineStyleRange) =>
-          !!a.bold === !!b.bold &&
-          !!a.italic === !!b.italic &&
-          !!a.underline === !!b.underline &&
-          String(a.fill || "").trim().toLowerCase() === String(b.fill || "").trim().toLowerCase();
-        for (let idx = 0; idx < text.length; idx++) {
-          const style = styles[idx] || {};
-          const fillRaw = typeof style?.fill === "string" ? String(style.fill).trim() : "";
-          const next: InlineStyleRange = {
-            start: idx,
-            end: idx + 1,
-            ...(style?.fontWeight === "bold" || style?.fontWeight === 700 ? { bold: true } : {}),
-            ...(style?.fontStyle === "italic" ? { italic: true } : {}),
-            ...(style?.underline ? { underline: true } : {}),
-            ...(fillRaw && fillRaw.toLowerCase() !== baseFill ? { fill: fillRaw } : {}),
-          };
-          if (!next.bold && !next.italic && !next.underline && !next.fill) continue;
-          const prev = out[out.length - 1];
-          if (prev && same(prev, next) && prev.end === next.start) {
-            prev.end = next.end;
-          } else {
-            out.push(next);
-          }
-        }
-        return out;
-      } catch {
-        return [];
       }
     };
 
@@ -1954,15 +1899,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             const obj = e?.target;
             if (!obj || obj?.data?.role !== 'user-text') return;
             editStateRef.active = true;
-            const isRegularBodyText = hasHeadline === false && String(obj?.data?.block || "").toUpperCase() !== "HEADLINE";
-            if (!isRegularBodyText) return;
-            const key = getLiveRegularTextStateKey(obj);
-            const text = String(obj?.text || "");
-            const ranges = extractInlineStyleRangesFromTextObject(obj);
-            liveRegularTextStyleStateRef.current[key] = { text, ranges };
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-live-style-baseline',hypothesisId:'R8',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:1942',message:'Captured Regular live style baseline when Fabric editing started',data:{slideIndex:Number(canvasSlideIndex||0),lineIndex:Number(obj?.data?.lineIndex ?? 0),lineKey:typeof obj?.data?.lineKey==='string'?obj.data.lineKey:'',textPreview:text.slice(0,180),textLength:text.length,rangesSample:ranges.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined}))},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
           } catch {
             // ignore
           }
@@ -1973,167 +1909,11 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             if (!obj || obj?.data?.role !== 'user-text') return;
             editStateRef.active = false;
             editStateRef.lastExitAt = Date.now();
-            const key = getLiveRegularTextStateKey(obj);
-            delete liveRegularTextStyleStateRef.current[key];
             notifyUserText(obj, true);
           } catch {
             // ignore
           }
         };
-        const onTextChanged = (e: any) => {
-          try {
-            const obj = e?.target;
-            if (!obj || obj?.data?.role !== 'user-text') return;
-            const text = String(obj?.text || '');
-            const selectionStart = Number(obj?.selectionStart ?? 0);
-            const selectionEnd = Number(obj?.selectionEnd ?? selectionStart);
-            const isRegularBodyText = hasHeadline === false && String(obj?.data?.block || "").toUpperCase() !== "HEADLINE";
-            const stylesSample =
-              typeof obj?.getSelectionStyles === 'function'
-                ? (obj.getSelectionStyles(0, Math.min(text.length, 220)) || []).slice(0, 24).map((s: any, idx: number) => ({
-                    idx,
-                    bold: s?.fontWeight === 'bold' || s?.fontWeight === 700,
-                    italic: s?.fontStyle === 'italic',
-                    underline: !!s?.underline,
-                    fill: typeof s?.fill === 'string' ? String(s.fill) : undefined,
-                  }))
-                : [];
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-live-text-change',hypothesisId:'R7',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:1927',message:'Fabric text:changed fired for live Regular editing state',data:{slideIndex:Number(canvasSlideIndex||0),lineIndex:Number(obj?.data?.lineIndex ?? 0),lineKey:typeof obj?.data?.lineKey==='string'?obj.data.lineKey:'',textPreview:text.slice(0,180),textLength:text.length,selectionStart,selectionEnd,stylesSample},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            if (isRegularBodyText) {
-              const key = getLiveRegularTextStateKey(obj);
-              const prevState = liveRegularTextStyleStateRef.current[key] || { text, ranges: extractInlineStyleRangesFromTextObject(obj) };
-              const expectedRanges = remapRangesByDiff({ oldText: prevState.text, newText: text, ranges: prevState.ranges });
-              const actualRanges = extractInlineStyleRangesFromTextObject(obj);
-              liveRegularTextStyleStateRef.current[key] = { text, ranges: expectedRanges };
-              const cursorLocation = (() => {
-                try {
-                  return typeof obj?.get2DCursorLocation === "function" ? obj.get2DCursorLocation(selectionStart) : null;
-                } catch {
-                  return null;
-                }
-              })();
-              const styleMapSample = (() => {
-                try {
-                  const styleMap = obj?._styleMap && typeof obj._styleMap === "object" ? obj._styleMap : null;
-                  if (!styleMap) return [];
-                  return Object.entries(styleMap).slice(0, 6).map(([k, v]: any) => ({
-                    key: String(k),
-                    line: Number(v?.line ?? v?.lineIndex ?? -1),
-                    offset: Number(v?.offset ?? v?.charOffset ?? -1),
-                  }));
-                } catch {
-                  return [];
-                }
-              })();
-              const renderedLinesSample = (() => {
-                try {
-                  const lines = Array.isArray(obj?._textLines) ? obj._textLines : [];
-                  return lines.slice(0, 6).map((line: any) => String(Array.isArray(line) ? line.join("") : line || ""));
-                } catch {
-                  return [];
-                }
-              })();
-              const internalStylesSample = (() => {
-                try {
-                  const styles = obj?.styles && typeof obj.styles === "object" ? obj.styles : null;
-                  if (!styles) return [];
-                  return Object.entries(styles).slice(0, 8).map(([lineKey, chars]: any) => ({
-                    lineKey: String(lineKey),
-                    chars: chars && typeof chars === "object"
-                      ? Object.entries(chars).slice(0, 8).map(([charKey, style]: any) => ({
-                          charKey: String(charKey),
-                          bold: style?.fontWeight === "bold" || style?.fontWeight === 700,
-                          italic: style?.fontStyle === "italic",
-                          underline: !!style?.underline,
-                          fill: typeof style?.fill === "string" ? String(style.fill) : undefined,
-                        }))
-                      : [],
-                  }));
-                } catch {
-                  return [];
-                }
-              })();
-              const expectedBoundaryLocations = (() => {
-                try {
-                  if (typeof obj?.get2DCursorLocation !== "function") return [];
-                  return expectedRanges.slice(0, 5).flatMap((r: any) => {
-                    const startLoc = obj.get2DCursorLocation(Number(r?.start ?? 0));
-                    const endLoc = obj.get2DCursorLocation(Number(r?.end ?? 0));
-                    return [
-                      {
-                        at: "start",
-                        index: Number(r?.start ?? 0),
-                        lineIndex: Number(startLoc?.lineIndex ?? -1),
-                        charIndex: Number(startLoc?.charIndex ?? -1),
-                        bold: !!r?.bold,
-                        italic: !!r?.italic,
-                        underline: !!r?.underline,
-                        fill: typeof r?.fill === "string" ? String(r.fill) : undefined,
-                      },
-                      {
-                        at: "end",
-                        index: Number(r?.end ?? 0),
-                        lineIndex: Number(endLoc?.lineIndex ?? -1),
-                        charIndex: Number(endLoc?.charIndex ?? -1),
-                        bold: !!r?.bold,
-                        italic: !!r?.italic,
-                        underline: !!r?.underline,
-                        fill: typeof r?.fill === "string" ? String(r.fill) : undefined,
-                      },
-                    ];
-                  });
-                } catch {
-                  return [];
-                }
-              })();
-              const boundaryCharStyles = (() => {
-                try {
-                  if (typeof obj?.getSelectionStyles !== "function") return [];
-                  return expectedRanges.slice(0, 5).flatMap((r: any) => {
-                    const start = Number(r?.start ?? 0);
-                    const end = Number(r?.end ?? 0);
-                    const sampleAt = (idx: number, label: string) => {
-                      const style = (obj.getSelectionStyles(idx, Math.min(idx + 1, text.length)) || [])[0] || {};
-                      const loc = typeof obj?.get2DCursorLocation === "function" ? obj.get2DCursorLocation(idx) : null;
-                      return {
-                        at: label,
-                        index: idx,
-                        lineIndex: Number((loc as any)?.lineIndex ?? -1),
-                        charIndex: Number((loc as any)?.charIndex ?? -1),
-                        bold: style?.fontWeight === "bold" || style?.fontWeight === 700,
-                        italic: style?.fontStyle === "italic",
-                        underline: !!style?.underline,
-                        fill: typeof style?.fill === "string" ? String(style.fill) : undefined,
-                      };
-                    };
-                    const out = [sampleAt(start, "start")];
-                    if (end - 1 >= start) out.push(sampleAt(end - 1, "endMinus1"));
-                    return out;
-                  });
-                } catch {
-                  return [];
-                }
-              })();
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-live-style-compare',hypothesisId:'R9',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:1960',message:'Compared Fabric live styles against remapped Regular ranges during typing',data:{slideIndex:Number(canvasSlideIndex||0),lineIndex:Number(obj?.data?.lineIndex ?? 0),lineKey:typeof obj?.data?.lineKey==='string'?obj.data.lineKey:'',previousTextLength:prevState.text.length,textLength:text.length,selectionStart,selectionEnd,expectedRangesSample:expectedRanges.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined})),actualRangesSample:actualRanges.slice(0,8).map((r:any)=>({start:Number(r?.start??0),end:Number(r?.end??0),bold:!!r?.bold,italic:!!r?.italic,underline:!!r?.underline,fill:typeof r?.fill==='string'?String(r.fill):undefined}))},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-live-textbox-layout',hypothesisId:'R10',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:1972',message:'Captured Regular live Textbox layout internals during typing',data:{slideIndex:Number(canvasSlideIndex||0),lineIndex:Number(obj?.data?.lineIndex ?? 0),lineKey:typeof obj?.data?.lineKey==='string'?obj.data.lineKey:'',objectType:String(obj?.type||''),isEditing:!!obj?.isEditing,objectCaching:!!obj?.objectCaching,dirty:typeof obj?.dirty==='boolean'?obj.dirty:null,width:Number(obj?.width??0),height:Number(obj?.height??0),dynamicMinWidth:Number(obj?.dynamicMinWidth??0),textLineCount:Array.isArray(obj?._textLines)?obj._textLines.length:null,selectionStart,selectionEnd,cursorLocation:cursorLocation?{lineIndex:Number((cursorLocation as any)?.lineIndex ?? -1),charIndex:Number((cursorLocation as any)?.charIndex ?? -1)}:null,renderedLinesSample,styleMapSample},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-live-textbox-styles',hypothesisId:'R11',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:1998',message:'Captured Regular Textbox internal style rows and expected styled boundaries during typing',data:{slideIndex:Number(canvasSlideIndex||0),lineIndex:Number(obj?.data?.lineIndex ?? 0),lineKey:typeof obj?.data?.lineKey==='string'?obj.data.lineKey:'',selectionStart,selectionEnd,internalStylesSample,expectedBoundaryLocations},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-boundary-char-styles',hypothesisId:'R12',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:2010',message:'Captured actual char styles at expected Regular overlap boundaries during typing',data:{slideIndex:Number(canvasSlideIndex||0),lineIndex:Number(obj?.data?.lineIndex ?? 0),lineKey:typeof obj?.data?.lineKey==='string'?obj.data.lineKey:'',selectionStart,selectionEnd,boundaryCharStyles},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-            }
-          } catch {
-            // ignore
-          }
-        };
-
         // Debug overlay stacking: template/user images load async and can be added after overlays.
         // Ensure overlays remain visible by bringing them to front any time a non-overlay object is added.
         const onObjectAdded = (e: any) => {
@@ -2281,7 +2061,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         canvas.on('object:moving', onObjectMovingForLongPress);
         canvas.on('text:editing:entered', onTextEditingEntered as any);
         canvas.on('text:editing:exited', onTextEditingExited as any);
-        canvas.on('text:changed', onTextChanged as any);
         canvas.on('object:added', onObjectAdded);
         // Store for cleanup
         (canvas as any).__dnClampHandlers = {
@@ -2331,7 +2110,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               c.off('mouse:up', h.onMouseUp);
               c.off('text:editing:entered', h.onTextEditingEntered);
               c.off('text:editing:exited', h.onTextEditingExited);
-              c.off('text:changed', h.onTextChanged);
               c.off('object:added', h.onObjectAdded);
             }
             if (ov) {
@@ -4236,16 +4014,6 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
           const blkUpper = String((line as any)?.block || "").toUpperCase();
           const isBodyBlockForRanges = blkUpper === "" || blkUpper === "BODY";
           const shouldUseInputBodyRanges = isBodyBlockForRanges && !isHeadlineLine && inputBodyRanges.length > 0;
-          try {
-            if (Number(slideIndex) === 1) {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b3eb1d72-1d58-4fda-af71-7effd49d73aa',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c3c093'},body:JSON.stringify({sessionId:'c3c093',runId:'regular-render-branch',hypothesisId:'R5',location:'src/app/components/health/marketing/ai-carousel/CarouselPreviewVision.tsx:4015',message:'Regular slide render chose BODY input-ranges branch or fallback branch',data:{slideIndex:Number(slideIndex||0),lineIndex:Number(index||0),lineKey:String((line as any)?.lineKey||''),block:String((line as any)?.block||''),isHeadlineLine:!!isHeadlineLine,inputBodyRangesCount:inputBodyRanges.length,shouldUseInputBodyRanges,layoutStyleCount:Array.isArray((line as any)?.styles)?(line as any).styles.length:0,lineTextPreview:String((line as any)?.text||'').slice(0,120)},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-            }
-          } catch {
-            // ignore
-          }
-
           if (shouldUseInputBodyRanges) {
             applyInlineStyleRangesToBodyLine({
               textObj,
