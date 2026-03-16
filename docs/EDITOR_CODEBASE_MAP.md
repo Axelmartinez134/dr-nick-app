@@ -950,6 +950,8 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
 - **Modal**: `src/features/editor/components/SwipeFileModal.tsx`
   - Categories + saved items (account-scoped)
   - Enrich (Instagram + YouTube) + Repurpose into a new project
+  - In-modal **Add item** flow via nested capture modal (`+` in header)
+  - Reuses `src/features/editor/components/SwipeFileCaptureForm.tsx`
   - **Ideas Chat (Phase 1)**: “Generate ideas” button opens `SwipeIdeasChatModal`
 - **Ideas Chat modal**: `src/features/editor/components/SwipeIdeasChatModal.tsx`
   - Persisted per-item chat thread and saved Idea cards
@@ -976,6 +978,17 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - Accepts optional `ideaId` to snapshot the selected idea onto the new project
 - `POST /api/editor/projects/jobs/generate-copy`
   - If `source_swipe_idea_snapshot` exists, it is used as the Swipe “angle” input (preferred over Angle/Notes)
+
+### Manual QA (Swipe File add-item modal)
+- Open `/editor` as superadmin and click **Swipe File**
+- On desktop, confirm a new **`+`** button appears immediately to the right of **Copy**
+- On mobile, confirm the header shows **`+`** and does **not** expose **Copy**
+- Click **`+`** and confirm a second modal opens on top of Swipe File without closing the underlying modal
+- Confirm the add modal matches the capture flow fields: URL, Category, New category, Angle / Notes, Tags, Save
+- With a category filter selected in Swipe File, open **`+`** and confirm that category is preselected
+- With **All** selected in Swipe File, open **`+`** and confirm Category starts empty and requires manual selection
+- Save a new item and confirm **Saved ✓** appears briefly, then the add modal closes automatically
+- Confirm the new item appears immediately in Swipe File and becomes the selected item
 
 ## Script Chat (Create Script) — per project (MVP)
 Superadmin-only chat modal for collaboratively drafting a Reel script from the current project.
@@ -1139,6 +1152,10 @@ Key tables used by `/editor`:
   - APIs:
     - `POST /api/editor/projects/jobs/regenerate-body` → `src/app/api/editor/projects/jobs/regenerate-body/route.ts`
     - `GET  /api/editor/projects/body-regen-attempts` → `src/app/api/editor/projects/body-regen-attempts/route.ts`
+- **Regular slide text sizing (Slide 1 and Slides 2–6)**:
+  - UI popovers: `src/features/editor/components/EditorBottomPanel.tsx`
+  - Live layout + shrink-to-fit rules: `src/app/editor/EditorShell.tsx`
+  - Note: regular BODY size should honor the user-selected size on slides 1–6 and only shrink when needed to fit the content region
 - **Regenerate Emphasis Styles (Regular-only; styles-only)**:
   - UI: `src/features/editor/components/EditorBottomPanel.tsx` (button in ¶ Body card)
   - Modal: `src/features/editor/components/BodyEmphasisStylesModal.tsx` (guidance + previous attempts + restore w/ remap)

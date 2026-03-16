@@ -62,8 +62,14 @@ export function EditorBottomPanel() {
   // Slide 2–6 text overrides (Regular only).
   const [slideTextOpen, setSlideTextOpen] = useState(false);
   const [slideCalloutDraft, setSlideCalloutDraft] = useState<string>("");
+  const [slideCalloutSizeDraft, setSlideCalloutSizeDraft] = useState<string>("");
+  const slideCalloutSizeEditingRef = useRef<boolean>(false);
+  const slideCalloutSizeHoldTimeoutRef = useRef<number | null>(null);
+  const slideCalloutSizeHoldIntervalRef = useRef<number | null>(null);
   const [slideBodySizeDraft, setSlideBodySizeDraft] = useState<string>("");
   const slideBodySizeEditingRef = useRef<boolean>(false);
+  const slideBodySizeHoldTimeoutRef = useRef<number | null>(null);
+  const slideBodySizeHoldIntervalRef = useRef<number | null>(null);
 
   const [scriptPromptCopyStatus, setScriptPromptCopyStatus] = useState<"idle" | "copied" | "error" | "loading">("idle");
   const [scriptPromptPrefetchStatus, setScriptPromptPrefetchStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -226,6 +232,20 @@ export function EditorBottomPanel() {
     slide1BodySizeHoldIntervalRef.current = null;
   };
 
+  const stopSlideCalloutSizeHold = () => {
+    if (slideCalloutSizeHoldTimeoutRef.current) window.clearTimeout(slideCalloutSizeHoldTimeoutRef.current);
+    if (slideCalloutSizeHoldIntervalRef.current) window.clearInterval(slideCalloutSizeHoldIntervalRef.current);
+    slideCalloutSizeHoldTimeoutRef.current = null;
+    slideCalloutSizeHoldIntervalRef.current = null;
+  };
+
+  const stopSlideBodySizeHold = () => {
+    if (slideBodySizeHoldTimeoutRef.current) window.clearTimeout(slideBodySizeHoldTimeoutRef.current);
+    if (slideBodySizeHoldIntervalRef.current) window.clearInterval(slideBodySizeHoldIntervalRef.current);
+    slideBodySizeHoldTimeoutRef.current = null;
+    slideBodySizeHoldIntervalRef.current = null;
+  };
+
   const SLIDE1_THEME_ACCENT_BY_ID: Record<string, string> = useMemo(
     () => ({
       "kalypso-uofbw2": "#ff0000",
@@ -290,6 +310,14 @@ export function EditorBottomPanel() {
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, [slide1BgOpen, slide1CopyPasteOpen, slide1TextOpen, slide1FadeOpen, slideTextOpen]);
 
+  useEffect(() => {
+    return () => {
+      stopSlide1BodySizeHold();
+      stopSlideCalloutSizeHold();
+      stopSlideBodySizeHold();
+    };
+  }, []);
+
   // Hide Slide 1 text panel when it can't apply.
   const activeSlideIndexForSlide1Text = Number((ui as any)?.activeSlideIndex ?? -1);
   const slide1BodySizeCurrentForSync = Math.round(Number((ui as any)?.slides?.[0]?.draftBodyFontSizePx ?? 48)) || 48;
@@ -325,12 +353,20 @@ export function EditorBottomPanel() {
   // Keep Slide 2–6 body size draft in sync when not actively typing.
   useEffect(() => {
     if (!slideTextOpen) {
+      slideCalloutSizeEditingRef.current = false;
+      stopSlideCalloutSizeHold();
       slideBodySizeEditingRef.current = false;
+      stopSlideBodySizeHold();
       return;
     }
-    if (slideBodySizeEditingRef.current) return;
     const s = (ui as any)?.slides?.[activeSlideIndexForSlide1Text] || null;
-    setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
+    const callout = (s as any)?.inputData?.slideCallout || null;
+    if (!slideCalloutSizeEditingRef.current) {
+      setSlideCalloutSizeDraft(String(Math.max(8, Math.min(999, Math.round(Number(callout?.fontSizePx ?? 28) || 28)))));
+    }
+    if (!slideBodySizeEditingRef.current) {
+      setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
+    }
   }, [activeSlideIndexForSlide1Text, slideTextOpen, ui]);
 
   const applySlide1BodySelectionColor = (hex: string) => {
@@ -549,6 +585,27 @@ export function EditorBottomPanel() {
   const commitSlide1BodySizeLive = (next: number) => {
     const n = clampSlide1BodySize(next);
     setSlide1BodySizeDraft(String(n));
+    actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
+  };
+  const clampSlideCalloutSize = (n: number) => Math.max(8, Math.min(999, Math.round(Number(n) || 0)));
+  const clampSlideBodySize = (n: number) => Math.max(8, Math.min(120, Math.round(Number(n) || 0)));
+  const commitSlideCalloutSizeLive = (next: number) => {
+    const text = String(slideCalloutDraft || "");
+    if (!text.trim()) return;
+    const n = clampSlideCalloutSize(next);
+    setSlideCalloutSizeDraft(String(n));
+    const s = (slides as any)?.[activeSlideIndex] || null;
+    const prev = (s as any)?.inputData?.slideCallout || null;
+    const nextCallout = prev && typeof prev === "object" ? { ...(prev as any) } : { text };
+    nextCallout.text = text;
+    nextCallout.fontSizePx = n;
+    nextCallout.colorHex = String(nextCallout.colorHex || "").trim() || "#000000";
+    nextCallout.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(nextCallout.lineGapPx ?? 0) || 0)));
+    actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next: nextCallout } as any);
+  };
+  const commitSlideBodySizeLive = (next: number) => {
+    const n = clampSlideBodySize(next);
+    setSlideBodySizeDraft(String(n));
     actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
   };
 
@@ -3445,6 +3502,7 @@ export function EditorBottomPanel() {
                                 const s = (slides as any)?.[activeSlideIndex] || null;
                                 const callout = (s as any)?.inputData?.slideCallout || null;
                                 setSlideCalloutDraft(String(callout?.text || ""));
+                                setSlideCalloutSizeDraft(String(Math.max(8, Math.min(999, Math.round(Number(callout?.fontSizePx ?? 28) || 28)))));
                                 setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
                               }
                               return next;
@@ -3509,32 +3567,93 @@ export function EditorBottomPanel() {
 
                               <div>
                                 <div className="text-[11px] font-semibold text-slate-600 uppercase">Callout font size</div>
-                                <input
-                                  type="number"
-                                  className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
-                                  value={(() => {
-                                    const s = (slides as any)?.[activeSlideIndex] || null;
-                                    const c = (s as any)?.inputData?.slideCallout || null;
-                                    return Math.max(8, Math.min(999, Math.round(Number(c?.fontSizePx ?? 28) || 28)));
-                                  })()}
-                                  min={8}
-                                  max={999}
-                                  step={1}
-                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim()}
-                                  onChange={(e) => {
-                                    const n = Math.max(8, Math.min(999, Math.round(Number(e.target.value) || 28)));
-                                    const s = (slides as any)?.[activeSlideIndex] || null;
-                                    const prev = (s as any)?.inputData?.slideCallout || null;
-                                    const text = String(slideCalloutDraft || "");
-                                    if (!text.trim()) return;
-                                    const next = prev && typeof prev === "object" ? { ...(prev as any) } : { text };
-                                    next.text = text;
-                                    next.fontSizePx = n;
-                                    next.colorHex = String(next.colorHex || "").trim() || "#000000";
-                                    next.lineGapPx = Math.max(-80, Math.min(80, Math.round(Number(next.lineGapPx ?? 0) || 0)));
-                                    actions.onSetSlideCallout?.({ slideIndex: activeSlideIndex, next } as any);
-                                  }}
-                                />
+                                <div className="mt-1 flex items-stretch gap-2">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                    value={slideCalloutSizeDraft}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim()}
+                                    onFocus={() => {
+                                      slideCalloutSizeEditingRef.current = true;
+                                    }}
+                                    onChange={(e) => {
+                                      const raw = String(e.target.value || "");
+                                      setSlideCalloutSizeDraft(raw.replace(/[^\d]/g, ""));
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key !== "Enter") return;
+                                      (e.target as HTMLInputElement | null)?.blur?.();
+                                    }}
+                                    onBlur={() => {
+                                      slideCalloutSizeEditingRef.current = false;
+                                      const raw = String(slideCalloutSizeDraft || "").trim();
+                                      const n = Math.round(Number(raw));
+                                      if (!Number.isFinite(n)) {
+                                        const s = (slides as any)?.[activeSlideIndex] || null;
+                                        const c = (s as any)?.inputData?.slideCallout || null;
+                                        setSlideCalloutSizeDraft(String(Math.max(8, Math.min(999, Math.round(Number(c?.fontSizePx ?? 28) || 28)))));
+                                        return;
+                                      }
+                                      commitSlideCalloutSizeLive(n);
+                                    }}
+                                    title="Callout font size. Min 8, max 999."
+                                  />
+                                  <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                    {([
+                                      { dir: "up" as const, label: "Increase", delta: +1, glyph: "▲" },
+                                      { dir: "down" as const, label: "Decrease", delta: -1, glyph: "▼" },
+                                    ] as const).map((btn) => {
+                                      const disabled =
+                                        !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn || !String(slideCalloutDraft || "").trim();
+                                      const stepOnce = () => {
+                                        const raw = String(slideCalloutSizeDraft || "").trim();
+                                        const base = Number.isFinite(Number(raw)) ? Number(raw) : 28;
+                                        commitSlideCalloutSizeLive(base + btn.delta);
+                                      };
+                                      const startHold = (e: any) => {
+                                        if (disabled) return;
+                                        try {
+                                          e?.preventDefault?.();
+                                        } catch {
+                                          // ignore
+                                        }
+                                        stopSlideCalloutSizeHold();
+                                        stepOnce();
+                                        slideCalloutSizeHoldTimeoutRef.current = window.setTimeout(() => {
+                                          slideCalloutSizeHoldIntervalRef.current = window.setInterval(() => {
+                                            stepOnce();
+                                          }, 80);
+                                        }, 250);
+                                      };
+                                      return (
+                                        <button
+                                          key={btn.dir}
+                                          type="button"
+                                          className={[
+                                            "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                            btn.dir === "up" ? "border-b border-slate-200" : "",
+                                            disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                          ].join(" ")}
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                          }}
+                                          onPointerDown={startHold}
+                                          onPointerUp={stopSlideCalloutSizeHold}
+                                          onPointerCancel={stopSlideCalloutSizeHold}
+                                          onPointerLeave={stopSlideCalloutSizeHold}
+                                          aria-label={btn.label}
+                                          aria-disabled={disabled}
+                                          title={`${btn.label} (hold to repeat)`}
+                                        >
+                                          {btn.glyph}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="mt-1 text-[10px] text-slate-500">Min 8 · Max 999</div>
                               </div>
 
                               <div>
@@ -3571,28 +3690,91 @@ export function EditorBottomPanel() {
                             <div className="mt-4 grid grid-cols-2 gap-3">
                               <div>
                                 <div className="text-[11px] font-semibold text-slate-600 uppercase">Body size</div>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
-                                  value={slideBodySizeDraft}
-                                  disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
-                                  onFocus={() => {
-                                    slideBodySizeEditingRef.current = true;
-                                  }}
-                                  onChange={(e) => {
-                                    const raw = String(e.target.value || "");
-                                    setSlideBodySizeDraft(raw.replace(/[^\d]/g, ""));
-                                  }}
-                                  onBlur={() => {
-                                    slideBodySizeEditingRef.current = false;
-                                    const raw = String(slideBodySizeDraft || "").trim();
-                                    const n = Math.round(Number(raw));
-                                    if (!Number.isFinite(n)) return;
-                                    actions.onChangeBodyFontSize?.({ target: { value: n } } as any);
-                                  }}
-                                />
+                                <div className="mt-1 flex items-stretch gap-2">
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    className="w-full h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800"
+                                    value={slideBodySizeDraft}
+                                    disabled={!currentProjectId || switchingSlides || copyGenerating || enhancedLockOn}
+                                    onFocus={() => {
+                                      slideBodySizeEditingRef.current = true;
+                                    }}
+                                    onChange={(e) => {
+                                      const raw = String(e.target.value || "");
+                                      setSlideBodySizeDraft(raw.replace(/[^\d]/g, ""));
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key !== "Enter") return;
+                                      (e.target as HTMLInputElement | null)?.blur?.();
+                                    }}
+                                    onBlur={() => {
+                                      slideBodySizeEditingRef.current = false;
+                                      const raw = String(slideBodySizeDraft || "").trim();
+                                      const n = Math.round(Number(raw));
+                                      if (!Number.isFinite(n)) {
+                                        const s = (slides as any)?.[activeSlideIndex] || null;
+                                        setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 48)) || 48));
+                                        return;
+                                      }
+                                      commitSlideBodySizeLive(n);
+                                    }}
+                                    title="Body font size (BODY only). Min 8, max 120."
+                                  />
+                                  <div className="hidden md:flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                                    {([
+                                      { dir: "up" as const, label: "Increase", delta: +1, glyph: "▲" },
+                                      { dir: "down" as const, label: "Decrease", delta: -1, glyph: "▼" },
+                                    ] as const).map((btn) => {
+                                      const disabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
+                                      const stepOnce = () => {
+                                        const raw = String(slideBodySizeDraft || "").trim();
+                                        const base = Number.isFinite(Number(raw)) ? Number(raw) : 48;
+                                        commitSlideBodySizeLive(base + btn.delta);
+                                      };
+                                      const startHold = (e: any) => {
+                                        if (disabled) return;
+                                        try {
+                                          e?.preventDefault?.();
+                                        } catch {
+                                          // ignore
+                                        }
+                                        stopSlideBodySizeHold();
+                                        stepOnce();
+                                        slideBodySizeHoldTimeoutRef.current = window.setTimeout(() => {
+                                          slideBodySizeHoldIntervalRef.current = window.setInterval(() => {
+                                            stepOnce();
+                                          }, 80);
+                                        }, 250);
+                                      };
+                                      return (
+                                        <button
+                                          key={btn.dir}
+                                          type="button"
+                                          className={[
+                                            "w-10 flex-1 text-[10px] font-bold leading-none transition-colors select-none",
+                                            btn.dir === "up" ? "border-b border-slate-200" : "",
+                                            disabled ? "text-slate-300" : "text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+                                          ].join(" ")}
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                          }}
+                                          onPointerDown={startHold}
+                                          onPointerUp={stopSlideBodySizeHold}
+                                          onPointerCancel={stopSlideBodySizeHold}
+                                          onPointerLeave={stopSlideBodySizeHold}
+                                          aria-label={btn.label}
+                                          aria-disabled={disabled}
+                                          title={`${btn.label} (hold to repeat)`}
+                                        >
+                                          {btn.glyph}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <div className="mt-1 text-[10px] text-slate-500">Min 8 · Max 120 (auto-fits if needed)</div>
                               </div>
                               <div>
                                 <div className="text-[11px] font-semibold text-slate-600 uppercase">Body text color</div>

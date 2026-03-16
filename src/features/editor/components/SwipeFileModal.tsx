@@ -5,27 +5,10 @@ import { supabase } from "@/app/components/auth/AuthContext";
 import { useEditorSelector } from "@/features/editor/store";
 import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChatModal";
 import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
+import { SwipeFileCaptureForm, type SwipeFileCaptureItem } from "@/features/editor/components/SwipeFileCaptureForm";
 
 type Category = { id: string; name: string };
-type SwipeItem = {
-  id: string;
-  createdAt: string;
-  url: string;
-  platform: string;
-  status: string;
-  categoryId: string;
-  tags: string[];
-  note: string | null;
-  enrichStatus: string;
-  enrichError: string | null;
-  enrichedAt: string | null;
-  caption: string | null;
-  transcript: string | null;
-  authorHandle: string | null;
-  title: string | null;
-  thumbUrl: string | null;
-  createdProjectId: string | null;
-};
+type SwipeItem = SwipeFileCaptureItem;
 
 type SavedPrompt = { id: string; title: string; is_active: boolean };
 
@@ -140,6 +123,7 @@ export function SwipeFileModal() {
   const [ideasChatOpen, setIdeasChatOpen] = useState(false);
   const [ideasCount, setIdeasCount] = useState<number>(0);
   const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
+  const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
   const captureLink = useMemo(() => {
     try {
@@ -317,6 +301,12 @@ export function SwipeFileModal() {
     if (!open) return;
     void refreshPrompts(templateTypeId);
   }, [open, templateTypeId]);
+
+  useEffect(() => {
+    if (open) return;
+    setCaptureModalOpen(false);
+    setMobileSheet(null);
+  }, [open]);
 
   useEffect(() => {
     if (!rowMenu) return;
@@ -569,6 +559,18 @@ export function SwipeFileModal() {
     }
   };
 
+  const onCaptureSaved = (nextItems: SwipeFileCaptureItem[]) => {
+    const previousIds = new Set((items || []).map((it) => it.id));
+    const created = nextItems.find((it) => !previousIds.has(it.id)) || nextItems[0] || null;
+    setItems(nextItems);
+    if (activeCategoryId !== "all" && created?.categoryId && created.categoryId !== activeCategoryId) {
+      setActiveCategoryId(created.categoryId);
+    }
+    setQ("");
+    setRepurposeFilter("all");
+    setSelectedItemId(created?.id || nextItems[0]?.id || null);
+  };
+
   return (
     <div
       className="fixed inset-0 z-[120] flex items-stretch justify-center bg-black/50 p-2 md:p-6"
@@ -609,6 +611,14 @@ export function SwipeFileModal() {
                   >
                     Copy
                   </button>
+                  <button
+                    type="button"
+                    className="h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                    onClick={() => setCaptureModalOpen(true)}
+                    title="Add Swipe File item"
+                  >
+                    +
+                  </button>
                 </div>
                 {captureKeyPresent === false ? (
                   <div className="mt-1 text-[11px] text-amber-700">Could not load capture key for this account.</div>
@@ -631,13 +641,24 @@ export function SwipeFileModal() {
               <button
                 type="button"
                 className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setCaptureModalOpen(true)}
+                aria-label="Add Swipe File item"
+                title="Add Swipe File item"
+              >
+                +
+              </button>
+            )}
+            {isMobile ? (
+              <button
+                type="button"
+                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 onClick={() => setMobileSheet({ kind: "overflow" })}
                 aria-label="More"
                 title="More"
               >
                 ⋯
               </button>
-            )}
+            ) : null}
             <button
               type="button"
               className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -755,7 +776,7 @@ export function SwipeFileModal() {
             <div className="flex-1 min-h-0 overflow-auto">
               {visibleItems.length === 0 ? (
                 <div className="p-6 text-sm text-slate-600">
-                  {items.length === 0 ? "No items yet. Use the iPhone Shortcut to save a link." : "No items match this filter."}
+                  {items.length === 0 ? "No items yet. Use + or the iPhone Shortcut to save a link." : "No items match this filter."}
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
@@ -1371,6 +1392,44 @@ export function SwipeFileModal() {
         }}
       />
 
+      {captureModalOpen ? (
+        <div
+          className="fixed inset-0 z-[180] flex items-center justify-center bg-black/55 p-3 md:p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setCaptureModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-900">Save to Swipe File</div>
+                <div className="mt-1 text-xs text-slate-500">Fast capture — enrichment happens later on desktop.</div>
+              </div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setCaptureModalOpen(false)}
+                aria-label="Close add Swipe File modal"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <SwipeFileCaptureForm
+              mode="authed"
+              initialCategoryId={activeCategoryId !== "all" ? activeCategoryId : ""}
+              autoSelectFirstCategory={false}
+              showPasteButton={true}
+              secondaryActionLabel="Close"
+              onSecondaryAction={() => setCaptureModalOpen(false)}
+              onSaved={onCaptureSaved}
+              autoCloseAfterSuccessMs={700}
+              onRequestClose={() => setCaptureModalOpen(false)}
+            />
+          </div>
+        </div>
+      ) : null}
+
       {/* Mobile overflow sheet */}
       {isMobile && mobileSheet?.kind === "overflow" ? (
         <div
@@ -1384,16 +1443,6 @@ export function SwipeFileModal() {
               <div className="text-xs font-semibold text-slate-700">Swipe File</div>
             </div>
             <div className="p-2 space-y-2">
-              <button
-                type="button"
-                className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
-                onClick={async () => {
-                  await copyText(captureLinkNoLogin || captureLink);
-                  setMobileSheet(null);
-                }}
-              >
-                Copy capture link
-              </button>
               <button
                 type="button"
                 className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"

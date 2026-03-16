@@ -4206,9 +4206,8 @@ export default function EditorShell() {
             maxWidthPx: width,
             maxHeightPx: region.height,
             bodyRanges: params.bodyRanges || [],
-            // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
-            // Other slides: keep legacy cap for now.
-            maxFontSizePx: params.slideIndex === 0 ? requestedBodySize : 56,
+            // Regular slides should honor the user-requested size and only shrink when needed to fit.
+            maxFontSizePx: requestedBodySize,
           });
     const bodySize = Math.max(8, Math.min(params.slideIndex === 0 ? 999 : 120, Math.round(Number(fittedSize) || requestedBodySize)));
 
@@ -4531,12 +4530,11 @@ export default function EditorShell() {
               maxWidthPx: widthFixed,
               maxHeightPx: region.height,
               bodyRanges: Array.isArray(curSlide.draftBodyRanges) ? curSlide.draftBodyRanges : [],
-              // Slide 1: allow user-chosen size to grow (shrink-to-fit only when needed).
-              // Other slides: keep legacy cap for now.
+              // Regular slides should honor the user-requested size and only shrink when needed to fit.
               maxFontSizePx:
                 slideIndex === 0
                   ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
-                  : 56,
+                  : Math.max(8, Math.min(120, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 48)))),
             });
             const measuredH = measureRegularBodyHeightPx(
               nextBodyForFit,

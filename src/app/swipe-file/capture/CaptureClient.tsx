@@ -1,40 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase, useAuth } from "@/app/components/auth/AuthContext";
-
-type Category = { id: string; name: string };
-
-function derivePlatform(urlRaw: string): string {
-  const raw = String(urlRaw || "").trim();
-  if (!raw) return "unknown";
-  try {
-    const u = new URL(raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`);
-    const h = String(u.hostname || "").toLowerCase();
-    if (h.includes("instagram.com")) return "instagram";
-    if (h.includes("tiktok.com")) return "tiktok";
-    if (h.includes("youtube.com") || h.includes("youtu.be")) return "youtube";
-    if (h === "x.com" || h.includes("twitter.com")) return "x";
-    return "web";
-  } catch {
-    return "unknown";
-  }
-}
-
-function getActiveAccountHeader(): Record<string, string> {
-  try {
-    const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
-    return id ? ({ "x-account-id": id } as Record<string, string>) : ({} as Record<string, string>);
-  } catch {
-    return {} as Record<string, string>;
-  }
-}
-
-async function getToken(): Promise<string> {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token || "";
-}
+import { useAuth } from "@/app/components/auth/AuthContext";
+import { SwipeFileCaptureForm } from "@/features/editor/components/SwipeFileCaptureForm";
 
 export default function CaptureClient() {
   const { user, loading } = useAuth();
@@ -60,19 +29,6 @@ export default function CaptureClient() {
   }, [sp]);
 
   const publicMode = useMemo(() => !!String(keyFromQuery || "").trim(), [keyFromQuery]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryId, setCategoryId] = useState<string>("");
-
-  const [url, setUrl] = useState<string>(urlFromQuery);
-  const [tags, setTags] = useState<string>("");
-  const [note, setNote] = useState<string>("");
-  const [newCategory, setNewCategory] = useState<string>("");
-
-  const platform = useMemo(() => derivePlatform(url), [url]);
-
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     // iOS Safari fallback: prevent pinch-to-zoom gesture on this capture page.
@@ -118,126 +74,9 @@ export default function CaptureClient() {
   }, []);
 
   useEffect(() => {
-    setUrl(urlFromQuery);
-  }, [urlFromQuery]);
-
-  useEffect(() => {
     if (loading) return;
     if (!user && !publicMode) router.replace("/");
   }, [loading, user, router, publicMode]);
-
-  const loadCategories = async () => {
-    setError(null);
-    try {
-      if (publicMode) {
-        const res = await fetch(`/api/swipe-file/public/categories?k=${encodeURIComponent(String(keyFromQuery || "").trim())}`, { method: "GET" });
-        const j = await res.json().catch(() => null);
-        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load categories (${res.status})`));
-        const rows: Category[] = Array.isArray(j.categories) ? j.categories.map((c: any) => ({ id: String(c.id), name: String(c.name || "") })) : [];
-        setCategories(rows);
-        if (!categoryId) setCategoryId(rows[0]?.id || "");
-        return;
-      }
-
-      const token = await getToken();
-      if (!token) throw new Error("Missing auth token");
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch("/api/swipe-file/categories", { method: "GET", headers });
-      const j = await res.json().catch(() => null);
-      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load categories (${res.status})`));
-      const rows: Category[] = Array.isArray(j.categories) ? j.categories.map((c: any) => ({ id: String(c.id), name: String(c.name || "") })) : [];
-      setCategories(rows);
-      if (!categoryId) setCategoryId(rows[0]?.id || "");
-    } catch (e: any) {
-      setError(String(e?.message || e || "Failed to load categories"));
-    }
-  };
-
-  useEffect(() => {
-    if (publicMode) {
-      void loadCategories();
-      return;
-    }
-    void loadCategories();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publicMode]);
-
-  const onAddCategory = async () => {
-    const name = String(newCategory || "").trim();
-    if (!name) return;
-    setBusy(true);
-    setError(null);
-    try {
-      if (publicMode) {
-        const res = await fetch("/api/swipe-file/public/categories", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ k: String(keyFromQuery || "").trim(), name }),
-        });
-        const j = await res.json().catch(() => null);
-        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to add category (${res.status})`));
-        const rows: Category[] = Array.isArray(j.categories) ? j.categories.map((c: any) => ({ id: String(c.id), name: String(c.name || "") })) : [];
-        setCategories(rows);
-        const created = rows.find((c) => c.name.toLowerCase() === name.toLowerCase());
-        if (created?.id) setCategoryId(created.id);
-        setNewCategory("");
-        return;
-      }
-
-      const token = await getToken();
-      if (!token) throw new Error("Missing auth token");
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch("/api/swipe-file/categories", { method: "POST", headers, body: JSON.stringify({ name }) });
-      const j = await res.json().catch(() => null);
-      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to add category (${res.status})`));
-      const rows: Category[] = Array.isArray(j.categories) ? j.categories.map((c: any) => ({ id: String(c.id), name: String(c.name || "") })) : [];
-      setCategories(rows);
-      const created = rows.find((c) => c.name.toLowerCase() === name.toLowerCase());
-      if (created?.id) setCategoryId(created.id);
-      setNewCategory("");
-    } catch (e: any) {
-      setError(String(e?.message || e || "Failed to add category"));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onSubmit = async () => {
-    setBusy(true);
-    setError(null);
-    setSuccess(false);
-    try {
-      if (!String(url || "").trim()) throw new Error("URL is required");
-      if (!String(categoryId || "").trim()) throw new Error("Category is required");
-
-      const payload = {
-        url: String(url || "").trim(),
-        categoryId,
-        tags,
-        note: String(note || "").trim() || null,
-      };
-
-      const res = publicMode
-        ? await fetch("/api/swipe-file/public/items", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ k: String(keyFromQuery || "").trim(), ...payload }),
-          })
-        : await (async () => {
-            const token = await getToken();
-            if (!token) throw new Error("Missing auth token");
-            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-            return await fetch("/api/swipe-file/items", { method: "POST", headers, body: JSON.stringify(payload) });
-          })();
-      const j = await res.json().catch(() => null);
-      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Save failed (${res.status})`));
-      setSuccess(true);
-    } catch (e: any) {
-      setError(String(e?.message || e || "Save failed"));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -263,140 +102,16 @@ export default function CaptureClient() {
           <div className="mt-1 text-xs text-slate-500">Fast capture — enrichment happens later on desktop.</div>
         </div>
 
-        <div className="px-5 py-4 space-y-3">
-          {error ? <div className="text-sm text-red-600">❌ {error}</div> : null}
-
-          <div>
-            <div className="text-xs font-semibold text-slate-700">URL</div>
-            <div className="mt-2 relative">
-              <input
-                className="w-full h-11 rounded-lg border border-slate-200 bg-white pl-3 pr-20 text-sm text-slate-900 shadow-sm"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste link…"
-                inputMode="url"
-                autoCapitalize="none"
-                autoCorrect="off"
-              />
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                disabled={busy}
-                onClick={async () => {
-                  setError(null);
-                  try {
-                    const text = typeof navigator !== "undefined" && navigator.clipboard ? await navigator.clipboard.readText() : "";
-                    const next = String(text || "").trim();
-                    if (!next) throw new Error("Clipboard is empty");
-                    setUrl(next);
-                  } catch {
-                    setError("Couldn’t read clipboard. Try pasting manually, or allow clipboard access.");
-                  }
-                }}
-                title="Paste from clipboard"
-              >
-                Paste
-              </button>
-            </div>
-            <div className="mt-1 text-[11px] text-slate-500">
-              Platform detected: <span className="font-semibold text-slate-700">{platform}</span>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold text-slate-700">Category (required)</div>
-            <select
-              className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              disabled={busy}
-            >
-              {categories.length === 0 ? <option value="">Loading…</option> : null}
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                className="flex-1 h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                placeholder="+ New category (optional)"
-                disabled={busy}
-              />
-              <button
-                type="button"
-                className="h-11 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                onClick={() => void onAddCategory()}
-                disabled={busy || !String(newCategory || "").trim()}
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold text-slate-700">Angle / Notes (optional)</div>
-            <textarea
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
-              rows={3}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="What do you like about this? What angle to use?"
-              disabled={busy}
-            />
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold text-slate-700">Tags (optional)</div>
-            <input
-              className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="comma,separated,tags"
-              disabled={busy}
-              autoCapitalize="none"
-              autoCorrect="off"
-            />
-          </div>
-
-          <button
-            type="button"
-            className="w-full h-11 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
-            onClick={() => void onSubmit()}
-            disabled={busy}
-          >
-            {busy ? "Saving…" : success ? "Saved ✓" : "Save"}
-          </button>
-          {success && !busy ? <div className="text-sm text-emerald-700 font-medium text-center">Saved ✓</div> : null}
-
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="text-sm text-slate-700 underline"
-              onClick={() => {
-                setUrl("");
-                setNote("");
-                setTags("");
-                setSuccess(false);
-              }}
-              disabled={busy}
-            >
-              Save another
-            </button>
-            <button
-              type="button"
-              className="text-sm text-slate-700 underline"
-              onClick={() => router.push("/editor")}
-              disabled={busy}
-              title="Open the editor (Swipe File is available from the top bar)"
-            >
-              Open editor
-            </button>
-          </div>
-        </div>
+        <SwipeFileCaptureForm
+          mode={publicMode ? "public" : "authed"}
+          publicKey={keyFromQuery}
+          initialUrl={urlFromQuery}
+          autoSelectFirstCategory={true}
+          showPasteButton={true}
+          secondaryActionLabel="Open editor"
+          secondaryActionTitle="Open the editor (Swipe File is available from the top bar)"
+          onSecondaryAction={() => router.push("/editor")}
+        />
       </div>
     </main>
   );
