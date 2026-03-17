@@ -49,7 +49,7 @@ export function initSlide(): SlideState {
     draftBodyRanges: [],
     draftHeadlineFontSizePx: 76,
     draftHeadlineTextAlign: 'left',
-    draftBodyFontSizePx: 48,
+    draftBodyFontSizePx: 56,
     draftBodyTextAlign: 'left',
     draftBg: '#ffffff',
     draftText: '#000000',

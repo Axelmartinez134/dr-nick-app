@@ -271,7 +271,7 @@ export function useProjectLifecycle(params: {
           draftBodyRanges: [],
           draftHeadlineFontSizePx: 76,
           draftHeadlineTextAlign: 'left',
-          draftBodyFontSizePx: 48,
+          draftBodyFontSizePx: 56,
           draftBodyTextAlign: 'left',
           layoutData: null,
           inputData: null,
