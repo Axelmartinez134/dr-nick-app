@@ -318,13 +318,95 @@ function normalizeHhmm(v: string | undefined | null): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
+async function getFirstWeekRow(
+  userId: string,
+  weekNumber: number,
+  enteredBy?: string
+): Promise<{ date: string; created_at?: string } | null> {
+  try {
+    let query = supabase
+      .from('health_data')
+      .select('date, created_at')
+      .eq('user_id', userId)
+      .eq('week_number', weekNumber)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+    if (enteredBy) {
+      query = query.eq('data_entered_by', enteredBy)
+    }
+
+    const { data, error } = await query
+    if (error) {
+      console.warn('getFirstWeekRow failed', { weekNumber, enteredBy, error })
+      return null
+    }
+    return Array.isArray(data) && data.length > 0 ? (data[0] as any) : null
+  } catch (error) {
+    console.warn('getFirstWeekRow exception', { weekNumber, enteredBy, error })
+    return null
+  }
+}
+
+function computeFirstEligibleWeek1AoEMondayFromWeek0Date(week0Date: string): Date {
+  const week0 = new Date(week0Date)
+  const week0AoE = toAoE(week0)
+  const sameOrPriorMonday = getAoEMonday(week0)
+  // Monday onboarding can submit Week 1 immediately. Tuesday-Sunday must wait until next Monday.
+  if (week0AoE.getDay() === 1) {
+    return sameOrPriorMonday
+  }
+  const nextMonday = new Date(sameOrPriorMonday)
+  nextMonday.setDate(sameOrPriorMonday.getDate() + 7)
+  nextMonday.setHours(0, 0, 0, 0)
+  return nextMonday
+}
+
+async function getNutraceuticalPreStartState(userId: string): Promise<{
+  hasWeek1: boolean
+  earliestEligibleWeek1AoEMonday: Date
+}> {
+  const anyWeek1 = await getFirstWeekRow(userId, 1)
+  if (anyWeek1?.date) {
+    return {
+      hasWeek1: true,
+      earliestEligibleWeek1AoEMonday: getAoEMonday(new Date(anyWeek1.date)),
+    }
+  }
+
+  const week0 = await getFirstWeekRow(userId, 0)
+  if (week0?.date) {
+    return {
+      hasWeek1: false,
+      earliestEligibleWeek1AoEMonday: computeFirstEligibleWeek1AoEMondayFromWeek0Date(week0.date),
+    }
+  }
+
+  // Safety fallback if a Week 0 row does not exist yet.
+  return {
+    hasWeek1: false,
+    earliestEligibleWeek1AoEMonday: getAoEMonday(new Date()),
+  }
+}
+
 // Calendar-based week calculation with relaxed baseline anchor.
 // Priority:
 // 1) Patient-submitted Week 1
 // 2) Any Week 1 (regardless of data_entered_by)
 // 3) Fallback to the smallest available week_number as baseline
-const calculateCurrentWeek = async (userId: string): Promise<number> => {
+const calculateCurrentWeek = async (userId: string, clientStatus?: string): Promise<number> => {
   try {
+    if (clientStatus === 'Nutraceutical') {
+      const anyWeek1 = await getFirstWeekRow(userId, 1)
+      if (anyWeek1?.date) {
+        const week1AoEMonday = getAoEMonday(new Date(anyWeek1.date))
+        return calculateAoECurrentWeekFromWeek1(week1AoEMonday)
+      }
+      // Nutraceutical pre-start mode: Week 0 exists, but the weekly timeline does not begin
+      // until any Week 1 row is created.
+      return 1
+    }
+
     // 1) Patient-submitted Week 1
     const { data: patientWeek1Rows, error: patientWeek1Error } = await supabase
       .from('health_data')
@@ -625,10 +707,10 @@ export default function HealthForm() {
   const avgFastingMinutesRef = useRef<HTMLInputElement | null>(null)
 
   // Load resistance training goal from profile
-  const loadResistanceTrainingGoal = async () => {
+  const loadResistanceTrainingGoal = async (): Promise<string> => {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) return ''
 
       const { data: profileData, error } = await supabase
         .from('profiles')
@@ -638,7 +720,7 @@ export default function HealthForm() {
 
       if (error) {
         console.error('Error loading resistance training goal:', error)
-        return
+        return ''
       }
 
       setResistanceTrainingGoal(profileData?.resistance_training_days_goal || 0)
@@ -650,8 +732,10 @@ export default function HealthForm() {
       setIsNutraceutical(status === 'Nutraceutical')
       setTracksBP(Boolean((profileData as any)?.track_blood_pressure))
       setTracksBodyComp(Boolean((profileData as any)?.track_body_composition))
+      return status
     } catch (error) {
       console.error('Error loading resistance training goal:', error)
+      return ''
     }
   }
 
@@ -682,10 +766,17 @@ export default function HealthForm() {
         return
       }
 
-      const calculatedWeek = await calculateCurrentWeek(user.id)
-      const maxExistingWeek = await fetchMaxExistingWeek(user.id)
-      // Display the later of AoE current week and next-after-highest existing week
-      const targetWeek = Math.max(calculatedWeek, (maxExistingWeek || 0) + 1)
+      // Load profile-derived behavior first so Nutraceutical pre-start rules can be applied.
+      const status = await loadResistanceTrainingGoal()
+      const nutraceuticalPreStart = status === 'Nutraceutical'
+        ? await getNutraceuticalPreStartState(user.id)
+        : null
+
+      const calculatedWeek = await calculateCurrentWeek(user.id, status)
+      const targetWeek =
+        status === 'Nutraceutical' && nutraceuticalPreStart && !nutraceuticalPreStart.hasWeek1
+          ? 1
+          : Math.max(calculatedWeek, ((await fetchMaxExistingWeek(user.id)) || 0) + 1)
       setActiveWeek(targetWeek)
       setDevWeek(targetWeek)
       
@@ -702,9 +793,6 @@ export default function HealthForm() {
         setAlreadySubmittedThisWeek(weeklySubmissionCheck.hasSubmitted)
       }
       setCheckingSubmissionStatus(false)
-      
-      // Load resistance training goal
-      await loadResistanceTrainingGoal()
       
       // Load existing form data if available
       await loadExistingFormData(user.id, targetWeek)
@@ -968,10 +1056,14 @@ export default function HealthForm() {
       }
 
       // Recompute target week at submit time to prevent stale submissions
-      const freshCalculatedWeek = await calculateCurrentWeek(user.id)
-      const freshMaxWeek = await fetchMaxExistingWeek(user.id)
-      // Display target (may be ahead due to existing future rows)
-      const computedTargetWeek = Math.max(freshCalculatedWeek, (freshMaxWeek || 0) + 1)
+      const nutraceuticalPreStart = effIsNutraceutical
+        ? await getNutraceuticalPreStartState(user.id)
+        : null
+      const freshCalculatedWeek = await calculateCurrentWeek(user.id, effectiveClientStatus)
+      const computedTargetWeek =
+        effIsNutraceutical && nutraceuticalPreStart && !nutraceuticalPreStart.hasWeek1
+          ? 1
+          : Math.max(freshCalculatedWeek, ((await fetchMaxExistingWeek(user.id)) || 0) + 1)
       // Submit to the displayed target week (optimistic), gate by AoE below
       const weekToSubmit = devMode ? devWeek : computedTargetWeek
 
@@ -1033,14 +1125,23 @@ export default function HealthForm() {
           return getAoEMonday(new Date())
         }
 
-        const submitWeekAoEMonday = await computeSubmitWeekAoEMonday()
-        const submitWeekAoEThursday = new Date(submitWeekAoEMonday.getTime() + 3 * 24 * 60 * 60 * 1000)
         const nowAoE = toAoE(new Date())
-        
-        if (nowAoE < submitWeekAoEMonday || nowAoE >= submitWeekAoEThursday) {
-          setMessage('Submissions only allowed Monday')
-          setIsSubmitting(false)
-          return
+
+        if (effIsNutraceutical && nutraceuticalPreStart && !nutraceuticalPreStart.hasWeek1) {
+          if (nowAoE < nutraceuticalPreStart.earliestEligibleWeek1AoEMonday) {
+            setMessage('Submissions only allowed Monday')
+            setIsSubmitting(false)
+            return
+          }
+        } else {
+          const submitWeekAoEMonday = await computeSubmitWeekAoEMonday()
+          const submitWeekAoEThursday = new Date(submitWeekAoEMonday.getTime() + 3 * 24 * 60 * 60 * 1000)
+
+          if (nowAoE < submitWeekAoEMonday || nowAoE >= submitWeekAoEThursday) {
+            setMessage('Submissions only allowed Monday')
+            setIsSubmitting(false)
+            return
+          }
         }
       }
 
@@ -1057,6 +1158,10 @@ export default function HealthForm() {
       
       // Update form data with correct week number and AoE Monday date
       const computeAoEMondayForTarget = async (): Promise<string> => {
+        if (effIsNutraceutical && nutraceuticalPreStart && !nutraceuticalPreStart.hasWeek1) {
+          return toIsoDateUTC(getAoEMonday(new Date()))
+        }
+
         // Patient Week 1 baseline
         const { data: p1 } = await supabase
           .from('health_data')
@@ -1122,9 +1227,14 @@ export default function HealthForm() {
         
         // If not in dev mode, recalculate the current week
         if (!devMode) {
-          const newCurrentWeek = await calculateCurrentWeek(user.id)
-          const newMaxWeek = await fetchMaxExistingWeek(user.id)
-          const nextTarget = Math.max(newCurrentWeek, (newMaxWeek || 0) + 1)
+          const nextNutraceuticalPreStart = effIsNutraceutical
+            ? await getNutraceuticalPreStartState(user.id)
+            : null
+          const newCurrentWeek = await calculateCurrentWeek(user.id, effectiveClientStatus)
+          const nextTarget =
+            effIsNutraceutical && nextNutraceuticalPreStart && !nextNutraceuticalPreStart.hasWeek1
+              ? 1
+              : Math.max(newCurrentWeek, ((await fetchMaxExistingWeek(user.id)) || 0) + 1)
           setActiveWeek(nextTarget)
           setDevWeek(nextTarget)
           // Load data for the new target week if it exists

@@ -422,12 +422,13 @@ function calculateAoECurrentWeek(week1AoEMonday: Date): number {
 }
 
 /**
-  * Background routine to auto-create missed weeks as null rows for allowed clients
-  * (Current, Onboarding, or Test) who have at least one Week 1 submission entered by the patient.
+ * Background routine to auto-create missed weeks as null rows for allowed clients
+ * (Current, Onboarding, Test, Nutraceutical, or Maintenance) once a Week 1 row
+ * exists to anchor the weekly timeline.
  */
 async function gapFillMissedWeeks(user: User): Promise<void> {
   try {
-    // 1) Ensure profile is allowed (Current, Onboarding, or Test)
+    // 1) Ensure profile is allowed for gap-fill backfilling.
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('client_status')
@@ -440,8 +441,17 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
       console.warn('gapFillMissedWeeks: failed to load profile', profileError)
       return
     }
-    if (!profile || (profile.client_status !== 'Current' && profile.client_status !== 'Onboarding' && profile.client_status !== 'Test')) {
-      return // Only run for Current, Onboarding, or Test clients
+    if (
+      !profile ||
+      (
+        profile.client_status !== 'Current' &&
+        profile.client_status !== 'Onboarding' &&
+        profile.client_status !== 'Test' &&
+        profile.client_status !== 'Nutraceutical' &&
+        profile.client_status !== 'Maintenance'
+      )
+    ) {
+      return // Only run for Current, Onboarding, Test, Nutraceutical, or Maintenance clients
     }
 
     // 2) Find the first Week 1 record (regardless of who entered it)
@@ -458,7 +468,7 @@ async function gapFillMissedWeeks(user: User): Promise<void> {
       return
     }
     if (!week1Rows || week1Rows.length === 0) {
-      return // Require at least one Week 1 patient submission to start program
+      return // Require a Week 1 row to start the weekly timeline
     }
 
     // Program start is AoE Monday of the calendar week containing first Week 1 submission
