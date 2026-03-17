@@ -691,6 +691,25 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - If it fails (missing env / Claude error)
   - Expected: shows a red error line under the caption textarea
 
+### Manual QA (Body Regenerate chat prompt preview + reset)
+- Open `/editor` and load a **Regular** project
+- Click **Regenerate** in the ¶ Body card
+  - Expected: modal opens with a single wide chat column (no permanent right sidebar)
+- Click **View prompt**
+  - Expected: preview opens with raw sections for `SYSTEM`, `CONTEXT`, `HISTORY`, and `CURRENT MESSAGE`
+- Type a draft message but do not send
+  - Expected: `CURRENT MESSAGE` in the preview reflects the draft text
+- For a Swipe-origin project
+  - Expected: `CONTEXT` includes Swipe source **caption** and **transcript**
+- Send a chat message
+  - Expected: assistant returns 3 options and each still has **Apply**
+- Click **Start new chat**
+  - Expected: a confirmation appears before deleting the current conversation
+- Confirm **Start new chat**
+  - Expected: current conversation clears and the modal reloads to a fresh empty chat for the same slide
+- Expand **Previous attempts**
+  - Expected: attempt history still remains available even after resetting the chat
+
 ## Projects + slides (server APIs)
 All editor project data is **account-scoped** (`account_id`) and accessed via `/api/editor/...`.
 
@@ -1152,6 +1171,15 @@ Key tables used by `/editor`:
   - APIs:
     - `POST /api/editor/projects/jobs/regenerate-body` → `src/app/api/editor/projects/jobs/regenerate-body/route.ts`
     - `GET  /api/editor/projects/body-regen-attempts` → `src/app/api/editor/projects/body-regen-attempts/route.ts`
+    - `GET  /api/editor/projects/body-regen-chat/thread` → `src/app/api/editor/projects/body-regen-chat/thread/route.ts`
+    - `POST /api/editor/projects/body-regen-chat/messages` → `src/app/api/editor/projects/body-regen-chat/messages/route.ts`
+    - `GET  /api/editor/projects/body-regen-chat/prompt-preview` → `src/app/api/editor/projects/body-regen-chat/prompt-preview/route.ts`
+    - `POST /api/editor/projects/body-regen-chat/reset` → `src/app/api/editor/projects/body-regen-chat/reset/route.ts`
+  - Shared prompt/context helpers:
+    - `src/app/api/editor/projects/body-regen-chat/_shared.ts`
+  - Context note:
+    - Chat uses live project context (`textLines` for all 6 slides, project caption, brand voice, prior attempts)
+    - Swipe-origin projects also include Swipe source **caption** + **transcript** in chat context and prompt preview
 - **Regular slide text sizing (Slide 1 and Slides 2–6)**:
   - UI popovers: `src/features/editor/components/EditorBottomPanel.tsx`
   - Live layout + shrink-to-fit rules: `src/app/editor/EditorShell.tsx`
