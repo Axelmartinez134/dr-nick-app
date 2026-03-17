@@ -22,6 +22,11 @@ type DraftIdea = {
   angleText: string;
   sourceMessageId: string;
 };
+type StarterPrompt = {
+  id: string;
+  title: string;
+  prompt: string;
+};
 
 type SwipeContext = {
   title: string;
@@ -75,6 +80,7 @@ export function SwipeIdeasChatModal(props: {
 }) {
   const { open, onClose, swipeItemId, swipeItemLabel, onIdeaSaved } = props;
   const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
+  const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
 
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +107,19 @@ export function SwipeIdeasChatModal(props: {
 
   const [draft, setDraft] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+
+  const [starterPrompts, setStarterPrompts] = useState<StarterPrompt[]>([]);
+  const [starterPromptsLoading, setStarterPromptsLoading] = useState(false);
+  const [starterPromptsError, setStarterPromptsError] = useState<string | null>(null);
+
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [promptSystem, setPromptSystem] = useState("");
+  const [promptContext, setPromptContext] = useState("");
+  const [promptHistory, setPromptHistory] = useState("");
+  const [promptCopyStatus, setPromptCopyStatus] = useState<"idle" | "copied" | "error">("idle");
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState<string>("");
@@ -116,6 +135,7 @@ export function SwipeIdeasChatModal(props: {
 
   const [openPanel, setOpenPanel] = useState<null | "source" | "ideas">(null);
   const [sourceTab, setSourceTab] = useState<"transcript" | "caption" | "notes">("transcript");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const gestureRef = useRef<{
     mode: null | "open-source" | "open-ideas";
     startX: number;
@@ -124,8 +144,9 @@ export function SwipeIdeasChatModal(props: {
   }>({ mode: null, startX: 0, startY: 0, fired: false });
 
   const canSend = useMemo(() => {
-    return !!open && !!String(swipeItemId || "").trim() && !!String(draft || "").trim() && !sendBusy;
-  }, [open, swipeItemId, draft, sendBusy]);
+    return !!open && !!String(swipeItemId || "").trim() && !!String(draft || "").trim() && !sendBusy && !resetBusy;
+  }, [open, swipeItemId, draft, sendBusy, resetBusy]);
+  const showStarterPrompts = status === "ready" && messages.length === 0;
 
   const cardKey = (c: { title: string; angleText: string; slides: string[] }) => {
     const title = String(c.title || "").trim();
@@ -169,10 +190,31 @@ export function SwipeIdeasChatModal(props: {
     setAngleNotesSaveStatus("idle");
     setAngleNotesSaveError(null);
     setDraft("");
+    setResetBusy(false);
+    setStarterPrompts([]);
+    setStarterPromptsError(null);
+    setPromptOpen(false);
+    setPromptLoading(false);
+    setPromptError(null);
+    setPromptSystem("");
+    setPromptContext("");
+    setPromptHistory("");
+    setPromptCopyStatus("idle");
     setBatchesOpenBySourceMessageId({});
     setOpenPanel(null);
     setSourceTab("transcript");
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const el = scrollRef.current;
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
+    } catch {
+      // ignore
+    }
+  }, [open, messages.length]);
 
   const refreshSavedIdeas = async (itemId: string) => {
     const id = String(itemId || "").trim();
@@ -267,6 +309,63 @@ export function SwipeIdeasChatModal(props: {
     }
   };
 
+  const refreshStarterPrompts = async () => {
+    setStarterPromptsLoading(true);
+    setStarterPromptsError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, ...getActiveAccountHeader() };
+      const res = await fetch("/api/editor/user-settings/poppy-prompts/list?type=regular", { method: "GET", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompts (${res.status})`));
+      const rows: StarterPrompt[] = Array.isArray(j?.prompts)
+        ? (j.prompts as any[]).map((row) => ({
+            id: String(row?.id || ""),
+            title: String(row?.title || "").trim(),
+            prompt: String(row?.prompt || ""),
+          }))
+        : [];
+      setStarterPrompts(rows.filter((row) => row.id && row.title && row.prompt.trim()));
+    } catch (e: any) {
+      setStarterPromptsError(String(e?.message || e || "Failed to load prompts"));
+      setStarterPrompts([]);
+    } finally {
+      setStarterPromptsLoading(false);
+    }
+  };
+
+  const loadThread = async (itemId: string) => {
+    const id = String(itemId || "").trim();
+    if (!id) return;
+    setStatus("loading");
+    setError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas/thread`, { method: "GET", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load thread (${res.status})`));
+      setThreadId(String(j?.threadId || "").trim() || null);
+      const msgs: ChatMsg[] = Array.isArray(j?.messages) ? (j.messages as any[]) : [];
+      setMessages(
+        msgs.map((m) => ({
+          id: String(m.id),
+          role: String(m.role) === "assistant" ? "assistant" : "user",
+          content: String(m.content || ""),
+          createdAt: String(m.createdAt || ""),
+        }))
+      );
+      setStatus("ready");
+    } catch (e: any) {
+      setStatus("error");
+      setError(String(e?.message || e || "Failed to load ideas chat"));
+      setThreadId(null);
+      setMessages([]);
+    }
+  };
+
   // Load master prompt + thread/messages when opening.
   useEffect(() => {
     if (!open) return;
@@ -282,22 +381,17 @@ export function SwipeIdeasChatModal(props: {
         if (!token) throw new Error("Missing auth token");
         const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
 
-        const [promptRes, threadRes, ctxRes] = await Promise.all([
+        const [promptRes, ctxRes] = await Promise.all([
           fetch("/api/editor/user-settings/swipe-ideas-master-prompt", { method: "GET", headers }),
-          fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/thread`, { method: "GET", headers }),
           fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/context`, { method: "GET", headers }),
         ]);
 
         const promptJson = await promptRes.json().catch(() => null);
-        const threadJson = await threadRes.json().catch(() => null);
         const ctxJson = await ctxRes.json().catch(() => null);
         if (cancelled) return;
 
         if (!promptRes.ok || !promptJson?.success) {
           throw new Error(String(promptJson?.error || `Failed to load master prompt (${promptRes.status})`));
-        }
-        if (!threadRes.ok || !threadJson?.success) {
-          throw new Error(String(threadJson?.error || `Failed to load thread (${threadRes.status})`));
         }
         if (!ctxRes.ok || !ctxJson?.success) {
           throw new Error(String(ctxJson?.error || `Failed to load context (${ctxRes.status})`));
@@ -305,17 +399,6 @@ export function SwipeIdeasChatModal(props: {
 
         const mp = String(promptJson?.swipeIdeasMasterPromptOverride ?? "").trim();
         setMasterPrompt(mp || DEFAULT_MASTER_PROMPT_UI);
-        setThreadId(String(threadJson?.threadId || "").trim() || null);
-        const msgs: ChatMsg[] = Array.isArray(threadJson?.messages) ? (threadJson.messages as any[]) : [];
-        setMessages(
-          msgs.map((m) => ({
-            id: String(m.id),
-            role: String(m.role) === "assistant" ? "assistant" : "user",
-            content: String(m.content || ""),
-            createdAt: String(m.createdAt || ""),
-          }))
-        );
-        setStatus("ready");
 
         const ctx: SwipeContext = {
           title: String(ctxJson?.context?.title || ""),
@@ -327,6 +410,9 @@ export function SwipeIdeasChatModal(props: {
         };
         setSwipeContext(ctx);
         setAngleNotesDraft(String(ctx.note || ""));
+
+        await Promise.all([loadThread(itemId), refreshStarterPrompts()]);
+        if (cancelled) return;
 
         // Load saved ideas (persisted) so reopening shows what "Generate ideas (N)" refers to.
         void refreshSavedIdeas(itemId);
@@ -492,6 +578,130 @@ export function SwipeIdeasChatModal(props: {
       setNotice(null);
     } finally {
       setSendBusy(false);
+    }
+  };
+
+  const buildPromptPreviewText = () => {
+    const currentMessage = String(draft || "").trim() || "<type your next message here>";
+    return [
+      `SYSTEM:\n${String(promptSystem || "").trim() || "-"}`,
+      ``,
+      `CONTEXT:\n${String(promptContext || "").trim() || "-"}`,
+      ``,
+      `HISTORY:\n${String(promptHistory || "").trim() || "(none)"}`,
+      ``,
+      `CURRENT MESSAGE:\n${currentMessage}`,
+    ].join("\n");
+  };
+
+  const fetchPromptPreview = async () => {
+    const itemId = String(swipeItemId || "").trim();
+    if (!itemId) return;
+    setPromptLoading(true);
+    setPromptError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/chat-prompt-preview`, { method: "GET", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompt preview (${res.status})`));
+      setPromptSystem(String(j?.system || ""));
+      setPromptContext(String(j?.contextText || ""));
+      setPromptHistory(String(j?.historyText || ""));
+    } catch (e: any) {
+      setPromptError(String(e?.message || e || "Failed to load prompt preview"));
+    } finally {
+      setPromptLoading(false);
+    }
+  };
+
+  const onOpenPrompt = async () => {
+    setPromptOpen(true);
+    await fetchPromptPreview();
+  };
+
+  const onCopyPrompt = async () => {
+    const text = buildPromptPreviewText();
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        setPromptCopyStatus("copied");
+        window.setTimeout(() => setPromptCopyStatus("idle"), 1200);
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (!ok) throw new Error("copy command failed");
+      setPromptCopyStatus("copied");
+      window.setTimeout(() => setPromptCopyStatus("idle"), 1200);
+    } catch {
+      setPromptCopyStatus("error");
+      window.setTimeout(() => setPromptCopyStatus("idle"), 1600);
+    }
+  };
+
+  const onUseStarterPrompt = (prompt: StarterPrompt) => {
+    const nextPrompt = String(prompt.prompt || "");
+    if (!nextPrompt.trim()) return;
+    const hasDraft = !!String(draft || "").trim();
+    if (hasDraft) {
+      const ok = window.confirm("Replace your current draft with this saved prompt?");
+      if (!ok) return;
+    }
+    setDraft(nextPrompt);
+  };
+
+  const onReset = async () => {
+    const itemId = String(swipeItemId || "").trim();
+    if (!itemId) return;
+    const ok = window.confirm(
+      "Start a new chat?\n\nThis will delete the current conversation and unsaved idea batches for this swipe item. Saved ideas will be kept."
+    );
+    if (!ok) return;
+
+    setResetBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/reset`, {
+        method: "POST",
+        headers,
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Reset failed (${res.status})`));
+      setPromptOpen(false);
+      setDraft("");
+      setThreadId(null);
+      setMessages([]);
+      setCards([]);
+      setDraftIdeas([]);
+      await loadThread(itemId);
+      void refreshDraftIdeas(itemId);
+      void refreshSavedIdeas(itemId);
+    } catch (e: any) {
+      setError(String(e?.message || e || "Reset failed"));
+      setStatus("error");
+    } finally {
+      setResetBusy(false);
     }
   };
 
@@ -966,14 +1176,14 @@ export function SwipeIdeasChatModal(props: {
       }}
     >
       <div className="w-full max-w-7xl h-full bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
           <div className="min-w-0">
             <div className="text-base font-semibold text-slate-900 truncate">Generate ideas</div>
             <div className="mt-0.5 text-xs text-slate-500 truncate" title={swipeItemLabel}>
               {swipeItemLabel || "Swipe item"}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
             {isMobile ? (
               <>
                 <button
@@ -997,16 +1207,58 @@ export function SwipeIdeasChatModal(props: {
                 >
                   Ideas
                 </button>
+                {isSuperadmin ? (
+                  <button
+                    type="button"
+                    className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                    onClick={() => void onOpenPrompt()}
+                    disabled={promptLoading || resetBusy}
+                    title="See the raw sections sent to the AI"
+                  >
+                    View prompt
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => void onReset()}
+                  disabled={resetBusy || status === "loading"}
+                  title="Delete the current conversation and unsaved idea batches for this swipe item"
+                >
+                  {resetBusy ? "Resetting..." : "Start new chat"}
+                </button>
               </>
             ) : (
-              <button
-                type="button"
-                className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
-                onClick={() => setSettingsOpen((v) => !v)}
-                title="Master prompt settings"
-              >
-                Settings
-              </button>
+              <>
+                {isSuperadmin ? (
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                    onClick={() => void onOpenPrompt()}
+                    disabled={promptLoading || resetBusy}
+                    title="See the raw sections sent to the AI"
+                  >
+                    View prompt
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => void onReset()}
+                  disabled={resetBusy || status === "loading"}
+                  title="Delete the current conversation and unsaved idea batches for this swipe item"
+                >
+                  {resetBusy ? "Resetting..." : "Start new chat"}
+                </button>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
+                  onClick={() => setSettingsOpen((v) => !v)}
+                  title="Master prompt settings"
+                >
+                  Settings
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -1046,6 +1298,47 @@ export function SwipeIdeasChatModal(props: {
           </div>
         ) : null}
 
+        {promptOpen ? (
+          <div className="border-b border-slate-100 bg-white px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-semibold text-slate-900">Prompt preview</div>
+              <div className="flex items-center gap-2">
+                {promptCopyStatus === "copied" ? (
+                  <span className="text-[11px] text-emerald-700 font-semibold">Copied!</span>
+                ) : promptCopyStatus === "error" ? (
+                  <span className="text-[11px] text-red-600 font-semibold">Copy failed</span>
+                ) : null}
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => void onCopyPrompt()}
+                  disabled={promptLoading || (!promptSystem && !promptContext)}
+                  title="Copy the full prompt preview"
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50"
+                  onClick={() => setPromptOpen(false)}
+                  title="Hide prompt preview"
+                >
+                  Hide
+                </button>
+              </div>
+            </div>
+
+            {promptError ? <div className="mt-2 text-[11px] text-red-700">{promptError}</div> : null}
+            {promptLoading ? <div className="mt-2 text-[11px] text-slate-500">Loading…</div> : null}
+
+            <textarea
+              className="mt-2 w-full h-[220px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-mono text-slate-900 outline-none"
+              readOnly
+              value={buildPromptPreviewText()}
+            />
+          </div>
+        ) : null}
+
         <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr_360px]">
           {/* Left: context (desktop only) */}
           {!isMobile ? (
@@ -1055,12 +1348,38 @@ export function SwipeIdeasChatModal(props: {
           ) : null}
 
           <main className="min-h-0 flex flex-col">
-            <div className="flex-1 min-h-0 overflow-auto p-5 space-y-3">
+            <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto p-5 space-y-3">
               {status === "loading" ? <div className="text-sm text-slate-600">Loading…</div> : null}
               {status === "error" ? <div className="text-sm text-red-600">❌ {error || "Failed to load"}</div> : null}
-              {status === "ready" && messages.length === 0 ? (
-                <div className="text-sm text-slate-600">
-                  Ask for carousel angles, hooks, or how to adapt the idea to your audience.
+              {showStarterPrompts ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-sm text-slate-700">
+                    Ask for carousel angles, hooks, or how to adapt the idea to your audience.
+                  </div>
+                  <div className="mt-3 text-xs font-semibold text-slate-700">Start from one of your saved prompts</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Tap a prompt to insert its full text into the composer. You can edit it before sending.
+                  </div>
+                  {starterPromptsError ? <div className="mt-2 text-xs text-red-600">❌ {starterPromptsError}</div> : null}
+                  {starterPromptsLoading ? (
+                    <div className="mt-3 text-sm text-slate-600">Loading prompts…</div>
+                  ) : starterPrompts.length === 0 ? (
+                    <div className="mt-3 text-sm text-slate-600">No regular saved prompts found for your user in this account.</div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {starterPrompts.map((prompt) => (
+                        <button
+                          key={prompt.id}
+                          type="button"
+                          className="max-w-full rounded-full border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                          onClick={() => onUseStarterPrompt(prompt)}
+                          title={prompt.title}
+                        >
+                          <span className="block max-w-[280px] truncate">{prompt.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : null}
 

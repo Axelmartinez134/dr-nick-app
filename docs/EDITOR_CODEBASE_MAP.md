@@ -974,6 +974,9 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - **Ideas Chat (Phase 1)**: “Generate ideas” button opens `SwipeIdeasChatModal`
 - **Ideas Chat modal**: `src/features/editor/components/SwipeIdeasChatModal.tsx`
   - Persisted per-item chat thread and saved Idea cards
+  - Empty-chat starter buttons load the current user’s `regular` saved prompts for the active account and insert raw prompt text into the composer
+  - Superadmin-only **View prompt** preview shows `SYSTEM`, `CONTEXT`, `HISTORY`, and `CURRENT MESSAGE`
+  - **Start new chat** deletes the current thread and unsaved draft batches while preserving saved ideas
   - Master prompt override editor (account-wide) under Settings
 
 ### Superadmin-only APIs (authed)
@@ -986,6 +989,9 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - `GET /api/swipe-file/items/[id]/ideas/thread` → `src/app/api/swipe-file/items/[id]/ideas/thread/route.ts`
   - `POST /api/swipe-file/items/[id]/ideas/messages` → `src/app/api/swipe-file/items/[id]/ideas/messages/route.ts`
   - `GET/POST /api/swipe-file/items/[id]/ideas` → `src/app/api/swipe-file/items/[id]/ideas/route.ts`
+  - `GET /api/swipe-file/items/[id]/ideas/chat-prompt-preview` → `src/app/api/swipe-file/items/[id]/ideas/chat-prompt-preview/route.ts`
+  - `POST /api/swipe-file/items/[id]/ideas/reset` → `src/app/api/swipe-file/items/[id]/ideas/reset/route.ts`
+  - Shared prompt/context helpers: `src/app/api/swipe-file/items/[id]/ideas/_shared.ts`
 - Master prompt override (account-wide):
   - `GET/POST /api/editor/user-settings/swipe-ideas-master-prompt` → `src/app/api/editor/user-settings/swipe-ideas-master-prompt/route.ts`
 
