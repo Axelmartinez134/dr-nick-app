@@ -51,7 +51,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   // Load swipe item (account scoped)
   const { data: item, error: itemErr } = await supabase
     .from('swipe_file_items')
-    .select('id, url, platform, note, caption, transcript')
+    .select('id, url, platform, note, caption, transcript, title')
     .eq('id', itemId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -60,6 +60,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
   const platform = String((item as any)?.platform || 'unknown').trim() as SwipePlatform;
   const url = String((item as any)?.url || '').trim();
+  const itemTitle = String((item as any)?.title || '').trim();
 
   // Optional: load idea snapshot (must belong to this account+item)
   let ideaSnapshot: { id: string; title: string; slideOutline: string[]; angleText: string } | null = null;
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const title = (() => {
     // If a Swipe idea was chosen, that title should become the project's title.
     if (ideaSnapshot?.title) return String(ideaSnapshot.title).slice(0, 120);
+    if (platform === 'freestyle' && itemTitle) return itemTitle.slice(0, 120);
     const base = platform === 'instagram' ? 'Swipe File (IG)' : platform === 'youtube' ? 'Swipe File (YT)' : 'Swipe File';
     const trimmed = url ? url.replace(/^https?:\/\//, '').slice(0, 60) : '';
     return `${base}: ${trimmed || 'Link'}`.slice(0, 120);
@@ -134,7 +136,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       template_type_id: templateTypeId,
       caption: null,
       // Keep an at-a-glance source link in the editor's "Source material…" field.
-      review_source: url ? url.slice(0, 8000) : null,
+      review_source: platform === 'freestyle' ? null : url ? url.slice(0, 8000) : null,
       // IMPORTANT: store the selected saved prompt so this project uses it (without changing global active).
       prompt_snapshot: promptText,
       slide1_template_id_snapshot: (effective as any)?.slide1TemplateId ?? null,
@@ -142,7 +144,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       slide6_template_id_snapshot: (effective as any)?.slide6TemplateId ?? null,
       // Swipe origin markers
       source_swipe_item_id: itemId,
-      source_swipe_angle_snapshot: typeof (item as any)?.note === 'string' ? String((item as any).note || '').trim() || null : null,
+      source_swipe_angle_snapshot:
+        platform === 'freestyle'
+          ? null
+          : typeof (item as any)?.note === 'string'
+            ? String((item as any).note || '').trim() || null
+            : null,
       source_swipe_idea_id: ideaSnapshot ? ideaSnapshot.id : null,
       source_swipe_idea_snapshot: ideaSnapshot ? formatIdeaSnapshotText(ideaSnapshot) : null,
     } as any)

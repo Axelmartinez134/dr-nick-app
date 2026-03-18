@@ -57,10 +57,27 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
     // ignore
   }
 
+  const { data: currentItem, error: currentItemErr } = await supabase
+    .from('swipe_file_items')
+    .select('id, platform')
+    .eq('id', itemId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (currentItemErr) return NextResponse.json({ success: false, error: currentItemErr.message } satisfies Resp, { status: 500 });
+  if (!currentItem?.id) return NextResponse.json({ success: false, error: 'Not found' } satisfies Resp, { status: 404 });
+
+  const isFreestyle = String((currentItem as any)?.platform || '').trim().toLowerCase() === 'freestyle';
   const patch: any = {};
   if ((body as any)?.note !== undefined) {
     const noteIn = (body as any)?.note;
     const note = typeof noteIn === 'string' ? String(noteIn).trim() || null : noteIn === null ? null : null;
+    if (isFreestyle) {
+      if (!note) return NextResponse.json({ success: false, error: 'Angle / Notes is required' } satisfies Resp, { status: 400 });
+      if (note.length > 25_000) {
+        return NextResponse.json({ success: false, error: 'Angle / Notes must be 25,000 characters or fewer' } satisfies Resp, { status: 400 });
+      }
+      patch.transcript = note;
+    }
     patch.note = note;
   }
   const tagsNorm = normalizeTags((body as any)?.tags);

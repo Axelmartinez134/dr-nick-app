@@ -28,6 +28,7 @@ export type SwipeFileCaptureItem = {
 
 type SwipeFileCaptureFormProps = {
   mode: "authed" | "public";
+  variant?: "link" | "freestyle";
   publicKey?: string;
   initialUrl?: string;
   initialCategoryId?: string;
@@ -99,6 +100,7 @@ function mapItems(rows: any): SwipeFileCaptureItem[] {
 
 export function SwipeFileCaptureForm({
   mode,
+  variant = "link",
   publicKey,
   initialUrl = "",
   initialCategoryId = "",
@@ -114,6 +116,7 @@ export function SwipeFileCaptureForm({
   const [categories, setCategories] = useState<SwipeFileCaptureCategory[]>([]);
   const [categoryId, setCategoryId] = useState<string>(initialCategoryId);
   const [url, setUrl] = useState<string>(initialUrl);
+  const [title, setTitle] = useState<string>("");
   const [tags, setTags] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [newCategory, setNewCategory] = useState<string>("");
@@ -122,7 +125,8 @@ export function SwipeFileCaptureForm({
   const [success, setSuccess] = useState(false);
   const successCloseTimeoutRef = useRef<number | null>(null);
 
-  const platform = useMemo(() => derivePlatform(url), [url]);
+  const freestyleMode = variant === "freestyle";
+  const platform = useMemo(() => (freestyleMode ? "freestyle" : derivePlatform(url)), [freestyleMode, url]);
   const publicMode = mode === "public";
 
   useEffect(() => {
@@ -236,14 +240,25 @@ export function SwipeFileCaptureForm({
     setError(null);
     setSuccess(false);
     try {
-      if (!String(url || "").trim()) throw new Error("URL is required");
+      if (freestyleMode) {
+        const titleTrim = String(title || "").trim();
+        const noteTrim = String(note || "").trim();
+        if (!titleTrim) throw new Error("Title is required");
+        if (!noteTrim) throw new Error("Angle / Notes is required");
+        if (noteTrim.length < 1) throw new Error("Angle / Notes must be at least 1 character");
+        if (noteTrim.length > 25_000) throw new Error("Angle / Notes must be 25,000 characters or fewer");
+      } else if (!String(url || "").trim()) {
+        throw new Error("URL is required");
+      }
       if (!String(categoryId || "").trim()) throw new Error("Category is required");
 
       const payload = {
-        url: String(url || "").trim(),
+        url: freestyleMode ? null : String(url || "").trim(),
         categoryId,
         tags,
         note: String(note || "").trim() || null,
+        title: freestyleMode ? String(title || "").trim() || null : null,
+        platform: freestyleMode ? "freestyle" : null,
       };
 
       const res = publicMode
@@ -286,45 +301,63 @@ export function SwipeFileCaptureForm({
       {error ? <div className="text-sm text-red-600">❌ {error}</div> : null}
 
       <div>
-        <div className="text-xs font-semibold text-slate-700">URL</div>
-        <div className="mt-2 relative">
-          <input
-            className={[
-              "w-full h-11 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 shadow-sm",
-              showPasteButton ? "pl-3 pr-20" : "px-3",
-            ].join(" ")}
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste link…"
-            inputMode="url"
-            autoCapitalize="none"
-            autoCorrect="off"
-          />
-          {showPasteButton ? (
-            <button
-              type="button"
-              className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+        {freestyleMode ? (
+          <>
+            <div className="text-xs font-semibold text-slate-700">Title (required)</div>
+            <input
+              className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Type the swipe title…"
               disabled={busy}
-              onClick={async () => {
-                setError(null);
-                try {
-                  const text = typeof navigator !== "undefined" && navigator.clipboard ? await navigator.clipboard.readText() : "";
-                  const next = String(text || "").trim();
-                  if (!next) throw new Error("Clipboard is empty");
-                  setUrl(next);
-                } catch {
-                  setError("Couldn’t read clipboard. Try pasting manually, or allow clipboard access.");
-                }
-              }}
-              title="Paste from clipboard"
-            >
-              Paste
-            </button>
-          ) : null}
-        </div>
-        <div className="mt-1 text-[11px] text-slate-500">
-          Platform detected: <span className="font-semibold text-slate-700">{platform}</span>
-        </div>
+            />
+            <div className="mt-1 text-[11px] text-slate-500">
+              Item type: <span className="font-semibold text-slate-700">{platform}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-xs font-semibold text-slate-700">URL</div>
+            <div className="mt-2 relative">
+              <input
+                className={[
+                  "w-full h-11 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 shadow-sm",
+                  showPasteButton ? "pl-3 pr-20" : "px-3",
+                ].join(" ")}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Paste link…"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
+              {showPasteButton ? (
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                  disabled={busy}
+                  onClick={async () => {
+                    setError(null);
+                    try {
+                      const text = typeof navigator !== "undefined" && navigator.clipboard ? await navigator.clipboard.readText() : "";
+                      const next = String(text || "").trim();
+                      if (!next) throw new Error("Clipboard is empty");
+                      setUrl(next);
+                    } catch {
+                      setError("Couldn’t read clipboard. Try pasting manually, or allow clipboard access.");
+                    }
+                  }}
+                  title="Paste from clipboard"
+                >
+                  Paste
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-1 text-[11px] text-slate-500">
+              Platform detected: <span className="font-semibold text-slate-700">{platform}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <div>
@@ -362,15 +395,20 @@ export function SwipeFileCaptureForm({
       </div>
 
       <div>
-        <div className="text-xs font-semibold text-slate-700">Angle / Notes (optional)</div>
+        <div className="text-xs font-semibold text-slate-700">
+          Angle / Notes {freestyleMode ? "(required)" : "(optional)"}
+        </div>
         <textarea
           className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
-          rows={3}
+          rows={freestyleMode ? 8 : 3}
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="What do you like about this? What angle to use?"
+          placeholder={freestyleMode ? "Talk or type freely here…" : "What do you like about this? What angle to use?"}
           disabled={busy}
         />
+        {freestyleMode ? (
+          <div className="mt-1 text-[11px] text-slate-500">{String(note || "").length}/25,000 characters</div>
+        ) : null}
       </div>
 
       <div>
@@ -401,6 +439,7 @@ export function SwipeFileCaptureForm({
           type="button"
           className="text-sm text-slate-700 underline"
           onClick={() => {
+            setTitle("");
             setUrl("");
             setNote("");
             setTags("");

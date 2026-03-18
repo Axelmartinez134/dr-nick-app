@@ -29,10 +29,15 @@ async function getToken(): Promise<string> {
 function platformBadge(platform: string) {
   const p = String(platform || "unknown").toLowerCase();
   const base = "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border";
+  if (p === "freestyle") return `${base} bg-sky-50 text-sky-700 border-sky-200`;
   if (p === "instagram") return `${base} bg-pink-50 text-pink-700 border-pink-200`;
   if (p === "youtube") return `${base} bg-red-50 text-red-700 border-red-200`;
   if (p === "tiktok") return `${base} bg-slate-50 text-slate-800 border-slate-200`;
   return `${base} bg-slate-50 text-slate-700 border-slate-200`;
+}
+
+function isFreestyleItem(item: Pick<SwipeItem, "platform"> | null | undefined) {
+  return String(item?.platform || "").trim().toLowerCase() === "freestyle";
 }
 
 export function SwipeFileModal() {
@@ -124,6 +129,7 @@ export function SwipeFileModal() {
   const [ideasCount, setIdeasCount] = useState<number>(0);
   const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
+  const [freestyleModalOpen, setFreestyleModalOpen] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
   const captureLink = useMemo(() => {
     try {
@@ -305,6 +311,7 @@ export function SwipeFileModal() {
   useEffect(() => {
     if (open) return;
     setCaptureModalOpen(false);
+    setFreestyleModalOpen(false);
     setMobileSheet(null);
   }, [open]);
 
@@ -501,10 +508,10 @@ export function SwipeFileModal() {
       const projectId = String(j?.projectId || "").trim();
       if (!projectId) throw new Error("Missing projectId");
 
-      // Close modal, load project, then auto-generate copy if transcript is present.
+      // Close modal, load project, then auto-generate copy if source material is present.
       actions.onCloseSwipeFileModal?.();
       actions.onLoadProject?.(projectId);
-      if (String(selectedItem.transcript || "").trim()) {
+      if (String(selectedItem.transcript || "").trim() || (isFreestyleItem(selectedItem) && String(noteDraft || "").trim())) {
         pendingAutoGenerateProjectIdRef.current = projectId;
       }
     } catch (e: any) {
@@ -619,6 +626,14 @@ export function SwipeFileModal() {
                   >
                     +
                   </button>
+                  <button
+                    type="button"
+                    className="h-8 px-3 rounded-md border border-sky-200 bg-sky-50 text-sky-700 text-xs font-semibold shadow-sm hover:bg-sky-100"
+                    onClick={() => setFreestyleModalOpen(true)}
+                    title="Add freestyle Swipe File item"
+                  >
+                    + Freestyle
+                  </button>
                 </div>
                 {captureKeyPresent === false ? (
                   <div className="mt-1 text-[11px] text-amber-700">Could not load capture key for this account.</div>
@@ -638,15 +653,26 @@ export function SwipeFileModal() {
                 Refresh
               </button>
             ) : (
-              <button
-                type="button"
-                className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                onClick={() => setCaptureModalOpen(true)}
-                aria-label="Add Swipe File item"
-                title="Add Swipe File item"
-              >
-                +
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  onClick={() => setCaptureModalOpen(true)}
+                  aria-label="Add Swipe File item"
+                  title="Add Swipe File item"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  className="h-10 px-3 rounded-md border border-sky-200 bg-sky-50 text-sky-700 text-sm font-semibold hover:bg-sky-100"
+                  onClick={() => setFreestyleModalOpen(true)}
+                  aria-label="Add freestyle Swipe File item"
+                  title="Add freestyle Swipe File item"
+                >
+                  + Freestyle
+                </button>
+              </>
             )}
             {isMobile ? (
               <button
@@ -782,7 +808,8 @@ export function SwipeFileModal() {
                 <div className="divide-y divide-slate-100">
                   {visibleItems.map((it) => {
                     const selected = it.id === selectedItemId;
-                    const canIdeasChat = !!String(it.transcript || "").trim();
+                    const freestyle = isFreestyleItem(it);
+                    const canIdeasChat = freestyle ? !!String(it.note || "").trim() : !!String(it.transcript || "").trim();
                     const platform = String(it.platform || "").toLowerCase();
                     const canEnrich = platform === "instagram" || platform === "youtube";
                     const enrichStatus = String(it.enrichStatus || "idle").toLowerCase();
@@ -812,6 +839,11 @@ export function SwipeFileModal() {
                               // Even if the store mistakenly marks desktop as "mobile", row-click should still
                               // select and populate the right panel on wider viewports.
                               if (isMobile && isNarrowViewport) {
+                                if (freestyle) {
+                                  setSelectedItemId(it.id);
+                                  setMobileSheet({ kind: "actions", itemId: it.id });
+                                  return;
+                                }
                                 openLink(it.url);
                                 return;
                               }
@@ -820,14 +852,16 @@ export function SwipeFileModal() {
                             title={isMobile ? "Open link" : "Select item"}
                           >
                             <div className="flex items-center gap-2">
-                              <span className={platformBadge(it.platform)}>{String(it.platform || "unknown")}</span>
-                              <span className="text-xs text-slate-500">
-                                {String(it.enrichStatus || "idle").toLowerCase() === "ok"
-                                  ? "enriched"
-                                  : String(it.enrichStatus || "idle").toLowerCase() === "needs_transcript"
-                                    ? "needs transcript"
-                                    : String(it.enrichStatus || "idle").toLowerCase()}
-                              </span>
+                              <span className={platformBadge(it.platform)}>{freestyle ? "freestyle" : String(it.platform || "unknown")}</span>
+                              {!freestyle ? (
+                                <span className="text-xs text-slate-500">
+                                  {String(it.enrichStatus || "idle").toLowerCase() === "ok"
+                                    ? "enriched"
+                                    : String(it.enrichStatus || "idle").toLowerCase() === "needs_transcript"
+                                      ? "needs transcript"
+                                      : String(it.enrichStatus || "idle").toLowerCase()}
+                                </span>
+                              ) : null}
                               {String(it.createdProjectId || "").trim() ? (
                                 <span className="text-[11px] font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 px-2 py-0.5 rounded-full">
                                   repurposed
@@ -845,8 +879,11 @@ export function SwipeFileModal() {
                             >
                               {it.title ? it.title : it.note ? it.note : it.url}
                             </div>
-                            <div className="mt-0.5 text-[11px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap" title={it.url}>
-                              {it.url}
+                            <div
+                              className="mt-0.5 text-[11px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap"
+                              title={freestyle ? "N/A" : it.url}
+                            >
+                              {freestyle ? "N/A" : it.url}
                             </div>
                           </button>
 
@@ -887,68 +924,72 @@ export function SwipeFileModal() {
                                 </div>
                               </div>
                               <div className="p-2 space-y-2">
-                                <button
-                                  type="button"
-                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
-                                  onClick={() => {
-                                    setMobileSheet(null);
-                                    openLink(it.url);
-                                  }}
-                                >
-                                  Open link
-                                </button>
-                                <button
-                                  type="button"
-                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
-                                  onClick={async () => {
-                                    await copyText(it.url);
-                                    setMobileSheet(null);
-                                  }}
-                                >
-                                  Copy link
-                                </button>
-                                <button
-                                  type="button"
-                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
-                                  disabled={!canEnrich || loading || enrichDone || enrichRunning}
-                                  onClick={async () => {
-                                    if (!canEnrich) return;
-                                    if (enrichDone || enrichRunning) return;
-                                    setMobileSheet(null);
-                                    try {
-                                      setLoading(true);
-                                      setNotice("Enriching (Apify)…");
-                                      setError(null);
-                                      setActionError(null);
-                                      await runEnrichOne(it.id);
-                                      const nextItems = await refresh({ setSpinner: false });
-                                      const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === it.id) : null;
-                                      if (platform === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
-                                        setNotice("Transcript missing — transcribing (Whisper)…");
-                                        await runTranscribeOne(it.id);
-                                        await refresh({ setSpinner: false });
+                                {!freestyle ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+                                      onClick={() => {
+                                        setMobileSheet(null);
+                                        openLink(it.url);
+                                      }}
+                                    >
+                                      Open link
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50"
+                                      onClick={async () => {
+                                        await copyText(it.url);
+                                        setMobileSheet(null);
+                                      }}
+                                    >
+                                      Copy link
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                      disabled={!canEnrich || loading || enrichDone || enrichRunning}
+                                      onClick={async () => {
+                                        if (!canEnrich) return;
+                                        if (enrichDone || enrichRunning) return;
+                                        setMobileSheet(null);
+                                        try {
+                                          setLoading(true);
+                                          setNotice("Enriching (Apify)…");
+                                          setError(null);
+                                          setActionError(null);
+                                          await runEnrichOne(it.id);
+                                          const nextItems = await refresh({ setSpinner: false });
+                                          const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === it.id) : null;
+                                          if (platform === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+                                            setNotice("Transcript missing — transcribing (Whisper)…");
+                                            await runTranscribeOne(it.id);
+                                            await refresh({ setSpinner: false });
+                                          }
+                                        } catch (e: any) {
+                                          const msg = String(e?.message || e || "Enrich failed");
+                                          setActionError(msg);
+                                          setError(msg);
+                                        } finally {
+                                          setNotice(null);
+                                          setLoading(false);
+                                        }
+                                      }}
+                                      title={
+                                        !canEnrich
+                                          ? "Enrich is only available for Instagram + YouTube items right now"
+                                          : enrichDone
+                                            ? "Already enriched"
+                                            : enrichRunning
+                                              ? "Enrich running"
+                                              : "Enrich (Apify)"
                                       }
-                                    } catch (e: any) {
-                                      const msg = String(e?.message || e || "Enrich failed");
-                                      setActionError(msg);
-                                      setError(msg);
-                                    } finally {
-                                      setNotice(null);
-                                      setLoading(false);
-                                    }
-                                  }}
-                                  title={
-                                    !canEnrich
-                                      ? "Enrich is only available for Instagram + YouTube items right now"
-                                      : enrichDone
-                                        ? "Already enriched"
-                                        : enrichRunning
-                                          ? "Enrich running"
-                                          : "Enrich (Apify)"
-                                  }
-                                >
-                                  {enrichDone ? "Enriched ✓" : enrichRunning ? "Enriching…" : "Enrich"}
-                                </button>
+                                    >
+                                      {enrichDone ? "Enriched ✓" : enrichRunning ? "Enriching…" : "Enrich"}
+                                    </button>
+                                  </>
+                                ) : null}
                                 <button
                                   type="button"
                                   className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
@@ -959,7 +1000,7 @@ export function SwipeFileModal() {
                                     setSelectedItemId(it.id);
                                     setIdeasChatOpen(true);
                                   }}
-                                  title={!canIdeasChat ? "Enrich first to get a transcript" : "Open Ideas Chat"}
+                                  title={!canIdeasChat ? "Add source text first" : "Open Ideas Chat"}
                                 >
                                   Ideas Chat
                                 </button>
@@ -1138,7 +1179,9 @@ export function SwipeFileModal() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={platformBadge(selectedItem.platform)}>{String(selectedItem.platform || "unknown")}</span>
+                      <span className={platformBadge(selectedItem.platform)}>
+                        {isFreestyleItem(selectedItem) ? "freestyle" : String(selectedItem.platform || "unknown")}
+                      </span>
                       {selectedItem.authorHandle ? (
                         <span className="text-xs text-slate-600">@{String(selectedItem.authorHandle)}</span>
                       ) : null}
@@ -1158,75 +1201,82 @@ export function SwipeFileModal() {
                 </div>
 
                 <div className="mt-3 space-y-2">
-                  <a
-                    className="text-xs text-blue-700 underline break-all"
-                    href={selectedItem.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {selectedItem.url}
-                  </a>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(String(selectedItem.url || ""));
-                        } catch {
-                          // ignore
-                        }
-                      }}
-                      title="Copy URL"
-                    >
-                      Copy link
-                    </button>
-                    <button
-                      type="button"
-                      className="h-9 px-3 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                      disabled={
-                        (() => {
-                          const p = String(selectedItem.platform || "").toLowerCase();
-                          return !(p === "instagram" || p === "youtube") || loading;
-                        })()
-                      }
-                      onClick={async () => {
-                        try {
-                          setLoading(true);
-                          setNotice("Enriching (Apify)…");
-                          setError(null);
-                          setActionError(null);
-                          await runEnrichOne(selectedItem.id);
-                          const nextItems = await refresh({ setSpinner: false });
-                          const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === selectedItem.id) : null;
-                          if (String(selectedItem.platform || "").toLowerCase() === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
-                            setNotice("Transcript missing — transcribing (Whisper)…");
-                            await runTranscribeOne(selectedItem.id);
-                            await refresh({ setSpinner: false });
+                  {isFreestyleItem(selectedItem) ? (
+                    <div className="text-xs text-slate-500">Source URL: N/A</div>
+                  ) : (
+                    <>
+                      <a
+                        className="text-xs text-blue-700 underline break-all"
+                        href={selectedItem.url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {selectedItem.url}
+                      </a>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(String(selectedItem.url || ""));
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                          title="Copy URL"
+                        >
+                          Copy link
+                        </button>
+                        <button
+                          type="button"
+                          className="h-9 px-3 rounded-md bg-slate-900 text-white text-sm font-semibold shadow-sm disabled:opacity-50"
+                          disabled={
+                            (() => {
+                              const p = String(selectedItem.platform || "").toLowerCase();
+                              return !(p === "instagram" || p === "youtube") || loading;
+                            })()
                           }
-                        } catch (e: any) {
-                          const msg = String(e?.message || e || "Enrich failed");
-                          setActionError(msg);
-                          setError(msg);
-                        } finally {
-                          setNotice(null);
-                          setLoading(false);
-                        }
-                      }}
-                      title={
-                        (() => {
-                          const p = String(selectedItem.platform || "").toLowerCase();
-                          return p === "instagram" || p === "youtube" ? "Enrich (Apify)" : "Enrich (V2)";
-                        })()
-                      }
-                    >
-                      Enrich
-                    </button>
-                  </div>
+                          onClick={async () => {
+                            try {
+                              setLoading(true);
+                              setNotice("Enriching (Apify)…");
+                              setError(null);
+                              setActionError(null);
+                              await runEnrichOne(selectedItem.id);
+                              const nextItems = await refresh({ setSpinner: false });
+                              const after = Array.isArray(nextItems) ? nextItems.find((x) => x.id === selectedItem.id) : null;
+                              if (String(selectedItem.platform || "").toLowerCase() === "instagram" && String(after?.enrichStatus || "").toLowerCase() === "needs_transcript") {
+                                setNotice("Transcript missing — transcribing (Whisper)…");
+                                await runTranscribeOne(selectedItem.id);
+                                await refresh({ setSpinner: false });
+                              }
+                            } catch (e: any) {
+                              const msg = String(e?.message || e || "Enrich failed");
+                              setActionError(msg);
+                              setError(msg);
+                            } finally {
+                              setNotice(null);
+                              setLoading(false);
+                            }
+                          }}
+                          title={
+                            (() => {
+                              const p = String(selectedItem.platform || "").toLowerCase();
+                              return p === "instagram" || p === "youtube" ? "Enrich (Apify)" : "Enrich (V2)";
+                            })()
+                          }
+                        >
+                          Enrich
+                        </button>
+                      </div>
+                    </>
+                  )}
                   {notice ? <div className="text-xs text-amber-700">{notice}</div> : null}
                   {actionError ? <div className="text-xs text-red-600">❌ {actionError}</div> : null}
-                  {selectedItem.enrichError ? <div className="text-xs text-red-600">❌ {selectedItem.enrichError}</div> : null}
-                  {String(selectedItem.platform || "").toLowerCase() === "instagram" &&
+                  {!isFreestyleItem(selectedItem) && selectedItem.enrichError ? <div className="text-xs text-red-600">❌ {selectedItem.enrichError}</div> : null}
+                  {!isFreestyleItem(selectedItem) &&
+                  String(selectedItem.platform || "").toLowerCase() === "instagram" &&
                   String(selectedItem.enrichStatus || "").toLowerCase() === "needs_transcript" ? (
                     <div className="text-xs text-amber-700">
                       Transcript missing. If you click Enrich, it will auto-transcribe via Whisper.
@@ -1317,11 +1367,14 @@ export function SwipeFileModal() {
                     <button
                       type="button"
                       className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                      disabled={!selectedItem || !String(selectedItem.transcript || "").trim()}
+                      disabled={
+                        !selectedItem ||
+                        !(isFreestyleItem(selectedItem) ? String(selectedItem.note || "").trim() : String(selectedItem.transcript || "").trim())
+                      }
                       onClick={() => setIdeasChatOpen(true)}
                       title={
-                        !String(selectedItem?.transcript || "").trim()
-                          ? "Enrich first to get a transcript"
+                        !(isFreestyleItem(selectedItem) ? String(selectedItem.note || "").trim() : String(selectedItem?.transcript || "").trim())
+                          ? "Add source text first"
                           : "Chat with this Swipe item and generate carousel-ready ideas"
                       }
                     >
@@ -1348,20 +1401,22 @@ export function SwipeFileModal() {
                   </div>
                 </div>
 
-                <div className="mt-6">
-                  <details className="rounded-lg border border-slate-200 bg-white p-3">
-                    <summary className="cursor-pointer text-xs font-semibold text-slate-700">Caption</summary>
-                    <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
-                      {selectedItem.caption ? selectedItem.caption : <span className="text-slate-400">—</span>}
-                    </div>
-                  </details>
-                  <details className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                    <summary className="cursor-pointer text-xs font-semibold text-slate-700">Transcript</summary>
-                    <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
-                      {selectedItem.transcript ? selectedItem.transcript : <span className="text-slate-400">—</span>}
-                    </div>
-                  </details>
-                </div>
+                {!isFreestyleItem(selectedItem) ? (
+                  <div className="mt-6">
+                    <details className="rounded-lg border border-slate-200 bg-white p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Caption</summary>
+                      <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
+                        {selectedItem.caption ? selectedItem.caption : <span className="text-slate-400">—</span>}
+                      </div>
+                    </details>
+                    <details className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Transcript</summary>
+                      <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">
+                        {selectedItem.transcript ? selectedItem.transcript : <span className="text-slate-400">—</span>}
+                      </div>
+                    </details>
+                  </div>
+                ) : null}
               </>
             )}
           </aside>
@@ -1417,6 +1472,7 @@ export function SwipeFileModal() {
             </div>
             <SwipeFileCaptureForm
               mode="authed"
+              variant="link"
               initialCategoryId={activeCategoryId !== "all" ? activeCategoryId : ""}
               autoSelectFirstCategory={false}
               showPasteButton={true}
@@ -1425,6 +1481,45 @@ export function SwipeFileModal() {
               onSaved={onCaptureSaved}
               autoCloseAfterSuccessMs={700}
               onRequestClose={() => setCaptureModalOpen(false)}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {freestyleModalOpen ? (
+        <div
+          className="fixed inset-0 z-[181] flex items-center justify-center bg-black/55 p-3 md:p-6"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setFreestyleModalOpen(false);
+          }}
+        >
+          <div className="w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-900">Save freestyle to Swipe File</div>
+                <div className="mt-1 text-xs text-slate-500">Dictate or type your own swipe source text.</div>
+              </div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                onClick={() => setFreestyleModalOpen(false)}
+                aria-label="Close freestyle Swipe File modal"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <SwipeFileCaptureForm
+              mode="authed"
+              variant="freestyle"
+              initialCategoryId={activeCategoryId !== "all" ? activeCategoryId : ""}
+              autoSelectFirstCategory={false}
+              showPasteButton={false}
+              secondaryActionLabel="Close"
+              onSecondaryAction={() => setFreestyleModalOpen(false)}
+              onSaved={onCaptureSaved}
+              autoCloseAfterSuccessMs={700}
+              onRequestClose={() => setFreestyleModalOpen(false)}
             />
           </div>
         </div>

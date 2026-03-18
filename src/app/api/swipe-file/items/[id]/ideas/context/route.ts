@@ -10,6 +10,7 @@ type Resp =
   | {
       success: true;
       context: {
+        platform: string;
         title: string;
         authorHandle: string;
         categoryName: string;
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
   const { data: item, error: itemErr } = await supabase
     .from('swipe_file_items')
-    .select('id, transcript, caption, title, author_handle, note, category_id')
+    .select('id, platform, transcript, caption, title, author_handle, note, category_id')
     .eq('account_id', accountId)
     .eq('id', swipeItemId)
     .maybeSingle();
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
   return NextResponse.json({
     success: true,
     context: {
+      platform: String((item as any)?.platform || '').trim(),
       title: String((item as any)?.title || '').trim(),
       authorHandle: String((item as any)?.author_handle || '').trim(),
       categoryName,

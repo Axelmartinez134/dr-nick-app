@@ -29,6 +29,7 @@ type StarterPrompt = {
 };
 
 type SwipeContext = {
+  platform: string;
   title: string;
   authorHandle: string;
   categoryName: string;
@@ -147,6 +148,7 @@ export function SwipeIdeasChatModal(props: {
     return !!open && !!String(swipeItemId || "").trim() && !!String(draft || "").trim() && !sendBusy && !resetBusy;
   }, [open, swipeItemId, draft, sendBusy, resetBusy]);
   const showStarterPrompts = status === "ready" && messages.length === 0;
+  const isFreestyleContext = String(swipeContext?.platform || "").trim().toLowerCase() === "freestyle";
 
   const cardKey = (c: { title: string; angleText: string; slides: string[] }) => {
     const title = String(c.title || "").trim();
@@ -291,6 +293,7 @@ export function SwipeIdeasChatModal(props: {
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load context (${res.status})`));
       const ctx: SwipeContext = {
+        platform: String(j?.context?.platform || ""),
         title: String(j?.context?.title || ""),
         authorHandle: String(j?.context?.authorHandle || ""),
         categoryName: String(j?.context?.categoryName || ""),
@@ -300,6 +303,7 @@ export function SwipeIdeasChatModal(props: {
       };
       setSwipeContext(ctx);
       setAngleNotesDraft(String(ctx.note || ""));
+      if (String(ctx.platform || "").trim().toLowerCase() === "freestyle") setSourceTab("notes");
     } catch (e: any) {
       setSwipeContextError(String(e?.message || e || "Failed to load context"));
       setSwipeContext(null);
@@ -401,6 +405,7 @@ export function SwipeIdeasChatModal(props: {
         setMasterPrompt(mp || DEFAULT_MASTER_PROMPT_UI);
 
         const ctx: SwipeContext = {
+          platform: String(ctxJson?.context?.platform || ""),
           title: String(ctxJson?.context?.title || ""),
           authorHandle: String(ctxJson?.context?.authorHandle || ""),
           categoryName: String(ctxJson?.context?.categoryName || ""),
@@ -410,6 +415,7 @@ export function SwipeIdeasChatModal(props: {
         };
         setSwipeContext(ctx);
         setAngleNotesDraft(String(ctx.note || ""));
+        if (String(ctx.platform || "").trim().toLowerCase() === "freestyle") setSourceTab("notes");
 
         await Promise.all([loadThread(itemId), refreshStarterPrompts()]);
         if (cancelled) return;
@@ -827,19 +833,23 @@ export function SwipeIdeasChatModal(props: {
               ) : null}
             </div>
 
-            <div>
-              <div className="text-xs font-semibold text-slate-700">Caption</div>
-              <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
-                {swipeContext.caption ? swipeContext.caption : <span className="text-slate-400">—</span>}
-              </div>
-            </div>
+            {!isFreestyleContext ? (
+              <>
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">Caption</div>
+                  <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
+                    {swipeContext.caption ? swipeContext.caption : <span className="text-slate-400">—</span>}
+                  </div>
+                </div>
 
-            <div>
-              <div className="text-xs font-semibold text-slate-700">Transcript</div>
-              <div className="mt-2 max-h-[360px] overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
-                {swipeContext.transcript ? swipeContext.transcript : <span className="text-slate-400">—</span>}
-              </div>
-            </div>
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">Transcript</div>
+                  <div className="mt-2 max-h-[360px] overflow-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 whitespace-pre-wrap break-words">
+                    {swipeContext.transcript ? swipeContext.transcript : <span className="text-slate-400">—</span>}
+                  </div>
+                </div>
+              </>
+            ) : null}
           </div>
         ) : status === "ready" ? (
           <div className="mt-3 text-sm text-slate-600">No context loaded.</div>
@@ -1017,11 +1027,15 @@ export function SwipeIdeasChatModal(props: {
           </div>
           <div className="px-2 pt-2 border-b border-slate-100">
             <div className="flex items-center gap-1">
-              {([
-                { id: "transcript", label: "Transcript" },
-                { id: "caption", label: "Caption" },
-                { id: "notes", label: "Notes" },
-              ] as const).map((t) => {
+              {(
+                isFreestyleContext
+                  ? ([{ id: "notes", label: "Notes" }] as const)
+                  : ([
+                      { id: "transcript", label: "Transcript" },
+                      { id: "caption", label: "Caption" },
+                      { id: "notes", label: "Notes" },
+                    ] as const)
+              ).map((t) => {
                 const active = sourceTab === t.id;
                 return (
                   <button
@@ -1073,7 +1087,7 @@ export function SwipeIdeasChatModal(props: {
               </>
             ) : (
               <>
-                <div className="text-xs font-semibold text-slate-700">Transcript</div>
+                <div className="text-xs font-semibold text-slate-700">{isFreestyleContext ? "Source text" : "Transcript"}</div>
                 <div className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-800 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                   {swipeContext?.transcript ? swipeContext.transcript : "—"}
                 </div>
@@ -1191,7 +1205,7 @@ export function SwipeIdeasChatModal(props: {
                   className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   onClick={() => {
                     setOpenPanel((prev) => (prev === "source" ? null : "source"));
-                    setSourceTab((prev) => prev || "transcript");
+                      setSourceTab((prev) => prev || (isFreestyleContext ? "notes" : "transcript"));
                   }}
                   aria-label="Source"
                   title="Source"

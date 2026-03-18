@@ -119,10 +119,12 @@ export async function GET(request: NextRequest) {
 }
 
 type CreateBody = {
-  url: string;
+  url?: string | null;
   categoryId: string;
   tags?: string[] | string | null;
   note?: string | null;
+  title?: string | null;
+  platform?: SwipePlatform | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -137,27 +139,48 @@ export async function POST(request: NextRequest) {
     // ignore
   }
 
+  const requestedPlatformRaw = String((body as any)?.platform || '').trim().toLowerCase();
+  const requestedPlatform = requestedPlatformRaw === 'freestyle' ? ('freestyle' as const) : null;
   const urlRaw = s((body as any)?.url);
   const categoryId = s((body as any)?.categoryId);
-  if (!urlRaw) return NextResponse.json({ success: false, error: 'url is required' } satisfies Resp, { status: 400 });
   if (!categoryId) return NextResponse.json({ success: false, error: 'categoryId is required' } satisfies Resp, { status: 400 });
+  const titleIn = typeof (body as any)?.title === 'string' ? String((body as any).title).trim() : '';
+  const noteIn = typeof (body as any)?.note === 'string' ? String((body as any).note) : (body as any)?.note ?? null;
+  const note = noteIn && typeof noteIn === 'string' ? String(noteIn).trim() || null : null;
 
-  const platform = derivePlatformFromUrl(urlRaw);
-  if (platform === 'youtube' && !isYoutubeWatchUrl(urlRaw)) {
+  if (requestedPlatform === 'freestyle') {
+    if (!titleIn) {
+      return NextResponse.json({ success: false, error: 'title is required' } satisfies Resp, { status: 400 });
+    }
+    if (!note) {
+      return NextResponse.json({ success: false, error: 'Angle / Notes is required' } satisfies Resp, { status: 400 });
+    }
+    if (note.length < 1) {
+      return NextResponse.json({ success: false, error: 'Angle / Notes must be at least 1 character' } satisfies Resp, { status: 400 });
+    }
+    if (note.length > 25_000) {
+      return NextResponse.json({ success: false, error: 'Angle / Notes must be 25,000 characters or fewer' } satisfies Resp, { status: 400 });
+    }
+  } else if (!urlRaw) {
+    return NextResponse.json({ success: false, error: 'url is required' } satisfies Resp, { status: 400 });
+  }
+
+  const platform = requestedPlatform ?? derivePlatformFromUrl(urlRaw || '');
+  if (platform === 'youtube' && !isYoutubeWatchUrl(urlRaw || '')) {
     return NextResponse.json(
       { success: false, error: 'Only youtube.com/watch?v=... video URLs are supported right now.' } satisfies Resp,
       { status: 400 }
     );
   }
   const url =
-    platform === 'instagram'
-      ? canonicalizeInstagramUrl(urlRaw)
+    platform === 'freestyle'
+      ? `https://swipe-file.local/freestyle/${crypto.randomUUID()}`
+      : platform === 'instagram'
+      ? canonicalizeInstagramUrl(urlRaw || '')
       : platform === 'youtube'
-        ? canonicalizeYoutubeWatchUrl(urlRaw)
+        ? canonicalizeYoutubeWatchUrl(urlRaw || '')
         : String(urlRaw || '').trim();
   const tags = normalizeTags((body as any)?.tags);
-  const noteIn = typeof (body as any)?.note === 'string' ? String((body as any).note) : (body as any)?.note ?? null;
-  const note = noteIn && typeof noteIn === 'string' ? String(noteIn).trim() || null : null;
 
   // Validate category belongs to account.
   const { data: catRow, error: catErr } = await supabase
@@ -171,7 +194,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const enrichStatus =
-      platform === 'instagram' && isInstagramReelOrPostUrl(url) ? ('idle' as const) : ('idle' as const);
+      platform === 'freestyle' ? ('ok' as const) : platform === 'instagram' && isInstagramReelOrPostUrl(url) ? ('idle' as const) : ('idle' as const);
     const { error } = await supabase.from('swipe_file_items').insert({
       account_id: accountId,
       created_by_user_id: user.id,
@@ -181,6 +204,8 @@ export async function POST(request: NextRequest) {
       category_id: categoryId,
       tags,
       note,
+      title: titleIn || null,
+      transcript: platform === 'freestyle' ? note : null,
       enrich_status: enrichStatus,
     } as any);
     if (error) throw new Error(error.message);

@@ -1007,6 +1007,7 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
 ### Manual QA (Swipe File add-item modal)
 - Open `/editor` as superadmin and click **Swipe File**
 - On desktop, confirm a new **`+`** button appears immediately to the right of **Copy**
+- On desktop, confirm a new light-blue **`+ Freestyle`** button appears immediately to the right of **`+`**
 - On mobile, confirm the header shows **`+`** and does **not** expose **Copy**
 - Click **`+`** and confirm a second modal opens on top of Swipe File without closing the underlying modal
 - Confirm the add modal matches the capture flow fields: URL, Category, New category, Angle / Notes, Tags, Save
@@ -1014,6 +1015,10 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
 - With **All** selected in Swipe File, open **`+`** and confirm Category starts empty and requires manual selection
 - Save a new item and confirm **Saved ✓** appears briefly, then the add modal closes automatically
 - Confirm the new item appears immediately in Swipe File and becomes the selected item
+- Click **`+ Freestyle`** and confirm the nested modal uses the same shell style but shows **Title**, **Category**, **Angle / Notes**, and **Tags** with no visible URL field
+- Dictate or type freestyle notes, save, and confirm the new row appears with a blue **`freestyle`** pill and **`N/A`** in the secondary line where URLs normally appear
+- Open the freestyle item and confirm **Enrich** controls are hidden, **Caption/Transcript** panels are hidden, and **Generate ideas** is available without enrichment
+- Create a project from the freestyle item and confirm the project title defaults to the freestyle swipe title
 
 ## Script Chat (Create Script) — per project (MVP)
 Superadmin-only chat modal for collaboratively drafting a Reel script from the current project.

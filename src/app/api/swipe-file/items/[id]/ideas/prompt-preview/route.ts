@@ -74,13 +74,15 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
     const { data: item, error: itemErr } = await supabase
       .from('swipe_file_items')
-      .select('id, caption, transcript, note')
+      .select('id, platform, title, caption, transcript, note')
       .eq('account_id', accountId)
       .eq('id', swipeItemId)
       .maybeSingle();
     if (itemErr) return NextResponse.json({ success: false, error: itemErr.message } satisfies Resp, { status: 500 });
     if (!item?.id) return NextResponse.json({ success: false, error: 'Not found' } satisfies Resp, { status: 404 });
 
+    const platform = String((item as any)?.platform || '').trim().toLowerCase();
+    const isFreestyle = platform === 'freestyle';
     const captionRaw = String((item as any)?.caption || '');
     const transcriptRaw = String((item as any)?.transcript || '');
     const noteRaw = String((item as any)?.note || '');
@@ -148,7 +150,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       ? [`SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`].filter(Boolean).join('\n')
       : [
           `STYLE_PROMPT:\n${stylePromptRaw}`,
-          swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
+          !isFreestyle && swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
         ]
           .filter(Boolean)
           .join('\n');
@@ -164,7 +166,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
     const introLines = [
       `You are an expert Instagram carousel copywriter.`,
-      `You are given source material from an Instagram Reel (caption + transcript).`,
+      isFreestyle
+        ? `You are given source material from a freestyle swipe item entered directly by the user.`
+        : `You are given source material from an Instagram Reel (caption + transcript).`,
     ];
 
     const isSwipeSelectedIdea = String(composedPromptRaw || '').includes('SWIPE_SELECTED_IDEA:');
@@ -173,7 +177,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       : 'PRIMARY INSTRUCTIONS (user-provided "Poppy Prompt"):';
     const primary = `${primaryHeader}\n${prompt}`;
     const bestBlock = best ? `BEST PRACTICES (superadmin-only):\n${best}` : '';
-    const source = `SOURCE MATERIAL:\nREEL_CAPTION:\n${caption || '(empty)'}\n\nREEL_TRANSCRIPT:\n${transcript}`;
+    const source = isFreestyle
+      ? `SOURCE MATERIAL:\nFREESTYLE_TITLE:\n${sanitizePrompt(String((item as any)?.title || '').trim()) || '(empty)'}\n\nFREESTYLE_SOURCE_TEXT:\n${transcript}`
+      : `SOURCE MATERIAL:\nREEL_CAPTION:\n${caption || '(empty)'}\n\nREEL_TRANSCRIPT:\n${transcript}`;
 
     // Match the exact string we send in Generate Copy.
     const fullPrompt = [

@@ -64,7 +64,7 @@ export function s(v: any): string | null {
   return out ? out : null;
 }
 
-export type SwipePlatform = 'instagram' | 'youtube' | 'tiktok' | 'x' | 'web' | 'unknown';
+export type SwipePlatform = 'instagram' | 'youtube' | 'tiktok' | 'x' | 'web' | 'freestyle' | 'unknown';
 
 export function derivePlatformFromUrl(urlRaw: string): SwipePlatform {
   const raw = String(urlRaw || '').trim();
