@@ -11,6 +11,12 @@ type Idea = {
   angleText: string;
 };
 
+type SavedPrompt = {
+  id: string;
+  title: string;
+  is_active: boolean;
+};
+
 function getActiveAccountHeader(): Record<string, string> {
   try {
     const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
@@ -30,17 +36,33 @@ export function SwipeIdeasPickerModal(props: {
   onClose: () => void;
   swipeItemId: string | null;
   swipeItemLabel: string;
-  templateTypeId: "regular" | "enhanced";
-  savedPromptId: string;
+  initialTemplateTypeId: "regular" | "enhanced";
+  initialSavedPromptId: string;
   angleNotesSnapshot: string;
-  onPick: (args: { ideaId: string | null }) => void;
+  onSelectionChange?: (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
+  onPick: (args: { ideaId: string | null; templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
 }) {
-  const { open, onClose, swipeItemId, swipeItemLabel, templateTypeId, savedPromptId, angleNotesSnapshot, onPick } = props;
+  const {
+    open,
+    onClose,
+    swipeItemId,
+    swipeItemLabel,
+    initialTemplateTypeId,
+    initialSavedPromptId,
+    angleNotesSnapshot,
+    onSelectionChange,
+    onPick,
+  } = props;
 
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
+  const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">(initialTemplateTypeId);
+  const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
+  const [savedPromptId, setSavedPromptId] = useState<string>(initialSavedPromptId);
+  const [promptsLoading, setPromptsLoading] = useState(false);
+  const [promptsError, setPromptsError] = useState<string | null>(null);
 
   const selectedIdea = useMemo(() => ideas.find((i) => i.id === selectedId) || null, [ideas, selectedId]);
 
@@ -48,6 +70,56 @@ export function SwipeIdeasPickerModal(props: {
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptSections, setPromptSections] = useState<Array<{ id: string; title: string; content: string }>>([]);
+
+  const emitSelectionChange = (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => {
+    onSelectionChange?.(args);
+  };
+
+  const refreshPrompts = async (args: { templateTypeId: "regular" | "enhanced"; preferredPromptId?: string }) => {
+    setPromptsLoading(true);
+    setPromptsError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/editor/user-settings/poppy-prompts/list?type=${encodeURIComponent(args.templateTypeId)}`, {
+        method: "GET",
+        headers,
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompts (${res.status})`));
+      const rows: SavedPrompt[] = Array.isArray(j.prompts)
+        ? j.prompts.map((p: any) => ({ id: String(p.id), title: String(p.title || "Prompt"), is_active: !!p.is_active }))
+        : [];
+      setSavedPrompts(rows);
+
+      const preferredPromptId = String(args.preferredPromptId || "").trim();
+      const preferredExists = preferredPromptId ? rows.some((p) => p.id === preferredPromptId) : false;
+      const nextPromptId = preferredExists ? preferredPromptId : rows.find((p) => p.is_active)?.id || rows[0]?.id || "";
+      setSavedPromptId(nextPromptId);
+      emitSelectionChange({ templateTypeId: args.templateTypeId, savedPromptId: nextPromptId });
+    } catch (e: any) {
+      setSavedPrompts([]);
+      setSavedPromptId("");
+      setPromptsError(String(e?.message || e || "Failed to load prompts"));
+      emitSelectionChange({ templateTypeId: args.templateTypeId, savedPromptId: "" });
+    } finally {
+      setPromptsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setTemplateTypeId(initialTemplateTypeId);
+    setSavedPromptId(initialSavedPromptId);
+  }, [open, initialTemplateTypeId, initialSavedPromptId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const preferredPromptId = templateTypeId === initialTemplateTypeId ? initialSavedPromptId : "";
+    void refreshPrompts({ templateTypeId, preferredPromptId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, templateTypeId]);
 
   useEffect(() => {
     if (!open) return;
@@ -228,18 +300,95 @@ export function SwipeIdeasPickerModal(props: {
             )}
 
             <div className="mt-4 space-y-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="text-xs font-semibold text-slate-700">Create project + rewrite</div>
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold text-slate-700">Template type</div>
+                  <select
+                    className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                    value={templateTypeId}
+                    onChange={(e) => {
+                      const next = e.target.value === "regular" ? "regular" : "enhanced";
+                      setTemplateTypeId(next);
+                      setSavedPromptId("");
+                      setPromptOpen(false);
+                      setPromptError(null);
+                      setPromptSections([]);
+                      emitSelectionChange({ templateTypeId: next, savedPromptId: "" });
+                    }}
+                  >
+                    <option value="enhanced">Enhanced</option>
+                    <option value="regular">Regular</option>
+                  </select>
+                </div>
+                <div className="mt-3">
+                  <div className="text-[11px] font-semibold text-slate-700">Saved prompt</div>
+                  <select
+                    className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-50"
+                    value={savedPromptId}
+                    onChange={(e) => {
+                      const next = String(e.target.value || "");
+                      setSavedPromptId(next);
+                      setPromptOpen(false);
+                      setPromptError(null);
+                      setPromptSections([]);
+                      emitSelectionChange({ templateTypeId, savedPromptId: next });
+                    }}
+                    disabled={promptsLoading || savedPrompts.length === 0}
+                  >
+                    {savedPrompts.length === 0 ? (
+                      <option value="">{promptsLoading ? "Loading..." : "No saved prompts found"}</option>
+                    ) : null}
+                    {savedPrompts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.is_active ? "★ " : ""}
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>
+                  {promptsError ? <div className="mt-2 text-[11px] text-red-600">❌ {promptsError}</div> : null}
+                  {!promptsError && !promptsLoading && savedPrompts.length === 0 ? (
+                    <div className="mt-2 text-[11px] text-amber-700">No saved prompts found for this template type.</div>
+                  ) : null}
+                </div>
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold text-slate-700">Summary</div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    Template type: {templateTypeId === "regular" ? "Regular" : "Enhanced"}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    Saved prompt: {savedPrompts.find((p) => p.id === savedPromptId)?.title || "No saved prompt selected"}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    Selected idea: {selectedIdea ? selectedIdea.title : "Continue without idea"}
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
                 className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-                disabled={!selectedIdea}
-                onClick={() => onPick({ ideaId: selectedIdea ? selectedIdea.id : null })}
+                disabled={!selectedIdea || !savedPromptId}
+                onClick={() =>
+                  onPick({
+                    ideaId: selectedIdea ? selectedIdea.id : null,
+                    templateTypeId,
+                    savedPromptId: String(savedPromptId || "").trim(),
+                  })
+                }
               >
                 Use selected idea
               </button>
               <button
                 type="button"
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
-                onClick={() => onPick({ ideaId: null })}
+                disabled={!savedPromptId}
+                onClick={() =>
+                  onPick({
+                    ideaId: null,
+                    templateTypeId,
+                    savedPromptId: String(savedPromptId || "").trim(),
+                  })
+                }
                 title="Continue using Angle/Notes (no idea selected)"
               >
                 Continue without idea

@@ -534,14 +534,17 @@ export async function POST(request: NextRequest) {
 
   // Phase BV: compose the final prompt at runtime.
   // - Default: brand voice + selected style prompt (Poppy prompt)
-  // - Swipe-origin: brand voice + the project's stored prompt_snapshot + selected Swipe idea (or angle notes fallback)
+  // - Swipe-origin: keep the existing Swipe flow, but when an idea is selected,
+  //   include it alongside the project's stored style prompt instead of replacing it.
   // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
   const stylePromptRaw = swipeItemId ? String((project as any)?.prompt_snapshot || '') : promptRaw;
   const composedPromptRaw = swipeItemId
     ? swipeIdeaSnapshot
       ? [
-          // If the user selected an idea, we want the model to follow that direction
-          // without being influenced by account-level BRAND_VOICE or template STYLE_PROMPT.
+          // Keep Swipe-origin behavior (no brand voice), but preserve the exact
+          // saved prompt chosen for this project while also passing the selected idea.
+          `STYLE_PROMPT:\n${stylePromptRaw}`,
+          ``,
           `SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`,
         ]
           .filter(Boolean)

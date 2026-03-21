@@ -169,7 +169,7 @@ export function useProjectLifecycle(params: {
                 : 'left',
           draftBodyFontSizePx: Number.isFinite((inputSnap as any)?.bodyFontSizePx as any)
             ? Math.max(8, Math.min(i === 0 ? 999 : 120, Math.round(Number((inputSnap as any).bodyFontSizePx))))
-            : 48,
+            : 58,
           draftBodyTextAlign:
             String((inputSnap as any)?.bodyTextAlign || 'left') === 'center'
               ? 'center'
@@ -271,7 +271,7 @@ export function useProjectLifecycle(params: {
           draftBodyRanges: [],
           draftHeadlineFontSizePx: 76,
           draftHeadlineTextAlign: 'left',
-          draftBodyFontSizePx: 56,
+          draftBodyFontSizePx: 58,
           draftBodyTextAlign: 'left',
           layoutData: null,
           inputData: null,

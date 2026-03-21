@@ -2623,7 +2623,7 @@ export default function EditorShell() {
     const wrapOnce = (headlineAvg: number, bodyAvg: number) => {
       const bodyMax = params.slideIndex === 0 ? 999 : 120;
       const headlineSizePx = Math.max(24, Math.min(120, Math.round(Number(params.headlineFontSizePx) || 76)));
-      const bodySizePx = Math.max(8, Math.min(bodyMax, Math.round(Number(params.bodyFontSizePx) || 56)));
+      const bodySizePx = Math.max(8, Math.min(bodyMax, Math.round(Number(params.bodyFontSizePx) || 58)));
       const debugWrap = typeof addLog === "function" && String(params.headline || "").includes("\n");
       return wrapFlowLayout(params.headline, params.body, imageBounds, {
         ...(inset ? { contentRect: inset } : { margin: 40 }),
@@ -4180,7 +4180,7 @@ export default function EditorShell() {
     const prevLine = params.existingLayout?.textLines?.[0] || null;
     const prevExtraLines = Array.isArray(params.existingLayout?.textLines) ? (params.existingLayout.textLines as any[]).slice(1) : [];
 
-    const requestedBodySize = Math.max(8, Math.min(params.slideIndex === 0 ? 999 : 120, Math.round(Number(params.bodyFontSizePx) || 56)));
+    const requestedBodySize = Math.max(8, Math.min(params.slideIndex === 0 ? 999 : 120, Math.round(Number(params.bodyFontSizePx) || 58)));
     const rawX = typeof prevLine?.position?.x === "number" ? prevLine.position.x : region.x;
     // For Regular we anchor Y by CENTER so the box grows up/down.
     // - If we already have an anchored snapshot, preserve it.
@@ -4493,7 +4493,7 @@ export default function EditorShell() {
     // IMPORTANT: For Slide 1 Regular, moving the BODY textbox should NOT change its size/structure.
     // Only run shrink-to-fit when the user resized the box or edited text.
     let nextLayoutSnap = { ...baseLayout, textLines: nextTextLines } as VisionLayoutDecision;
-    let fittedSizeForUi = Number((curSlide as any)?.draftBodyFontSizePx ?? 56);
+    let fittedSizeForUi = Number((curSlide as any)?.draftBodyFontSizePx ?? 58);
     if (change.lineIndex === 0) {
       try {
         const shouldShrinkToFit = didResize || didEditText;
@@ -4533,8 +4533,8 @@ export default function EditorShell() {
               // Regular slides should honor the user-requested size and only shrink when needed to fit.
               maxFontSizePx:
                 slideIndex === 0
-                  ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56))))
-                  : Math.max(8, Math.min(120, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 56)))),
+                  ? Math.max(8, Math.min(999, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 58))))
+                  : Math.max(8, Math.min(120, Math.round(Number((curSlide as any)?.draftBodyFontSizePx ?? 58)))),
             });
             const measuredH = measureRegularBodyHeightPx(
               nextBodyForFit,
@@ -6960,7 +6960,7 @@ export default function EditorShell() {
   const onChangeBodyFontSize = (e: any) => {
     const raw = Number((e.target as any).value);
     const max = templateTypeIdRef.current === "regular" && activeSlideIndexRef.current === 0 ? 999 : 120;
-    const nextSize = Number.isFinite(raw) ? Math.max(8, Math.min(max, Math.round(raw))) : 48;
+    const nextSize = Number.isFinite(raw) ? Math.max(8, Math.min(max, Math.round(raw))) : 58;
     pushUndoSnapshot();
     setSlides((prev: any) =>
       prev.map((s: any, i: number) =>

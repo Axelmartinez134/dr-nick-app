@@ -10,8 +10,6 @@ import { SwipeFileCaptureForm, type SwipeFileCaptureItem } from "@/features/edit
 type Category = { id: string; name: string };
 type SwipeItem = SwipeFileCaptureItem;
 
-type SavedPrompt = { id: string; title: string; is_active: boolean };
-
 function getActiveAccountHeader(): Record<string, string> {
   try {
     const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
@@ -117,9 +115,7 @@ export function SwipeFileModal() {
       // ignore
     }
   }, [templateTypeId]);
-  const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
   const [savedPromptId, setSavedPromptId] = useState<string>("");
-  const [promptsLoading, setPromptsLoading] = useState(false);
 
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -245,29 +241,6 @@ export function SwipeFileModal() {
     }
   };
 
-  const refreshPrompts = async (typeId: "enhanced" | "regular") => {
-    setPromptsLoading(true);
-    try {
-      const token = await getToken();
-      if (!token) throw new Error("Missing auth token");
-      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch(`/api/editor/user-settings/poppy-prompts/list?type=${encodeURIComponent(typeId)}`, { method: "GET", headers });
-      const j = await res.json().catch(() => null);
-      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompts (${res.status})`));
-      const rows: SavedPrompt[] = Array.isArray(j.prompts)
-        ? j.prompts.map((p: any) => ({ id: String(p.id), title: String(p.title || "Prompt"), is_active: !!p.is_active }))
-        : [];
-      setSavedPrompts(rows);
-      const active = rows.find((p) => p.is_active)?.id || rows[0]?.id || "";
-      setSavedPromptId(active);
-    } catch {
-      setSavedPrompts([]);
-      setSavedPromptId("");
-    } finally {
-      setPromptsLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!open) return;
     void refresh();
@@ -302,11 +275,6 @@ export function SwipeFileModal() {
     if (noteSaveTimeoutRef.current) window.clearTimeout(noteSaveTimeoutRef.current);
     noteSaveTimeoutRef.current = null;
   }, [selectedItem?.id, selectedItem?.note]);
-
-  useEffect(() => {
-    if (!open) return;
-    void refreshPrompts(templateTypeId);
-  }, [open, templateTypeId]);
 
   useEffect(() => {
     if (open) return;
@@ -474,11 +442,17 @@ export function SwipeFileModal() {
     }
   };
 
-  const onCreateProject = async (opts?: { ideaId: string | null }) => {
+  const onCreateProject = async (opts: {
+    ideaId: string | null;
+    templateTypeId: "enhanced" | "regular";
+    savedPromptId: string;
+  }) => {
     setCreateBusy(true);
     setCreateError(null);
     try {
       if (!selectedItem) throw new Error("Select an item first");
+      const templateTypeId = opts.templateTypeId === "regular" ? "regular" : "enhanced";
+      const savedPromptId = String(opts.savedPromptId || "").trim();
       if (!savedPromptId) throw new Error("Select a prompt");
 
       const token = await getToken();
@@ -501,7 +475,7 @@ export function SwipeFileModal() {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(selectedItem.id)}/create-project`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ templateTypeId: templateTypeIdRef.current, savedPromptId, ideaId: opts?.ideaId ?? null }),
+        body: JSON.stringify({ templateTypeId, savedPromptId, ideaId: opts.ideaId ?? null }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Create project failed (${res.status})`));
@@ -1078,44 +1052,10 @@ export function SwipeFileModal() {
                                 </button>
                               </div>
                               <div className="p-4 space-y-3">
-                                <div>
-                                  <div className="text-xs font-semibold text-slate-700">Template type</div>
-                                  <select
-                                    className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-                                    value={templateTypeId}
-                                    onChange={(e) => {
-                                      const next = e.target.value === "regular" ? "regular" : "enhanced";
-                                      setTemplateTypeId(next);
-                                    }}
-                                    disabled={createBusy}
-                                  >
-                                    <option value="enhanced">Enhanced</option>
-                                    <option value="regular">Regular</option>
-                                  </select>
-                                </div>
-                                <div>
-                                  <div className="text-xs font-semibold text-slate-700">Saved prompt</div>
-                                  <select
-                                    className="mt-2 w-full h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-50"
-                                    value={savedPromptId}
-                                    onChange={(e) => setSavedPromptId(e.target.value)}
-                                    disabled={createBusy || promptsLoading || savedPrompts.length === 0}
-                                  >
-                                    {savedPrompts.length === 0 ? (
-                                      <option value="">{promptsLoading ? "Loading..." : "No saved prompts found"}</option>
-                                    ) : null}
-                                    {savedPrompts.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.is_active ? "★ " : ""}
-                                        {p.title}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
                                 <button
                                   type="button"
                                   className="w-full h-11 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:bg-slate-900 disabled:opacity-50"
-                                  disabled={createBusy || !savedPromptId}
+                                  disabled={createBusy}
                                   onClick={() => {
                                     setMobileSheet(null);
                                     setSelectedItemId(it.id);
@@ -1318,45 +1258,10 @@ export function SwipeFileModal() {
                 <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="text-xs font-semibold text-slate-700">Repurpose</div>
                   <div className="mt-3 space-y-3">
-                    <div>
-                      <div className="text-xs font-semibold text-slate-700">Template type</div>
-                      <select
-                        className="mt-2 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
-                        value={templateTypeId}
-                        onChange={(e) => {
-                          const next = e.target.value === "regular" ? "regular" : "enhanced";
-                          setTemplateTypeId(next);
-                        }}
-                        disabled={createBusy}
-                      >
-                        <option value="enhanced">Enhanced</option>
-                        <option value="regular">Regular</option>
-                      </select>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold text-slate-700">Saved prompt</div>
-                      <select
-                        className="mt-2 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm disabled:opacity-50"
-                        value={savedPromptId}
-                        onChange={(e) => setSavedPromptId(e.target.value)}
-                        disabled={createBusy || promptsLoading || savedPrompts.length === 0}
-                      >
-                        {savedPrompts.length === 0 ? (
-                          <option value="">{promptsLoading ? "Loading..." : "No saved prompts found"}</option>
-                        ) : null}
-                        {savedPrompts.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.is_active ? "★ " : ""}
-                            {p.title}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
                     <button
                       type="button"
                       className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
-                      disabled={createBusy || !savedPromptId}
+                      disabled={createBusy}
                       onClick={() => setIdeasPickerOpen(true)}
                       title="Create project and auto-generate copy (when transcript exists)"
                     >
@@ -1438,12 +1343,21 @@ export function SwipeFileModal() {
         onClose={() => setIdeasPickerOpen(false)}
         swipeItemId={selectedItem?.id || null}
         swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
-        templateTypeId={templateTypeIdRef.current}
-        savedPromptId={savedPromptId}
+        initialTemplateTypeId={templateTypeIdRef.current}
+        initialSavedPromptId={savedPromptId}
         angleNotesSnapshot={noteDraft}
+        onSelectionChange={(args) => {
+          const nextType = args.templateTypeId === "regular" ? "regular" : "enhanced";
+          setTemplateTypeId(nextType);
+          setSavedPromptId(String(args.savedPromptId || "").trim());
+        }}
         onPick={(args) => {
           setIdeasPickerOpen(false);
-          void onCreateProject({ ideaId: args.ideaId });
+          void onCreateProject({
+            ideaId: args.ideaId,
+            templateTypeId: args.templateTypeId === "regular" ? "regular" : "enhanced",
+            savedPromptId: args.savedPromptId,
+          });
         }}
       />
 

@@ -147,7 +147,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     const swipeAngleSnapshot = String(noteToUse || '').trim();
 
     const composedPromptRaw = swipeIdeaSnapshot
-      ? [`SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`].filter(Boolean).join('\n')
+      ? [
+          `STYLE_PROMPT:\n${stylePromptRaw}`,
+          ``,
+          `SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`,
+        ]
+          .filter(Boolean)
+          .join('\n')
       : [
           `STYLE_PROMPT:\n${stylePromptRaw}`,
           !isFreestyle && swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,

@@ -248,7 +248,7 @@ export function useLiveLayoutQueue(params: {
 
         const effectiveBodyFontSizePx =
           item.templateTypeId === "regular"
-            ? Number((nextLayout as any)?.textLines?.[0]?.baseSize ?? item.bodyFontSizePx ?? 48)
+            ? Number((nextLayout as any)?.textLines?.[0]?.baseSize ?? item.bodyFontSizePx ?? 58)
             : item.bodyFontSizePx;
 
         const textLineCount = Array.isArray((nextLayout as any)?.textLines) ? (nextLayout as any).textLines.length : 0;
@@ -437,7 +437,7 @@ export function useLiveLayoutQueue(params: {
         const bodyFontSizePxSnap =
           Number.isFinite((slide as any)?.draftBodyFontSizePx as any)
             ? Math.max(8, Math.min(bodyMax, Math.round(Number((slide as any).draftBodyFontSizePx))))
-            : 48;
+            : 58;
         const _bAlign = (slide as any)?.draftBodyTextAlign;
         const bodyTextAlign: "left" | "center" | "right" = _bAlign === "center" || _bAlign === "right" ? _bAlign : "left";
 

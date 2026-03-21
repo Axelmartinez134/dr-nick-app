@@ -320,7 +320,7 @@ export function EditorBottomPanel() {
 
   // Hide Slide 1 text panel when it can't apply.
   const activeSlideIndexForSlide1Text = Number((ui as any)?.activeSlideIndex ?? -1);
-  const slide1BodySizeCurrentForSync = Math.round(Number((ui as any)?.slides?.[0]?.draftBodyFontSizePx ?? 56)) || 56;
+  const slide1BodySizeCurrentForSync = Math.round(Number((ui as any)?.slides?.[0]?.draftBodyFontSizePx ?? 58)) || 58;
   useEffect(() => {
     if (templateTypeId !== "regular" || activeSlideIndexForSlide1Text !== 0) setSlide1TextOpen(false);
   }, [activeSlideIndexForSlide1Text, templateTypeId]);
@@ -365,7 +365,7 @@ export function EditorBottomPanel() {
       setSlideCalloutSizeDraft(String(Math.max(8, Math.min(999, Math.round(Number(callout?.fontSizePx ?? 28) || 28)))));
     }
     if (!slideBodySizeEditingRef.current) {
-      setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 56)) || 56));
+      setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 58)) || 58));
     }
   }, [activeSlideIndexForSlide1Text, slideTextOpen, ui]);
 
@@ -616,7 +616,7 @@ export function EditorBottomPanel() {
     const bodyFontSizePx =
       Number.isFinite(Number(slide0?.draftBodyFontSizePx))
         ? Math.round(Number(slide0.draftBodyFontSizePx))
-        : (Number.isFinite(Number(input0?.bodyFontSizePx)) ? Math.round(Number(input0.bodyFontSizePx)) : 48);
+        : (Number.isFinite(Number(input0?.bodyFontSizePx)) ? Math.round(Number(input0.bodyFontSizePx)) : 58);
 
     const payload = {
       kind: "dn.slide1_preset",
@@ -1154,7 +1154,7 @@ export function EditorBottomPanel() {
                       max={120}
                       step={1}
                       className="w-16 h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-800 text-center"
-                      value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 56)}
+                      value={Number(slides[activeSlideIndex]?.draftBodyFontSizePx ?? 58)}
                       disabled={loading || switchingSlides || copyGenerating || enhancedLockOn}
                       onChange={actions.onChangeBodyFontSize}
                       title="Font size (24–120px)"
@@ -3292,7 +3292,7 @@ export function EditorBottomPanel() {
                                 const callout = (s as any)?.inputData?.slideCallout || null;
                                 const calloutText = String(callout?.text || "");
                                 setSlideCalloutDraft(calloutText);
-                                setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 56)) || 56));
+                                setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 58)) || 58));
                               }
                               return next;
                             });
@@ -3503,7 +3503,7 @@ export function EditorBottomPanel() {
                                 const callout = (s as any)?.inputData?.slideCallout || null;
                                 setSlideCalloutDraft(String(callout?.text || ""));
                                 setSlideCalloutSizeDraft(String(Math.max(8, Math.min(999, Math.round(Number(callout?.fontSizePx ?? 28) || 28)))));
-                                setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 56)) || 56));
+                                setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 58)) || 58));
                               }
                               return next;
                             });
@@ -3715,7 +3715,7 @@ export function EditorBottomPanel() {
                                       const n = Math.round(Number(raw));
                                       if (!Number.isFinite(n)) {
                                         const s = (slides as any)?.[activeSlideIndex] || null;
-                                        setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 56)) || 56));
+                                        setSlideBodySizeDraft(String(Math.round(Number((s as any)?.draftBodyFontSizePx ?? 58)) || 58));
                                         return;
                                       }
                                       commitSlideBodySizeLive(n);
@@ -3730,7 +3730,7 @@ export function EditorBottomPanel() {
                                       const disabled = !currentProjectId || switchingSlides || copyGenerating || enhancedLockOn;
                                       const stepOnce = () => {
                                         const raw = String(slideBodySizeDraft || "").trim();
-                                        const base = Number.isFinite(Number(raw)) ? Number(raw) : 48;
+                                        const base = Number.isFinite(Number(raw)) ? Number(raw) : 58;
                                         commitSlideBodySizeLive(base + btn.delta);
                                       };
                                       const startHold = (e: any) => {

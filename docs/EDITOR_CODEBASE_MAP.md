@@ -1002,11 +1002,13 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
 ### Phase 2 (Idea picker → project creation → Generate Copy)
 - `src/features/editor/components/SwipeIdeasPickerModal.tsx`
   - Opened from Swipe File Repurpose section before creating a project
+  - Now owns the final repurpose selections: **Template type**, **Saved prompt**, and idea choice
   - Allows selecting a saved idea **or** continuing without an idea (Angle/Notes fallback)
+  - Prompt preview in this modal reflects the current in-modal template type + saved prompt + idea state
 - `POST /api/swipe-file/items/[id]/create-project`
   - Accepts optional `ideaId` to snapshot the selected idea onto the new project
 - `POST /api/editor/projects/jobs/generate-copy`
-  - If `source_swipe_idea_snapshot` exists, it is used as the Swipe “angle” input (preferred over Angle/Notes)
+  - If `source_swipe_idea_snapshot` exists, it is sent **alongside** the project `prompt_snapshot` (the exact saved prompt chosen in the repurpose modal)
 
 ### Manual QA (Swipe File add-item modal)
 - Open `/editor` as superadmin and click **Swipe File**
