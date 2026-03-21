@@ -2409,7 +2409,7 @@ export function OutreachModal() {
     const safeName = String(args.name || "").trim() || "there";
     const topic = String(args.topicLine || "").trim();
     const about = topic ? ` about ${topic}` : "";
-    return `Hey ${safeName}, made you this carousel from one of your recent posts${about}.\n\nThis same format helped grow @thefittestdoc from 50K to 240K in 6 months through consistent posting.\n\nCarousels also drive way higher engagement than Reels, and high engagement = high intent leads for your services.\n\nWant the full version?`;
+    return `Hey ${safeName}, made you this carousel from your recent post${about}.\n\nThis same format helped grow @thefittestdoc from 50K to 240K in 6 months through consistent posting.\n\nCarousels also drive way higher engagement than Reels, and high engagement = high intent leads for your services.\n\nWant the full version?`;
   }
 
   async function apiPersistTarget(args: {

@@ -3467,6 +3467,31 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       // STEP 0.5: Slide 1 style (MVP) is applied at the end (after text objects exist).
 
+      const applyRegularDefaultImageLayeringNow = () => {
+        try {
+          if (hasHeadline !== false) return;
+          const objs = (canvas.getObjects?.() || []) as any[];
+          if (!objs.length) return;
+          const images = objs.filter((o) => {
+            const role = String(o?.data?.role || "");
+            return role === "user-image" || role === "user-image-sticker";
+          });
+          if (!images.length) return;
+          const bringFront = (o: any) => {
+            if (!o) return;
+            if (typeof canvas.bringObjectToFront === "function") canvas.bringObjectToFront(o);
+            else if (typeof canvas.bringToFront === "function") canvas.bringToFront(o);
+            else if (typeof canvas.moveTo === "function") canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+            else if (typeof o?.moveTo === "function") o.moveTo((canvas.getObjects?.().length || 1) - 1);
+          };
+          // Preserve the current image-to-image ordering by re-bringing them in existing canvas order.
+          for (const img of images) bringFront(img);
+          canvas.requestRenderAll?.();
+        } catch {
+          // ignore
+        }
+      };
+
       // STEP 1: Load and add image if provided
       if (layout.image && layout.image.url) {
         console.log('[Preview Vision] 🖼️ Loading image...');
@@ -3526,40 +3551,49 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             }
             console.log('[Preview Vision] 🧱 Image stacking:', stacked ? `moved to index ${templateCount} ✅` : 'could not reorder ⚠️');
 
-            // If the image loads after text has been added, force all text (and its noise overlays) to the front.
-            try {
-              const objs = canvas.getObjects?.() || [];
-              const bringFront = (o: any) => {
-                if (!o) return;
-                if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
-                else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
-                else if (typeof canvas.moveTo === 'function') canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
-                else if (typeof o?.moveTo === 'function') o.moveTo((canvas.getObjects?.().length || 1) - 1);
-              };
-              // Ensure each text-noise overlay stays above its corresponding text.
-              const noiseByLine = new Map<number, any[]>();
-              for (const o of objs as any[]) {
-                const r = String(o?.data?.role || "");
-                if (r !== 'slide1-text-noise' && r !== 'slide1-callout-text-noise') continue;
-                const li = Number(o?.data?.forLineIndex);
-                if (!Number.isFinite(li)) continue;
-                const arr = noiseByLine.get(li) || [];
-                arr.push(o);
-                noiseByLine.set(li, arr);
+            if (hasHeadline === false) {
+              try {
+                applyRegularDefaultImageLayeringNow();
+                console.log('[Preview Vision] ✅ Applied Regular default image-on-top layering');
+              } catch (e) {
+                console.warn('[Preview Vision] ⚠️ Could not apply Regular default image layering:', e);
               }
-              for (const obj of objs as any[]) {
-                if (obj?.data?.role !== 'user-text') continue;
-                bringFront(obj);
-                const li = Number(obj?.data?.lineIndex);
-                const overlays = Number.isFinite(li) ? noiseByLine.get(li) : null;
-                if (overlays && overlays.length) {
-                  for (const ov of overlays) bringFront(ov);
+            } else {
+              // If the image loads after text has been added, force all text (and its noise overlays) to the front.
+              try {
+                const objs = canvas.getObjects?.() || [];
+                const bringFront = (o: any) => {
+                  if (!o) return;
+                  if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
+                  else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
+                  else if (typeof canvas.moveTo === 'function') canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+                  else if (typeof o?.moveTo === 'function') o.moveTo((canvas.getObjects?.().length || 1) - 1);
+                };
+                // Ensure each text-noise overlay stays above its corresponding text.
+                const noiseByLine = new Map<number, any[]>();
+                for (const o of objs as any[]) {
+                  const r = String(o?.data?.role || "");
+                  if (r !== 'slide1-text-noise' && r !== 'slide1-callout-text-noise') continue;
+                  const li = Number(o?.data?.forLineIndex);
+                  if (!Number.isFinite(li)) continue;
+                  const arr = noiseByLine.get(li) || [];
+                  arr.push(o);
+                  noiseByLine.set(li, arr);
                 }
+                for (const obj of objs as any[]) {
+                  if (obj?.data?.role !== 'user-text') continue;
+                  bringFront(obj);
+                  const li = Number(obj?.data?.lineIndex);
+                  const overlays = Number.isFinite(li) ? noiseByLine.get(li) : null;
+                  if (overlays && overlays.length) {
+                    for (const ov of overlays) bringFront(ov);
+                  }
+                }
+                canvas.renderAll();
+                console.log('[Preview Vision] ✅ Forced text to front after image load');
+              } catch (e) {
+                console.warn('[Preview Vision] ⚠️ Could not force text to front:', e);
               }
-              canvas.renderAll();
-              console.log('[Preview Vision] ✅ Forced text to front after image load');
-            } catch (e) {
-              console.warn('[Preview Vision] ⚠️ Could not force text to front:', e);
             }
 
             // Apply any Slide 1 manual layering overrides (send-to-back / bring-to-front).
@@ -3638,36 +3672,40 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 // ignore
               }
 
-              // If sticker loads after text has been added, force all text (and its noise overlays) to the front.
-              try {
-                const objs = canvas.getObjects?.() || [];
-                const bringFront = (o: any) => {
-                  if (!o) return;
-                  if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
-                  else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
-                  else if (typeof canvas.moveTo === 'function') canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
-                  else if (typeof o?.moveTo === 'function') o.moveTo((canvas.getObjects?.().length || 1) - 1);
-                };
-                const noiseByLine = new Map<number, any[]>();
-                for (const o of objs as any[]) {
-                  if (o?.data?.role !== 'slide1-text-noise') continue;
-                  const li = Number(o?.data?.forLineIndex);
-                  if (!Number.isFinite(li)) continue;
-                  const arr = noiseByLine.get(li) || [];
-                  arr.push(o);
-                  noiseByLine.set(li, arr);
-                }
-                for (const obj of objs as any[]) {
-                  if (obj?.data?.role !== 'user-text') continue;
-                  bringFront(obj);
-                  const li = Number(obj?.data?.lineIndex);
-                  const overlays = Number.isFinite(li) ? noiseByLine.get(li) : null;
-                  if (overlays && overlays.length) {
-                    for (const ov of overlays) bringFront(ov);
+              if (hasHeadline === false) {
+                applyRegularDefaultImageLayeringNow();
+              } else {
+                // If sticker loads after text has been added, force all text (and its noise overlays) to the front.
+                try {
+                  const objs = canvas.getObjects?.() || [];
+                  const bringFront = (o: any) => {
+                    if (!o) return;
+                    if (typeof canvas.bringObjectToFront === 'function') canvas.bringObjectToFront(o);
+                    else if (typeof canvas.bringToFront === 'function') canvas.bringToFront(o);
+                    else if (typeof canvas.moveTo === 'function') canvas.moveTo(o, (canvas.getObjects?.().length || 1) - 1);
+                    else if (typeof o?.moveTo === 'function') o.moveTo((canvas.getObjects?.().length || 1) - 1);
+                  };
+                  const noiseByLine = new Map<number, any[]>();
+                  for (const o of objs as any[]) {
+                    if (o?.data?.role !== 'slide1-text-noise') continue;
+                    const li = Number(o?.data?.forLineIndex);
+                    if (!Number.isFinite(li)) continue;
+                    const arr = noiseByLine.get(li) || [];
+                    arr.push(o);
+                    noiseByLine.set(li, arr);
                   }
+                  for (const obj of objs as any[]) {
+                    if (obj?.data?.role !== 'user-text') continue;
+                    bringFront(obj);
+                    const li = Number(obj?.data?.lineIndex);
+                    const overlays = Number.isFinite(li) ? noiseByLine.get(li) : null;
+                    if (overlays && overlays.length) {
+                      for (const ov of overlays) bringFront(ov);
+                    }
+                  }
+                } catch {
+                  // ignore
                 }
-              } catch {
-                // ignore
               }
 
               canvas.renderAll();
@@ -4389,6 +4427,13 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
       // Apply Slide 1 style overrides (background + accent fill/gradient).
       applySlide1Style();
+
+      // Default Regular behavior: images render above all user text unless a later manual override changes it.
+      try {
+        applyRegularDefaultImageLayeringNow();
+      } catch {
+        // ignore
+      }
 
       // Apply any Slide 1 manual layering overrides (send-to-back / bring-to-front).
       try {

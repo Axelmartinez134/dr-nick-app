@@ -22,13 +22,13 @@ export function ScriptChatOverlayButton() {
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const currentProjectId = useEditorSelector((s: any) => ((s as any).currentProjectId ? String((s as any).currentProjectId) : null));
+  const projectTitle = useEditorSelector((s: any) => String((s as any).projectTitle || ""));
+  const slides = useEditorSelector((s: any) => (s as any)?.bottomPanelUi?.slides || (s as any)?.workspaceUi?.slides || []);
   const actions = useEditorSelector((s: any) => (s as any).actions);
 
   const pid = useMemo(() => (currentProjectId ? String(currentProjectId) : ""), [currentProjectId]);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error" | "loading">("idle");
-  // Mobile UX: hide overlay buttons (Copy action is moved into the bottom Controls card).
-  if (isMobile) return null;
-  if (!isSuperadmin || !pid) return null;
+  const [copySlidesStatus, setCopySlidesStatus] = useState<"idle" | "copied" | "error" | "loading">("idle");
 
   const buildPromptPreviewText = (args: { system: string; contextText: string }) => {
     const sys = String(args.system || "").trim();
@@ -43,6 +43,59 @@ export function ScriptChatOverlayButton() {
     ].join("\n");
   };
 
+  const carouselSlidesCopyText = useMemo(() => {
+    const title = String(projectTitle || "").trim() || "-";
+    const slideSections = Array.from({ length: 6 }).map((_, idx) => {
+      const linesRaw = (slides as any[])?.[idx]?.layoutData?.layout?.textLines;
+      const lines = Array.isArray(linesRaw)
+        ? linesRaw
+            .map((line: any) => String(line?.text ?? ""))
+            .map((text) => text.trim())
+            .filter((text) => text.length > 0)
+        : null;
+      const joined = lines && lines.length > 0 ? lines.join("\n") : "(no text lines)";
+      return `SLIDE ${idx + 1} (textLines):\n${joined}`;
+    });
+    return [`PROJECT_TITLE:\n${title}`, `CAROUSEL_TEXTLINES:\n${slideSections.join("\n\n")}`].join("\n\n");
+  }, [projectTitle, slides]);
+
+  const canCopyCarouselSlides = useMemo(() => {
+    const rows = Array.isArray(slides) ? slides : [];
+    if (rows.length !== 6) return false;
+    return rows.every((slide: any) => Array.isArray(slide?.layoutData?.layout?.textLines));
+  }, [slides]);
+
+  // Mobile UX: hide overlay buttons (Copy action is moved into the bottom Controls card).
+  if (isMobile) return null;
+  if (!isSuperadmin || !pid) return null;
+
+  const copyPlainText = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fall through
+    }
+
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "true");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    ta.style.pointerEvents = "none";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (!ok) throw new Error("copy command failed");
+    return true;
+  };
+
   const copyScriptPrompt = async () => {
     if (copyStatus === "loading") return;
     setCopyStatus("loading");
@@ -55,33 +108,7 @@ export function ScriptChatOverlayButton() {
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompt (${res.status})`));
 
       const text = buildPromptPreviewText({ system: String(j?.system || ""), contextText: String(j?.contextText || "") });
-
-      try {
-        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(text);
-          setCopyStatus("copied");
-          window.setTimeout(() => setCopyStatus("idle"), 1200);
-          return;
-        }
-      } catch {
-        // fall through
-      }
-
-      // Fallback copy path (matches DebugCard behavior).
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "true");
-      ta.style.position = "fixed";
-      ta.style.top = "0";
-      ta.style.left = "0";
-      ta.style.opacity = "0";
-      ta.style.pointerEvents = "none";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      if (!ok) throw new Error("copy command failed");
+      await copyPlainText(text);
       setCopyStatus("copied");
       window.setTimeout(() => setCopyStatus("idle"), 1200);
     } catch {
@@ -90,18 +117,40 @@ export function ScriptChatOverlayButton() {
     }
   };
 
+  const copyCarouselSlides = async () => {
+    if (!canCopyCarouselSlides || copySlidesStatus === "loading") return;
+    setCopySlidesStatus("loading");
+    try {
+      await copyPlainText(carouselSlidesCopyText);
+      setCopySlidesStatus("copied");
+      window.setTimeout(() => setCopySlidesStatus("idle"), 1200);
+    } catch {
+      setCopySlidesStatus("error");
+      window.setTimeout(() => setCopySlidesStatus("idle"), 1600);
+    }
+  };
+
   return (
     <div className="absolute right-[5px] top-[5px] z-[50] flex items-center gap-2">
-      {copyStatus === "copied" ? (
+      {copySlidesStatus === "copied" || copyStatus === "copied" ? (
         <div className="text-[11px] font-semibold text-emerald-700 bg-white/95 backdrop-blur border border-slate-200 rounded-lg px-2 py-1 shadow-lg">
           Copied
         </div>
-      ) : copyStatus === "error" ? (
+      ) : copySlidesStatus === "error" || copyStatus === "error" ? (
         <div className="text-[11px] font-semibold text-red-600 bg-white/95 backdrop-blur border border-slate-200 rounded-lg px-2 py-1 shadow-lg">
           Copy failed
         </div>
       ) : null}
 
+      <button
+        type="button"
+        className="h-9 px-3 rounded-xl border border-slate-200 bg-white/95 backdrop-blur text-[12px] font-semibold text-slate-800 shadow-lg hover:bg-white disabled:opacity-60"
+        onClick={() => void copyCarouselSlides()}
+        disabled={!canCopyCarouselSlides || copySlidesStatus === "loading"}
+        title={canCopyCarouselSlides ? "Copy the live project title and carousel slide text lines" : "Generate/Realign first"}
+      >
+        {copySlidesStatus === "loading" ? "Copying…" : "Copy Carousel Slides"}
+      </button>
       <button
         type="button"
         className="h-9 px-3 rounded-xl border border-slate-200 bg-white/95 backdrop-blur text-[12px] font-semibold text-slate-800 shadow-lg hover:bg-white disabled:opacity-60"

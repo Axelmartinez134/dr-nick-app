@@ -168,6 +168,10 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
   - `contextTop` overlay drawing for debug overlays + Smart Guides
   - Drag/scale handlers for `user-text` and `user-image`
   - Post-render invariant enforcement (disabled in lock mode; can be suppressed during image drag when auto-realign is enabled)
+  - **Regular default image layering (2026-03-18)**:
+    - default rule: user-added images render above user text on Regular slides so overlapped images remain easy to grab/move
+    - existing projects pick this up on reopen because the order is enforced at render time
+    - existing manual `slide1Layering` overrides still win on Slide 1 after the default is applied
 - **Smart Guides helper (lock mode)**: `src/app/components/health/marketing/ai-carousel/smartGuides.ts`
   - Visual-only horizontal alignment guides (left/center/right)
 
@@ -1026,6 +1030,8 @@ Superadmin-only chat modal for collaboratively drafting a Reel script from the c
 ### Superadmin-only UI (inside `/editor`)
 - **Canvas/workspace overlay button**: `src/features/editor/components/ScriptChatOverlayButton.tsx`
   - Rendered in `src/app/editor/EditorShell.tsx` as an absolute overlay (**top-right**, desktop only)
+  - Desktop buttons: **Copy Carousel Slides**, **Copy Script Prompt**, **Create Script**
+  - `Copy Carousel Slides` uses the live current project title + current slide `layoutData.layout.textLines` from editor store state (no caption; disabled until all 6 slides have deterministic text lines)
   - Mobile: overlay is hidden; “Copy Script Prompt” is available in the bottom **⚙️ Controls** card
 - **Modal**: `src/features/editor/components/ScriptChatModal.tsx`
   - Plain-text chat (no markdown)
