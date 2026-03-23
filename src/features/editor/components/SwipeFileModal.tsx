@@ -6,6 +6,7 @@ import { useEditorSelector } from "@/features/editor/store";
 import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChatModal";
 import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
 import { SwipeFileCaptureForm, type SwipeFileCaptureItem } from "@/features/editor/components/SwipeFileCaptureForm";
+import { YoutubeCreatorFeedPanel } from "@/features/editor/components/YoutubeCreatorFeedPanel";
 
 type Category = { id: string; name: string };
 type SwipeItem = SwipeFileCaptureItem;
@@ -127,6 +128,14 @@ export function SwipeFileModal() {
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [freestyleModalOpen, setFreestyleModalOpen] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
+  const [activeTab, setActiveTab] = useState<"swipe" | "yt_rss">(() => {
+    try {
+      const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("swipeFile.activeTab") || "").trim() : "";
+      return raw === "yt_rss" ? "yt_rss" : "swipe";
+    } catch {
+      return "swipe";
+    }
+  });
   const captureLink = useMemo(() => {
     try {
       const origin = typeof window !== "undefined" ? String(window.location.origin || "").trim() : "";
@@ -175,6 +184,18 @@ export function SwipeFileModal() {
       cancelled = true;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (activeTab === "yt_rss" && !isSuperadmin) setActiveTab("swipe");
+  }, [activeTab, isSuperadmin]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("swipeFile.activeTab", activeTab);
+    } catch {
+      // ignore
+    }
+  }, [activeTab]);
 
   const refreshIdeasCount = async (itemId: string) => {
     const id = String(itemId || "").trim();
@@ -562,11 +583,36 @@ export function SwipeFileModal() {
       <div className="w-full max-w-6xl h-full bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-4 md:px-5 py-4 border-b border-slate-100">
           <div className="min-w-0">
-            <div className="text-base font-semibold text-slate-900 truncate">Swipe File</div>
-            <div className="mt-0.5 text-xs text-slate-500">
-              Save links on mobile, enrich on desktop, repurpose into carousels.
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={[
+                  "h-8 rounded-full border px-3 text-sm font-semibold shadow-sm transition-colors",
+                  activeTab === "swipe" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                ].join(" ")}
+                onClick={() => setActiveTab("swipe")}
+              >
+                Swipe File
+              </button>
+              {isSuperadmin ? (
+                <button
+                  type="button"
+                  className={[
+                    "h-8 rounded-full border px-3 text-sm font-semibold shadow-sm transition-colors",
+                    activeTab === "yt_rss" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => setActiveTab("yt_rss")}
+                >
+                  YouTube Creator Feed
+                </button>
+              ) : null}
             </div>
-            {!isMobile ? (
+            <div className="mt-0.5 text-xs text-slate-500">
+              {activeTab === "swipe"
+                ? "Save links on mobile, enrich on desktop, repurpose into carousels."
+                : "Track creator RSS feeds, cache videos, and route them into the same repurpose flow."}
+            </div>
+            {!isMobile && activeTab === "swipe" ? (
               <>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">iPhone Shortcut URL</div>
@@ -616,7 +662,7 @@ export function SwipeFileModal() {
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            {!isMobile ? (
+            {!isMobile && activeTab === "swipe" ? (
               <button
                 type="button"
                 className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-50"
@@ -626,7 +672,7 @@ export function SwipeFileModal() {
               >
                 Refresh
               </button>
-            ) : (
+            ) : activeTab === "swipe" ? (
               <>
                 <button
                   type="button"
@@ -647,8 +693,8 @@ export function SwipeFileModal() {
                   + Freestyle
                 </button>
               </>
-            )}
-            {isMobile ? (
+            ) : null}
+            {isMobile && activeTab === "swipe" ? (
               <button
                 type="button"
                 className="h-10 w-10 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
@@ -671,6 +717,8 @@ export function SwipeFileModal() {
           </div>
         </div>
 
+        {activeTab === "swipe" ? (
+        <>
         {/* Use minmax(0,1fr) so the middle column can shrink and the right panel never gets pushed outside/clipped. */}
         <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_360px]">
           {/* Left: categories */}
@@ -1326,8 +1374,13 @@ export function SwipeFileModal() {
             )}
           </aside>
         </div>
+        </>
+        ) : (
+          <YoutubeCreatorFeedPanel />
+        )}
       </div>
 
+      {activeTab === "swipe" ? (
       <SwipeIdeasChatModal
         open={ideasChatOpen}
         onClose={() => setIdeasChatOpen(false)}
@@ -1337,7 +1390,9 @@ export function SwipeFileModal() {
           if (selectedItem?.id) void refreshIdeasCount(selectedItem.id);
         }}
       />
+      ) : null}
 
+      {activeTab === "swipe" ? (
       <SwipeIdeasPickerModal
         open={ideasPickerOpen}
         onClose={() => setIdeasPickerOpen(false)}
@@ -1360,8 +1415,9 @@ export function SwipeFileModal() {
           });
         }}
       />
+      ) : null}
 
-      {captureModalOpen ? (
+      {activeTab === "swipe" && captureModalOpen ? (
         <div
           className="fixed inset-0 z-[180] flex items-center justify-center bg-black/55 p-3 md:p-6"
           onMouseDown={(e) => {
@@ -1400,7 +1456,7 @@ export function SwipeFileModal() {
         </div>
       ) : null}
 
-      {freestyleModalOpen ? (
+      {activeTab === "swipe" && freestyleModalOpen ? (
         <div
           className="fixed inset-0 z-[181] flex items-center justify-center bg-black/55 p-3 md:p-6"
           onMouseDown={(e) => {
@@ -1440,7 +1496,7 @@ export function SwipeFileModal() {
       ) : null}
 
       {/* Mobile overflow sheet */}
-      {isMobile && mobileSheet?.kind === "overflow" ? (
+      {activeTab === "swipe" && isMobile && mobileSheet?.kind === "overflow" ? (
         <div
           className="fixed inset-0 z-[190] flex items-end justify-center bg-black/40"
           onMouseDown={(e) => {

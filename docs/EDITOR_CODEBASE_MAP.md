@@ -992,6 +992,7 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
 - Ideas Chat (Phase 1):
   - `GET /api/swipe-file/items/[id]/ideas/thread` → `src/app/api/swipe-file/items/[id]/ideas/thread/route.ts`
   - `POST /api/swipe-file/items/[id]/ideas/messages` → `src/app/api/swipe-file/items/[id]/ideas/messages/route.ts`
+  - `POST /api/swipe-file/items/[id]/ideas/topics` → `src/app/api/swipe-file/items/[id]/ideas/topics/route.ts`
   - `GET/POST /api/swipe-file/items/[id]/ideas` → `src/app/api/swipe-file/items/[id]/ideas/route.ts`
   - `GET /api/swipe-file/items/[id]/ideas/chat-prompt-preview` → `src/app/api/swipe-file/items/[id]/ideas/chat-prompt-preview/route.ts`
   - `POST /api/swipe-file/items/[id]/ideas/reset` → `src/app/api/swipe-file/items/[id]/ideas/reset/route.ts`
@@ -1005,10 +1006,41 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - Now owns the final repurpose selections: **Template type**, **Saved prompt**, and idea choice
   - Allows selecting a saved idea **or** continuing without an idea (Angle/Notes fallback)
   - Prompt preview in this modal reflects the current in-modal template type + saved prompt + idea state
+- `src/features/editor/components/SwipeIdeasChatModal.tsx`
+  - Now has a superadmin-only **Topics** helper beside **View prompt**
+  - Topics runs as a separate ephemeral Anthropic analysis on the raw source material only
+  - It does **not** write to idea threads/drafts/saved ideas; it returns temporary bullet points focused on core topics + why they matter
 - `POST /api/swipe-file/items/[id]/create-project`
   - Accepts optional `ideaId` to snapshot the selected idea onto the new project
 - `POST /api/editor/projects/jobs/generate-copy`
   - If `source_swipe_idea_snapshot` exists, it is sent **alongside** the project `prompt_snapshot` (the exact saved prompt chosen in the repurpose modal)
+
+### YouTube Creator Feed tab (superadmin-only, inside Swipe File modal)
+- `src/features/editor/components/SwipeFileModal.tsx`
+  - Now exposes a second tab: **YouTube Creator Feed** for superadmins only
+  - Keeps the existing Swipe File tab intact while switching the modal body to a creator/video browser
+- `src/features/editor/components/YoutubeCreatorFeedPanel.tsx`
+  - Owns the YT RSS UI: creator management, cached video list, note editing, refresh actions, and the right-side repurpose controls
+  - Reuses `SwipeIdeasChatModal` + `SwipeIdeasPickerModal`, but only after the selected YT video has been mirrored into the active account’s Swipe File
+- `src/app/api/yt-rss/_utils.ts`
+  - Auth + superadmin gate for the YT RSS feature
+  - YouTube feed URL validation + RSS/XML parsing helpers
+  - Per-account mirror bridge from user-scoped `yt_videos` into account-scoped `swipe_file_items`
+- API surface:
+  - `GET/POST /api/yt-rss/creators`
+  - `PATCH/DELETE /api/yt-rss/creators/[id]`
+  - `GET /api/yt-rss/videos`
+  - `PATCH /api/yt-rss/videos/[id]`
+  - `POST /api/yt-rss/refresh`
+  - `POST /api/yt-rss/videos/[id]/enrich`
+- Data model:
+  - `public.yt_creators`: user-scoped tracked creators + refresh status
+  - `public.yt_videos`: user-scoped cached video metadata + YT-side Angle/Notes
+  - `public.yt_video_swipe_mirrors`: bridge table so the same cached YT video can mirror into the current editor account’s Swipe File without breaking the user-scoped feed model
+- Mirror behavior:
+  - The YT tab does **not** directly create projects from raw RSS rows
+  - `Enrich` is the bridge step: it creates/reuses an account-scoped Swipe File item, then runs the existing Swipe enrich route on that mirrored item
+  - After that, Generate ideas / Create project + rewrite / Open existing project all use the mirrored Swipe item
 
 ### Manual QA (Swipe File add-item modal)
 - Open `/editor` as superadmin and click **Swipe File**

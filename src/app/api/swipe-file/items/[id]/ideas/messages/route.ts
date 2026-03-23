@@ -26,12 +26,77 @@ function normalizeSlideOutline(input: any): string[] {
   return out.length === 6 ? out : [];
 }
 
-function extractJsonObject(text: string): any {
+function stripMarkdownCodeFences(text: string): string {
+  const raw = String(text || '').trim();
+  if (!raw.startsWith('```')) return raw;
+  const match = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1] ? String(match[1]).trim() : raw;
+}
+
+function extractFirstBalancedJsonObject(text: string): string {
   const raw = String(text || '');
-  const first = raw.indexOf('{');
-  const last = raw.lastIndexOf('}');
-  if (first === -1 || last === -1 || last <= first) throw new Error('Model did not return JSON');
-  return JSON.parse(raw.slice(first, last + 1));
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (start === -1) {
+      if (ch === '{') {
+        start = i;
+        depth = 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+
+  throw new Error('Model did not return a balanced JSON object');
+}
+
+function extractJsonObject(text: string): any {
+  const trimmed = String(text || '').trim();
+  const unfenced = stripMarkdownCodeFences(trimmed);
+
+  try {
+    return JSON.parse(unfenced);
+  } catch {
+    // fall through to balanced-object extraction
+  }
+
+  const jsonSlice = extractFirstBalancedJsonObject(unfenced);
+  return JSON.parse(jsonSlice);
 }
 
 function assertCards(payload: any): { assistantMessage: string; cards: CardOut[] } {

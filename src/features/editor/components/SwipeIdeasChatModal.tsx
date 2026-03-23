@@ -38,6 +38,10 @@ type SwipeContext = {
   note: string;
 };
 
+type TopicsResult = {
+  bullets: string[];
+};
+
 function getActiveAccountHeader(): Record<string, string> {
   try {
     const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
@@ -121,6 +125,10 @@ export function SwipeIdeasChatModal(props: {
   const [promptContext, setPromptContext] = useState("");
   const [promptHistory, setPromptHistory] = useState("");
   const [promptCopyStatus, setPromptCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [topicsOpen, setTopicsOpen] = useState(false);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
+  const [topicsResult, setTopicsResult] = useState<TopicsResult | null>(null);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [masterPrompt, setMasterPrompt] = useState<string>("");
@@ -202,6 +210,10 @@ export function SwipeIdeasChatModal(props: {
     setPromptContext("");
     setPromptHistory("");
     setPromptCopyStatus("idle");
+    setTopicsOpen(false);
+    setTopicsLoading(false);
+    setTopicsError(null);
+    setTopicsResult(null);
     setBatchesOpenBySourceMessageId({});
     setOpenPanel(null);
     setSourceTab("transcript");
@@ -623,8 +635,40 @@ export function SwipeIdeasChatModal(props: {
   };
 
   const onOpenPrompt = async () => {
+    setTopicsOpen(false);
+    setSettingsOpen(false);
     setPromptOpen(true);
     await fetchPromptPreview();
+  };
+
+  const fetchTopics = async () => {
+    const itemId = String(swipeItemId || "").trim();
+    if (!itemId) return;
+    setTopicsLoading(true);
+    setTopicsError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/topics`, { method: "POST", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load topics (${res.status})`));
+      const bullets = Array.isArray(j?.bullets) ? (j.bullets as any[]).map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+      setTopicsResult({ bullets });
+    } catch (e: any) {
+      setTopicsError(String(e?.message || e || "Failed to load topics"));
+      setTopicsResult(null);
+    } finally {
+      setTopicsLoading(false);
+    }
+  };
+
+  const onOpenTopics = async () => {
+    setPromptOpen(false);
+    setSettingsOpen(false);
+    setTopicsOpen(true);
+    if (topicsResult?.bullets?.length) return;
+    await fetchTopics();
   };
 
   const onCopyPrompt = async () => {
@@ -695,6 +739,9 @@ export function SwipeIdeasChatModal(props: {
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Reset failed (${res.status})`));
       setPromptOpen(false);
+      setTopicsOpen(false);
+      setTopicsError(null);
+      setTopicsResult(null);
       setDraft("");
       setThreadId(null);
       setMessages([]);
@@ -1135,6 +1182,7 @@ export function SwipeIdeasChatModal(props: {
 
   const disabledComposer = isMobile && openPanel === "ideas";
   const canSendEffective = canSend && !disabledComposer;
+  const canOpenTopics = isSuperadmin && status === "ready" && !swipeContextLoading && !!String(swipeContext?.transcript || "").trim();
 
   return (
     <div
@@ -1225,6 +1273,17 @@ export function SwipeIdeasChatModal(props: {
                   <button
                     type="button"
                     className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                    onClick={() => void onOpenTopics()}
+                    disabled={!canOpenTopics || topicsLoading || resetBusy}
+                    title="Extract the core topics and why they matter from the source material"
+                  >
+                    Topics
+                  </button>
+                ) : null}
+                {isSuperadmin ? (
+                  <button
+                    type="button"
+                    className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
                     onClick={() => void onOpenPrompt()}
                     disabled={promptLoading || resetBusy}
                     title="See the raw sections sent to the AI"
@@ -1248,6 +1307,17 @@ export function SwipeIdeasChatModal(props: {
                   <button
                     type="button"
                     className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                    onClick={() => void onOpenTopics()}
+                    disabled={!canOpenTopics || topicsLoading || resetBusy}
+                    title="Extract the core topics and why they matter from the source material"
+                  >
+                    Topics
+                  </button>
+                ) : null}
+                {isSuperadmin ? (
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50 disabled:opacity-60"
                     onClick={() => void onOpenPrompt()}
                     disabled={promptLoading || resetBusy}
                     title="See the raw sections sent to the AI"
@@ -1267,7 +1337,11 @@ export function SwipeIdeasChatModal(props: {
                 <button
                   type="button"
                   className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"
-                  onClick={() => setSettingsOpen((v) => !v)}
+                  onClick={() => {
+                    setPromptOpen(false);
+                    setTopicsOpen(false);
+                    setSettingsOpen((v) => !v);
+                  }}
                   title="Master prompt settings"
                 >
                   Settings
@@ -1309,6 +1383,57 @@ export function SwipeIdeasChatModal(props: {
               <div className="mt-2 text-xs text-red-600">❌ {masterSaveError}</div>
             ) : null}
             <div className="mt-2 text-[11px] text-slate-500">Auto-saves as you type.</div>
+          </div>
+        ) : null}
+
+        {topicsOpen ? (
+          <div className="border-b border-slate-100 bg-white px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-slate-900">Topics</div>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Core topics and why they matter, extracted from the raw source material only.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => void fetchTopics()}
+                  disabled={topicsLoading}
+                  title="Refresh topics"
+                >
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50"
+                  onClick={() => setTopicsOpen(false)}
+                  title="Hide topics"
+                >
+                  Hide
+                </button>
+              </div>
+            </div>
+
+            {topicsError ? <div className="mt-2 text-[11px] text-red-700">❌ {topicsError}</div> : null}
+            {topicsLoading ? <div className="mt-2 text-[11px] text-slate-500">Analyzing source material…</div> : null}
+            {!topicsLoading && !topicsError && (!topicsResult || topicsResult.bullets.length === 0) ? (
+              <div className="mt-2 text-[11px] text-slate-500">No topics returned.</div>
+            ) : null}
+
+            {topicsResult && topicsResult.bullets.length > 0 ? (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="space-y-2">
+                  {topicsResult.bullets.map((bullet, idx) => (
+                    <div key={`${idx}-${bullet.slice(0, 24)}`} className="flex items-start gap-2 text-sm text-slate-800">
+                      <span className="mt-[2px] text-slate-500">•</span>
+                      <span className="leading-6">{bullet}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

@@ -5299,12 +5299,12 @@ export default function EditorShell() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [promptModalOpen]);
 
-  // Shortcut: Cmd+O → open Outreach modal → paste clipboard URL → run outreach
+  // Shortcut: Cmd+O / Cmd+J → open Outreach modal → paste clipboard URL → run outreach
   useEffect(() => {
     const onKeyDown = async (e: KeyboardEvent) => {
       const key = String((e as any)?.key || "").toLowerCase();
       if (!e.metaKey || e.ctrlKey || e.altKey) return;
-      if (key !== "o") return;
+      if (key !== "o" && key !== "j") return;
 
       // Avoid hijacking when typing in inputs.
       const t = e.target as any;
@@ -5320,7 +5320,7 @@ export default function EditorShell() {
       try {
         text = typeof navigator !== "undefined" && navigator.clipboard ? await navigator.clipboard.readText() : "";
       } catch (err: any) {
-        addLog(`⚠️ Clipboard read failed for Cmd+O: ${String(err?.message || err || "unknown error")}`);
+        addLog(`⚠️ Clipboard read failed for Cmd+O/Cmd+J: ${String(err?.message || err || "unknown error")}`);
         text = "";
       }
       const reelUrl = String(text || "").trim();

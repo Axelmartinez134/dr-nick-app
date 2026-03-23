@@ -2719,7 +2719,7 @@ export function OutreachModal() {
     return !!String(reelUrl || "").trim() && !!String(baseTemplateId || "").trim();
   }, [baseTemplateId, instagramUrl, reelUrl, singleMode]);
 
-  // Cmd+O automation: open modal → paste URL → run outreach
+  // Cmd+O / Cmd+J automation: open modal → paste URL → run outreach
   const pendingShortcutRunRef = useRef<null | { reelUrl: string; startedAtMs: number }>(null);
 
   const handleRunOutreach = async (): Promise<boolean> => {
@@ -2985,7 +2985,7 @@ export function OutreachModal() {
 
   useEffect(() => {
     if (!open) return;
-    // If Cmd+O fired while the modal was closed, pick up the pending payload now.
+    // If Cmd+O / Cmd+J fired while the modal was closed, pick up the pending payload now.
     const pending = (window as any)?.__outreachRunPending || null;
     const ts = Number(pending?.ts || 0);
     const raw = String(pending?.reelUrl || "").trim();
@@ -3027,7 +3027,7 @@ export function OutreachModal() {
       }
 
       if (!canon) {
-        setScrapeError("Clipboard is empty (Cmd+O). Copy an Instagram Reel/Post link first.");
+        setScrapeError("Clipboard is empty (Cmd+O/Cmd+J). Copy an Instagram Reel/Post link first.");
         return;
       }
 
