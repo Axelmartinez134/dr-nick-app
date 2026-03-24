@@ -2,7 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext } from '../../../../_utils';
-import { isUuid } from '../_shared';
+import { isUuid, normalizeSwipeIdeasChatMode } from '../_shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
@@ -21,11 +21,20 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
     }
 
+    let body: any = null;
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+    const chatMode = normalizeSwipeIdeasChatMode(body?.chatMode);
+
     const { error: delErr } = await supabase
       .from('swipe_file_idea_threads')
       .delete()
       .eq('account_id', accountId)
-      .eq('swipe_item_id', swipeItemId);
+      .eq('swipe_item_id', swipeItemId)
+      .eq('chat_mode', chatMode);
     if (delErr) return NextResponse.json({ success: false, error: delErr.message } satisfies Resp, { status: 500 });
 
     return NextResponse.json({ success: true } satisfies Resp);

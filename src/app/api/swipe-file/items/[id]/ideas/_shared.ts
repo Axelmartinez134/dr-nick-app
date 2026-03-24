@@ -4,6 +4,12 @@ export function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(String(v || '').trim());
 }
 
+export type SwipeIdeasChatMode = 'ideas' | 'opening_slides';
+
+export function normalizeSwipeIdeasChatMode(input: unknown): SwipeIdeasChatMode {
+  return String(input || '').trim().toLowerCase() === 'opening_slides' ? 'opening_slides' : 'ideas';
+}
+
 export function sanitizePrompt(input: string): string {
   return String(input || '')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ')
@@ -68,19 +74,19 @@ export async function loadSwipeIdeasContextOrThrow(args: {
 export async function loadSwipeIdeasMasterPrompt(args: {
   supabase: any;
   accountId: string;
+  chatMode?: SwipeIdeasChatMode;
 }) {
   const { supabase, accountId } = args;
+  const chatMode = normalizeSwipeIdeasChatMode(args.chatMode);
   const { data: settingsRow } = await supabase
     .from('editor_account_settings')
-    .select('brand_alignment_prompt_override, swipe_ideas_master_prompt_override')
+    .select('brand_alignment_prompt_override, swipe_ideas_master_prompt_override, swipe_opening_slides_master_prompt_override')
     .eq('account_id', accountId)
     .maybeSingle();
 
-  return {
-    brandVoice: String((settingsRow as any)?.brand_alignment_prompt_override ?? '').trim(),
-    masterPrompt:
-      String((settingsRow as any)?.swipe_ideas_master_prompt_override ?? '').trim() ||
-      `You are an idea-generation assistant for 6-slide Instagram carousel posts.
+  const ideasPrompt = String((settingsRow as any)?.swipe_ideas_master_prompt_override ?? '').trim();
+  const openingSlidesPrompt = String((settingsRow as any)?.swipe_opening_slides_master_prompt_override ?? '').trim();
+  const defaultIdeasPrompt = `You are an idea-generation assistant for 6-slide Instagram carousel posts.
 
 Your job:
 - Help the user refine someone else’s inspiration into an original, brand-aligned idea.
@@ -102,8 +108,43 @@ Output format (HARD):
 
 Rules (HARD):
 - "slides" must be an array of length 6
-- Provide 3–8 cards unless the user explicitly asks for fewer
-- angleText should be the canonical “angle” used later to generate copy. Keep it concise but specific.`,
+- Provide 3-8 cards unless the user explicitly asks for fewer
+- angleText should be the canonical “angle” used later to generate copy. Keep it concise but specific.`;
+  const defaultOpeningSlidesPrompt = `You are an idea-generation assistant for Instagram carousel opening slides.
+
+Your job:
+- Help the user develop only the first two slides of a carousel.
+- Focus on strong hooks, framing, tension, clarity, novelty, and payoff.
+- Do not generate slides 3-6.
+- Produce multiple viable opening-slide pairs grounded in the source material and brand voice.
+
+Output format (HARD):
+- Return ONLY valid JSON (no markdown) in this exact shape:
+{
+  "assistantMessage": "string",
+  "cards": [
+    {
+      "title": "string",
+      "slide1": "string",
+      "slide2": "string",
+      "angleText": "string"
+    }
+  ]
+}
+
+Rules (HARD):
+- Return 3-8 cards unless the user explicitly asks for fewer.
+- Each card must contain exactly one slide1 and one slide2.
+- slide1 should be the strongest hook or opening claim.
+- slide2 should sharpen, explain, escalate, or reframe slide1.
+- angleText should be the canonical angle used to describe the pair.
+- Stay close to the source material and the user’s requested direction.
+- Do not generate full carousels.
+- Return JSON only.`;
+
+  return {
+    brandVoice: String((settingsRow as any)?.brand_alignment_prompt_override ?? '').trim(),
+    masterPrompt: chatMode === 'opening_slides' ? openingSlidesPrompt || defaultOpeningSlidesPrompt : ideasPrompt || defaultIdeasPrompt,
   };
 }
 

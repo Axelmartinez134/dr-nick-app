@@ -8,13 +8,17 @@ import {
   isUuid,
   loadSwipeIdeasContextOrThrow,
   loadSwipeIdeasMasterPrompt,
+  normalizeSwipeIdeasChatMode,
   sanitizePrompt,
+  type SwipeIdeasChatMode,
 } from '../_shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-type CardOut = { title: string; slides: string[]; angleText: string };
+type IdeaCardOut = { title: string; slides: string[]; angleText: string };
+type OpeningSlidesCardOut = { title: string; slide1: string; slide2: string; angleText: string };
+type CardOut = IdeaCardOut | OpeningSlidesCardOut;
 
 type Resp =
   | { success: true; assistantMessage: string; cards: CardOut[]; threadId: string; sourceMessageId: string }
@@ -22,8 +26,7 @@ type Resp =
 
 function normalizeSlideOutline(input: any): string[] {
   if (!Array.isArray(input)) return [];
-  const out = input.map((x) => String(x ?? '')).slice(0, 6);
-  return out.length === 6 ? out : [];
+  return input.map((x) => String(x ?? '')).slice(0, 6);
 }
 
 function stripMarkdownCodeFences(text: string): string {
@@ -99,11 +102,11 @@ function extractJsonObject(text: string): any {
   return JSON.parse(jsonSlice);
 }
 
-function assertCards(payload: any): { assistantMessage: string; cards: CardOut[] } {
+function assertIdeasCards(payload: any): { assistantMessage: string; cards: IdeaCardOut[] } {
   const assistantMessage = typeof payload?.assistantMessage === 'string' ? payload.assistantMessage : '';
   const cardsIn = payload?.cards;
   if (!Array.isArray(cardsIn) || cardsIn.length < 1) throw new Error('Invalid output: cards must be a non-empty array');
-  const cards: CardOut[] = cardsIn.slice(0, 12).map((c: any, idx: number) => {
+  const cards: IdeaCardOut[] = cardsIn.slice(0, 12).map((c: any, idx: number) => {
     const title = String(c?.title || '').trim();
     const angleText = String(c?.angleText || '').trim();
     const slidesIn = c?.slides;
@@ -112,6 +115,24 @@ function assertCards(payload: any): { assistantMessage: string; cards: CardOut[]
     if (!angleText) throw new Error(`Invalid card ${idx + 1}: angleText missing`);
     if (slides.length !== 6) throw new Error(`Invalid card ${idx + 1}: slides must be length 6`);
     return { title, angleText, slides };
+  });
+  return { assistantMessage: String(assistantMessage || '').trim(), cards };
+}
+
+function assertOpeningSlidesCards(payload: any): { assistantMessage: string; cards: OpeningSlidesCardOut[] } {
+  const assistantMessage = typeof payload?.assistantMessage === 'string' ? payload.assistantMessage : '';
+  const cardsIn = payload?.cards;
+  if (!Array.isArray(cardsIn) || cardsIn.length < 1) throw new Error('Invalid output: cards must be a non-empty array');
+  const cards: OpeningSlidesCardOut[] = cardsIn.slice(0, 12).map((c: any, idx: number) => {
+    const title = String(c?.title || '').trim();
+    const angleText = String(c?.angleText || '').trim();
+    const slide1 = String(c?.slide1 || '').trim();
+    const slide2 = String(c?.slide2 || '').trim();
+    if (!title) throw new Error(`Invalid card ${idx + 1}: title missing`);
+    if (!angleText) throw new Error(`Invalid card ${idx + 1}: angleText missing`);
+    if (!slide1) throw new Error(`Invalid card ${idx + 1}: slide1 missing`);
+    if (!slide2) throw new Error(`Invalid card ${idx + 1}: slide2 missing`);
+    return { title, angleText, slide1, slide2 };
   });
   return { assistantMessage: String(assistantMessage || '').trim(), cards };
 }
@@ -158,18 +179,25 @@ async function callAnthropicJson(args: {
   }
 }
 
-function parseCardsFromRaw(rawText: string): { assistantMessage: string; cards: CardOut[] } {
+function parseCardsFromRaw(rawText: string, chatMode: SwipeIdeasChatMode): { assistantMessage: string; cards: CardOut[] } {
   const payload = extractJsonObject(rawText);
-  return assertCards(payload);
+  return chatMode === 'opening_slides' ? assertOpeningSlidesCards(payload) : assertIdeasCards(payload);
 }
 
-async function ensureThread(args: { supabase: any; accountId: string; userId: string; swipeItemId: string }): Promise<string> {
-  const { supabase, accountId, userId, swipeItemId } = args;
+async function ensureThread(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  swipeItemId: string;
+  chatMode: SwipeIdeasChatMode;
+}): Promise<string> {
+  const { supabase, accountId, userId, swipeItemId, chatMode } = args;
   const { data: existing, error: exErr } = await supabase
     .from('swipe_file_idea_threads')
     .select('id')
     .eq('account_id', accountId)
     .eq('swipe_item_id', swipeItemId)
+    .eq('chat_mode', chatMode)
     .maybeSingle();
   if (exErr) throw new Error(exErr.message);
   const existingId = String((existing as any)?.id || '').trim();
@@ -177,7 +205,7 @@ async function ensureThread(args: { supabase: any; accountId: string; userId: st
 
   const { data: inserted, error: insErr } = await supabase
     .from('swipe_file_idea_threads')
-    .insert({ account_id: accountId, swipe_item_id: swipeItemId, created_by_user_id: userId } as any)
+    .insert({ account_id: accountId, swipe_item_id: swipeItemId, chat_mode: chatMode, created_by_user_id: userId } as any)
     .select('id')
     .maybeSingle();
   if (insErr) {
@@ -192,6 +220,7 @@ async function ensureThread(args: { supabase: any; accountId: string; userId: st
     .select('id')
     .eq('account_id', accountId)
     .eq('swipe_item_id', swipeItemId)
+    .eq('chat_mode', chatMode)
     .maybeSingle();
   if (rrErr) throw new Error(rrErr.message);
   const rereadId = String((reread as any)?.id || '').trim();
@@ -218,6 +247,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       body = {};
     }
     const content = String(s(body?.content) || '').trim();
+    const chatMode = normalizeSwipeIdeasChatMode(body?.chatMode);
     if (!content) return NextResponse.json({ success: false, error: 'Missing content' } satisfies Resp, { status: 400 });
     if (content.length > 10_000) return NextResponse.json({ success: false, error: 'Message too long' } satisfies Resp, { status: 400 });
 
@@ -230,9 +260,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       return NextResponse.json({ success: false, error: msg } satisfies Resp, { status });
     }
 
-    const { brandVoice, masterPrompt } = await loadSwipeIdeasMasterPrompt({ supabase, accountId });
+    const { brandVoice, masterPrompt } = await loadSwipeIdeasMasterPrompt({ supabase, accountId, chatMode });
 
-    const threadId = await ensureThread({ supabase, accountId, userId: user.id, swipeItemId });
+    const threadId = await ensureThread({ supabase, accountId, userId: user.id, swipeItemId, chatMode });
 
     // Persist user message.
     const { error: userMsgErr } = await supabase.from('swipe_file_idea_messages').insert({
@@ -270,7 +300,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     // Robustness: Claude may occasionally return non-JSON on follow-ups. Retry once with stricter instructions.
     const parsed = await (async () => {
       try {
-        return parseCardsFromRaw(anthropic.rawText);
+        return parseCardsFromRaw(anthropic.rawText, chatMode);
       } catch {
         const retrySystem =
           system +
@@ -282,7 +312,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             ].join('\n')
           );
         const retry = await callAnthropicJson({ system: retrySystem, messages: history, temperature: 0, max_tokens: 2200 });
-        return parseCardsFromRaw(retry.rawText);
+        return parseCardsFromRaw(retry.rawText, chatMode);
       }
     })();
 
@@ -307,16 +337,22 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       return NextResponse.json({ success: false, error: 'Failed to persist assistant message' } satisfies Resp, { status: 500 });
     }
 
-    const draftRows = parsed.cards.map((c) => ({
-      account_id: accountId,
-      swipe_item_id: swipeItemId,
-      thread_id: threadId,
-      source_message_id: sourceMessageId,
-      created_by_user_id: user.id,
-      title: String(c.title || '').trim().slice(0, 240),
-      slide_outline: normalizeSlideOutline(c.slides) as any,
-      angle_text: String(c.angleText || '').trim(),
-    }));
+    const draftRows = parsed.cards.map((c) => {
+      const slideOutline =
+        chatMode === 'opening_slides'
+          ? normalizeSlideOutline([(c as OpeningSlidesCardOut).slide1, (c as OpeningSlidesCardOut).slide2])
+          : normalizeSlideOutline((c as IdeaCardOut).slides);
+      return {
+        account_id: accountId,
+        swipe_item_id: swipeItemId,
+        thread_id: threadId,
+        source_message_id: sourceMessageId,
+        created_by_user_id: user.id,
+        title: String(c.title || '').trim().slice(0, 240),
+        slide_outline: slideOutline as any,
+        angle_text: String(c.angleText || '').trim(),
+      };
+    });
 
     const { error: draftErr } = await supabase.from('swipe_file_idea_drafts').insert(draftRows as any);
     if (draftErr) return NextResponse.json({ success: false, error: draftErr.message } satisfies Resp, { status: 500 });

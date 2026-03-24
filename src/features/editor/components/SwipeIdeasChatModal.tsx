@@ -6,6 +6,7 @@ import { useEditorSelector } from "@/features/editor/store";
 
 type ChatMsg = { id: string; role: "user" | "assistant"; content: string; createdAt: string };
 type IdeaCard = { title: string; slides: string[]; angleText: string; sourceMessageId?: string | null };
+type OpeningSlidesCard = { title: string; slide1: string; slide2: string; angleText: string; sourceMessageId?: string | null };
 type SavedIdea = {
   id: string;
   createdAt: string;
@@ -42,6 +43,8 @@ type TopicsResult = {
   bullets: string[];
 };
 
+type ChatMode = "ideas" | "opening_slides";
+
 function getActiveAccountHeader(): Record<string, string> {
   try {
     const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
@@ -76,6 +79,28 @@ Return ONLY valid JSON (no markdown) in this exact shape:
   ]
 }`;
 
+const DEFAULT_OPENING_SLIDES_MASTER_PROMPT_UI = `You are an idea-generation assistant for Instagram carousel opening slides.
+
+Your job:
+- Help me develop only the first two slides of a carousel.
+- Focus on strong hooks, framing, tension, clarity, novelty, and payoff.
+- Do not generate slides 3-6.
+- Produce multiple viable opening-slide pairs grounded in the source material and brand voice.
+
+Output format (HARD):
+Return ONLY valid JSON (no markdown) in this exact shape:
+{
+  "assistantMessage": "string",
+  "cards": [
+    {
+      "title": "string",
+      "slide1": "string",
+      "slide2": "string",
+      "angleText": "string"
+    }
+  ]
+}`;
+
 export function SwipeIdeasChatModal(props: {
   open: boolean;
   onClose: () => void;
@@ -86,13 +111,14 @@ export function SwipeIdeasChatModal(props: {
   const { open, onClose, swipeItemId, swipeItemLabel, onIdeaSaved } = props;
   const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
+  const [activeMode, setActiveMode] = useState<ChatMode>("ideas");
 
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [cards, setCards] = useState<IdeaCard[]>([]);
+  const [cards, setCards] = useState<Array<IdeaCard | OpeningSlidesCard>>([]);
   const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>([]);
   const [savedIdeasLoading, setSavedIdeasLoading] = useState(false);
   const [savedIdeasError, setSavedIdeasError] = useState<string | null>(null);
@@ -135,6 +161,7 @@ export function SwipeIdeasChatModal(props: {
   const [masterSaveStatus, setMasterSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [masterSaveError, setMasterSaveError] = useState<string | null>(null);
   const masterSaveTimeoutRef = useRef<number | null>(null);
+  const loadedMasterPromptRef = useRef<Record<ChatMode, string>>({ ideas: "", opening_slides: "" });
 
   const [saveIdeaBusyKey, setSaveIdeaBusyKey] = useState<string | null>(null);
   const [saveIdeaError, setSaveIdeaError] = useState<string | null>(null);
@@ -157,6 +184,12 @@ export function SwipeIdeasChatModal(props: {
   }, [open, swipeItemId, draft, sendBusy, resetBusy]);
   const showStarterPrompts = status === "ready" && messages.length === 0;
   const isFreestyleContext = String(swipeContext?.platform || "").trim().toLowerCase() === "freestyle";
+  const isOpeningSlidesMode = activeMode === "opening_slides";
+  const modalTitle = isOpeningSlidesMode ? "Opening Slides" : "Generate ideas";
+  const modePromptPlaceholder = isOpeningSlidesMode
+    ? DEFAULT_OPENING_SLIDES_MASTER_PROMPT_UI
+    : DEFAULT_MASTER_PROMPT_UI;
+  const modeParam = `chatMode=${encodeURIComponent(activeMode)}`;
 
   const cardKey = (c: { title: string; angleText: string; slides: string[] }) => {
     const title = String(c.title || "").trim();
@@ -168,6 +201,39 @@ export function SwipeIdeasChatModal(props: {
   const savedCardKeySet = useMemo(() => {
     return new Set((savedIdeas || []).map((s) => cardKey({ title: s.title, angleText: s.angleText, slides: s.slides })));
   }, [savedIdeas]);
+
+  const copyText = async (text: string, successNotice: string) => {
+    const value = String(text || "");
+    if (!value.trim()) return;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        setNotice(successNotice);
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.setAttribute("readonly", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "0";
+      ta.style.opacity = "0";
+      ta.style.pointerEvents = "none";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (!ok) throw new Error("copy command failed");
+      setNotice(successNotice);
+    } catch {
+      setNotice("Copy failed.");
+    }
+  };
 
   const attemptGroups = useMemo(() => {
     const groups = new Map<string, DraftIdea[]>();
@@ -270,7 +336,7 @@ export function SwipeIdeasChatModal(props: {
       const token = await getToken();
       if (!token) throw new Error("Missing auth token");
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas/drafts`, { method: "GET", headers });
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas/drafts?${modeParam}`, { method: "GET", headers });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load draft ideas (${res.status})`));
       const rows: DraftIdea[] = Array.isArray(j.drafts)
@@ -360,7 +426,7 @@ export function SwipeIdeasChatModal(props: {
       const token = await getToken();
       if (!token) throw new Error("Missing auth token");
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas/thread`, { method: "GET", headers });
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas/thread?${modeParam}`, { method: "GET", headers });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load thread (${res.status})`));
       setThreadId(String(j?.threadId || "").trim() || null);
@@ -376,7 +442,7 @@ export function SwipeIdeasChatModal(props: {
       setStatus("ready");
     } catch (e: any) {
       setStatus("error");
-      setError(String(e?.message || e || "Failed to load ideas chat"));
+      setError(String(e?.message || e || `Failed to load ${isOpeningSlidesMode ? "opening slides" : "ideas"} chat`));
       setThreadId(null);
       setMessages([]);
     }
@@ -413,8 +479,13 @@ export function SwipeIdeasChatModal(props: {
           throw new Error(String(ctxJson?.error || `Failed to load context (${ctxRes.status})`));
         }
 
-        const mp = String(promptJson?.swipeIdeasMasterPromptOverride ?? "").trim();
-        setMasterPrompt(mp || DEFAULT_MASTER_PROMPT_UI);
+        const currentMode = activeMode;
+        const promptKey = currentMode === "opening_slides" ? "swipeOpeningSlidesMasterPromptOverride" : "swipeIdeasMasterPromptOverride";
+        const fallbackPrompt = currentMode === "opening_slides" ? DEFAULT_OPENING_SLIDES_MASTER_PROMPT_UI : DEFAULT_MASTER_PROMPT_UI;
+        const mp = String(promptJson?.[promptKey] ?? "").trim();
+        const loadedPrompt = mp || fallbackPrompt;
+        loadedMasterPromptRef.current[currentMode] = loadedPrompt;
+        setMasterPrompt(loadedPrompt);
 
         const ctx: SwipeContext = {
           platform: String(ctxJson?.context?.platform || ""),
@@ -432,13 +503,17 @@ export function SwipeIdeasChatModal(props: {
         await Promise.all([loadThread(itemId), refreshStarterPrompts()]);
         if (cancelled) return;
 
-        // Load saved ideas (persisted) so reopening shows what "Generate ideas (N)" refers to.
-        void refreshSavedIdeas(itemId);
+        if (!isOpeningSlidesMode) {
+          void refreshSavedIdeas(itemId);
+        } else {
+          setSavedIdeas([]);
+          setSavedIdeasError(null);
+        }
         void refreshDraftIdeas(itemId);
       } catch (e: any) {
         if (!cancelled) {
           setStatus("error");
-          setError(String(e?.message || e || "Failed to load ideas chat"));
+          setError(String(e?.message || e || `Failed to load ${isOpeningSlidesMode ? "opening slides" : "ideas"} chat`));
         }
       }
     })();
@@ -446,7 +521,7 @@ export function SwipeIdeasChatModal(props: {
     return () => {
       cancelled = true;
     };
-  }, [open, swipeItemId]);
+  }, [open, swipeItemId, activeMode]);
 
   // Debounced autosave Angle/Notes for this swipe item.
   useEffect(() => {
@@ -500,6 +575,13 @@ export function SwipeIdeasChatModal(props: {
     if (!open) return;
     if (status !== "ready") return;
     if (masterSaveTimeoutRef.current) window.clearTimeout(masterSaveTimeoutRef.current);
+    const currentPrompt = String(masterPrompt || "").trim();
+    const loadedPrompt = String(loadedMasterPromptRef.current[activeMode] || "").trim();
+    if (currentPrompt === loadedPrompt) {
+      setMasterSaveStatus("idle");
+      setMasterSaveError(null);
+      return;
+    }
 
     masterSaveTimeoutRef.current = window.setTimeout(() => {
       masterSaveTimeoutRef.current = null;
@@ -513,10 +595,14 @@ export function SwipeIdeasChatModal(props: {
           const res = await fetch("/api/editor/user-settings/swipe-ideas-master-prompt", {
             method: "POST",
             headers,
-            body: JSON.stringify({ swipeIdeasMasterPromptOverride: String(masterPrompt || "").trim() || null }),
+            body: JSON.stringify({
+              chatMode: activeMode,
+              promptOverride: String(masterPrompt || "").trim() || null,
+            }),
           });
           const j = await res.json().catch(() => null);
           if (!res.ok || !j?.success) throw new Error(String(j?.error || `Save failed (${res.status})`));
+          loadedMasterPromptRef.current[activeMode] = String(masterPrompt || "").trim();
           setMasterSaveStatus("saved");
           window.setTimeout(() => setMasterSaveStatus("idle"), 800);
         } catch (e: any) {
@@ -530,7 +616,7 @@ export function SwipeIdeasChatModal(props: {
       if (masterSaveTimeoutRef.current) window.clearTimeout(masterSaveTimeoutRef.current);
       masterSaveTimeoutRef.current = null;
     };
-  }, [masterPrompt, open, status]);
+  }, [masterPrompt, open, status, activeMode]);
 
   const sendMessage = async () => {
     const itemId = String(swipeItemId || "").trim();
@@ -552,20 +638,30 @@ export function SwipeIdeasChatModal(props: {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/messages`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ content: text, chatMode: activeMode }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Send failed (${res.status})`));
 
       const assistantMessage = String(j?.assistantMessage || "").trim();
       const srcMsgId = String(j?.sourceMessageId || "").trim();
-      const cardsIn: IdeaCard[] = Array.isArray(j?.cards)
-        ? (j.cards as any[]).map((c) => ({
-            title: String(c?.title || ""),
-            slides: Array.isArray(c?.slides) ? c.slides.map((s: any) => String(s ?? "")) : [],
-            angleText: String(c?.angleText || ""),
-            sourceMessageId: srcMsgId || null,
-          }))
+      const cardsIn: Array<IdeaCard | OpeningSlidesCard> = Array.isArray(j?.cards)
+        ? (j.cards as any[]).map((c) =>
+            isOpeningSlidesMode
+              ? {
+                  title: String(c?.title || ""),
+                  slide1: String(c?.slide1 || ""),
+                  slide2: String(c?.slide2 || ""),
+                  angleText: String(c?.angleText || ""),
+                  sourceMessageId: srcMsgId || null,
+                }
+              : {
+                  title: String(c?.title || ""),
+                  slides: Array.isArray(c?.slides) ? c.slides.map((s: any) => String(s ?? "")) : [],
+                  angleText: String(c?.angleText || ""),
+                  sourceMessageId: srcMsgId || null,
+                }
+          )
         : [];
 
       setThreadId(String(j?.threadId || "").trim() || null);
@@ -581,7 +677,7 @@ export function SwipeIdeasChatModal(props: {
           id: `local-${srcMsgId}-${idx}`,
           createdAt: nowIso,
           title: String(c.title || ""),
-          slides: Array.isArray(c.slides) ? c.slides : [],
+          slides: "slides" in c ? (Array.isArray(c.slides) ? c.slides : []) : [String(c.slide1 || ""), String(c.slide2 || "")].filter(Boolean),
           angleText: String(c.angleText || ""),
           sourceMessageId: srcMsgId,
         }));
@@ -589,7 +685,7 @@ export function SwipeIdeasChatModal(props: {
         setBatchesOpenBySourceMessageId((prev) => ({ ...(prev || {}), [srcMsgId]: true }));
       }
       void refreshDraftIdeas(itemId);
-      void refreshSavedIdeas(itemId);
+      if (!isOpeningSlidesMode) void refreshSavedIdeas(itemId);
     } catch (e: any) {
       const msg = String(e?.message || e || "Send failed");
       setError(msg);
@@ -621,7 +717,7 @@ export function SwipeIdeasChatModal(props: {
       const token = await getToken();
       if (!token) throw new Error("Missing auth token");
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/chat-prompt-preview`, { method: "GET", headers });
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/chat-prompt-preview?${modeParam}`, { method: "GET", headers });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load prompt preview (${res.status})`));
       setPromptSystem(String(j?.system || ""));
@@ -717,11 +813,32 @@ export function SwipeIdeasChatModal(props: {
     setDraft(nextPrompt);
   };
 
+  const onSelectMode = (nextMode: ChatMode) => {
+    if (nextMode === activeMode) return;
+    setPromptOpen(false);
+    setTopicsOpen(false);
+    setTopicsError(null);
+    setTopicsResult(null);
+    setSettingsOpen(false);
+    setMasterSaveStatus("idle");
+    setMasterSaveError(null);
+    setNotice(null);
+    setError(null);
+    setDraft("");
+    setCards([]);
+    setDraftIdeas([]);
+    setMessages([]);
+    setThreadId(null);
+    setActiveMode(nextMode);
+  };
+
   const onReset = async () => {
     const itemId = String(swipeItemId || "").trim();
     if (!itemId) return;
     const ok = window.confirm(
-      "Start a new chat?\n\nThis will delete the current conversation and unsaved idea batches for this swipe item. Saved ideas will be kept."
+      isOpeningSlidesMode
+        ? "Start a new Opening Slides chat?\n\nThis will delete the current Opening Slides conversation and its unsaved batches for this swipe item."
+        : "Start a new chat?\n\nThis will delete the current conversation and unsaved idea batches for this swipe item. Saved ideas will be kept."
     );
     if (!ok) return;
 
@@ -735,6 +852,7 @@ export function SwipeIdeasChatModal(props: {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/reset`, {
         method: "POST",
         headers,
+        body: JSON.stringify({ chatMode: activeMode }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Reset failed (${res.status})`));
@@ -749,7 +867,7 @@ export function SwipeIdeasChatModal(props: {
       setDraftIdeas([]);
       await loadThread(itemId);
       void refreshDraftIdeas(itemId);
-      void refreshSavedIdeas(itemId);
+      if (!isOpeningSlidesMode) void refreshSavedIdeas(itemId);
     } catch (e: any) {
       setError(String(e?.message || e || "Reset failed"));
       setStatus("error");
@@ -908,51 +1026,116 @@ export function SwipeIdeasChatModal(props: {
   const renderIdeasInner = () => {
     return (
       <>
-        <div className="text-xs font-semibold text-slate-700">Saved ideas (persisted)</div>
-        <div className="mt-2 text-[11px] text-slate-500">These are the ideas you saved and can reuse later.</div>
-        {savedIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {savedIdeasError}</div> : null}
+        {isOpeningSlidesMode ? (
+          <>
+            <div className="text-xs font-semibold text-slate-700">Recent opening pairs</div>
+            <div className="mt-2 text-[11px] text-slate-500">
+              Persistent opening-slide pairs for this swipe item. Copy a pair into Ideas when you want to expand it into a full carousel.
+            </div>
+            {draftIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {draftIdeasError}</div> : null}
 
-        {savedIdeasLoading ? (
-          <div className="mt-3 text-sm text-slate-600">Loading saved ideas…</div>
-        ) : savedIdeas.length === 0 ? (
-          <div className="mt-3 text-sm text-slate-600">No saved ideas yet. Use the section below to save one.</div>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {savedIdeas.map((it) => (
-              <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900 truncate" title={it.title}>
-                      {it.title || "Idea"}
+            {draftIdeasLoading ? (
+              <div className="mt-3 text-sm text-slate-600">Loading opening pairs…</div>
+            ) : draftIdeas.length === 0 ? (
+              <div className="mt-3 text-sm text-slate-600">No opening pairs yet. Send a message to generate some.</div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {draftIdeas.map((it) => {
+                  const slide1 = String(it.slides?.[0] || "").trim();
+                  const slide2 = String(it.slides?.[1] || "").trim();
+                  const pairText = `Slide 1: ${slide1}\n\nSlide 2: ${slide2}`;
+                  return (
+                    <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 truncate" title={it.title}>
+                            {it.title || "Opening pair"}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-slate-500">{it.createdAt ? new Date(it.createdAt).toLocaleString() : ""}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        <div className="text-xs text-slate-700">
+                          <span className="font-semibold text-slate-600">S1:</span> {slide1 || "—"}
+                        </div>
+                        <div className="text-xs text-slate-700">
+                          <span className="font-semibold text-slate-600">S2:</span> {slide2 || "—"}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2">
+                        <button
+                          type="button"
+                          className="h-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                          onClick={() => void copyText(slide1, "Copied slide 1.")}
+                          disabled={!slide1}
+                        >
+                          Copy slide 1
+                        </button>
+                        <button
+                          type="button"
+                          className="h-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                          onClick={() => void copyText(slide2, "Copied slide 2.")}
+                          disabled={!slide2}
+                        >
+                          Copy slide 2
+                        </button>
+                        <button
+                          type="button"
+                          className="h-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                          onClick={() => void copyText(pairText, "Copied opening pair.")}
+                          disabled={!slide1 && !slide2}
+                        >
+                          Copy pair
+                        </button>
+                      </div>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-slate-500">{it.createdAt ? new Date(it.createdAt).toLocaleString() : ""}</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="shrink-0 h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(String(it.angleText || "").trim());
-                        setNotice("Copied idea angle.");
-                      } catch {
-                        // ignore
-                      }
-                    }}
-                    title="Copy angle text"
-                  >
-                    Copy
-                  </button>
-                </div>
-                <div className="mt-2 space-y-1">
-                  {(Array.isArray(it.slides) ? it.slides : []).slice(0, 2).map((s, i) => (
-                    <div key={i} className="text-xs text-slate-700 truncate" title={String(s || "")}>
-                      <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
-                    </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="text-xs font-semibold text-slate-700">Saved ideas (persisted)</div>
+            <div className="mt-2 text-[11px] text-slate-500">These are the ideas you saved and can reuse later.</div>
+            {savedIdeasError ? <div className="mt-2 text-xs text-red-600">❌ {savedIdeasError}</div> : null}
+
+            {savedIdeasLoading ? (
+              <div className="mt-3 text-sm text-slate-600">Loading saved ideas…</div>
+            ) : savedIdeas.length === 0 ? (
+              <div className="mt-3 text-sm text-slate-600">No saved ideas yet. Use the section below to save one.</div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {savedIdeas.map((it) => (
+                  <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate" title={it.title}>
+                          {it.title || "Idea"}
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-slate-500">{it.createdAt ? new Date(it.createdAt).toLocaleString() : ""}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="shrink-0 h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                        onClick={() => void copyText(String(it.angleText || "").trim(), "Copied idea angle.")}
+                        title="Copy angle text"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {(Array.isArray(it.slides) ? it.slides : []).slice(0, 2).map((s, i) => (
+                        <div key={i} className="text-xs text-slate-700 truncate" title={String(s || "")}>
+                          <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         <div className="mt-5 border-t border-slate-200 pt-4">
@@ -960,7 +1143,9 @@ export function SwipeIdeasChatModal(props: {
             <div>
               <div className="text-xs font-semibold text-slate-700">Batches</div>
               <div className="mt-2 text-[11px] text-slate-500">
-                Each time you chat, new ideas are grouped into an attempt. Expand/collapse as needed.
+                {isOpeningSlidesMode
+                  ? "Each Opening Slides message creates a new attempt with opening pairs only."
+                  : "Each time you chat, new ideas are grouped into an attempt. Expand/collapse as needed."}
               </div>
             </div>
             <button
@@ -979,7 +1164,9 @@ export function SwipeIdeasChatModal(props: {
           {draftIdeasLoading ? (
             <div className="mt-3 text-sm text-slate-600">Loading batches…</div>
           ) : attemptGroups.length === 0 ? (
-            <div className="mt-3 text-sm text-slate-600">No ideas yet. Send a message to generate ideas.</div>
+            <div className="mt-3 text-sm text-slate-600">
+              {isOpeningSlidesMode ? "No opening-slide batches yet. Send a message to generate some." : "No ideas yet. Send a message to generate ideas."}
+            </div>
           ) : (
             <div className="mt-3 space-y-2">
               {attemptGroups.map((g, idx) => {
@@ -1009,7 +1196,10 @@ export function SwipeIdeasChatModal(props: {
                         {g.items.map((it) => {
                           const key = `batch-${it.id}`;
                           const busy = saveIdeaBusyKey === key;
-                          const isSaved = savedCardKeySet.has(cardKey({ title: it.title, angleText: it.angleText, slides: it.slides }));
+                          const isSaved = !isOpeningSlidesMode && savedCardKeySet.has(cardKey({ title: it.title, angleText: it.angleText, slides: it.slides }));
+                          const slide1 = String(it.slides?.[0] || "").trim();
+                          const slide2 = String(it.slides?.[1] || "").trim();
+                          const pairText = `Slide 1: ${slide1}\n\nSlide 2: ${slide2}`;
                           return (
                             <div key={it.id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                               <div className="flex items-start justify-between gap-3">
@@ -1019,20 +1209,49 @@ export function SwipeIdeasChatModal(props: {
                                 {isSaved ? <span className="shrink-0 text-[11px] font-semibold text-emerald-700">Saved ✓</span> : null}
                               </div>
                               <div className="mt-2 space-y-1">
-                                {(Array.isArray(it.slides) ? it.slides : []).slice(0, 6).map((s, i) => (
+                                {(Array.isArray(it.slides) ? it.slides : []).slice(0, isOpeningSlidesMode ? 2 : 6).map((s, i) => (
                                   <div key={i} className="text-xs text-slate-700">
                                     <span className="font-semibold text-slate-600">S{i + 1}:</span> {String(s || "").trim() || "—"}
                                   </div>
                                 ))}
                               </div>
-                              <button
-                                type="button"
-                                className="mt-3 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                                disabled={busy || isSaved}
-                                onClick={() => void saveIdea({ title: it.title, slides: it.slides, angleText: it.angleText }, key, it.sourceMessageId)}
-                              >
-                                {isSaved ? "Saved" : busy ? "Saving…" : "Select (save idea)"}
-                              </button>
+                              {isOpeningSlidesMode ? (
+                                <div className="mt-3 grid grid-cols-1 gap-2">
+                                  <button
+                                    type="button"
+                                    className="h-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                                    onClick={() => void copyText(slide1, "Copied slide 1.")}
+                                    disabled={!slide1}
+                                  >
+                                    Copy slide 1
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="h-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                                    onClick={() => void copyText(slide2, "Copied slide 2.")}
+                                    disabled={!slide2}
+                                  >
+                                    Copy slide 2
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="h-8 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50"
+                                    onClick={() => void copyText(pairText, "Copied opening pair.")}
+                                    disabled={!slide1 && !slide2}
+                                  >
+                                    Copy pair
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="mt-3 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                                  disabled={busy || isSaved}
+                                  onClick={() => void saveIdea({ title: it.title, slides: it.slides, angleText: it.angleText }, key, it.sourceMessageId)}
+                                >
+                                  {isSaved ? "Saved" : busy ? "Saving…" : "Select (save idea)"}
+                                </button>
+                              )}
                             </div>
                           );
                         })}
@@ -1162,7 +1381,7 @@ export function SwipeIdeasChatModal(props: {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="h-14 px-4 border-b border-slate-200 flex items-center justify-between">
-            <div className="text-sm font-semibold text-slate-900">Ideas</div>
+            <div className="text-sm font-semibold text-slate-900">{isOpeningSlidesMode ? "Opening Slides" : "Ideas"}</div>
             <button
               type="button"
               className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
@@ -1240,10 +1459,15 @@ export function SwipeIdeasChatModal(props: {
       <div className="w-full max-w-7xl h-full bg-white rounded-xl shadow-xl border border-slate-200 flex flex-col overflow-hidden">
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
           <div className="min-w-0">
-            <div className="text-base font-semibold text-slate-900 truncate">Generate ideas</div>
+            <div className="text-base font-semibold text-slate-900 truncate">{modalTitle}</div>
             <div className="mt-0.5 text-xs text-slate-500 truncate" title={swipeItemLabel}>
               {swipeItemLabel || "Swipe item"}
             </div>
+            {isOpeningSlidesMode ? (
+              <div className="mt-1 text-[11px] text-slate-500">
+                Develop slide 1 and slide 2 only. Copy a pair into Ideas when you want to expand it into a full 6-slide carousel.
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center justify-end gap-2 flex-wrap">
             {isMobile ? (
@@ -1264,10 +1488,38 @@ export function SwipeIdeasChatModal(props: {
                   type="button"
                   className="h-10 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
                   onClick={() => setOpenPanel((prev) => (prev === "ideas" ? null : "ideas"))}
-                  aria-label="Ideas"
-                  title="Ideas"
+                  aria-label="Results"
+                  title="Results"
+                >
+                  Results
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    "h-10 px-3 rounded-md border text-sm font-semibold shadow-sm",
+                    !isOpeningSlidesMode
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => onSelectMode("ideas")}
+                  disabled={resetBusy}
+                  title="Switch to full 6-slide ideas mode"
                 >
                   Ideas
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    "h-10 px-3 rounded-md border text-sm font-semibold shadow-sm",
+                    isOpeningSlidesMode
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => onSelectMode("opening_slides")}
+                  disabled={resetBusy}
+                  title="Switch to opening slides mode"
+                >
+                  Opening Slides
                 </button>
                 {isSuperadmin ? (
                   <button
@@ -1303,6 +1555,34 @@ export function SwipeIdeasChatModal(props: {
               </>
             ) : (
               <>
+                <button
+                  type="button"
+                  className={[
+                    "h-9 px-3 rounded-md border text-sm shadow-sm",
+                    !isOpeningSlidesMode
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => onSelectMode("ideas")}
+                  disabled={resetBusy}
+                  title="Switch to full 6-slide ideas mode"
+                >
+                  Ideas
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    "h-9 px-3 rounded-md border text-sm shadow-sm",
+                    isOpeningSlidesMode
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => onSelectMode("opening_slides")}
+                  disabled={resetBusy}
+                  title="Switch to opening slides mode"
+                >
+                  Opening Slides
+                </button>
                 {isSuperadmin ? (
                   <button
                     type="button"
@@ -1363,7 +1643,9 @@ export function SwipeIdeasChatModal(props: {
         {settingsOpen ? (
           <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-slate-700">Master prompt (account-wide)</div>
+              <div className="text-xs font-semibold text-slate-700">
+                {isOpeningSlidesMode ? "Opening Slides master prompt (account-wide)" : "Ideas master prompt (account-wide)"}
+              </div>
               {masterSaveStatus === "saving" ? (
                 <span className="text-xs text-slate-500">Saving…</span>
               ) : masterSaveStatus === "saved" ? (
@@ -1377,7 +1659,7 @@ export function SwipeIdeasChatModal(props: {
               rows={8}
               value={masterPrompt}
               onChange={(e) => setMasterPrompt(e.target.value)}
-              placeholder={DEFAULT_MASTER_PROMPT_UI}
+              placeholder={modePromptPlaceholder}
             />
             {masterSaveStatus === "error" && masterSaveError ? (
               <div className="mt-2 text-xs text-red-600">❌ {masterSaveError}</div>
@@ -1440,7 +1722,9 @@ export function SwipeIdeasChatModal(props: {
         {promptOpen ? (
           <div className="border-b border-slate-100 bg-white px-5 py-4">
             <div className="flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-slate-900">Prompt preview</div>
+              <div className="text-xs font-semibold text-slate-900">
+                {isOpeningSlidesMode ? "Opening Slides prompt preview" : "Prompt preview"}
+              </div>
               <div className="flex items-center gap-2">
                 {promptCopyStatus === "copied" ? (
                   <span className="text-[11px] text-emerald-700 font-semibold">Copied!</span>
@@ -1493,7 +1777,9 @@ export function SwipeIdeasChatModal(props: {
               {showStarterPrompts ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="text-sm text-slate-700">
-                    Ask for carousel angles, hooks, or how to adapt the idea to your audience.
+                    {isOpeningSlidesMode
+                      ? "Ask for stronger slide 1 hooks, sharper slide 2 payoffs, or new opening-pair directions."
+                      : "Ask for carousel angles, hooks, or how to adapt the idea to your audience."}
                   </div>
                   <div className="mt-3 text-xs font-semibold text-slate-700">Start from one of your saved prompts</div>
                   <div className="mt-1 text-[11px] text-slate-500">

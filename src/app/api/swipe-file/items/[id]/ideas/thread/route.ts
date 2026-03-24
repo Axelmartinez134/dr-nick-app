@@ -2,6 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext } from '../../../../_utils';
+import { normalizeSwipeIdeasChatMode, type SwipeIdeasChatMode } from '../_shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -16,8 +17,14 @@ function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(String(v || '').trim());
 }
 
-async function ensureThread(args: { supabase: any; accountId: string; userId: string; swipeItemId: string }): Promise<string> {
-  const { supabase, accountId, userId, swipeItemId } = args;
+async function ensureThread(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  swipeItemId: string;
+  chatMode: SwipeIdeasChatMode;
+}): Promise<string> {
+  const { supabase, accountId, userId, swipeItemId, chatMode } = args;
 
   // Load existing thread.
   const { data: existing, error: exErr } = await supabase
@@ -25,6 +32,7 @@ async function ensureThread(args: { supabase: any; accountId: string; userId: st
     .select('id')
     .eq('account_id', accountId)
     .eq('swipe_item_id', swipeItemId)
+    .eq('chat_mode', chatMode)
     .maybeSingle();
   if (exErr) throw new Error(exErr.message);
   const existingId = String((existing as any)?.id || '').trim();
@@ -33,7 +41,7 @@ async function ensureThread(args: { supabase: any; accountId: string; userId: st
   // Create thread (handle rare race via unique constraint).
   const { data: inserted, error: insErr } = await supabase
     .from('swipe_file_idea_threads')
-    .insert({ account_id: accountId, swipe_item_id: swipeItemId, created_by_user_id: userId } as any)
+    .insert({ account_id: accountId, swipe_item_id: swipeItemId, chat_mode: chatMode, created_by_user_id: userId } as any)
     .select('id')
     .maybeSingle();
   if (insErr) {
@@ -49,6 +57,7 @@ async function ensureThread(args: { supabase: any; accountId: string; userId: st
     .select('id')
     .eq('account_id', accountId)
     .eq('swipe_item_id', swipeItemId)
+    .eq('chat_mode', chatMode)
     .maybeSingle();
   if (rrErr) throw new Error(rrErr.message);
   const rereadId = String((reread as any)?.id || '').trim();
@@ -64,6 +73,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
     const { id } = await ctx.params;
     const swipeItemId = String(id || '').trim();
+    const chatMode = normalizeSwipeIdeasChatMode(request.nextUrl.searchParams.get('chatMode'));
     if (!swipeItemId || !isUuid(swipeItemId)) {
       return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
     }
@@ -78,7 +88,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
     if (itemErr) return NextResponse.json({ success: false, error: itemErr.message } satisfies Resp, { status: 500 });
     if (!itemRow?.id) return NextResponse.json({ success: false, error: 'Not found' } satisfies Resp, { status: 404 });
 
-    const threadId = await ensureThread({ supabase, accountId, userId: user.id, swipeItemId });
+    const threadId = await ensureThread({ supabase, accountId, userId: user.id, swipeItemId, chatMode });
 
     // Load recent messages (latest 50) and return oldest->newest.
     const { data: rows, error: msgErr } = await supabase

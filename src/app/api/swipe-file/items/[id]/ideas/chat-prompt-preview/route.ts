@@ -9,6 +9,7 @@ import {
   isUuid,
   loadSwipeIdeasContextOrThrow,
   loadSwipeIdeasMasterPrompt,
+  normalizeSwipeIdeasChatMode,
 } from '../_shared';
 
 export const runtime = 'nodejs';
@@ -32,12 +33,13 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
     const { id } = await ctx.params;
     const swipeItemId = String(id || '').trim();
+    const chatMode = normalizeSwipeIdeasChatMode(request.nextUrl.searchParams.get('chatMode'));
     if (!swipeItemId || !isUuid(swipeItemId)) {
       return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
     }
 
     const swipeContext = await loadSwipeIdeasContextOrThrow({ supabase, accountId, swipeItemId });
-    const { brandVoice, masterPrompt } = await loadSwipeIdeasMasterPrompt({ supabase, accountId });
+    const { brandVoice, masterPrompt } = await loadSwipeIdeasMasterPrompt({ supabase, accountId, chatMode });
     const system = buildSwipeIdeasSystemText({ masterPrompt });
     const contextText = buildSwipeIdeasContextText({ brandVoice, context: swipeContext });
 
@@ -46,6 +48,7 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
       .select('id')
       .eq('account_id', accountId)
       .eq('swipe_item_id', swipeItemId)
+      .eq('chat_mode', chatMode)
       .maybeSingle();
     if (threadErr) return NextResponse.json({ success: false, error: threadErr.message } satisfies Resp, { status: 500 });
 

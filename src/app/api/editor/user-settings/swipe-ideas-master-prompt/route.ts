@@ -6,7 +6,10 @@ export const runtime = 'nodejs';
 export const maxDuration = 10;
 
 type Body = {
-  swipeIdeasMasterPromptOverride: string | null;
+  swipeIdeasMasterPromptOverride?: string | null;
+  swipeOpeningSlidesMasterPromptOverride?: string | null;
+  chatMode?: string | null;
+  promptOverride?: string | null;
 };
 
 function sanitizePrompt(input: string): string {
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   const { data: settingsRow, error: settingsErr } = await supabase
     .from('editor_account_settings')
-    .select('swipe_ideas_master_prompt_override')
+    .select('swipe_ideas_master_prompt_override, swipe_opening_slides_master_prompt_override')
     .eq('account_id', accountId)
     .maybeSingle();
   if (settingsErr) {
@@ -40,6 +43,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     success: true,
     swipeIdeasMasterPromptOverride: String((settingsRow as any)?.swipe_ideas_master_prompt_override ?? ''),
+    swipeOpeningSlidesMasterPromptOverride: String((settingsRow as any)?.swipe_opening_slides_master_prompt_override ?? ''),
   });
 }
 
@@ -61,19 +65,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
   }
 
-  const raw = (body as any)?.swipeIdeasMasterPromptOverride;
+  const chatMode = String((body as any)?.chatMode || '').trim().toLowerCase() === 'opening_slides' ? 'opening_slides' : 'ideas';
+  const usingUnifiedField = Object.prototype.hasOwnProperty.call(body || {}, 'promptOverride');
+  const raw = usingUnifiedField
+    ? (body as any)?.promptOverride
+    : chatMode === 'opening_slides'
+      ? (body as any)?.swipeOpeningSlidesMasterPromptOverride
+      : (body as any)?.swipeIdeasMasterPromptOverride;
   const next = raw === null ? null : sanitizePrompt(String(raw ?? ''));
+  const fieldName =
+    chatMode === 'opening_slides' ? 'swipe_opening_slides_master_prompt_override' : 'swipe_ideas_master_prompt_override';
   if (next !== null && next.length > 80_000) {
-    return NextResponse.json({ success: false, error: 'swipeIdeasMasterPromptOverride too long' }, { status: 400 });
+    return NextResponse.json({ success: false, error: 'promptOverride too long' }, { status: 400 });
   }
 
   const { error: upErr } = await supabase
     .from('editor_account_settings')
-    .upsert({ account_id: accountId, swipe_ideas_master_prompt_override: next }, { onConflict: 'account_id' });
+    .upsert({ account_id: accountId, [fieldName]: next }, { onConflict: 'account_id' });
   if (upErr) {
     return NextResponse.json({ success: false, error: upErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, swipeIdeasMasterPromptOverride: next ?? '' });
+  return NextResponse.json({
+    success: true,
+    chatMode,
+    swipeIdeasMasterPromptOverride: chatMode === 'ideas' ? next ?? '' : undefined,
+    swipeOpeningSlidesMasterPromptOverride: chatMode === 'opening_slides' ? next ?? '' : undefined,
+    promptOverride: next ?? '',
+  });
 }
 

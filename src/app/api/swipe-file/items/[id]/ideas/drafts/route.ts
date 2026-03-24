@@ -2,6 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext } from '../../../../_utils';
+import { normalizeSwipeIdeasChatMode } from '../_shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -25,8 +26,7 @@ function isUuid(v: string): boolean {
 
 function normalizeSlideOutline(input: any): string[] {
   if (!Array.isArray(input)) return [];
-  const out = input.map((x) => String(x ?? '')).slice(0, 6);
-  return out.length === 6 ? out : [];
+  return input.map((x) => String(x ?? '')).filter((x) => !!x.trim()).slice(0, 6);
 }
 
 export async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -36,15 +36,27 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
   const { id } = await ctx.params;
   const swipeItemId = String(id || '').trim();
+  const chatMode = normalizeSwipeIdeasChatMode(request.nextUrl.searchParams.get('chatMode'));
   if (!swipeItemId || !isUuid(swipeItemId)) {
     return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
   }
+
+  const { data: threadRow, error: threadErr } = await supabase
+    .from('swipe_file_idea_threads')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('swipe_item_id', swipeItemId)
+    .eq('chat_mode', chatMode)
+    .maybeSingle();
+  if (threadErr) return NextResponse.json({ success: false, error: threadErr.message } satisfies Resp, { status: 500 });
+  const threadId = String((threadRow as any)?.id || '').trim();
+  if (!threadId) return NextResponse.json({ success: true, drafts: [] } satisfies Resp);
 
   const { data: rows, error } = await supabase
     .from('swipe_file_idea_drafts')
     .select('id, created_at, title, slide_outline, angle_text, source_message_id')
     .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
+    .eq('thread_id', threadId)
     .order('created_at', { ascending: false })
     .limit(1000);
   if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });
