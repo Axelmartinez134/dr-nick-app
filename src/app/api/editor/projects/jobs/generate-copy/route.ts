@@ -475,7 +475,7 @@ export async function POST(request: NextRequest) {
   let { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select(
-      'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot'
+      'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot, source_carousel_map_id, source_carousel_map_expansion_id, source_carousel_map_topic_snapshot, source_carousel_map_selected_slide1_snapshot, source_carousel_map_selected_slide2_snapshot, source_carousel_map_expansion_snapshot'
     )
     .eq('id', body.projectId)
     .eq('account_id', accountId)
@@ -486,7 +486,7 @@ export async function POST(request: NextRequest) {
     const legacy = await supabase
       .from('carousel_projects')
       .select(
-        'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot'
+        'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot, source_carousel_map_id, source_carousel_map_expansion_id, source_carousel_map_topic_snapshot, source_carousel_map_selected_slide1_snapshot, source_carousel_map_selected_slide2_snapshot, source_carousel_map_expansion_snapshot'
       )
       .eq('id', body.projectId)
       .eq('owner_user_id', user.id)
@@ -508,6 +508,11 @@ export async function POST(request: NextRequest) {
   const swipeItemId = String((project as any)?.source_swipe_item_id || '').trim();
   const swipeAngleSnapshot = String((project as any)?.source_swipe_angle_snapshot || '').trim();
   const swipeIdeaSnapshot = String((project as any)?.source_swipe_idea_snapshot || '').trim();
+  const carouselMapExpansionId = String((project as any)?.source_carousel_map_expansion_id || '').trim();
+  const carouselMapTopicSnapshot = String((project as any)?.source_carousel_map_topic_snapshot || '').trim();
+  const carouselMapSelectedSlide1Snapshot = String((project as any)?.source_carousel_map_selected_slide1_snapshot || '').trim();
+  const carouselMapSelectedSlide2Snapshot = String((project as any)?.source_carousel_map_selected_slide2_snapshot || '').trim();
+  const carouselMapExpansionSnapshot = String((project as any)?.source_carousel_map_expansion_snapshot || '').trim();
 
   // Phase 6: Generate Copy uses the user's active saved Poppy prompt (per-account, per template type).
   // Fallback to account-level effective prompt only if the saved prompt is missing/empty.
@@ -539,7 +544,24 @@ export async function POST(request: NextRequest) {
   // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
   const stylePromptRaw = swipeItemId ? String((project as any)?.prompt_snapshot || '') : promptRaw;
   const composedPromptRaw = swipeItemId
-    ? swipeIdeaSnapshot
+    ? carouselMapExpansionId
+      ? [
+          `STYLE_PROMPT:\n${stylePromptRaw}`,
+          ``,
+          carouselMapTopicSnapshot ? `CAROUSEL_MAP_SELECTED_TOPIC:\n${carouselMapTopicSnapshot}` : ``,
+          carouselMapSelectedSlide1Snapshot || carouselMapSelectedSlide2Snapshot
+            ? `CAROUSEL_MAP_OPENING:\n${[
+                carouselMapSelectedSlide1Snapshot ? `SLIDE_1:\n${carouselMapSelectedSlide1Snapshot}` : ``,
+                carouselMapSelectedSlide2Snapshot ? `\nSLIDE_2:\n${carouselMapSelectedSlide2Snapshot}` : ``,
+              ]
+                .filter(Boolean)
+                .join('\n')}`
+            : ``,
+          carouselMapExpansionSnapshot ? `CAROUSEL_MAP_EXPANSION_OUTLINE:\n${carouselMapExpansionSnapshot}` : ``,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : swipeIdeaSnapshot
       ? [
           // Keep Swipe-origin behavior (no brand voice), but preserve the exact
           // saved prompt chosen for this project while also passing the selected idea.

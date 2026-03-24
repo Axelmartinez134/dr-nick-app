@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
 import { useEditorSelector } from "@/features/editor/store";
+import { CarouselMapModal } from "@/features/editor/components/CarouselMapModal";
 import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChatModal";
 import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
 
@@ -126,6 +127,7 @@ export function YoutubeCreatorFeedPanel() {
   const [ideasCount, setIdeasCount] = useState<number>(0);
   const [ideasChatOpen, setIdeasChatOpen] = useState(false);
   const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
+  const [carouselMapOpen, setCarouselMapOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState<string>("");
   const [noteSaveStatus, setNoteSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
@@ -756,6 +758,15 @@ export function YoutubeCreatorFeedPanel() {
                   </button>
                   <button
                     type="button"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                    disabled={!canGenerateIdeas}
+                    onClick={() => setCarouselMapOpen(true)}
+                    title={canGenerateIdeas ? "Open Carousel Map from the mirrored Swipe item" : "Enrich this video until a transcript is available"}
+                  >
+                    Carousel Map
+                  </button>
+                  <button
+                    type="button"
                     className={[
                       "h-10 w-full rounded-lg border text-sm font-semibold shadow-sm transition-colors",
                       selectedVideo.mirroredCreatedProjectId
@@ -822,6 +833,18 @@ export function YoutubeCreatorFeedPanel() {
             templateTypeId: args.templateTypeId === "regular" ? "regular" : "enhanced",
             savedPromptId: args.savedPromptId,
           });
+        }}
+      />
+
+      <CarouselMapModal
+        open={carouselMapOpen}
+        onClose={() => setCarouselMapOpen(false)}
+        swipeItemId={selectedVideo?.mirroredSwipeItemId || null}
+        swipeItemLabel={selectedVideo?.title || "YouTube video"}
+        onLoadProject={(projectId) => {
+          pendingAutoGenerateProjectIdRef.current = String(projectId);
+          actions?.onCloseSwipeFileModal?.();
+          actions?.onLoadProject?.(String(projectId));
         }}
       />
     </>

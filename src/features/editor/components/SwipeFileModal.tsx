@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
 import { useEditorSelector } from "@/features/editor/store";
+import { CarouselMapModal } from "@/features/editor/components/CarouselMapModal";
 import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChatModal";
 import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
 import { SwipeFileCaptureForm, type SwipeFileCaptureItem } from "@/features/editor/components/SwipeFileCaptureForm";
@@ -125,6 +126,7 @@ export function SwipeFileModal() {
   const [ideasChatOpen, setIdeasChatOpen] = useState(false);
   const [ideasCount, setIdeasCount] = useState<number>(0);
   const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
+  const [carouselMapOpen, setCarouselMapOpen] = useState(false);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [freestyleModalOpen, setFreestyleModalOpen] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
@@ -1028,6 +1030,20 @@ export function SwipeFileModal() {
                                 </button>
                                 <button
                                   type="button"
+                                  className="w-full h-12 rounded-xl bg-white border border-slate-200 text-slate-900 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50"
+                                  disabled={!canIdeasChat}
+                                  onClick={() => {
+                                    if (!canIdeasChat) return;
+                                    setMobileSheet(null);
+                                    setSelectedItemId(it.id);
+                                    setCarouselMapOpen(true);
+                                  }}
+                                  title={!canIdeasChat ? "Add source text first" : "Open Carousel Map"}
+                                >
+                                  Carousel Map
+                                </button>
+                                <button
+                                  type="button"
                                   className="w-full h-12 rounded-xl bg-black text-white text-sm font-semibold hover:bg-slate-900"
                                   onClick={() => {
                                     setSelectedItemId(it.id);
@@ -1335,6 +1351,22 @@ export function SwipeFileModal() {
                     </button>
                     <button
                       type="button"
+                      className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      disabled={
+                        !selectedItem ||
+                        !(isFreestyleItem(selectedItem) ? String(selectedItem.note || "").trim() : String(selectedItem.transcript || "").trim())
+                      }
+                      onClick={() => setCarouselMapOpen(true)}
+                      title={
+                        !(isFreestyleItem(selectedItem) ? String(selectedItem.note || "").trim() : String(selectedItem?.transcript || "").trim())
+                          ? "Add source text first"
+                          : "Open Carousel Map"
+                      }
+                    >
+                      Carousel Map
+                    </button>
+                    <button
+                      type="button"
                       className={[
                         "w-full h-10 rounded-lg border text-sm font-semibold shadow-sm transition-colors",
                         selectedItem.createdProjectId
@@ -1413,6 +1445,20 @@ export function SwipeFileModal() {
             templateTypeId: args.templateTypeId === "regular" ? "regular" : "enhanced",
             savedPromptId: args.savedPromptId,
           });
+        }}
+      />
+      ) : null}
+
+      {activeTab === "swipe" ? (
+      <CarouselMapModal
+        open={carouselMapOpen}
+        onClose={() => setCarouselMapOpen(false)}
+        swipeItemId={selectedItem?.id || null}
+        swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        onLoadProject={(projectId) => {
+          pendingAutoGenerateProjectIdRef.current = String(projectId);
+          actions.onCloseSwipeFileModal?.();
+          actions.onLoadProject?.(String(projectId));
         }}
       />
       ) : null}
