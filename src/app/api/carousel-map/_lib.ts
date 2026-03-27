@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { getAuthedSwipeSuperadminContext } from '../swipe-file/_utils';
 import {
   loadSwipeIdeasContextOrThrow,
@@ -10,8 +10,12 @@ import type {
   CarouselMapExpansion,
   CarouselMapGraph,
   CarouselMapOpeningPair,
+  CarouselMapPromptKey,
+  CarouselMapPromptState,
   CarouselMapPromptSection,
   CarouselMapSource,
+  CarouselMapSteeringStageKey,
+  CarouselMapSteeringState,
   CarouselMapTopic,
 } from './_types';
 
@@ -292,6 +296,38 @@ export async function loadCarouselMapGraph(args: {
       }))
     : [];
 
+  const topicsScopeKey = buildCarouselMapTopicsScopeKey();
+  const openingPairsScopeKey = mapRow?.selected_topic_id ? buildCarouselMapOpeningPairsScopeKey(String((mapRow as any).selected_topic_id || '')) : '';
+  const openingSignature = buildCarouselMapOpeningSignature({
+    topicId: (mapRow as any)?.selected_topic_id,
+    selectedSlide1Text: (mapRow as any)?.selected_slide1_text,
+    selectedSlide2Text: (mapRow as any)?.selected_slide2_text,
+  });
+  const expansionsScopeKey = openingSignature ? `opening:${openingSignature}` : '';
+  const [topicsSteering, openingPairsSteering, expansionsSteering] = await Promise.all([
+    loadCarouselMapSteeringState({
+      supabase,
+      accountId,
+      mapId,
+      stageKey: 'topics',
+      scopeKey: topicsScopeKey,
+    }),
+    loadCarouselMapSteeringState({
+      supabase,
+      accountId,
+      mapId,
+      stageKey: 'opening_pairs',
+      scopeKey: openingPairsScopeKey,
+    }),
+    loadCarouselMapSteeringState({
+      supabase,
+      accountId,
+      mapId,
+      stageKey: 'expansions',
+      scopeKey: expansionsScopeKey,
+    }),
+  ]);
+
   return {
     id: String(mapRow.id),
     source,
@@ -303,18 +339,253 @@ export async function loadCarouselMapGraph(args: {
     topics,
     openingPairs,
     expansions,
+    topicsSteering,
+    openingPairsSteering,
+    expansionsSteering,
   };
 }
 
-export function buildCarouselMapTopicsSystem(source: CarouselMapSource) {
+export const DEFAULT_CAROUSEL_MAP_TOPICS_MASTER_PROMPT = `You are extracting topics from one long-form source for Carousel Map.
+
+Your job:
+- Identify the real topics in the source material.
+- Ignore filler, repetition, storytelling padding, and generic motivational language.
+- Focus only on topics that could plausibly become strong carousel directions.
+- Make each topic specific enough that it feels useful, distinct, and actionable.
+- Summarize why each topic matters so the user can quickly decide where to explore.`;
+
+export const DEFAULT_CAROUSEL_MAP_OPENING_PAIRS_MASTER_PROMPT = `You are an idea-generation assistant for Instagram carousel opening slides.
+
+Your job:
+- Help me develop only the first two slides of a carousel.
+- Focus on strong hooks, framing, tension, clarity, novelty, and payoff.
+- Do not generate slides 3-6.
+- Produce multiple viable opening-slide pairs grounded in the source material and brand voice.
+- Keep in mind that Slide 1 has to be contextually relevant to what was talked about inside the source material and its pure purpose is to get someone to swipe.
+- Slide 1 does not need to be wordy or long. It just has to get someone to swipe to read Slide 2.
+- Slide 2 has a second life on Instagram because someone may be shown Slide 2 if they skipped Slide 1 in the feed.
+- Slide 2 must also have a hook, but it should give a little more context while changing the framing just enough that it does not feel like Slide 1 repeated.
+- Slide 2 can contain a bit more information, but it should still feel punchy and make someone want to read the rest of the slides.`;
+
+export const DEFAULT_CAROUSEL_MAP_EXPANSIONS_MASTER_PROMPT = `You are expanding an Instagram carousel after the opening has already been chosen.
+
+Your job:
+- Respect the selected Slide 1 and Slide 2 exactly as the opening.
+- Generate multiple strong options for Slides 3-6 only.
+- Keep the logic tight, escalating, and aligned with the source material.
+- Make Slides 3-6 feel like a natural continuation of the chosen opening rather than a disconnected second draft.
+- Land the carousel with a strong payoff, conclusion, or CTA when appropriate.`;
+
+export function getDefaultCarouselMapPrompt(promptKey: CarouselMapPromptKey): string {
+  if (promptKey === 'topics') return DEFAULT_CAROUSEL_MAP_TOPICS_MASTER_PROMPT;
+  if (promptKey === 'opening_pairs') return DEFAULT_CAROUSEL_MAP_OPENING_PAIRS_MASTER_PROMPT;
+  return DEFAULT_CAROUSEL_MAP_EXPANSIONS_MASTER_PROMPT;
+}
+
+export async function loadCarouselMapPrompt(args: {
+  supabase: any;
+  accountId: string;
+  promptKey: CarouselMapPromptKey;
+}): Promise<CarouselMapPromptState> {
+  const { supabase, accountId, promptKey } = args;
+  const { data, error } = await supabase
+    .from('editor_account_prompt_overrides')
+    .select('prompt_text')
+    .eq('account_id', accountId)
+    .eq('surface', 'carousel_map')
+    .eq('prompt_key', promptKey)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const overrideText = typeof (data as any)?.prompt_text === 'string' ? String((data as any).prompt_text) : null;
+  return {
+    promptKey,
+    promptText: overrideText !== null ? overrideText : getDefaultCarouselMapPrompt(promptKey),
+    isOverride: overrideText !== null,
+  };
+}
+
+export async function loadAllCarouselMapPrompts(args: { supabase: any; accountId: string }) {
+  const [topics, openingPairs, expansions] = await Promise.all([
+    loadCarouselMapPrompt({ ...args, promptKey: 'topics' }),
+    loadCarouselMapPrompt({ ...args, promptKey: 'opening_pairs' }),
+    loadCarouselMapPrompt({ ...args, promptKey: 'expansions' }),
+  ]);
+  return {
+    topics,
+    opening_pairs: openingPairs,
+    expansions,
+  };
+}
+
+export function normalizeCarouselMapSteeringText(input: string | null | undefined): string {
+  return sanitizePrompt(String(input || ''));
+}
+
+export function buildCarouselMapTopicsScopeKey() {
+  return 'map';
+}
+
+export function buildCarouselMapOpeningPairsScopeKey(topicId: string) {
+  return `topic:${String(topicId || '').trim()}`;
+}
+
+export function buildCarouselMapOpeningSignature(args: {
+  topicId: string | null | undefined;
+  selectedSlide1Text: string | null | undefined;
+  selectedSlide2Text: string | null | undefined;
+}) {
+  const topicId = String(args.topicId || '').trim();
+  const slide1 = normalizeCarouselMapSteeringText(args.selectedSlide1Text);
+  const slide2 = normalizeCarouselMapSteeringText(args.selectedSlide2Text);
+  if (!topicId || !slide1 || !slide2) return '';
+  return createHash('sha1').update(JSON.stringify({ topicId, slide1, slide2 })).digest('hex');
+}
+
+export function buildCarouselMapExpansionsScopeKey(args: {
+  topicId: string | null | undefined;
+  selectedSlide1Text: string | null | undefined;
+  selectedSlide2Text: string | null | undefined;
+}) {
+  const sig = buildCarouselMapOpeningSignature(args);
+  return sig ? `opening:${sig}` : '';
+}
+
+function emptySteeringState(stageKey: CarouselMapSteeringStageKey, scopeKey: string | null): CarouselMapSteeringState {
+  return {
+    stageKey,
+    scopeKey,
+    steeringText: '',
+    lastUsedSteeringText: '',
+    lastUsedAt: null,
+  };
+}
+
+function steeringStateFromRow(
+  stageKey: CarouselMapSteeringStageKey,
+  scopeKey: string | null,
+  row: any
+): CarouselMapSteeringState {
+  return {
+    stageKey,
+    scopeKey,
+    steeringText: String(row?.steering_text || ''),
+    lastUsedSteeringText: String(row?.last_used_steering_text || ''),
+    lastUsedAt: row?.last_used_at ? String(row.last_used_at) : null,
+  };
+}
+
+export async function loadCarouselMapSteeringState(args: {
+  supabase: any;
+  accountId: string;
+  mapId: string;
+  stageKey: CarouselMapSteeringStageKey;
+  scopeKey: string;
+}) {
+  const { supabase, accountId, mapId, stageKey, scopeKey } = args;
+  if (!scopeKey) return emptySteeringState(stageKey, null);
+  const { data, error } = await supabase
+    .from('carousel_map_generation_steering')
+    .select('scope_key, steering_text, last_used_steering_text, last_used_at')
+    .eq('account_id', accountId)
+    .eq('carousel_map_id', mapId)
+    .eq('stage_key', stageKey)
+    .eq('scope_key', scopeKey)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? steeringStateFromRow(stageKey, scopeKey, data) : emptySteeringState(stageKey, scopeKey);
+}
+
+export async function persistCarouselMapSteering(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  mapId: string;
+  stageKey: CarouselMapSteeringStageKey;
+  topicId?: string | null;
+  scopeKey: string;
+  steeringText: string;
+  openingSignature?: string | null;
+  markUsed: boolean;
+}) {
+  const steeringText = normalizeCarouselMapSteeringText(args.steeringText);
+  if (!args.scopeKey) return;
+  if (!steeringText) {
+    const { error } = await args.supabase
+      .from('carousel_map_generation_steering')
+      .delete()
+      .eq('account_id', args.accountId)
+      .eq('carousel_map_id', args.mapId)
+      .eq('stage_key', args.stageKey)
+      .eq('scope_key', args.scopeKey);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  const payload: any = {
+    account_id: args.accountId,
+    carousel_map_id: args.mapId,
+    stage_key: args.stageKey,
+    scope_key: args.scopeKey,
+    topic_id: args.topicId ? String(args.topicId).trim() : null,
+    opening_signature: args.openingSignature ? String(args.openingSignature).trim() : null,
+    steering_text: steeringText,
+    updated_by_user_id: args.userId,
+    created_by_user_id: args.userId,
+    last_used_steering_text: args.markUsed ? steeringText : null,
+    last_used_at: args.markUsed ? new Date().toISOString() : null,
+  };
+  const { error } = await args.supabase
+    .from('carousel_map_generation_steering')
+    .upsert(payload, { onConflict: 'account_id,carousel_map_id,stage_key,scope_key' });
+  if (error) throw new Error(error.message);
+}
+
+function formatCurrentTopicsForPrompt(topics: Array<Pick<CarouselMapTopic, 'title' | 'summary' | 'whyItMatters'>>) {
+  if (!topics.length) return '(none)';
+  return topics
+    .map(
+      (topic, index) =>
+        `${index + 1}. ${topic.title}\nSUMMARY: ${topic.summary}\nWHY_IT_MATTERS: ${topic.whyItMatters}`
+    )
+    .join('\n\n');
+}
+
+function formatCurrentOpeningPairsForPrompt(
+  pairs: Array<Pick<CarouselMapOpeningPair, 'title' | 'slide1' | 'slide2' | 'angleText'>>
+) {
+  if (!pairs.length) return '(none)';
+  return pairs
+    .map(
+      (pair, index) =>
+        `${index + 1}. ${pair.title}\nSLIDE_1: ${pair.slide1}\nSLIDE_2: ${pair.slide2}\nANGLE: ${pair.angleText}`
+    )
+    .join('\n\n');
+}
+
+function formatCurrentExpansionsForPrompt(
+  expansions: Array<Pick<CarouselMapExpansion, 'selectedSlide1Text' | 'selectedSlide2Text' | 'slide3' | 'slide4' | 'slide5' | 'slide6'>>
+) {
+  if (!expansions.length) return '(none)';
+  return expansions
+    .map(
+      (row, index) =>
+        `${index + 1}.\nSLIDE_1: ${row.selectedSlide1Text}\nSLIDE_2: ${row.selectedSlide2Text}\nSLIDE_3: ${row.slide3}\nSLIDE_4: ${row.slide4}\nSLIDE_5: ${row.slide5}\nSLIDE_6: ${row.slide6}`
+    )
+    .join('\n\n');
+}
+
+export function buildCarouselMapTopicsSystem(args: {
+  source: CarouselMapSource;
+  masterPrompt: string;
+  steeringText?: string;
+  currentTopics?: Array<Pick<CarouselMapTopic, 'title' | 'summary' | 'whyItMatters'>>;
+}) {
+  const masterPrompt = sanitizePrompt(String(args.masterPrompt || ''));
+  const steeringText = normalizeCarouselMapSteeringText(args.steeringText);
+  if (!masterPrompt) throw new Error('Carousel Map topics prompt is empty');
   return sanitizePrompt(
     [
-      `You are building a Carousel Map from one source item.`,
-      ``,
-      `Your job:`,
-      `- Extract the real topics from the source material.`,
-      `- Ignore filler, repetition, storytelling padding, and motivational fluff.`,
-      `- Focus on what could plausibly become a strong carousel topic.`,
+      `MASTER_PROMPT:`,
+      masterPrompt,
       ``,
       `OUTPUT FORMAT (HARD):`,
       `Return ONLY valid JSON in this shape:`,
@@ -335,19 +606,28 @@ export function buildCarouselMapTopicsSystem(source: CarouselMapSource) {
       `- whyItMatters should explain why the topic matters in 1 sentence.`,
       `- Stay close to the source material.`,
       `- Do not produce carousel copy yet.`,
+      args.currentTopics?.length
+        ? `- Avoid repeating the same topic framing already shown unless the user steering explicitly asks for it.`
+        : ``,
+      ``,
+      `CURRENTLY_DISPLAYED_TOPICS:`,
+      formatCurrentTopicsForPrompt(args.currentTopics || []),
+      ``,
+      `USER_STEERING:`,
+      steeringText || '(none)',
       ``,
       `SOURCE_CONTEXT:`,
-      `- Title: ${source.title || '-'}`,
-      `- Author handle: ${source.authorHandle || '-'}`,
-      `- Platform: ${source.platform || '-'}`,
-      `- Category: ${source.categoryName || '-'}`,
-      `- Angle / Notes: ${source.note || '-'}`,
+      `- Title: ${args.source.title || '-'}`,
+      `- Author handle: ${args.source.authorHandle || '-'}`,
+      `- Platform: ${args.source.platform || '-'}`,
+      `- Category: ${args.source.categoryName || '-'}`,
+      `- Angle / Notes: ${args.source.note || '-'}`,
       ``,
       `CAPTION:`,
-      source.caption || '-',
+      args.source.caption || '-',
       ``,
       `TRANSCRIPT:`,
-      source.transcript,
+      args.source.transcript,
     ].join('\n')
   );
 }
@@ -356,21 +636,17 @@ export function buildCarouselMapOpeningsSystem(args: {
   source: CarouselMapSource;
   topic: CarouselMapTopic;
   brandVoice: string;
+  masterPrompt: string;
+  steeringText?: string;
+  currentPairs?: Array<Pick<CarouselMapOpeningPair, 'title' | 'slide1' | 'slide2' | 'angleText'>>;
 }) {
+  const masterPrompt = sanitizePrompt(String(args.masterPrompt || ''));
+  const steeringText = normalizeCarouselMapSteeringText(args.steeringText);
+  if (!masterPrompt) throw new Error('Carousel Map opening pairs prompt is empty');
   return sanitizePrompt(
     [
-      `You are an idea-generation assistant for Instagram carousel opening slides.`,
-      ``,
-      `Your job:`,
-      `- Help me develop only the first two slides of a carousel.`,
-      `- Focus on strong hooks, framing, tension, clarity, novelty, and payoff.`,
-      `- Do not generate slides 3-6.`,
-      `- Produce multiple viable opening-slide pairs grounded in the source material and brand voice.`,
-      `- Keep in mind that Slide 1 has to be contextually relevant to what was talked about inside the source material and its pure purpose is to get someone to swipe.`,
-      `- Slide 1 does not need to be wordy or long. It just has to get someone to swipe to read Slide 2.`,
-      `- Slide 2 has a second life on Instagram because someone may be shown Slide 2 if they skipped Slide 1 in the feed.`,
-      `- Slide 2 must also have a hook, but it should give a little more context while changing the framing just enough that it does not feel like Slide 1 repeated.`,
-      `- Slide 2 can contain a bit more information, but it should still feel punchy and make someone want to read the rest of the slides.`,
+      `MASTER_PROMPT:`,
+      masterPrompt,
       ``,
       `OUTPUT FORMAT (HARD):`,
       `Return ONLY valid JSON in this exact shape:`,
@@ -393,6 +669,9 @@ export function buildCarouselMapOpeningsSystem(args: {
       `- slide1 and slide2 should feel related, but not repetitive.`,
       `- angleText should be a clear, concise label for the opening logic.`,
       `- Do not generate slides 3-6.`,
+      args.currentPairs?.length
+        ? `- Avoid repeating the same opening logic, phrasing, or angle already shown unless the user steering explicitly asks for it.`
+        : ``,
       ``,
       `BRAND_VOICE:`,
       args.brandVoice || '-',
@@ -401,6 +680,12 @@ export function buildCarouselMapOpeningsSystem(args: {
       `- Title: ${args.topic.title}`,
       `- Summary: ${args.topic.summary}`,
       `- Why it matters: ${args.topic.whyItMatters}`,
+      ``,
+      `CURRENTLY_DISPLAYED_OPENING_PAIRS:`,
+      formatCurrentOpeningPairsForPrompt(args.currentPairs || []),
+      ``,
+      `USER_STEERING:`,
+      steeringText || '(none)',
       ``,
       `SOURCE_CONTEXT:`,
       `- Title: ${args.source.title || '-'}`,
@@ -422,17 +707,19 @@ export function buildCarouselMapExpansionsSystem(args: {
   source: CarouselMapSource;
   topic: CarouselMapTopic;
   brandVoice: string;
+  masterPrompt: string;
   selectedSlide1Text: string;
   selectedSlide2Text: string;
+  steeringText?: string;
+  currentExpansions?: Array<Pick<CarouselMapExpansion, 'selectedSlide1Text' | 'selectedSlide2Text' | 'slide3' | 'slide4' | 'slide5' | 'slide6'>>;
 }) {
+  const masterPrompt = sanitizePrompt(String(args.masterPrompt || ''));
+  const steeringText = normalizeCarouselMapSteeringText(args.steeringText);
+  if (!masterPrompt) throw new Error('Carousel Map expansions prompt is empty');
   return sanitizePrompt(
     [
-      `You are expanding an Instagram carousel after the opening has already been chosen.`,
-      ``,
-      `Your job:`,
-      `- Respect the selected Slide 1 and Slide 2 exactly as the opening.`,
-      `- Generate multiple coherent options for slides 3-6 only.`,
-      `- Keep the logic tight, escalating, and aligned with the source material.`,
+      `MASTER_PROMPT:`,
+      masterPrompt,
       ``,
       `OUTPUT FORMAT (HARD):`,
       `Return ONLY valid JSON in this shape:`,
@@ -452,6 +739,9 @@ export function buildCarouselMapExpansionsSystem(args: {
       `- Do not rewrite slide1 or slide2.`,
       `- Slides 3-6 should feel like a natural continuation of the chosen opening.`,
       `- Slide 6 should land with a strong payoff, conclusion, or CTA if appropriate.`,
+      args.currentExpansions?.length
+        ? `- Avoid repeating the same slides 3-6 structure or phrasing already shown unless the user steering explicitly asks for it.`
+        : ``,
       ``,
       `BRAND_VOICE:`,
       args.brandVoice || '-',
@@ -464,6 +754,12 @@ export function buildCarouselMapExpansionsSystem(args: {
       `CHOSEN_OPENING:`,
       `- Slide 1: ${args.selectedSlide1Text}`,
       `- Slide 2: ${args.selectedSlide2Text}`,
+      ``,
+      `CURRENTLY_DISPLAYED_EXPANSIONS:`,
+      formatCurrentExpansionsForPrompt(args.currentExpansions || []),
+      ``,
+      `USER_STEERING:`,
+      steeringText || '(none)',
       ``,
       `SOURCE_CONTEXT:`,
       `- Title: ${args.source.title || '-'}`,

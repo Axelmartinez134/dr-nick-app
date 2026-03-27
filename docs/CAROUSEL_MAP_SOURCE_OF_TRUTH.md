@@ -139,9 +139,13 @@ Topic card fields:
 Controls:
 - `Generate Topics`
 - `Regenerate Topics`
+- stage gear icon opens a small prompt editor modal for the Topics creative prompt
+- merged `Generate/Regenerate + Steer` control for one-click generation or steering-guided generation
 
 Rules:
 - one selected topic at a time in V1
+- one steering note per map for Topics generation
+- Topics regenerate can include the currently displayed topics plus the saved steering note
 
 ### Lane 3: Opening Pairs
 
@@ -161,12 +165,45 @@ Actions:
 - click or drag `Slide 2`
 - `Use pair`
 - `Copy pair`
+- stage gear icon opens a small prompt editor modal for the Opening Pairs creative prompt
+- merged `Generate/Regenerate + Steer` control for one-click generation or steering-guided generation
 
 Rules:
 - the original opening-pair card remains in place
 - dragging or clicking copies content into `Chosen Opening`
 - dragging the pair handle copies both slides
 - dragging or clicking an individual slide copies only that slide
+- generation is blocked if that stage prompt is blank
+- one steering note per selected topic for Opening Pairs generation
+- Opening Pairs regenerate can include the currently displayed opening pairs plus the saved steering note
+
+### Stage Prompt Editing
+
+Purpose:
+- let superadmins edit the creative master prompt for each Carousel Map generation stage without changing the locked JSON schema or system framing
+
+Rules:
+- prompts are saved account-wide and apply to all future Carousel Maps for that account
+- each stage has its own prompt: `topics`, `opening_pairs`, and `expansions`
+- edits autosave while typing
+- prompt settings live in `public.editor_account_prompt_overrides`
+- if a prompt is blank, that stage's generation button stays blocked until prompt text is entered
+
+### Stage Steering
+
+Purpose:
+- let superadmins steer the next generation run without changing the account-wide master prompt
+
+Rules:
+- steering is persisted only when the user submits `Generate` or `Regenerate` from the steering modal
+- the main one-click generate button reuses the currently saved steering note for that scope, if one exists
+- steering scope is stage-specific:
+  - `topics`: one note per map
+  - `opening_pairs`: one note per selected topic
+  - `expansions`: one note per chosen opening signature
+- the modal is prefilled from the currently saved steering note for that scope
+- leaving steering blank is allowed and proceeds as a normal generation
+- after a successful run, each lane can show a small `Last steering used` box
 
 ### Lane 4: Chosen Opening
 
@@ -182,6 +219,8 @@ Actions:
 - `Clear Slide 2`
 - `Copy opener`
 - `Generate Slides 3-6`
+- stage gear icon opens a small prompt editor modal for the Slides `3-6` creative prompt
+- merged `Generate Slides 3-6/Generate more + Steer` control for one-click generation or steering-guided generation
 
 ### Lane 5: Expansions
 

@@ -1,3 +1,7 @@
+export type CarouselMapPromptKey = "topics" | "opening_pairs" | "expansions";
+
+export type CarouselMapSteeringStageKey = CarouselMapPromptKey;
+
 export type CarouselMapTopic = {
   id: string;
   sourceGenerationKey: string;
@@ -58,10 +62,27 @@ export type CarouselMapGraph = {
   topics: CarouselMapTopic[];
   openingPairs: CarouselMapOpeningPair[];
   expansions: CarouselMapExpansion[];
+  topicsSteering: CarouselMapSteeringState;
+  openingPairsSteering: CarouselMapSteeringState;
+  expansionsSteering: CarouselMapSteeringState;
 };
 
 export type CarouselMapPromptSection = {
   id: string;
   title: string;
   content: string;
+};
+
+export type CarouselMapPromptState = {
+  promptKey: CarouselMapPromptKey;
+  promptText: string;
+  isOverride: boolean;
+};
+
+export type CarouselMapSteeringState = {
+  stageKey: CarouselMapSteeringStageKey;
+  scopeKey: string | null;
+  steeringText: string;
+  lastUsedSteeringText: string;
+  lastUsedAt: string | null;
 };

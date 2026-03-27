@@ -1015,14 +1015,16 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
 - `POST /api/editor/projects/jobs/generate-copy`
   - If `source_swipe_idea_snapshot` exists, it is sent **alongside** the project `prompt_snapshot` (the exact saved prompt chosen in the repurpose modal)
 
-### Carousel Map (planned, source of truth)
+### Carousel Map
 - Canonical planning/spec doc: `docs/CAROUSEL_MAP_SOURCE_OF_TRUTH.md`
-- This is the authoritative reference for the future `Carousel Map` system:
+- This is the authoritative reference for the shipped `Carousel Map` system:
   - new `Carousel Map` button in Swipe File / mirrored YouTube flow
   - full-screen modal workflow
   - topic -> opening pair -> chosen opener -> expansion model
   - dedicated `carousel_map_*` tables and `/api/carousel-map/*` routes
-  - planned reuse of the existing project `prompt_snapshot` + `generate-copy` rewrite path
+  - reuse of the existing project `prompt_snapshot` + `generate-copy` rewrite path
+  - superadmin-only account-scoped stage prompt editing via `editor_account_prompt_overrides`
+  - superadmin-only scoped steering memory for generate/regenerate via `carousel_map_generation_steering`
 
 ### YouTube Creator Feed tab (superadmin-only, inside Swipe File modal)
 - `src/features/editor/components/SwipeFileModal.tsx`

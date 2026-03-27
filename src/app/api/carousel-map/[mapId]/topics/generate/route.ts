@@ -2,6 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  buildCarouselMapTopicsScopeKey,
   assertTopicsPayload,
   buildCarouselMapTopicsSystem,
   callAnthropicJson,
@@ -9,7 +10,9 @@ import {
   generationKey,
   getAuthedCarouselMapContext,
   isUuid,
+  loadCarouselMapPrompt,
   loadCarouselMapGraph,
+  persistCarouselMapSteering,
 } from '../../../_lib';
 
 export const runtime = 'nodejs';
@@ -26,8 +29,47 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     const id = String(mapId || '').trim();
     if (!id || !isUuid(id)) return NextResponse.json({ success: false, error: 'Invalid mapId' } satisfies Resp, { status: 400 });
 
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
     const graph = await loadCarouselMapGraph({ supabase, accountId, mapId: id });
-    const system = buildCarouselMapTopicsSystem(graph.source);
+    const topicsPrompt = await loadCarouselMapPrompt({ supabase, accountId, promptKey: 'topics' });
+    const hasSubmittedSteering = Object.prototype.hasOwnProperty.call(body || {}, 'steeringText');
+    const submittedSteeringText = hasSubmittedSteering ? String(body?.steeringText || '') : null;
+    const effectiveSteeringText = hasSubmittedSteering ? submittedSteeringText || '' : graph.topicsSteering.steeringText;
+    if (hasSubmittedSteering) {
+      await persistCarouselMapSteering({
+        supabase,
+        accountId,
+        userId: user.id,
+        mapId: id,
+        stageKey: 'topics',
+        scopeKey: buildCarouselMapTopicsScopeKey(),
+        steeringText: effectiveSteeringText,
+        markUsed: !!String(effectiveSteeringText || '').trim(),
+      });
+    } else if (String(graph.topicsSteering.steeringText || '').trim()) {
+      await persistCarouselMapSteering({
+        supabase,
+        accountId,
+        userId: user.id,
+        mapId: id,
+        stageKey: 'topics',
+        scopeKey: buildCarouselMapTopicsScopeKey(),
+        steeringText: graph.topicsSteering.steeringText,
+        markUsed: true,
+      });
+    }
+    const system = buildCarouselMapTopicsSystem({
+      source: graph.source,
+      masterPrompt: topicsPrompt.promptText,
+      steeringText: effectiveSteeringText,
+      currentTopics: graph.topics,
+    });
     const rawText = await callAnthropicJson({
       system,
       userText: 'Extract the Carousel Map topics now and return the JSON only.',

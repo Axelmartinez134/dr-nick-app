@@ -3,11 +3,15 @@
 import type { DragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
+import { useEditorSelector } from "@/features/editor/store";
 import { CarouselMapProjectPickerModal } from "@/features/editor/components/CarouselMapProjectPickerModal";
 import type {
   CarouselMapExpansion,
   CarouselMapGraph,
   CarouselMapOpeningPair,
+  CarouselMapPromptKey,
+  CarouselMapPromptState,
+  CarouselMapSteeringState,
 } from "@/features/editor/components/carousel-map/types";
 
 type Props = {
@@ -28,6 +32,51 @@ type LinePath = {
 };
 
 type Point = { x: number; y: number };
+
+const PROMPT_STAGE_META: Record<
+  CarouselMapPromptKey,
+  { title: string; modalTitle: string; emptyError: string }
+> = {
+  topics: {
+    title: "Topics",
+    modalTitle: "Edit Topics Prompt",
+    emptyError: "Enter a Topics prompt before generating.",
+  },
+  opening_pairs: {
+    title: "Opening Pairs",
+    modalTitle: "Edit Opening Pairs Prompt",
+    emptyError: "Enter an Opening Pairs prompt before generating.",
+  },
+  expansions: {
+    title: "Slides 3-6",
+    modalTitle: "Edit Slides 3-6 Prompt",
+    emptyError: "Enter a Slides 3-6 prompt before generating.",
+  },
+};
+
+const STEERING_STAGE_META: Record<
+  CarouselMapPromptKey,
+  { buttonLabel: string; modalTitle: string; helperText: string; lastUsedLabel: string }
+> = {
+  topics: {
+    buttonLabel: "Steer",
+    modalTitle: "Steer Topics",
+    helperText: "Steer the AI output here with your direction. This will be used for the next Topics generation only when you submit.",
+    lastUsedLabel: "Last steering used",
+  },
+  opening_pairs: {
+    buttonLabel: "Steer",
+    modalTitle: "Steer Opening Pairs",
+    helperText: "Steer the AI output here with your direction. This applies to the currently selected topic when you submit.",
+    lastUsedLabel: "Last steering used",
+  },
+  expansions: {
+    buttonLabel: "Steer",
+    modalTitle: "Steer Slides 3-6",
+    helperText: "Steer the AI output here with your direction. This applies to the current chosen opening when you submit.",
+    lastUsedLabel: "Last steering used",
+  },
+};
 
 function getActiveAccountHeader(): Record<string, string> {
   try {
@@ -88,12 +137,167 @@ function LaneShell(props: {
   );
 }
 
+function CarouselMapStagePromptModal(props: {
+  open: boolean;
+  stageKey: CarouselMapPromptKey | null;
+  value: string;
+  onChange: (next: string) => void;
+  onClose: () => void;
+  saveStatus: "idle" | "saving" | "saved" | "error";
+  saveError: string | null;
+}) {
+  if (!props.open || !props.stageKey) return null;
+  const meta = PROMPT_STAGE_META[props.stageKey];
+  return (
+    <div
+      className="fixed inset-0 z-[255] flex items-center justify-center bg-black/50 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) props.onClose();
+      }}
+    >
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-slate-900">{meta.modalTitle}</div>
+            <div className="mt-1 text-xs text-slate-500">Edit only the creative instruction text. Output format and schema remain locked by the system.</div>
+          </div>
+          <button
+            type="button"
+            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={props.onClose}
+          >
+            Close
+          </button>
+        </div>
+        <div className="p-5">
+          <textarea
+            className="min-h-[320px] w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 shadow-sm"
+            value={props.value}
+            onChange={(e) => props.onChange(e.target.value)}
+            placeholder="Enter prompt..."
+          />
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="text-[11px] text-slate-500">Autosaves while typing.</div>
+            <div className="text-[11px]">
+              {props.saveStatus === "saving" ? <span className="text-slate-500">Saving…</span> : null}
+              {props.saveStatus === "saved" ? <span className="text-emerald-700">Saved</span> : null}
+              {props.saveStatus === "error" ? <span className="text-red-600">❌ {props.saveError || "Save failed"}</span> : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CarouselMapSteeringModal(props: {
+  open: boolean;
+  stageKey: CarouselMapPromptKey | null;
+  value: string;
+  error: string | null;
+  busy: boolean;
+  submitLabel: string;
+  onChange: (next: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!props.open || !props.stageKey) return null;
+  const meta = STEERING_STAGE_META[props.stageKey];
+  return (
+    <div
+      className="fixed inset-0 z-[255] flex items-center justify-center bg-black/50 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !props.busy) props.onClose();
+      }}
+    >
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-slate-900">{meta.modalTitle}</div>
+            <div className="mt-1 text-xs text-slate-500">{meta.helperText}</div>
+          </div>
+          <button
+            type="button"
+            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            onClick={props.onClose}
+            disabled={props.busy}
+          >
+            Close
+          </button>
+        </div>
+        <div className="p-5">
+          <textarea
+            className="min-h-[240px] w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 shadow-sm"
+            value={props.value}
+            onChange={(e) => props.onChange(e.target.value)}
+            placeholder="Tell the AI how you want to steer the next output..."
+            disabled={props.busy}
+          />
+          {props.error ? <div className="mt-3 text-sm text-red-600">❌ {props.error}</div> : null}
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="text-[11px] text-slate-500">Leave blank to proceed without saved steering.</div>
+            <button
+              type="button"
+              className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              onClick={props.onSubmit}
+              disabled={props.busy}
+            >
+              {props.busy ? "Working…" : props.submitLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GenerateWithSteeringControls(props: {
+  label: string;
+  disabled?: boolean;
+  onGenerate: () => void;
+  onSteer: () => void;
+}) {
+  return (
+    <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        className="h-8 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        disabled={props.disabled}
+        onClick={props.onGenerate}
+      >
+        {props.label}
+      </button>
+      <div className="w-px bg-slate-200" />
+      <button
+        type="button"
+        className="h-8 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        disabled={props.disabled}
+        onClick={props.onSteer}
+        title="Steer the next output"
+      >
+        Steer
+      </button>
+    </div>
+  );
+}
+
 export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, onLoadProject }: Props) {
+  const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const [graph, setGraph] = useState<CarouselMapGraph | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [promptsLoading, setPromptsLoading] = useState(false);
+  const [stagePrompts, setStagePrompts] = useState<Record<CarouselMapPromptKey, CarouselMapPromptState> | null>(null);
+  const [promptEditorKey, setPromptEditorKey] = useState<CarouselMapPromptKey | null>(null);
+  const [promptEditorDraft, setPromptEditorDraft] = useState("");
+  const [promptSaveStatus, setPromptSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [promptSaveError, setPromptSaveError] = useState<string | null>(null);
+  const [steeringModalKey, setSteeringModalKey] = useState<CarouselMapPromptKey | null>(null);
+  const [steeringDraft, setSteeringDraft] = useState("");
+  const [steeringBusy, setSteeringBusy] = useState(false);
+  const [steeringError, setSteeringError] = useState<string | null>(null);
   const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">(() => {
     try {
       const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("swipeFile.templateTypeId") || "").trim() : "";
@@ -126,6 +330,12 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
   const slide1Refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const slide2Refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const expansionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const promptSaveTimeoutRef = useRef<number | null>(null);
+  const loadedPromptDraftRef = useRef<Record<CarouselMapPromptKey, string>>({
+    topics: "",
+    opening_pairs: "",
+    expansions: "",
+  });
 
   useEffect(() => {
     templateTypeIdRef.current = templateTypeId;
@@ -152,6 +362,24 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
     }
   }, [swipeItemId]);
 
+  const loadStagePrompts = useCallback(async () => {
+    setPromptsLoading(true);
+    try {
+      const json = await authedFetchJson(`/api/carousel-map/prompts`, { method: "GET" });
+      const prompts = (json.prompts || {}) as Record<CarouselMapPromptKey, CarouselMapPromptState>;
+      setStagePrompts(prompts);
+      loadedPromptDraftRef.current = {
+        topics: String(prompts?.topics?.promptText || ""),
+        opening_pairs: String(prompts?.opening_pairs?.promptText || ""),
+        expansions: String(prompts?.expansions?.promptText || ""),
+      };
+    } catch (e: any) {
+      setError(String(e?.message || e || "Failed to load Carousel Map prompts"));
+    } finally {
+      setPromptsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!open || !swipeItemId) return;
     const key = `${open}:${swipeItemId}`;
@@ -163,14 +391,56 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
     setBusyAction(null);
     setPickerOpen(false);
     setPickerExpansionId(null);
+    setStagePrompts(null);
+    setPromptEditorKey(null);
+    setPromptEditorDraft("");
+    setPromptSaveStatus("idle");
+    setPromptSaveError(null);
+    setSteeringModalKey(null);
+    setSteeringDraft("");
+    setSteeringBusy(false);
+    setSteeringError(null);
     void loadGraph();
-  }, [loadGraph, open, swipeItemId]);
+    void loadStagePrompts();
+  }, [loadGraph, loadStagePrompts, open, swipeItemId]);
 
   useEffect(() => {
     if (!open) {
       lastOpenRef.current = "";
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!promptEditorKey) return;
+    const loaded = String(loadedPromptDraftRef.current[promptEditorKey] || "");
+    const current = String(promptEditorDraft || "");
+    if (current === loaded) return;
+    if (promptSaveTimeoutRef.current) window.clearTimeout(promptSaveTimeoutRef.current);
+    setPromptSaveStatus("saving");
+    setPromptSaveError(null);
+    promptSaveTimeoutRef.current = window.setTimeout(() => {
+      promptSaveTimeoutRef.current = null;
+      void (async () => {
+        try {
+          const json = await authedFetchJson(`/api/carousel-map/prompts`, {
+            method: "POST",
+            body: JSON.stringify({ promptKey: promptEditorKey, promptText: current }),
+          });
+          const prompts = (json.prompts || {}) as Record<CarouselMapPromptKey, CarouselMapPromptState>;
+          setStagePrompts(prompts);
+          loadedPromptDraftRef.current[promptEditorKey] = String(prompts?.[promptEditorKey]?.promptText || "");
+          setPromptSaveStatus("saved");
+          window.setTimeout(() => setPromptSaveStatus("idle"), 1200);
+        } catch (e: any) {
+          setPromptSaveStatus("error");
+          setPromptSaveError(String(e?.message || e || "Save failed"));
+        }
+      })();
+    }, 500);
+    return () => {
+      if (promptSaveTimeoutRef.current) window.clearTimeout(promptSaveTimeoutRef.current);
+    };
+  }, [promptEditorDraft, promptEditorKey]);
 
   const selectedTopic = useMemo(
     () => graph?.topics.find((topic) => topic.id === graph.selectedTopicId) || null,
@@ -192,6 +462,41 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
     graph?.openingPairs.find((pair) => pair.id === graph?.selectedSlide1SourcePairId) || null;
   const selectedSlide2Pair =
     graph?.openingPairs.find((pair) => pair.id === graph?.selectedSlide2SourcePairId) || null;
+  const topicsSteering = graph?.topicsSteering || ({ stageKey: "topics", scopeKey: null, steeringText: "", lastUsedSteeringText: "", lastUsedAt: null } as CarouselMapSteeringState);
+  const openingPairsSteering =
+    graph?.openingPairsSteering ||
+    ({ stageKey: "opening_pairs", scopeKey: null, steeringText: "", lastUsedSteeringText: "", lastUsedAt: null } as CarouselMapSteeringState);
+  const expansionsSteering =
+    graph?.expansionsSteering ||
+    ({ stageKey: "expansions", scopeKey: null, steeringText: "", lastUsedSteeringText: "", lastUsedAt: null } as CarouselMapSteeringState);
+  const topicsPromptEmpty = !String(stagePrompts?.topics?.promptText || "").trim();
+  const openingPairsPromptEmpty = !String(stagePrompts?.opening_pairs?.promptText || "").trim();
+  const expansionsPromptEmpty = !String(stagePrompts?.expansions?.promptText || "").trim();
+
+  const openSteeringModal = (stageKey: CarouselMapPromptKey) => {
+    const next =
+      stageKey === "topics"
+        ? topicsSteering.steeringText
+        : stageKey === "opening_pairs"
+          ? openingPairsSteering.steeringText
+          : expansionsSteering.steeringText;
+    setSteeringDraft(String(next || ""));
+    setSteeringError(null);
+    setSteeringModalKey(stageKey);
+  };
+
+  const renderLastSteeringBox = (state: CarouselMapSteeringState) => {
+    const text = String(state.lastUsedSteeringText || "").trim();
+    if (!text) return null;
+    return (
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+          {STEERING_STAGE_META[state.stageKey].lastUsedLabel}
+        </div>
+        <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{text}</div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (!open) {
@@ -454,6 +759,69 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
     }
   };
 
+  const openPromptEditor = (promptKey: CarouselMapPromptKey) => {
+    const next = String(stagePrompts?.[promptKey]?.promptText || "");
+    setPromptEditorDraft(next);
+    loadedPromptDraftRef.current[promptKey] = next;
+    setPromptSaveStatus("idle");
+    setPromptSaveError(null);
+    setPromptEditorKey(promptKey);
+  };
+
+  const generateStage = async (stageKey: CarouselMapPromptKey, steeringText?: string) => {
+    const mapId = String(graph?.id || "").trim();
+    if (!mapId) return;
+    const route =
+      stageKey === "topics"
+        ? `/api/carousel-map/${encodeURIComponent(mapId)}/topics/generate`
+        : stageKey === "opening_pairs"
+          ? `/api/carousel-map/${encodeURIComponent(mapId)}/opening-pairs/generate`
+          : `/api/carousel-map/${encodeURIComponent(mapId)}/expansions/generate`;
+    const busyKey = stageKey === "topics" ? "topics" : stageKey === "opening_pairs" ? "pairs" : "expansions";
+    const successMessage =
+      stageKey === "topics"
+        ? "Topics generated."
+        : stageKey === "opening_pairs"
+          ? "Opening pairs generated."
+          : "Slides 3-6 generated.";
+    setBusyAction(busyKey);
+    setError(null);
+    try {
+      const json = await authedFetchJson(route, {
+        method: "POST",
+        body: steeringText === undefined ? JSON.stringify({}) : JSON.stringify({ steeringText }),
+      });
+      setGraph((json.graph as CarouselMapGraph) || null);
+      setNotice(successMessage);
+    } catch (e) {
+      throw e;
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const submitSteeringModal = async () => {
+    if (!steeringModalKey) return;
+    setSteeringBusy(true);
+    setSteeringError(null);
+    try {
+      await generateStage(steeringModalKey, steeringDraft);
+      setSteeringModalKey(null);
+    } catch (e: any) {
+      const msg = String(e?.message || e || "Failed");
+      setSteeringError(msg);
+      setError(msg);
+    } finally {
+      setSteeringBusy(false);
+    }
+  };
+
+  const onGenerateClick = (stageKey: CarouselMapPromptKey) => {
+    void generateStage(stageKey).catch((e: any) => {
+      setError(String(e?.message || e || "Failed"));
+    });
+  };
+
   if (!open) return null;
 
   return (
@@ -571,28 +939,33 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
                   topicLaneScrollRef.current = node;
                 }}
                 action={
-                  <button
-                    type="button"
-                    className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    disabled={!graph?.id || busyAction === "topics" || loading}
-                    onClick={() =>
-                      void runAction("topics", async () => {
-                        const json = await authedFetchJson(`/api/carousel-map/${encodeURIComponent(String(graph?.id || ""))}/topics/generate`, {
-                          method: "POST",
-                        });
-                        setGraph((json.graph as CarouselMapGraph) || null);
-                        setNotice("Topics generated.");
-                      })
-                    }
-                  >
-                    {busyAction === "topics" ? "Working…" : graph?.topics.length ? "Regenerate" : "Generate"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isSuperadmin ? (
+                      <button
+                        type="button"
+                        className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => openPromptEditor("topics")}
+                        title="Edit Topics prompt"
+                      >
+                        ⚙
+                      </button>
+                    ) : null}
+                    <GenerateWithSteeringControls
+                      label={busyAction === "topics" ? "Working…" : graph?.topics.length ? "Regenerate" : "Generate"}
+                      disabled={!graph?.id || busyAction === "topics" || loading || promptsLoading || topicsPromptEmpty}
+                      onGenerate={() => onGenerateClick("topics")}
+                      onSteer={() => openSteeringModal("topics")}
+                    />
+                  </div>
                 }
               >
-                {!graph?.topics.length ? (
+                {topicsPromptEmpty ? (
+                  <div className="text-sm text-amber-700">{PROMPT_STAGE_META.topics.emptyError}</div>
+                ) : !graph?.topics.length ? (
                   <div className="text-sm text-slate-600">Generate topics to extract the strongest directions from the source.</div>
                 ) : (
                   <div className="space-y-3">
+                    {renderLastSteeringBox(topicsSteering)}
                     {graph.topics.map((topic) => {
                       const active = topic.id === graph.selectedTopicId;
                       return (
@@ -640,32 +1013,35 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
                   openingLaneScrollRef.current = node;
                 }}
                 action={
-                  <button
-                    type="button"
-                    className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    disabled={!selectedTopic || busyAction === "pairs"}
-                    onClick={() =>
-                      selectedTopic
-                        ? void runAction("pairs", async () => {
-                            const json = await authedFetchJson(`/api/carousel-map/${encodeURIComponent(String(graph?.id || ""))}/opening-pairs/generate`, {
-                              method: "POST",
-                            });
-                            setGraph((json.graph as CarouselMapGraph) || null);
-                            setNotice("Opening pairs generated.");
-                          })
-                        : undefined
-                    }
-                  >
-                    {busyAction === "pairs" ? "Working…" : openingPairs.length ? "Regenerate" : "Generate"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isSuperadmin ? (
+                      <button
+                        type="button"
+                        className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => openPromptEditor("opening_pairs")}
+                        title="Edit Opening Pairs prompt"
+                      >
+                        ⚙
+                      </button>
+                    ) : null}
+                    <GenerateWithSteeringControls
+                      label={busyAction === "pairs" ? "Working…" : openingPairs.length ? "Regenerate" : "Generate"}
+                      disabled={!selectedTopic || busyAction === "pairs" || promptsLoading || openingPairsPromptEmpty}
+                      onGenerate={() => onGenerateClick("opening_pairs")}
+                      onSteer={() => openSteeringModal("opening_pairs")}
+                    />
+                  </div>
                 }
               >
                 {!selectedTopic ? (
                   <div className="text-sm text-slate-600">Select one topic first.</div>
+                ) : openingPairsPromptEmpty ? (
+                  <div className="text-sm text-amber-700">{PROMPT_STAGE_META.opening_pairs.emptyError}</div>
                 ) : openingPairs.length === 0 ? (
                   <div className="text-sm text-slate-600">Generate opening pairs for the selected topic.</div>
                 ) : (
                   <div className="space-y-3">
+                    {renderLastSteeringBox(openingPairsSteering)}
                     {openingPairs.map((pair) => (
                       <div
                         key={pair.id}
@@ -764,27 +1140,33 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
                   chosenLaneScrollRef.current = node;
                 }}
                 action={
-                  <button
-                    type="button"
-                    className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                    disabled={!graph?.selectedSlide1Text || !graph?.selectedSlide2Text || busyAction === "expansions"}
-                    onClick={() =>
-                      graph?.selectedSlide1Text && graph?.selectedSlide2Text
-                        ? void runAction("expansions", async () => {
-                            const json = await authedFetchJson(`/api/carousel-map/${encodeURIComponent(String(graph?.id || ""))}/expansions/generate`, {
-                              method: "POST",
-                            });
-                            setGraph((json.graph as CarouselMapGraph) || null);
-                            setNotice("Slides 3-6 generated.");
-                          })
-                        : undefined
-                    }
-                  >
-                    {busyAction === "expansions" ? "Working…" : expansions.length ? "Generate more" : "Generate Slides 3-6"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {isSuperadmin ? (
+                      <button
+                        type="button"
+                        className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => openPromptEditor("expansions")}
+                        title="Edit Slides 3-6 prompt"
+                      >
+                        ⚙
+                      </button>
+                    ) : null}
+                    <GenerateWithSteeringControls
+                      label={busyAction === "expansions" ? "Working…" : expansions.length ? "Generate more" : "Generate Slides 3-6"}
+                      disabled={!graph?.selectedSlide1Text || !graph?.selectedSlide2Text || busyAction === "expansions" || promptsLoading || expansionsPromptEmpty}
+                      onGenerate={() => onGenerateClick("expansions")}
+                      onSteer={() => openSteeringModal("expansions")}
+                    />
+                  </div>
                 }
               >
                 <div ref={chosenOpeningGroupRef} className="space-y-4">
+                  {expansionsPromptEmpty ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      {PROMPT_STAGE_META.expansions.emptyError}
+                    </div>
+                  ) : null}
+                  {renderLastSteeringBox(expansionsSteering)}
                   <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600">
                     Drag a full opening pair into either slot to copy both slides, or click/drag each slide directly from an opening-pair card.
                   </div>
@@ -946,6 +1328,42 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
         onPick={(args) => {
           void onCreateProject(args);
         }}
+      />
+      <CarouselMapStagePromptModal
+        open={!!promptEditorKey}
+        stageKey={promptEditorKey}
+        value={promptEditorDraft}
+        onChange={setPromptEditorDraft}
+        onClose={() => setPromptEditorKey(null)}
+        saveStatus={promptSaveStatus}
+        saveError={promptSaveError}
+      />
+      <CarouselMapSteeringModal
+        open={!!steeringModalKey}
+        stageKey={steeringModalKey}
+        value={steeringDraft}
+        error={steeringError}
+        busy={steeringBusy}
+        submitLabel={
+          steeringModalKey === "topics"
+            ? graph?.topics.length
+              ? "Regenerate Topics"
+              : "Generate Topics"
+            : steeringModalKey === "opening_pairs"
+              ? openingPairs.length
+                ? "Regenerate Opening Pairs"
+                : "Generate Opening Pairs"
+              : expansions.length
+                ? "Generate More"
+                : "Generate Slides 3-6"
+        }
+        onChange={setSteeringDraft}
+        onClose={() => {
+          if (steeringBusy) return;
+          setSteeringModalKey(null);
+          setSteeringError(null);
+        }}
+        onSubmit={() => void submitSteeringModal()}
       />
     </>
   );

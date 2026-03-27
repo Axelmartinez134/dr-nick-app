@@ -2,6 +2,8 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  buildCarouselMapExpansionsScopeKey,
+  buildCarouselMapOpeningSignature,
   assertExpansionsPayload,
   buildCarouselMapExpansionsSystem,
   callAnthropicJson,
@@ -10,7 +12,9 @@ import {
   getAuthedCarouselMapContext,
   isUuid,
   loadBrandVoice,
+  loadCarouselMapPrompt,
   loadCarouselMapGraph,
+  persistCarouselMapSteering,
 } from '../../../_lib';
 
 export const runtime = 'nodejs';
@@ -27,6 +31,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     const id = String(mapId || '').trim();
     if (!id || !isUuid(id)) return NextResponse.json({ success: false, error: 'Invalid mapId' } satisfies Resp, { status: 400 });
 
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
     const graph = await loadCarouselMapGraph({ supabase, accountId, mapId: id });
     const topic = graph.topics.find((row) => row.id === graph.selectedTopicId) || null;
     if (!topic) return NextResponse.json({ success: false, error: 'Select a topic first' } satisfies Resp, { status: 400 });
@@ -37,12 +48,57 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     }
 
     const brandVoice = await loadBrandVoice({ supabase, accountId });
+    const expansionsPrompt = await loadCarouselMapPrompt({ supabase, accountId, promptKey: 'expansions' });
+    const currentExpansions = (graph.expansions || []).filter((row) => row.topicId === topic.id);
+    const openingSignature = buildCarouselMapOpeningSignature({
+      topicId: topic.id,
+      selectedSlide1Text,
+      selectedSlide2Text,
+    });
+    const scopeKey = buildCarouselMapExpansionsScopeKey({
+      topicId: topic.id,
+      selectedSlide1Text,
+      selectedSlide2Text,
+    });
+    const hasSubmittedSteering = Object.prototype.hasOwnProperty.call(body || {}, 'steeringText');
+    const submittedSteeringText = hasSubmittedSteering ? String(body?.steeringText || '') : null;
+    const effectiveSteeringText = hasSubmittedSteering ? submittedSteeringText || '' : graph.expansionsSteering.steeringText;
+    if (hasSubmittedSteering) {
+      await persistCarouselMapSteering({
+        supabase,
+        accountId,
+        userId: user.id,
+        mapId: id,
+        stageKey: 'expansions',
+        topicId: topic.id,
+        scopeKey,
+        openingSignature,
+        steeringText: effectiveSteeringText,
+        markUsed: !!String(effectiveSteeringText || '').trim(),
+      });
+    } else if (String(graph.expansionsSteering.steeringText || '').trim()) {
+      await persistCarouselMapSteering({
+        supabase,
+        accountId,
+        userId: user.id,
+        mapId: id,
+        stageKey: 'expansions',
+        topicId: topic.id,
+        scopeKey,
+        openingSignature,
+        steeringText: graph.expansionsSteering.steeringText,
+        markUsed: true,
+      });
+    }
     const system = buildCarouselMapExpansionsSystem({
       source: graph.source,
       topic,
       brandVoice,
+      masterPrompt: expansionsPrompt.promptText,
       selectedSlide1Text,
       selectedSlide2Text,
+      steeringText: effectiveSteeringText,
+      currentExpansions,
     });
     const rawText = await callAnthropicJson({
       system,
