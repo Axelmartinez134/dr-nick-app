@@ -1500,6 +1500,7 @@ export default function EditorShell() {
     if (liveLayoutAutoFixAllSlidesDoneByProjectRef.current[pid]) return;
 
     const toQueue: number[] = [];
+    let sawAnyText = false;
     let waitingOnSnapshots = false;
 
     for (let i = 0; i < slideCount; i++) {
@@ -1508,6 +1509,7 @@ export default function EditorShell() {
       const headline = templateTypeId === "regular" ? "" : String(slide.draftHeadline || "");
       const body = String(slide.draftBody || "");
       if (!headline.trim() && !body.trim()) continue;
+      sawAnyText = true;
 
       const hasLayout = !!(slide as any)?.layoutData?.layout && Array.isArray(((slide as any).layoutData.layout as any)?.textLines);
       const hasSomeTextLines = hasLayout ? (((slide as any).layoutData.layout as any).textLines?.length || 0) > 0 : false;
@@ -1527,6 +1529,9 @@ export default function EditorShell() {
     }
 
     if (waitingOnSnapshots) return;
+    // Do not permanently "complete" the autofix pass before any generated text exists.
+    // Outreach can load a new project, then populate slide text shortly after via Generate Copy.
+    if (!sawAnyText) return;
     liveLayoutAutoFixAllSlidesDoneByProjectRef.current[pid] = true;
     if (toQueue.length) {
       addLog(`🛠️ Rendering ${toQueue.length} slide(s) with text but no layout yet (project=${pid})`);
@@ -1535,6 +1540,7 @@ export default function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentProjectId,
+    slides,
     templateTypeId,
     templateSnapshots,
     switchingSlides,
