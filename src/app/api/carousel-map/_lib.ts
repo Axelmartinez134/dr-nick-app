@@ -214,6 +214,7 @@ export async function loadCarouselMapGraph(args: {
   const categoryName = sourceContext.categoryName || (await loadCategoryName({ supabase, accountId, swipeItemId }));
   const source: CarouselMapSource = {
     swipeItemId,
+    url: sourceContext.url,
     title: sourceContext.title,
     authorHandle: sourceContext.authorHandle,
     platform: sourceContext.platform,

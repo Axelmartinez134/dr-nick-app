@@ -111,6 +111,7 @@ export function EditorSlidesRow() {
     onMobileViewportPointerMove,
     onMobileViewportPointerUp,
     onMobileViewportPointerCancel,
+    renderActiveSlideTopControlsRow,
     renderActiveSlideControlsRow,
   } = workspaceActions;
 
@@ -497,7 +498,8 @@ export function EditorSlidesRow() {
                       void effectiveSwitchToSlide(i);
                     }}
                   >
-                    {/* Per-slide controls under the active slide (active slide only). */}
+                    {/* Per-slide controls above/below the active slide (active slide only). */}
+                    {i === activeSlideIndex ? renderActiveSlideTopControlsRow() : null}
                     {i === activeSlideIndex ? renderActiveSlideControlsRow() : null}
 
                     <SlideCard index={i + 1} active={i === activeSlideIndex}>

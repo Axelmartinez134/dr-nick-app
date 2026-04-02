@@ -72,6 +72,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     if (!promptText) return NextResponse.json({ success: false, error: 'Saved prompt is empty' } satisfies Resp, { status: 400 });
 
     const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
+    const reviewSource = String(graph.source.url || '').trim() || 'N/A';
 
     const { data: project, error: projectErr } = await supabase
       .from('carousel_projects')
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
         title: buildProjectTitle({ sourceTitle: graph.source.title, topicTitle: topic.title }),
         template_type_id: templateTypeId,
         caption: null,
+        review_source: reviewSource,
         prompt_snapshot: promptText,
         slide1_template_id_snapshot: (effective as any)?.slide1TemplateId ?? null,
         slide2_5_template_id_snapshot: (effective as any)?.slide2to5TemplateId ?? null,

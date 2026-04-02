@@ -518,7 +518,8 @@ export type EditorWorkspaceState = {
   onMobileViewportPointerUp: (e: any) => void;
   onMobileViewportPointerCancel: (e: any) => void;
 
-  // Desktop active under-card controls row is passed through (kept in EditorShell for now)
+  // Desktop active slide controls rows are passed through (kept in EditorShell for now)
+  renderActiveSlideTopControlsRow: () => any;
   renderActiveSlideControlsRow: () => any;
 };
 
@@ -589,6 +590,7 @@ export type EditorWorkspaceActionsState = {
   onMobileViewportPointerUp: (e: any) => void;
   onMobileViewportPointerCancel: (e: any) => void;
 
+  renderActiveSlideTopControlsRow: () => any;
   renderActiveSlideControlsRow: () => any;
 };
 

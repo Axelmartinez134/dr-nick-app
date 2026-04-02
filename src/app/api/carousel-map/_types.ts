@@ -44,6 +44,7 @@ export type CarouselMapExpansion = {
 
 export type CarouselMapSource = {
   swipeItemId: string;
+  url: string;
   title: string;
   authorHandle: string;
   platform: string;

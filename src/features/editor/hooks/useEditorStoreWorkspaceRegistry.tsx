@@ -62,6 +62,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     slideRefs,
     canvasRef,
     lastActiveFabricCanvasRef,
+    activeCanvasNonce,
     setActiveCanvasNonce,
     CarouselPreviewVision,
     SlideCard,
@@ -80,6 +81,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     templateTypeId,
     handleRegularCanvasTextChange,
     handleEnhancedCanvasTextChange,
+    downloadSingleSlideDesktop,
 
     // From bottom-panel / jobs
     scheduleLiveLayout,
@@ -104,6 +106,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
         onMobileViewportPointerMove: (e: any) => workspaceImplRef.current?.onMobileViewportPointerMove?.(e),
         onMobileViewportPointerUp: (e: any) => workspaceImplRef.current?.onMobileViewportPointerUp?.(e),
         onMobileViewportPointerCancel: (e: any) => workspaceImplRef.current?.onMobileViewportPointerCancel?.(e),
+        renderActiveSlideTopControlsRow: () => workspaceImplRef.current?.renderActiveSlideTopControlsRow?.(),
         renderActiveSlideControlsRow: () => workspaceImplRef.current?.renderActiveSlideControlsRow?.(),
       }) as any,
     []
@@ -147,6 +150,56 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     const mobilePointerCancel = () => {
       const g = mobileGestureRef.current;
       if (g.mode === "slide") mobileGestureRef.current.mode = null;
+    };
+
+    const renderActiveSlideTopControlsRow = () => {
+      const activeHandle = slideCanvasRefs.current?.[activeSlideIndexRef.current]?.current;
+      const canvasReady = !!activeHandle;
+      const disabled = !currentProjectId || switchingSlides || copyGenerating || !canvasReady;
+      const stop = (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      return (
+        <div className="absolute top-0 right-2 -translate-y-10 flex items-center">
+          <button
+            type="button"
+            className={[
+              "h-9 w-9 rounded-full border border-slate-200 bg-white/95 backdrop-blur shadow-sm transition-colors",
+              disabled ? "text-slate-300 cursor-not-allowed" : "text-slate-700 hover:bg-white hover:text-slate-900",
+            ].join(" ")}
+            disabled={disabled}
+            title={
+              !currentProjectId
+                ? "Create or load a project to download a slide"
+                : !canvasReady
+                  ? "Slide is still rendering"
+                  : "Download this slide"
+            }
+            aria-label="Download current slide"
+            onMouseDown={stop}
+            onClick={(e) => {
+              stop(e);
+              if (disabled) return;
+              void downloadSingleSlideDesktop(activeSlideIndexRef.current);
+            }}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="mx-auto h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 3v10" />
+              <path d="M8 10l4 4 4-4" />
+              <path d="M4 17v2h16v-2" />
+            </svg>
+          </button>
+        </div>
+      );
     };
 
     const renderActiveSlideControlsRow = () => (
@@ -522,6 +575,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
       onMobileViewportPointerMove: mobilePointerMove,
       onMobileViewportPointerUp: mobilePointerUp,
       onMobileViewportPointerCancel: mobilePointerCancel,
+      renderActiveSlideTopControlsRow,
       renderActiveSlideControlsRow,
     };
 
@@ -571,6 +625,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     SlideCard,
     activeImageSelected,
     activeSlideIndex,
+    activeCanvasNonce,
     activeSlideIndexRef,
     addLog,
     applyCanvasInlineMark,
@@ -581,6 +636,7 @@ export function useEditorStoreWorkspaceRegistry(args: any) {
     copyGenerating,
     currentProjectId,
     deleteImageForActiveSlide,
+    downloadSingleSlideDesktop,
     editorStore,
     goNext,
     goPrev,

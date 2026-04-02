@@ -18,6 +18,7 @@ export function sanitizePrompt(input: string): string {
 
 export type SwipeIdeasContext = {
   platform: string;
+  url: string;
   title: string;
   authorHandle: string;
   categoryName: string;
@@ -35,7 +36,7 @@ export async function loadSwipeIdeasContextOrThrow(args: {
 
   const { data: item, error: itemErr } = await supabase
     .from('swipe_file_items')
-    .select('id, platform, transcript, caption, title, author_handle, note, category_id')
+    .select('id, platform, url, transcript, caption, title, author_handle, note, category_id')
     .eq('account_id', accountId)
     .eq('id', swipeItemId)
     .maybeSingle();
@@ -62,6 +63,7 @@ export async function loadSwipeIdeasContextOrThrow(args: {
 
   return {
     platform: String((item as any)?.platform || ''),
+    url: String((item as any)?.url || '').trim(),
     title: String((item as any)?.title || ''),
     authorHandle: String((item as any)?.author_handle || ''),
     categoryName,

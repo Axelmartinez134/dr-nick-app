@@ -60,8 +60,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 # ============================================================================
 
 DEFAULT_DEBUGGER_ADDRESS = "127.0.0.1:9222"
-DEFAULT_MIN_DELAY_SECONDS = 4
-DEFAULT_MAX_DELAY_SECONDS = 12
+DEFAULT_MIN_DELAY_SECONDS = 10
+DEFAULT_MAX_DELAY_SECONDS = 20
 DEFAULT_MAX_PAGES = 1000
 DEFAULT_PAGE_LOAD_TIMEOUT = 25
 DEBUG_LINE_SLOTS = 12

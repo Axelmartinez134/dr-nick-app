@@ -271,6 +271,29 @@ export function useCanvasExport(params: {
     ]
   );
 
+  const downloadSingleSlideDesktop = useCallback(
+    async (slideIndex: number) => {
+      const handle = slideCanvasRefs.current[slideIndex]?.current;
+      if (!getFabricCanvasFromHandle(handle)) {
+        alert("Slide is still rendering. Please wait a moment and try again.");
+        return;
+      }
+      try {
+        const blob = await exportFabricCanvasPngBlob(handle);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = `slide-${slideIndex + 1}.png`;
+        link.href = url;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } catch (e: any) {
+        console.error("[Editor] Download single slide failed:", e);
+        alert(e?.message || "Download failed. Please try again.");
+      }
+    },
+    [exportFabricCanvasPngBlob, getFabricCanvasFromHandle, slideCanvasRefs]
+  );
+
   const handleShareAll = useCallback(async () => {
     if (topExporting) return;
     setTopExporting(true);
@@ -344,6 +367,13 @@ export function useCanvasExport(params: {
     void handleDownloadAll();
   }, [handleDownloadAll]);
 
-  return { handleTopDownload, handleDownloadAll, handleDownloadPdf, handleShareAll, shareSingleSlide };
+  return {
+    handleTopDownload,
+    handleDownloadAll,
+    handleDownloadPdf,
+    handleShareAll,
+    shareSingleSlide,
+    downloadSingleSlideDesktop,
+  };
 }
 

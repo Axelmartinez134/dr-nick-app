@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "clean": "pkill -f 'next dev' || true && rm -rf .next && rm -rf node_modules/.cache && echo 'Cache cleared! Run npm run dev to start fresh.'"
+    "clean": "pkill -f 'next dev' || true && rm -rf .next && rm -rf node_modules/.cache && echo 'Cache cleared! Run npm run dev to start fresh.'",
+    "dm:discover-threads": "node scripts/instagram_dm/discover_threads.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
@@ -20,10 +21,12 @@
     "fabric": "^7.0.0",
     "fast-diff": "^1.3.0",
     "fast-xml-parser": "^5.5.8",
+    "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "next": "15.3.8",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
+    "playwright": "^1.58.2",
     "pngjs": "^7.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

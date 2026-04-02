@@ -18,6 +18,63 @@ type InlineStyleRange = {
   underline?: boolean;
 };
 
+function repairInnerQuotesInJsonStrings(input: string) {
+  const s = String(input || '');
+  let out = '';
+  let inString = false;
+  let escaping = false;
+  let repairedCount = 0;
+
+  const nextNonWsChar = (start: number) => {
+    for (let i = start; i < s.length; i++) {
+      const ch = s[i];
+      if (!/\s/.test(ch || '')) return ch || '';
+    }
+    return '';
+  };
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i] || '';
+    if (!inString) {
+      out += ch;
+      if (ch === '"') {
+        inString = true;
+        escaping = false;
+      }
+      continue;
+    }
+
+    if (escaping) {
+      out += ch;
+      escaping = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      out += ch;
+      escaping = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      const next = nextNonWsChar(i + 1);
+      const looksLikeStringTerminator = next === ',' || next === '}' || next === ']' || next === ':';
+      if (looksLikeStringTerminator) {
+        out += ch;
+        inString = false;
+      } else {
+        out += "'";
+        repairedCount += 1;
+      }
+      continue;
+    }
+
+    out += ch;
+  }
+
+  return { repaired: out, repairedCount };
+}
+
 function sanitizePrompt(input: string): string {
   // Remove ASCII control chars that can break JSON payloads/logging.
   return String(input || '').replace(/[\x00-\x1F\x7F]/g, ' ').trim();
@@ -31,7 +88,19 @@ function extractJsonObject(text: string): any {
     throw new Error('Parser did not return JSON');
   }
   const raw = s.slice(first, last + 1);
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    const repairedAttempt = repairInnerQuotesInJsonStrings(raw);
+    if (repairedAttempt.repairedCount > 0) {
+      try {
+        return JSON.parse(repairedAttempt.repaired);
+      } catch {
+        // Fall through to the original parse error below.
+      }
+    }
+    throw err;
+  }
 }
 
 function assertValidPayload(payload: any, templateTypeId: 'regular' | 'enhanced') {

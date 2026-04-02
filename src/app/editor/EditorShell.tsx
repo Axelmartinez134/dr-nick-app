@@ -6658,7 +6658,7 @@ export default function EditorShell() {
   const goPrev = () => void switchToSlide(activeSlideIndex - 1);
   const goNext = () => void switchToSlide(activeSlideIndex + 1);
 
-  const { handleTopDownload, handleDownloadAll, handleDownloadPdf, handleShareAll, shareSingleSlide } = useCanvasExport({
+  const { handleTopDownload, handleDownloadAll, handleDownloadPdf, handleShareAll, shareSingleSlide, downloadSingleSlideDesktop } = useCanvasExport({
     slideCount,
     slideCanvasRefs,
     projectTitle,
@@ -8173,6 +8173,8 @@ export default function EditorShell() {
     templateTypeId,
     handleRegularCanvasTextChange,
     handleEnhancedCanvasTextChange,
+    activeCanvasNonce,
+    downloadSingleSlideDesktop,
   });
 
   // Phase 5E6: bottom panel bridging hook removed (state/actions are now set directly by EditorShell + state.actions).

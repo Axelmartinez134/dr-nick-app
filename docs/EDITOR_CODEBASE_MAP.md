@@ -524,7 +524,7 @@ Enhanced `/editor` uses deterministic layout snapshots that are rendered by Fabr
 - **Active image selection tracking**: `src/features/editor/hooks/useActiveImageSelection.ts`
   - Keeps active-slide image UI in sync with Fabric selection listeners
 - **Export/share helpers**: `src/features/editor/hooks/useCanvasExport.ts`
-  - Download All ZIP + Share All + per-slide share
+  - Download All ZIP + Share All + per-slide share + desktop active-slide PNG download
 - **Viewport + slide strip translateX**: `src/features/editor/hooks/useSlidesViewport.ts`
 - **Fabric canvas binding (active slide)**: `src/features/editor/hooks/useFabricCanvasBinding.ts`
   - Assigns active slide canvas refs + updates `activeCanvasNonce` when Fabric canvas instance changes
