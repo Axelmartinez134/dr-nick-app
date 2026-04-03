@@ -782,6 +782,7 @@ export function useImageOps(params: {
           bgRemovalEnabled: !!bgRemovalEnabledAtInsert,
           bgRemovalStatus: bgRemovalEnabledAtInsert ? 'processing' : 'disabled',
           isAiGenerated: String(asset?.kind || '') === 'ai',
+          ...(templateTypeId === 'regular' ? { renderAboveTemplateAssets: true } : {}),
         };
 
         // Always keep a mask so Show Layout Overlays can visualize the wrap area,
@@ -1276,6 +1277,7 @@ export function useImageOps(params: {
       const nextPrimary = { ...sticker };
       // Primary does not need an id; keep it harmlessly if present.
       if (!(nextPrimary as any).mask) (nextPrimary as any).mask = solidMask128();
+      if (templateTypeId === 'regular') (nextPrimary as any).renderAboveTemplateAssets = true;
 
       const nextLayout: any = { ...baseLayout, image: nextPrimary, extraImages: nextExtras };
 

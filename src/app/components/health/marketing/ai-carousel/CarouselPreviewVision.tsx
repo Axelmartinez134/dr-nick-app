@@ -1184,9 +1184,8 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
 
     const shouldKeepPrimaryImageAboveTemplateAssets =
       hasHeadline === false &&
-      !!((layout as any)?.image?.renderAboveTemplateAssets) &&
-      slide1PrimaryLayerOverride !== "front" &&
-      slide1PrimaryLayerOverride !== "back";
+      !!String((layout as any)?.image?.url || "").trim() &&
+      (canvasSlideIndex !== 0 || (slide1PrimaryLayerOverride !== "front" && slide1PrimaryLayerOverride !== "back"));
 
     const bringPrimaryUserImageAboveTemplateAssetsNow = (canvas: any) => {
       try {
