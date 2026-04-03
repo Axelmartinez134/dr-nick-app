@@ -4279,6 +4279,18 @@ export function EditorBottomPanel() {
                       const enabled = ((selectedImg as any)?.bgRemovalEnabled ?? true) as boolean;
                       const statusRaw = String((selectedImg as any)?.bgRemovalStatus || (enabled ? "idle" : "disabled"));
                       const statusLabel = busy ? (enabled ? "processing" : "saving") : statusRaw;
+                      const imageControlDisabled =
+                        ui.imageBusy ||
+                        switchingSlides ||
+                        copyGenerating ||
+                        !currentProjectId ||
+                        (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false);
+                      const imageStyle = ((selectedImg as any)?.imageStyle ?? null) as any;
+                      const outlineEnabled = !!imageStyle?.outlineEnabled;
+                      const outlineWidthPx = Math.max(0, Math.min(20, Math.round(Number(imageStyle?.outlineWidthPx) || 4)));
+                      const shadowEnabled = !!imageStyle?.shadowEnabled;
+                      const shadowStrengthPct = Math.max(0, Math.min(100, Math.round(Number(imageStyle?.shadowStrengthPct) || 45)));
+                      const canUseRectOutline = !enabled;
 
                       return (
                         <>
@@ -4303,13 +4315,7 @@ export function EditorBottomPanel() {
                               const cur = ((selectedImg as any)?.bgRemovalEnabled ?? true) as boolean;
                               actions.setActiveSlideImageBgRemoval(!cur);
                             }}
-                            disabled={
-                              ui.imageBusy ||
-                              switchingSlides ||
-                              copyGenerating ||
-                              !currentProjectId ||
-                              (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
-                            }
+                            disabled={imageControlDisabled}
                             title="Toggle background removal for this image (persists per slide)"
                           >
                             <span
@@ -4325,19 +4331,101 @@ export function EditorBottomPanel() {
                             type="button"
                             className="mt-2 w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-50"
                             onClick={() => actions.setActiveSlideImageBgRemoval(true)}
-                            disabled={
-                              ui.imageBusy ||
-                              switchingSlides ||
-                              copyGenerating ||
-                              !currentProjectId ||
-                              (currentProjectId ? ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex)) : false)
-                            }
+                            disabled={imageControlDisabled}
                             title="Try background removal again"
                           >
                             {currentProjectId && ui.bgRemovalBusyKeys.has(ui.aiKey(currentProjectId, activeSlideIndex))
                               ? "Processing…"
                               : "Try again"}
                           </button>
+                        ) : null}
+                        {templateTypeId === "regular" ? (
+                          <div className="mt-3 border-t border-slate-200 pt-3 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">Rect outline</div>
+                                <div className="text-xs text-slate-500">
+                                  {canUseRectOutline
+                                    ? "Fixed black border for non-BG images."
+                                    : "Rect outline only applies when BG removal is off."}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className={[
+                                  "h-8 w-14 rounded-full transition-colors",
+                                  outlineEnabled && canUseRectOutline ? "bg-black" : "bg-slate-300",
+                                ].join(" ")}
+                                onClick={() => actions.setActiveSlideImageStyle?.({ outlineEnabled: !outlineEnabled })}
+                                disabled={imageControlDisabled || !canUseRectOutline}
+                                title={canUseRectOutline ? "Toggle rectangular outline for this image" : "Disable BG removal to use rectangular outline"}
+                              >
+                                <span
+                                  className={[
+                                    "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                    outlineEnabled && canUseRectOutline ? "translate-x-6" : "translate-x-1",
+                                  ].join(" ")}
+                                />
+                              </button>
+                            </div>
+                            {outlineEnabled ? (
+                              <div className="flex items-center gap-2">
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase whitespace-nowrap">Width</div>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={20}
+                                  step={1}
+                                  value={outlineWidthPx}
+                                  className="flex-1 min-w-0"
+                                  onChange={(e) => actions.setActiveSlideImageStyle?.({ outlineWidthPx: Math.max(0, Math.min(20, Math.round(Number(e.target.value) || 0))) })}
+                                  disabled={imageControlDisabled || !canUseRectOutline}
+                                  aria-label="Outline width"
+                                />
+                                <div className="w-10 text-right text-[11px] font-semibold text-slate-700 tabular-nums">{outlineWidthPx}</div>
+                              </div>
+                            ) : null}
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">Image shadow</div>
+                                <div className="text-xs text-slate-500">Fixed black shadow to separate the image from the background.</div>
+                              </div>
+                              <button
+                                type="button"
+                                className={[
+                                  "h-8 w-14 rounded-full transition-colors",
+                                  shadowEnabled ? "bg-black" : "bg-slate-300",
+                                ].join(" ")}
+                                onClick={() => actions.setActiveSlideImageStyle?.({ shadowEnabled: !shadowEnabled })}
+                                disabled={imageControlDisabled}
+                                title="Toggle image shadow"
+                              >
+                                <span
+                                  className={[
+                                    "block h-7 w-7 rounded-full bg-white shadow-sm translate-x-0 transition-transform",
+                                    shadowEnabled ? "translate-x-6" : "translate-x-1",
+                                  ].join(" ")}
+                                />
+                              </button>
+                            </div>
+                            {shadowEnabled ? (
+                              <div className="flex items-center gap-2">
+                                <div className="text-[11px] font-semibold text-slate-600 uppercase whitespace-nowrap">Strength</div>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={shadowStrengthPct}
+                                  className="flex-1 min-w-0"
+                                  onChange={(e) => actions.setActiveSlideImageStyle?.({ shadowStrengthPct: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })}
+                                  disabled={imageControlDisabled}
+                                  aria-label="Image shadow strength"
+                                />
+                                <div className="w-10 text-right text-[11px] font-semibold text-slate-700 tabular-nums">{shadowStrengthPct}</div>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : null}
                         </>
                       );

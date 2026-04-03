@@ -332,6 +332,7 @@ export type EditorActions = {
   onCloseShareCarousels: () => void;
   onRefreshShareCarousels: () => Promise<void> | void;
   onClickCopyShareCarouselsLink: () => Promise<void> | void;
+  onClickOpenShareCarouselsLink: () => Promise<void> | void;
   onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
@@ -342,6 +343,12 @@ export type EditorActions = {
   setShowDebugPreview: (next: boolean) => void;
 
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
+  setActiveSlideImageStyle: (patch: {
+    outlineEnabled?: boolean;
+    outlineWidthPx?: number;
+    shadowEnabled?: boolean;
+    shadowStrengthPct?: number;
+  }) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
 
   // Image Library modal (Phase 1)
@@ -644,12 +651,18 @@ export type EditorBottomPanelState = {
   error: string | null;
   onClickRetry: () => void;
 
-  // Image controls (Enhanced)
+  // Image controls
   activeImageSelected: boolean;
   imageBusy: boolean;
   aiKey: (projectId: string, slideIndex: number) => string;
   bgRemovalBusyKeys: Set<string>;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
+  setActiveSlideImageStyle: (patch: {
+    outlineEnabled?: boolean;
+    outlineWidthPx?: number;
+    shadowEnabled?: boolean;
+    shadowStrengthPct?: number;
+  }) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
 
   // Layout controls

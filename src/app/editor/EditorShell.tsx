@@ -1870,6 +1870,18 @@ export default function EditorShell() {
     await navigator.clipboard.writeText(url);
   }, [editorStore, ensureShareCarouselsLink, isSuperadmin]);
 
+  const openShareCarouselsLink = useCallback(async () => {
+    if (!isSuperadmin) return;
+    const cur = String((editorStore.getState() as any)?.shareCarouselsLinkPath || '').trim();
+    if (!cur) {
+      await ensureShareCarouselsLink();
+    }
+    const path = String((editorStore.getState() as any)?.shareCarouselsLinkPath || '').trim();
+    if (!path) throw new Error('Missing review link');
+    const url = `${window.location.origin}${path}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [editorStore, ensureShareCarouselsLink, isSuperadmin]);
+
   const toggleReviewForProject = useCallback(
     async (args: {
       projectId: string;
@@ -2805,7 +2817,7 @@ export default function EditorShell() {
     // Preserve editor-specific image metadata (mask + bg removal fields + storage pointers) so
     // live-layout/Realign (computational) doesn't "forget" the image state and regress UI to idle.
     if (params.image && layout.image) {
-      const keys = ["mask", "storage", "bgRemovalEnabled", "bgRemovalStatus", "original", "processed"] as const;
+      const keys = ["mask", "storage", "bgRemovalEnabled", "bgRemovalStatus", "original", "processed", "renderAboveTemplateAssets", "imageStyle"] as const;
       for (const k of keys) {
         if (typeof (params.image as any)?.[k] !== "undefined") {
           (layout.image as any)[k] = (params.image as any)[k];
@@ -5819,6 +5831,7 @@ export default function EditorShell() {
     uploadImageForActiveSlide,
     insertRecentImageForActiveSlide,
     setActiveSlideImageBgRemoval,
+    setActiveSlideImageStyle,
     handleUserImageChange,
     handleUserExtraImageChange,
     removeImagesFromSlide,
@@ -8024,6 +8037,7 @@ export default function EditorShell() {
     onRunEmphasisAllRegen,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
+    setActiveSlideImageStyle,
     deleteImageForActiveSlide,
 
     // Image Library modal (Phase 1)
@@ -8071,6 +8085,7 @@ export default function EditorShell() {
     onCloseShareCarousels: closeShareCarousels,
     onRefreshShareCarousels: refreshShareCarouselsProjects,
     onClickCopyShareCarouselsLink: copyShareCarouselsLink,
+    onClickOpenShareCarouselsLink: openShareCarouselsLink,
     onToggleProjectReviewReady: (a: any) =>
       toggleReviewForProject({ projectId: a?.projectId, patch: { reviewReady: !!a?.next } }),
     onToggleProjectReviewPosted: (a: any) =>

@@ -432,28 +432,73 @@ export function EditorTopBar() {
               {topExporting ? "Preparing..." : "Download PDF"}
             </button>
             {isSuperadmin ? (
-              <button
-                className="px-3 py-1.5 rounded-md bg-black text-white text-sm shadow-sm disabled:opacity-50"
-                onClick={actions.onOpenShareCarousels}
-                disabled={topExporting}
-                title="Share carousels for client review"
-              >
-                Share carousels
-              </button>
+              <div className="inline-flex overflow-hidden rounded-md shadow-sm">
+                <button
+                  className="px-3 py-1.5 bg-black text-white text-sm disabled:opacity-50"
+                  onClick={actions.onOpenShareCarousels}
+                  disabled={topExporting}
+                  title="Share carousels for client review"
+                  type="button"
+                >
+                  Share carousels
+                </button>
+                <button
+                  className="w-9 bg-black text-white border-l border-white/20 disabled:opacity-50 inline-flex items-center justify-center"
+                  onClick={() => void actions.onClickOpenShareCarouselsLink?.()}
+                  disabled={topExporting}
+                  title="Open share link in new tab"
+                  aria-label="Open share link in new tab"
+                  type="button"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+                    <path d="M11 4H16V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M9 11L16 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path
+                      d="M16 11V13.5C16 14.8807 14.8807 16 13.5 16H6.5C5.11929 16 4 14.8807 4 13.5V6.5C4 5.11929 5.11929 4 6.5 4H9"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             ) : null}
           </>
         ) : null}
         {isMobile && isSuperadmin ? (
-          <button
-            className="h-10 px-3 rounded-md bg-black text-white text-sm font-semibold shadow-sm disabled:opacity-50"
-            onClick={actions.onOpenShareCarousels}
-            disabled={topExporting}
-            title="Open review queue and share link"
-            aria-label="Open share carousels"
-            type="button"
-          >
-            Share
-          </button>
+          <div className="inline-flex overflow-hidden rounded-md shadow-sm">
+            <button
+              className="h-10 px-3 bg-black text-white text-sm font-semibold disabled:opacity-50"
+              onClick={actions.onOpenShareCarousels}
+              disabled={topExporting}
+              title="Open review queue and share link"
+              aria-label="Open share carousels"
+              type="button"
+            >
+              Share
+            </button>
+            <button
+              className="h-10 w-10 bg-black text-white border-l border-white/20 disabled:opacity-50 inline-flex items-center justify-center"
+              onClick={() => void actions.onClickOpenShareCarouselsLink?.()}
+              disabled={topExporting}
+              title="Open share link in new tab"
+              aria-label="Open share link in new tab"
+              type="button"
+            >
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+                <path d="M11 4H16V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M9 11L16 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M16 11V13.5C16 14.8807 14.8807 16 13.5 16H6.5C5.11929 16 4 14.8807 4 13.5V6.5C4 5.11929 5.11929 4 6.5 4H9"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         ) : null}
         <button
           onClick={actions.onSignOut}

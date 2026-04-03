@@ -1177,11 +1177,39 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       }
     };
 
+    const slide1PrimaryLayerOverride =
+      slide1Layering && typeof slide1Layering === "object"
+        ? String((slide1Layering as any)?.primary || "").trim()
+        : "";
+
+    const shouldKeepPrimaryImageAboveTemplateAssets =
+      hasHeadline === false &&
+      !!((layout as any)?.image?.renderAboveTemplateAssets) &&
+      slide1PrimaryLayerOverride !== "front" &&
+      slide1PrimaryLayerOverride !== "back";
+
+    const bringPrimaryUserImageAboveTemplateAssetsNow = (canvas: any) => {
+      try {
+        if (!shouldKeepPrimaryImageAboveTemplateAssets) return;
+        if (!canvas || typeof canvas.getObjects !== "function") return;
+        const objs = (canvas.getObjects?.() || []) as any[];
+        const primary = objs.find((o) => String(o?.data?.role || "") === "user-image");
+        if (!primary) return;
+        if (typeof canvas.bringObjectToFront === "function") canvas.bringObjectToFront(primary);
+        else if (typeof (canvas as any).bringToFront === "function") (canvas as any).bringToFront(primary);
+        else if (typeof canvas.moveTo === "function") canvas.moveTo(primary, (canvas.getObjects?.().length || 1) - 1);
+        else if (typeof primary?.moveTo === "function") primary.moveTo((canvas.getObjects?.().length || 1) - 1);
+      } catch {
+        // ignore
+      }
+    };
+
     const enforceTemplateAssetsTopmostNow = (canvas: any) => {
       try {
         const si = Number.isFinite(slideIndex as any) ? Number(slideIndex) : 0;
         const isRegularSlide1 = si === 0 && !hasHeadline;
         if (!isRegularSlide1) return;
+        if (shouldKeepPrimaryImageAboveTemplateAssets) return;
         if (!canvas || typeof canvas.getObjects !== "function") return;
         const objs = (canvas.getObjects?.() || []) as any[];
         const templateAssets = objs.filter((o) => String(o?.data?.role || "") === "template-asset");
@@ -1886,8 +1914,10 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
             notifySlide1FadeLayer(obj);
           }
 
-          // Hard rule: Regular Slide 1 template assets are always topmost.
+          // Hard rule: Regular Slide 1 template assets are always topmost,
+          // unless this uploaded primary image is explicitly marked to stay above them.
           enforceTemplateAssetsTopmostNow(canvas);
+          bringPrimaryUserImageAboveTemplateAssetsNow(canvas);
           canvas.requestRenderAll?.();
         };
         // IMPORTANT: Do NOT persist on every keystroke (text:changed) because it triggers React updates
@@ -3304,6 +3334,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                     } catch {
                       // ignore
                     }
+                    bringPrimaryUserImageAboveTemplateAssetsNow(canvas);
                     canvas.renderAll();
                     return;
                   }
@@ -3335,6 +3366,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                   } catch {
                     // ignore
                   }
+                  bringPrimaryUserImageAboveTemplateAssetsNow(canvas);
                   canvas.renderAll();
                 } catch (e) {
                   console.warn('[Preview Vision] ⚠️ Failed to add template image asset:', e);
@@ -3492,6 +3524,48 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
         }
       };
 
+      const applyImageStyleNow = (obj: any, imageMeta: any) => {
+        try {
+          if (!obj) return;
+          const style = imageMeta?.imageStyle && typeof imageMeta.imageStyle === 'object' ? (imageMeta.imageStyle as any) : null;
+          const outlineEnabled = !!style?.outlineEnabled;
+          const outlineWidthPx = Math.max(0, Math.min(20, Math.round(Number(style?.outlineWidthPx) || 0)));
+          const shadowEnabled = !!style?.shadowEnabled;
+          const shadowStrengthPct = Math.max(0, Math.min(100, Math.round(Number(style?.shadowStrengthPct) || 0)));
+          const bgRemovalEnabled = ((imageMeta as any)?.bgRemovalEnabled ?? true) === true;
+
+          if (outlineEnabled && !bgRemovalEnabled && outlineWidthPx > 0) {
+            obj.set?.({
+              stroke: '#000000',
+              strokeWidth: outlineWidthPx,
+              strokeUniform: true,
+              paintFirst: 'stroke',
+            });
+          } else {
+            obj.set?.({
+              stroke: null,
+              strokeWidth: 0,
+            });
+          }
+
+          if (shadowEnabled && shadowStrengthPct > 0) {
+            const t = shadowStrengthPct / 100;
+            const alpha = 0.10 + 0.30 * t;
+            const blur = 4 + 18 * t;
+            const offY = 2 + 8 * t;
+            const shadowObj =
+              typeof (fabric as any).Shadow === 'function'
+                ? new (fabric as any).Shadow({ color: `rgba(0,0,0,${alpha})`, blur, offsetX: 0, offsetY: offY })
+                : (`rgba(0,0,0,${alpha}) 0px ${offY}px ${blur}px` as any);
+            obj.set?.('shadow', shadowObj);
+          } else {
+            obj.set?.('shadow', null);
+          }
+        } catch {
+          // ignore
+        }
+      };
+
       // STEP 1: Load and add image if provided
       if (layout.image && layout.image.url) {
         console.log('[Preview Vision] 🖼️ Loading image...');
@@ -3529,6 +3603,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
               selectable: true,
             });
             (fabricImage as any).data = { role: 'user-image', imageKind: 'primary' };
+            applyImageStyleNow(fabricImage, layout.image);
             // NOTE: Rotation controls enabled for user images
 
             console.log('[Preview Vision] 📐 Image positioned and scaled');
@@ -3658,6 +3733,7 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
                 evented: true,
               });
               (fabricImage as any).data = { role: 'user-image-sticker', imageId: exId };
+              applyImageStyleNow(fabricImage, ex);
               canvas.add(fabricImage);
 
               // Stacking: place sticker above template assets but below user text.
@@ -4438,6 +4514,12 @@ const CarouselPreviewVision = forwardRef<any, CarouselPreviewProps>(
       // Apply any Slide 1 manual layering overrides (send-to-back / bring-to-front).
       try {
         applySlide1LayeringNow();
+      } catch {
+        // ignore
+      }
+
+      try {
+        bringPrimaryUserImageAboveTemplateAssetsNow(canvas);
       } catch {
         // ignore
       }

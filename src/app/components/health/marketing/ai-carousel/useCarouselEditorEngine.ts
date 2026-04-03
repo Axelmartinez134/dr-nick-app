@@ -638,7 +638,7 @@ export function useCarouselEditorEngine(opts?: {
 
       // Preserve editor image metadata fields (mask + bg removal toggle/state + storage pointers).
       if (result.layout.image && prevImageMeta) {
-        const fields = ['mask', 'storage', 'bgRemovalEnabled', 'bgRemovalStatus', 'original', 'processed'] as const;
+        const fields = ['mask', 'storage', 'bgRemovalEnabled', 'bgRemovalStatus', 'original', 'processed', 'renderAboveTemplateAssets', 'imageStyle'] as const;
         for (const k of fields) {
           if (typeof (prevImageMeta as any)?.[k] !== 'undefined') {
             (result.layout.image as any)[k] = (prevImageMeta as any)[k];

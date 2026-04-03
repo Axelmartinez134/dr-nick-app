@@ -116,6 +116,12 @@ type Args = {
   onChangeOutreachMessage: (next: string) => void;
   setShowDebugPreview: (next: boolean) => void;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => void;
+  setActiveSlideImageStyle: (patch: {
+    outlineEnabled?: boolean;
+    outlineWidthPx?: number;
+    shadowEnabled?: boolean;
+    shadowStrengthPct?: number;
+  }) => void;
   deleteImageForActiveSlide: (source: "menu" | "button") => void;
 
   // Body Regenerate (Regular only)
@@ -193,6 +199,7 @@ type Args = {
   onCloseShareCarousels: () => void;
   onRefreshShareCarousels: () => Promise<void> | void;
   onClickCopyShareCarouselsLink: () => Promise<void> | void;
+  onClickOpenShareCarouselsLink: () => Promise<void> | void;
   onToggleProjectReviewReady: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewPosted: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
   onToggleProjectReviewApproved: (args: { projectId: string; next: boolean }) => Promise<boolean | void> | void;
@@ -367,6 +374,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onRunEmphasisAllRegen,
     setShowDebugPreview,
     setActiveSlideImageBgRemoval,
+    setActiveSlideImageStyle,
     deleteImageForActiveSlide,
 
     onOpenImageLibraryModal,
@@ -401,6 +409,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onCloseShareCarousels,
     onRefreshShareCarousels,
     onClickCopyShareCarouselsLink,
+    onClickOpenShareCarouselsLink,
     onToggleProjectReviewReady,
     onToggleProjectReviewPosted,
     onToggleProjectReviewApproved,
@@ -611,6 +620,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onCloseShareCarousels: () => onCloseShareCarousels(),
     onRefreshShareCarousels: () => onRefreshShareCarousels(),
     onClickCopyShareCarouselsLink: () => onClickCopyShareCarouselsLink(),
+    onClickOpenShareCarouselsLink: () => onClickOpenShareCarouselsLink(),
     onToggleProjectReviewReady: (a: any) => onToggleProjectReviewReady(a),
     onToggleProjectReviewPosted: (a: any) => onToggleProjectReviewPosted(a),
     onToggleProjectReviewApproved: (a: any) => onToggleProjectReviewApproved(a),
@@ -826,6 +836,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onRunEmphasisAllRegen: (args: any) => onRunEmphasisAllRegen(args),
     setShowDebugPreview: (next: boolean) => setShowDebugPreview(next),
     setActiveSlideImageBgRemoval: (nextEnabled: boolean) => setActiveSlideImageBgRemoval(nextEnabled),
+    setActiveSlideImageStyle: (patch: any) => setActiveSlideImageStyle(patch),
     deleteImageForActiveSlide: (source: "menu" | "button") => deleteImageForActiveSlide(source),
 
     onOpenImageLibraryModal: () => onOpenImageLibraryModal(),
@@ -978,6 +989,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseShareCarousels: () => implRef.current?.onCloseShareCarousels?.(),
       onRefreshShareCarousels: () => implRef.current?.onRefreshShareCarousels?.(),
       onClickCopyShareCarouselsLink: () => implRef.current?.onClickCopyShareCarouselsLink?.(),
+      onClickOpenShareCarouselsLink: () => implRef.current?.onClickOpenShareCarouselsLink?.(),
       onToggleProjectReviewReady: (a: any) => implRef.current?.onToggleProjectReviewReady?.(a),
       onToggleProjectReviewPosted: (a: any) => implRef.current?.onToggleProjectReviewPosted?.(a),
       onToggleProjectReviewApproved: (a: any) => implRef.current?.onToggleProjectReviewApproved?.(a),
@@ -1067,6 +1079,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onClickRunBrandAlignmentCheck: () => implRef.current?.onClickRunBrandAlignmentCheck?.(),
       setShowDebugPreview: (next: boolean) => implRef.current?.setShowDebugPreview?.(next),
       setActiveSlideImageBgRemoval: (nextEnabled: boolean) => implRef.current?.setActiveSlideImageBgRemoval?.(nextEnabled),
+      setActiveSlideImageStyle: (patch: any) => implRef.current?.setActiveSlideImageStyle?.(patch),
       deleteImageForActiveSlide: (source: "menu" | "button") => implRef.current?.deleteImageForActiveSlide?.(source),
 
       onOpenImageLibraryModal: () => implRef.current?.onOpenImageLibraryModal?.(),

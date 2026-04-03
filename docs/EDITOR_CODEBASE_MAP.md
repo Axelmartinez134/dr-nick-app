@@ -172,8 +172,43 @@ At this point, **UI components read from the editor store**. `EditorShell.tsx` s
     - default rule: user-added images render above user text on Regular slides so overlapped images remain easy to grab/move
     - existing projects pick this up on reopen because the order is enforced at render time
     - existing manual `slide1Layering` overrides still win on Slide 1 after the default is applied
+  - **Regular uploaded-image override above template assets (2026-04-02)**:
+    - new uploads can persist `layout.image.renderAboveTemplateAssets = true`
+    - when present, `/editor` keeps the primary Regular image above template assets, including async-loaded template image assets
+    - scoped intentionally to new primary uploads only; old projects and stickers keep prior behavior
+  - **Regular selected-image style controls (2026-04-02)**:
+    - `EditorBottomPanel.tsx` exposes Regular-only controls for the selected image: rectangular outline + image shadow
+    - styles persist on `layout.image.imageStyle` and `layout.extraImages[].imageStyle`
+    - rectangular outline is fixed black and only renders when BG removal is OFF; when BG removal is ON the outline setting stays saved but dormant
+    - image shadow is fixed black and can apply to both primary images and stickers
 - **Smart Guides helper (lock mode)**: `src/app/components/health/marketing/ai-carousel/smartGuides.ts`
   - Visual-only horizontal alignment guides (left/center/right)
+
+### Manual QA (Regular uploaded image over template assets)
+- Open `/editor` and load any **Regular** project with a template that includes image/text assets
+- Upload a new primary image onto a slide that has no existing primary image
+- Confirm the uploaded image renders above template text and template image assets
+- Switch slides or trigger a Regular **Realign**, then return
+  - Expected: the uploaded image still renders above template assets
+- Reopen an older project with an existing image from before this change
+  - Expected: legacy layering behavior remains unchanged unless a newly uploaded primary image replaces it
+
+### Manual QA (Regular image outline + shadow)
+- Open `/editor` and load any **Regular** project with an existing primary image or sticker
+- Select the image on canvas
+  - Expected: the bottom panel shows **Rect outline** and **Image shadow** controls
+- Toggle **Image shadow** ON and scrub **Strength**
+  - Expected: the selected image gets a stronger black shadow and the effect persists after switching slides
+- With **BG removal OFF**, toggle **Rect outline** ON and scrub **Width**
+  - Expected: the selected image gets a black rectangular border whose width changes live
+- Turn **BG removal ON**
+  - Expected: the outline row remains visible but disabled with helper text, and the rectangular outline no longer renders
+- Turn **BG removal OFF** again
+  - Expected: the prior outline toggle/width are still saved and the border returns
+- Repeat the same checks with a selected sticker image
+  - Expected: both shadow and rectangular outline persist for stickers too
+- Trigger **Realign** or reopen the project
+  - Expected: the image shadow/outline settings persist
 
 ### Slide 1 Card (Instagram-like framing) — bug fix reference (2026-03-01)
 The Slide 1 Card is an optional rounded rectangle rendered on Slide 1 Regular only, giving an "Instagram card" look (card covers most of the canvas with a thin solid-color frame visible on all four edges).

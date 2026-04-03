@@ -10,6 +10,12 @@ export type ImageOps = {
     kind?: string | null;
   }, opts?: { bgRemovalEnabledAtInsert?: boolean }) => Promise<void>;
   setActiveSlideImageBgRemoval: (nextEnabled: boolean) => Promise<void>;
+  setActiveSlideImageStyle: (patch: {
+    outlineEnabled?: boolean;
+    outlineWidthPx?: number;
+    shadowEnabled?: boolean;
+    shadowStrengthPct?: number;
+  }) => Promise<void>;
   deleteImageForActiveSlide: (reason: 'menu' | 'button') => Promise<void>;
   handleUserImageChange: (change: {
     canvasSlideIndex?: number;
@@ -266,6 +272,7 @@ export function useImageOps(params: {
                 storage: { bucket: 'carousel-project-images', path },
                 bgRemovalEnabled: bgRemovalEnabledFromServer,
                 bgRemovalStatus,
+                ...(templateTypeId === 'regular' ? { renderAboveTemplateAssets: true } : {}),
                 ...(original
                   ? {
                       original: {
@@ -382,6 +389,7 @@ export function useImageOps(params: {
       setLayoutData,
       setSlides,
       slidesRef,
+      templateTypeId,
       templateSnapshots,
     ]
   );
@@ -615,6 +623,99 @@ export function useImageOps(params: {
       params,
       saveSlidePatchForProject,
       setBgRemovalBusyKeys,
+      setLayoutData,
+      setSlides,
+      slidesRef,
+    ]
+  );
+
+  const setActiveSlideImageStyle = useCallback(
+    async (patch: {
+      outlineEnabled?: boolean;
+      outlineWidthPx?: number;
+      shadowEnabled?: boolean;
+      shadowStrengthPct?: number;
+    }) => {
+      if (!currentProjectId) throw new Error('Create or load a project first.');
+      if (!Number.isInteger(activeSlideIndex) || activeSlideIndex < 0 || activeSlideIndex > 5) return;
+      const target = params.getSelectedImageTarget?.() || null;
+      if (!target) return;
+      const projectIdAtStart = currentProjectId;
+      const slideIndexAtStart = activeSlideIndex;
+      const baseLayout = (layoutData as any)?.layout ? { ...((layoutData as any).layout as any) } : null;
+      if (!baseLayout) return;
+
+      const locate = (layout: any) => {
+        if (!layout || typeof layout !== 'object') return null;
+        if (target.kind === 'primary') {
+          const img = layout?.image ? { ...(layout.image as any) } : null;
+          if (!img || !String(img?.url || '').trim()) return null;
+          return { mode: 'primary' as const, img };
+        }
+        const stickerId = String((target as any).stickerId || '').trim();
+        if (!stickerId) return null;
+        const primaryId = String(layout?.image?.id || '').trim();
+        if (primaryId && primaryId === stickerId) {
+          const img = layout?.image ? { ...(layout.image as any) } : null;
+          if (!img || !String(img?.url || '').trim()) return null;
+          return { mode: 'primary' as const, img };
+        }
+        const extras = Array.isArray(layout?.extraImages) ? (layout.extraImages as any[]) : [];
+        const idx = extras.findIndex((x) => String(x?.id || '') === stickerId);
+        if (idx < 0) return null;
+        const img = extras[idx] ? { ...(extras[idx] as any) } : null;
+        if (!img || !String(img?.url || '').trim()) return null;
+        return { mode: 'sticker' as const, idx, img };
+      };
+
+      const found = locate(baseLayout);
+      if (!found) return;
+      const img = found.img;
+      const prevStyle = (img as any).imageStyle && typeof (img as any).imageStyle === 'object'
+        ? { ...((img as any).imageStyle as any) }
+        : {};
+      const nextStyle: any = { ...prevStyle };
+
+      if (typeof patch.outlineEnabled !== 'undefined') nextStyle.outlineEnabled = !!patch.outlineEnabled;
+      if (typeof patch.outlineWidthPx !== 'undefined') nextStyle.outlineWidthPx = Math.max(0, Math.min(20, Math.round(Number(patch.outlineWidthPx) || 0)));
+      if (typeof patch.shadowEnabled !== 'undefined') nextStyle.shadowEnabled = !!patch.shadowEnabled;
+      if (typeof patch.shadowStrengthPct !== 'undefined') nextStyle.shadowStrengthPct = Math.max(0, Math.min(100, Math.round(Number(patch.shadowStrengthPct) || 0)));
+
+      (img as any).imageStyle = nextStyle;
+
+      const nextLayout =
+        found.mode === 'primary'
+          ? { ...baseLayout, image: img }
+          : (() => {
+              const prevExtras = Array.isArray((baseLayout as any)?.extraImages) ? ([...((baseLayout as any).extraImages as any[])] as any[]) : [];
+              prevExtras[(found as any).idx] = img;
+              return { ...baseLayout, extraImages: prevExtras };
+            })();
+
+      if (currentProjectIdRef.current === projectIdAtStart) {
+        setSlides((prev: any[]) =>
+          prev.map((s, i) =>
+            i === slideIndexAtStart ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout } as any } as any) : s
+          )
+        );
+        slidesRef.current = slidesRef.current.map((s, i) =>
+          i === slideIndexAtStart ? ({ ...s, layoutData: { ...(s as any).layoutData, layout: nextLayout } as any } as any) : s
+        );
+        if (activeSlideIndexRef.current === slideIndexAtStart) {
+          setLayoutData((prev: any) => (prev?.layout ? { ...prev, layout: nextLayout } : prev));
+        }
+      }
+
+      await saveSlidePatchForProject(projectIdAtStart, slideIndexAtStart, { layoutSnapshot: nextLayout });
+    },
+    [
+      activeSlideIndex,
+      activeSlideIndexRef,
+      currentProjectId,
+      currentProjectIdRef,
+      layoutData,
+      params,
+      saveSlidePatchForProject,
       setLayoutData,
       setSlides,
       slidesRef,
@@ -1219,6 +1320,7 @@ export function useImageOps(params: {
     uploadImageForActiveSlide,
     insertRecentImageForActiveSlide,
     setActiveSlideImageBgRemoval,
+    setActiveSlideImageStyle,
     deleteImageForActiveSlide,
     handleUserImageChange,
     handleUserExtraImageChange,

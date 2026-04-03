@@ -1009,6 +1009,7 @@ function ReviewProjectCard(props: {
             {/* swipe surface */}
             <div
               className="absolute inset-0"
+              style={{ touchAction: "none" }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}

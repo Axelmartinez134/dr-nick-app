@@ -299,6 +299,50 @@ export function ShareCarouselsModal() {
           </button>
           <button
             type="button"
+            className="h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center justify-center"
+            disabled={!fullUrl || !!linkLoading}
+            onClick={() => {
+              if (!fullUrl) return;
+              try {
+                window.open(fullUrl, "_blank", "noopener,noreferrer");
+              } catch {
+                // ignore
+              }
+            }}
+            aria-label="Open review link in new tab"
+            title="Open review link"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 20 20"
+              fill="none"
+              className="h-4 w-4"
+            >
+              <path
+                d="M11 4H16V9"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9 11L16 4"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M16 11V13.5C16 14.8807 14.8807 16 13.5 16H6.5C5.11929 16 4 14.8807 4 13.5V6.5C4 5.11929 5.11929 4 6.5 4H9"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
             className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
             disabled={!!loading}
             onClick={() => void actions.onRefreshShareCarousels?.()}
