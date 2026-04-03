@@ -447,7 +447,9 @@ export default function ReviewPageClient(props: { token: string }) {
           throw new Error(String((j as any)?.error || `Request failed (${res.status})`));
         }
         if (cancelled) return;
-        setProjects(Array.isArray((j as any).projects) ? ((j as any).projects as ProjectDto[]) : []);
+        const raw = Array.isArray((j as any).projects) ? ((j as any).projects as ProjectDto[]) : [];
+        raw.sort((a, b) => (a.review_approved === b.review_approved ? 0 : a.review_approved ? 1 : -1));
+        setProjects(raw);
         setTemplatesById(((j as any).templateSnapshotsById as any) || {});
       } catch (e: any) {
         if (cancelled) return;
@@ -462,6 +464,14 @@ export default function ReviewPageClient(props: { token: string }) {
       cancelled = true;
     };
   }, [token]);
+
+  const toReviewCount = useMemo(() => projects.filter((p) => !p.review_approved).length, [projects]);
+  const approvedCount = useMemo(() => projects.filter((p) => !!p.review_approved).length, [projects]);
+  const headerCopy = useMemo(() => {
+    if (approvedCount === 0) return `${toReviewCount} to review`;
+    if (toReviewCount === 0) return `${approvedCount} approved`;
+    return `${toReviewCount} to review · ${approvedCount} approved`;
+  }, [toReviewCount, approvedCount]);
 
   if (!token) {
     return (
@@ -494,7 +504,7 @@ export default function ReviewPageClient(props: { token: string }) {
     <main className="min-h-screen bg-[#f7f7f8]">
       <div className="max-w-[900px] mx-auto px-4 py-6">
         <div className="text-lg font-semibold text-slate-900 text-center">
-          {projects.length} {projects.length === 1 ? "carousel" : "carousels"} to review
+          {headerCopy}
         </div>
 
         <div className="mt-6 space-y-6">
