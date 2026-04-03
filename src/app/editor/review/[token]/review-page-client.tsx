@@ -604,10 +604,26 @@ function ReviewProjectCard(props: {
 
   // NOTE: Image prefetch is now centralized at the page level to avoid mobile request stampedes.
 
-  const swipeRef = useRef<{ down: boolean; startX: number; lastX: number }>({ down: false, startX: 0, lastX: 0 });
+  const [chevronsVisible, setChevronsVisible] = useState(true);
+  useEffect(() => {
+    if (!chevronsVisible) return;
+    const t = window.setTimeout(() => setChevronsVisible(false), 3000);
+    return () => window.clearTimeout(t);
+  }, [chevronsVisible]);
+
+  const swipeRef = useRef<{ down: boolean; startX: number; lastX: number; rectLeft: number; rectWidth: number }>({
+    down: false, startX: 0, lastX: 0, rectLeft: 0, rectWidth: 1,
+  });
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if ((e as any).pointerType && (e as any).pointerType === "mouse" && (e as any).button !== 0) return;
-    swipeRef.current = { down: true, startX: (e as any).clientX ?? 0, lastX: (e as any).clientX ?? 0 };
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    swipeRef.current = {
+      down: true,
+      startX: (e as any).clientX ?? 0,
+      lastX: (e as any).clientX ?? 0,
+      rectLeft: rect.left,
+      rectWidth: Math.max(1, rect.width),
+    };
   }, []);
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!swipeRef.current.down) return;
@@ -617,9 +633,16 @@ function ReviewProjectCard(props: {
     if (!swipeRef.current.down) return;
     swipeRef.current.down = false;
     const dx = swipeRef.current.lastX - swipeRef.current.startX;
-    if (Math.abs(dx) < 40) return;
-    if (dx < 0) setActiveSlide((v) => Math.min(5, v + 1));
-    else setActiveSlide((v) => Math.max(0, v - 1));
+    if (Math.abs(dx) >= 40) {
+      if (dx < 0) setActiveSlide((v) => Math.min(5, v + 1));
+      else setActiveSlide((v) => Math.max(0, v - 1));
+    } else {
+      const tapX = swipeRef.current.startX - swipeRef.current.rectLeft;
+      const pct = tapX / swipeRef.current.rectWidth;
+      if (pct < 0.35) setActiveSlide((v) => Math.max(0, v - 1));
+      else if (pct > 0.65) setActiveSlide((v) => Math.min(5, v + 1));
+    }
+    setChevronsVisible(false);
   }, []);
 
   const postApprove = useCallback(
@@ -951,17 +974,7 @@ function ReviewProjectCard(props: {
       </div>
 
       <div className="px-4 pt-4">
-        <div className="flex items-center justify-center gap-3">
-          <button
-            type="button"
-            className="h-10 w-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
-            onClick={goPrev}
-            disabled={!canGoPrev}
-            aria-label="Previous slide"
-            title="Previous"
-          >
-            ←
-          </button>
+        <div className="flex items-center justify-center">
           <div className="relative" style={{ width: displayW, height: displayH }}>
             <div style={{ pointerEvents: "none" }}>
               {templateId && templateSnap ? (
@@ -1006,7 +1019,7 @@ function ReviewProjectCard(props: {
                 <div className="w-full h-full flex items-center justify-center text-sm text-slate-500">Loading…</div>
               )}
             </div>
-            {/* swipe surface */}
+            {/* swipe + tap surface */}
             <div
               className="absolute inset-0"
               style={{ touchAction: "none" }}
@@ -1016,17 +1029,34 @@ function ReviewProjectCard(props: {
               onPointerCancel={onPointerUp}
               role="presentation"
             />
+            {/* chevron overlays — fade after 3s or first interaction */}
+            {canGoPrev ? (
+              <div
+                className="absolute left-0 top-0 bottom-0 flex items-center pl-2 transition-opacity duration-500"
+                style={{ pointerEvents: "none", opacity: chevronsVisible ? 1 : 0 }}
+              >
+                <span
+                  style={{ fontSize: 30, color: "white", opacity: 0.25, textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+                  aria-hidden="true"
+                >
+                  ‹
+                </span>
+              </div>
+            ) : null}
+            {canGoNext ? (
+              <div
+                className="absolute right-0 top-0 bottom-0 flex items-center pr-2 transition-opacity duration-500"
+                style={{ pointerEvents: "none", opacity: chevronsVisible ? 1 : 0 }}
+              >
+                <span
+                  style={{ fontSize: 30, color: "white", opacity: 0.25, textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+                  aria-hidden="true"
+                >
+                  ›
+                </span>
+              </div>
+            ) : null}
           </div>
-          <button
-            type="button"
-            className="h-10 w-10 rounded-full bg-white border border-slate-200 shadow-sm text-slate-700 disabled:opacity-50"
-            onClick={goNext}
-            disabled={!canGoNext}
-            aria-label="Next slide"
-            title="Next"
-          >
-            →
-          </button>
         </div>
         <Dots count={6} active={activeSlide} />
       </div>
