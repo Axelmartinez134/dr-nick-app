@@ -962,6 +962,7 @@ function ReviewProjectCard(props: {
           <div className="text-sm font-semibold text-slate-900 truncate">{project.title || "Untitled Project"}</div>
           {String(project.review_source || "").trim() ? (
             <div className="mt-1 text-[12px] text-slate-700 whitespace-pre-wrap break-words">
+              <span className="font-semibold">INSPIRED BY: </span>
               {sourceNodes.map((n, idx) =>
                 typeof n === "string" ? (
                   <span key={idx}>{n}</span>
@@ -1032,7 +1033,7 @@ function ReviewProjectCard(props: {
             {/* swipe + tap surface */}
             <div
               className="absolute inset-0"
-              style={{ touchAction: "none" }}
+              style={{ touchAction: "pan-y" }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
