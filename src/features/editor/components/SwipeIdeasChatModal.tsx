@@ -107,11 +107,33 @@ export function SwipeIdeasChatModal(props: {
   swipeItemId: string | null;
   swipeItemLabel: string;
   onIdeaSaved?: () => void;
+  sourceDigestTopicId?: string | null;
+  digestTopicTitle?: string | null;
+  digestTopicWhatItIs?: string | null;
+  digestTopicWhyItMatters?: string | null;
+  digestTopicCarouselAngle?: string | null;
+  initialDraft?: string | null;
+  onOpenPicker?: () => void;
 }) {
-  const { open, onClose, swipeItemId, swipeItemLabel, onIdeaSaved } = props;
+  const {
+    open,
+    onClose,
+    swipeItemId,
+    swipeItemLabel,
+    onIdeaSaved,
+    sourceDigestTopicId,
+    digestTopicTitle,
+    digestTopicWhatItIs,
+    digestTopicWhyItMatters,
+    digestTopicCarouselAngle,
+    initialDraft,
+    onOpenPicker,
+  } = props;
   const isMobile = useEditorSelector((s: any) => !!(s as any).isMobile);
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const [activeMode, setActiveMode] = useState<ChatMode>("ideas");
+  const isDigestOrigin = !!String(sourceDigestTopicId || "").trim();
+  const effectiveMode: ChatMode = isDigestOrigin ? "ideas" : activeMode;
 
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -184,12 +206,31 @@ export function SwipeIdeasChatModal(props: {
   }, [open, swipeItemId, draft, sendBusy, resetBusy]);
   const showStarterPrompts = status === "ready" && messages.length === 0;
   const isFreestyleContext = String(swipeContext?.platform || "").trim().toLowerCase() === "freestyle";
-  const isOpeningSlidesMode = activeMode === "opening_slides";
+  const isOpeningSlidesMode = effectiveMode === "opening_slides";
   const modalTitle = isOpeningSlidesMode ? "Opening Slides" : "Generate ideas";
   const modePromptPlaceholder = isOpeningSlidesMode
     ? DEFAULT_OPENING_SLIDES_MASTER_PROMPT_UI
     : DEFAULT_MASTER_PROMPT_UI;
-  const modeParam = `chatMode=${encodeURIComponent(activeMode)}`;
+  const modeParam = new URLSearchParams({
+    chatMode: effectiveMode,
+    ...(isDigestOrigin ? { sourceDigestTopicId: String(sourceDigestTopicId || "") } : {}),
+  }).toString();
+
+  useEffect(() => {
+    if (!open || !isDigestOrigin) return;
+    setActiveMode("ideas");
+    setSourceTab("transcript");
+  }, [isDigestOrigin, open]);
+
+  useEffect(() => {
+    if (!open || !isDigestOrigin) return;
+    if (status !== "ready") return;
+    if (messages.length > 0) return;
+    if (String(draft || "").trim()) return;
+    const seeded = String(initialDraft || "").trim();
+    if (!seeded) return;
+    setDraft(seeded);
+  }, [draft, initialDraft, isDigestOrigin, messages.length, open, status]);
 
   const cardKey = (c: { title: string; angleText: string; slides: string[] }) => {
     const title = String(c.title || "").trim();
@@ -305,7 +346,8 @@ export function SwipeIdeasChatModal(props: {
       const token = await getToken();
       if (!token) throw new Error("Missing auth token");
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas`, { method: "GET", headers });
+      const ideasQuery = isDigestOrigin ? `?sourceDigestTopicId=${encodeURIComponent(String(sourceDigestTopicId || ""))}` : "";
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(id)}/ideas${ideasQuery}`, { method: "GET", headers });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load saved ideas (${res.status})`));
       const rows: SavedIdea[] = Array.isArray(j.ideas)
@@ -521,6 +563,7 @@ export function SwipeIdeasChatModal(props: {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, swipeItemId, activeMode]);
 
   // Debounced autosave Angle/Notes for this swipe item.
@@ -596,7 +639,7 @@ export function SwipeIdeasChatModal(props: {
             method: "POST",
             headers,
             body: JSON.stringify({
-              chatMode: activeMode,
+              chatMode: effectiveMode,
               promptOverride: String(masterPrompt || "").trim() || null,
             }),
           });
@@ -616,7 +659,7 @@ export function SwipeIdeasChatModal(props: {
       if (masterSaveTimeoutRef.current) window.clearTimeout(masterSaveTimeoutRef.current);
       masterSaveTimeoutRef.current = null;
     };
-  }, [masterPrompt, open, status, activeMode]);
+  }, [effectiveMode, masterPrompt, open, status, activeMode]);
 
   const sendMessage = async () => {
     const itemId = String(swipeItemId || "").trim();
@@ -638,7 +681,7 @@ export function SwipeIdeasChatModal(props: {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/messages`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ content: text, chatMode: activeMode }),
+        body: JSON.stringify({ content: text, chatMode: effectiveMode, sourceDigestTopicId: sourceDigestTopicId || null }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Send failed (${res.status})`));
@@ -814,6 +857,7 @@ export function SwipeIdeasChatModal(props: {
   };
 
   const onSelectMode = (nextMode: ChatMode) => {
+    if (isDigestOrigin) return;
     if (nextMode === activeMode) return;
     setPromptOpen(false);
     setTopicsOpen(false);
@@ -852,7 +896,7 @@ export function SwipeIdeasChatModal(props: {
       const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas/reset`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ chatMode: activeMode }),
+        body: JSON.stringify({ chatMode: effectiveMode, sourceDigestTopicId: sourceDigestTopicId || null }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Reset failed (${res.status})`));
@@ -897,6 +941,7 @@ export function SwipeIdeasChatModal(props: {
           angleText: String(card.angleText || "").trim(),
           slideOutline: Array.isArray(card.slides) ? card.slides : [],
           threadId: tid || null,
+          sourceDigestTopicId: sourceDigestTopicId || null,
           sourceMessageId: sourceMessageId ? String(sourceMessageId || "").trim() : null,
         }),
       });
@@ -959,6 +1004,15 @@ export function SwipeIdeasChatModal(props: {
 
         {swipeContext ? (
           <div className="mt-3 space-y-4">
+            {isDigestOrigin ? (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+                <div className="text-xs font-semibold text-sky-900">Locked digest topic</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{digestTopicTitle || "Digest topic"}</div>
+                {digestTopicWhatItIs ? <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">{digestTopicWhatItIs}</div> : null}
+                {digestTopicWhyItMatters ? <div className="mt-2 text-xs text-slate-700 whitespace-pre-wrap">{digestTopicWhyItMatters}</div> : null}
+                {digestTopicCarouselAngle ? <div className="mt-2 text-xs text-slate-600">Carousel angle: {digestTopicCarouselAngle}</div> : null}
+              </div>
+            ) : null}
             <div>
               <div className="text-xs font-semibold text-slate-700">Title</div>
               <div className="mt-1 text-sm text-slate-900 whitespace-pre-wrap break-words">{swipeContext.title || "—"}</div>
@@ -974,6 +1028,7 @@ export function SwipeIdeasChatModal(props: {
               </div>
             </div>
 
+            {!isDigestOrigin ? (
             <div>
               <div className="text-xs font-semibold text-slate-700">Angle / Notes</div>
               <div className="mt-1 flex items-center justify-between gap-3">
@@ -997,6 +1052,7 @@ export function SwipeIdeasChatModal(props: {
                 <div className="mt-2 text-xs text-red-600">❌ {angleNotesSaveError}</div>
               ) : null}
             </div>
+            ) : null}
 
             {!isFreestyleContext ? (
               <>
@@ -1299,7 +1355,7 @@ export function SwipeIdeasChatModal(props: {
                   : ([
                       { id: "transcript", label: "Transcript" },
                       { id: "caption", label: "Caption" },
-                      { id: "notes", label: "Notes" },
+                      ...(!isDigestOrigin ? ([{ id: "notes", label: "Notes" }] as const) : []),
                     ] as const)
               ).map((t) => {
                 const active = sourceTab === t.id;
@@ -1320,7 +1376,7 @@ export function SwipeIdeasChatModal(props: {
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
-            {sourceTab === "notes" ? (
+            {sourceTab === "notes" && !isDigestOrigin ? (
               <>
                 <div className="text-xs font-semibold text-slate-700">Angle / Notes</div>
                 <div className="mt-1 flex items-center justify-between gap-3">
@@ -1463,6 +1519,13 @@ export function SwipeIdeasChatModal(props: {
             <div className="mt-0.5 text-xs text-slate-500 truncate" title={swipeItemLabel}>
               {swipeItemLabel || "Swipe item"}
             </div>
+            {isDigestOrigin ? (
+              <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-700">
+                <div className="font-semibold text-sky-900">Locked digest topic</div>
+                <div className="mt-1 font-semibold text-slate-900">{digestTopicTitle || "Digest topic"}</div>
+                {digestTopicCarouselAngle ? <div className="mt-1 text-slate-600">Carousel angle: {digestTopicCarouselAngle}</div> : null}
+              </div>
+            ) : null}
             {isOpeningSlidesMode ? (
               <div className="mt-1 text-[11px] text-slate-500">
                 Develop slide 1 and slide 2 only. Copy a pair into Ideas when you want to expand it into a full 6-slide carousel.
@@ -1507,20 +1570,22 @@ export function SwipeIdeasChatModal(props: {
                 >
                   Ideas
                 </button>
-                <button
-                  type="button"
-                  className={[
-                    "h-10 px-3 rounded-md border text-sm font-semibold shadow-sm",
-                    isOpeningSlidesMode
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                  ].join(" ")}
-                  onClick={() => onSelectMode("opening_slides")}
-                  disabled={resetBusy}
-                  title="Switch to opening slides mode"
-                >
-                  Opening Slides
-                </button>
+                {!isDigestOrigin ? (
+                  <button
+                    type="button"
+                    className={[
+                      "h-10 px-3 rounded-md border text-sm font-semibold shadow-sm",
+                      isOpeningSlidesMode
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                    ].join(" ")}
+                    onClick={() => onSelectMode("opening_slides")}
+                    disabled={resetBusy}
+                    title="Switch to opening slides mode"
+                  >
+                    Opening Slides
+                  </button>
+                ) : null}
                 {isSuperadmin ? (
                   <button
                     type="button"
@@ -1552,6 +1617,15 @@ export function SwipeIdeasChatModal(props: {
                 >
                   {resetBusy ? "Resetting..." : "Start new chat"}
                 </button>
+                {isDigestOrigin ? (
+                  <button
+                    type="button"
+                    className="h-10 px-3 rounded-md border border-slate-900 bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800"
+                    onClick={() => onOpenPicker?.()}
+                  >
+                    Pick idea & create
+                  </button>
+                ) : null}
               </>
             ) : (
               <>
@@ -1569,20 +1643,22 @@ export function SwipeIdeasChatModal(props: {
                 >
                   Ideas
                 </button>
-                <button
-                  type="button"
-                  className={[
-                    "h-9 px-3 rounded-md border text-sm shadow-sm",
-                    isOpeningSlidesMode
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-                  ].join(" ")}
-                  onClick={() => onSelectMode("opening_slides")}
-                  disabled={resetBusy}
-                  title="Switch to opening slides mode"
-                >
-                  Opening Slides
-                </button>
+                {!isDigestOrigin ? (
+                  <button
+                    type="button"
+                    className={[
+                      "h-9 px-3 rounded-md border text-sm shadow-sm",
+                      isOpeningSlidesMode
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                    ].join(" ")}
+                    onClick={() => onSelectMode("opening_slides")}
+                    disabled={resetBusy}
+                    title="Switch to opening slides mode"
+                  >
+                    Opening Slides
+                  </button>
+                ) : null}
                 {isSuperadmin ? (
                   <button
                     type="button"
@@ -1614,6 +1690,15 @@ export function SwipeIdeasChatModal(props: {
                 >
                   {resetBusy ? "Resetting..." : "Start new chat"}
                 </button>
+                {isDigestOrigin ? (
+                  <button
+                    type="button"
+                    className="h-9 px-3 rounded-md border border-slate-900 bg-slate-900 text-white text-sm shadow-sm hover:bg-slate-800"
+                    onClick={() => onOpenPicker?.()}
+                  >
+                    Pick idea & create
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="h-9 px-3 rounded-md border border-slate-200 bg-white text-slate-700 text-sm shadow-sm hover:bg-slate-50"

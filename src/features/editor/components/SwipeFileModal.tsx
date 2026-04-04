@@ -8,10 +8,12 @@ import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChat
 import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
 import { SwipeFileCaptureForm, type SwipeFileCaptureItem } from "@/features/editor/components/SwipeFileCaptureForm";
 import { YoutubeCreatorFeedPanel } from "@/features/editor/components/YoutubeCreatorFeedPanel";
-import { DailyDigestPanel } from "@/features/editor/components/DailyDigestPanel";
+import { DailyDigestPanel, type DigestTopicLaunchPayload } from "@/features/editor/components/DailyDigestPanel";
 
 type Category = { id: string; name: string };
 type SwipeItem = SwipeFileCaptureItem;
+type DigestMapSession = { topic: DigestTopicLaunchPayload; mapId: string };
+type DigestIdeasSession = { topic: DigestTopicLaunchPayload; swipeItemId: string; initialDraft: string };
 
 function getActiveAccountHeader(): Record<string, string> {
   try {
@@ -128,6 +130,8 @@ export function SwipeFileModal() {
   const [ideasCount, setIdeasCount] = useState<number>(0);
   const [ideasPickerOpen, setIdeasPickerOpen] = useState(false);
   const [carouselMapOpen, setCarouselMapOpen] = useState(false);
+  const [digestMapSession, setDigestMapSession] = useState<DigestMapSession | null>(null);
+  const [digestIdeasSession, setDigestIdeasSession] = useState<DigestIdeasSession | null>(null);
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [freestyleModalOpen, setFreestyleModalOpen] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
@@ -470,13 +474,17 @@ export function SwipeFileModal() {
     ideaId: string | null;
     templateTypeId: "enhanced" | "regular";
     savedPromptId: string;
+    itemId?: string | null;
+    sourceDigestTopicId?: string | null;
   }) => {
     setCreateBusy(true);
     setCreateError(null);
     try {
-      if (!selectedItem) throw new Error("Select an item first");
+      const itemId = String(opts.itemId || selectedItem?.id || "").trim();
+      if (!itemId) throw new Error("Select an item first");
       const templateTypeId = opts.templateTypeId === "regular" ? "regular" : "enhanced";
       const savedPromptId = String(opts.savedPromptId || "").trim();
+      const sourceDigestTopicId = String(opts.sourceDigestTopicId || "").trim();
       if (!savedPromptId) throw new Error("Select a prompt");
 
       const token = await getToken();
@@ -484,7 +492,7 @@ export function SwipeFileModal() {
       const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
 
       // Persist angle/note before creating project so snapshot matches what you typed.
-      if (noteDirty) {
+      if (!sourceDigestTopicId && selectedItem && noteDirty) {
         const noteRes = await fetch(`/api/swipe-file/items/${encodeURIComponent(selectedItem.id)}`, {
           method: "PATCH",
           headers,
@@ -496,10 +504,15 @@ export function SwipeFileModal() {
         }
       }
 
-      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(selectedItem.id)}/create-project`, {
+      const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/create-project`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ templateTypeId, savedPromptId, ideaId: opts.ideaId ?? null }),
+        body: JSON.stringify({
+          templateTypeId,
+          savedPromptId,
+          ideaId: opts.ideaId ?? null,
+          sourceDigestTopicId: sourceDigestTopicId || null,
+        }),
       });
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.success) throw new Error(String(j?.error || `Create project failed (${res.status})`));
@@ -509,13 +522,51 @@ export function SwipeFileModal() {
       // Close modal, load project, then auto-generate copy if source material is present.
       actions.onCloseSwipeFileModal?.();
       actions.onLoadProject?.(projectId);
-      if (String(selectedItem.transcript || "").trim() || (isFreestyleItem(selectedItem) && String(noteDraft || "").trim())) {
-        pendingAutoGenerateProjectIdRef.current = projectId;
-      }
+      pendingAutoGenerateProjectIdRef.current = projectId;
     } catch (e: any) {
       setCreateError(String(e?.message || e || "Create project failed"));
     } finally {
       setCreateBusy(false);
+    }
+  };
+
+  const openDigestCarouselMap = async (topic: DigestTopicLaunchPayload) => {
+    try {
+      setActionError(null);
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/daily-digest/topics/${encodeURIComponent(topic.id)}/carousel-map/bootstrap`, { method: "POST", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Bootstrap failed (${res.status})`));
+      const mapId = String(j?.mapId || "").trim();
+      if (!mapId) throw new Error("Missing mapId");
+      setDigestMapSession({ topic, mapId });
+      setCarouselMapOpen(true);
+    } catch (e: any) {
+      setActionError(String(e?.message || e || "Failed to open Carousel Map"));
+    }
+  };
+
+  const openDigestIdeas = async (topic: DigestTopicLaunchPayload) => {
+    try {
+      setActionError(null);
+      const token = await getToken();
+      if (!token) throw new Error("Missing auth token");
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
+      const res = await fetch(`/api/daily-digest/topics/${encodeURIComponent(topic.id)}/ideas/bootstrap`, { method: "POST", headers });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Bootstrap failed (${res.status})`));
+      const swipeItemId = String(j?.swipeItemId || "").trim();
+      if (!swipeItemId) throw new Error("Missing swipeItemId");
+      setDigestIdeasSession({
+        topic,
+        swipeItemId,
+        initialDraft: String(j?.initialDraft || ""),
+      });
+      setIdeasChatOpen(true);
+    } catch (e: any) {
+      setActionError(String(e?.message || e || "Failed to open Explore Ideas"));
     }
   };
 
@@ -737,6 +788,7 @@ export function SwipeFileModal() {
         {activeTab === "swipe" ? (
         <>
         {/* Use minmax(0,1fr) so the middle column can shrink and the right panel never gets pushed outside/clipped. */}
+        {actionError ? <div className="border-b border-red-200 bg-red-50 px-4 md:px-5 py-2 text-xs text-red-700">❌ {actionError}</div> : null}
         <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)_360px]">
           {/* Left: categories */}
           <aside className="hidden md:block border-r border-slate-100 bg-slate-50/50 p-3 overflow-auto">
@@ -1425,31 +1477,58 @@ export function SwipeFileModal() {
         ) : activeTab === "yt_rss" ? (
           <YoutubeCreatorFeedPanel />
         ) : (
-          <DailyDigestPanel />
+          <DailyDigestPanel
+            onCreateCarousel={(projectId: string) => {
+              pendingAutoGenerateProjectIdRef.current = String(projectId);
+              actions.onCloseSwipeFileModal?.();
+              actions.onLoadProject?.(String(projectId));
+            }}
+            onOpenDigestCarouselMap={(topic) => {
+              void openDigestCarouselMap(topic);
+            }}
+            onOpenDigestIdeas={(topic) => {
+              void openDigestIdeas(topic);
+            }}
+          />
         )}
       </div>
 
-      {activeTab === "swipe" ? (
       <SwipeIdeasChatModal
         open={ideasChatOpen}
-        onClose={() => setIdeasChatOpen(false)}
-        swipeItemId={selectedItem?.id || null}
-        swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        onClose={() => {
+          setIdeasChatOpen(false);
+          if (digestIdeasSession) setDigestIdeasSession(null);
+        }}
+        swipeItemId={digestIdeasSession?.swipeItemId || selectedItem?.id || null}
+        swipeItemLabel={digestIdeasSession?.topic.videoTitle || selectedItem?.title || selectedItem?.url || "Swipe item"}
+        sourceDigestTopicId={digestIdeasSession?.topic.id || null}
+        digestTopicTitle={digestIdeasSession?.topic.title || null}
+        digestTopicWhatItIs={digestIdeasSession?.topic.whatItIs || null}
+        digestTopicWhyItMatters={digestIdeasSession?.topic.whyItMatters || null}
+        digestTopicCarouselAngle={digestIdeasSession?.topic.carouselAngle || null}
+        initialDraft={digestIdeasSession?.initialDraft || null}
+        onOpenPicker={() => {
+          setIdeasChatOpen(false);
+          setIdeasPickerOpen(true);
+        }}
         onIdeaSaved={() => {
           if (selectedItem?.id) void refreshIdeasCount(selectedItem.id);
         }}
       />
-      ) : null}
 
-      {activeTab === "swipe" ? (
       <SwipeIdeasPickerModal
         open={ideasPickerOpen}
-        onClose={() => setIdeasPickerOpen(false)}
-        swipeItemId={selectedItem?.id || null}
-        swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        onClose={() => {
+          setIdeasPickerOpen(false);
+          if (digestIdeasSession) setDigestIdeasSession(null);
+        }}
+        swipeItemId={digestIdeasSession?.swipeItemId || selectedItem?.id || null}
+        swipeItemLabel={digestIdeasSession?.topic.videoTitle || selectedItem?.title || selectedItem?.url || "Swipe item"}
         initialTemplateTypeId={templateTypeIdRef.current}
         initialSavedPromptId={savedPromptId}
-        angleNotesSnapshot={noteDraft}
+        angleNotesSnapshot={digestIdeasSession ? "" : noteDraft}
+        sourceDigestTopicId={digestIdeasSession?.topic.id || null}
+        requireIdeaSelection={!!digestIdeasSession}
         onSelectionChange={(args) => {
           const nextType = args.templateTypeId === "regular" ? "regular" : "enhanced";
           setTemplateTypeId(nextType);
@@ -1461,24 +1540,27 @@ export function SwipeFileModal() {
             ideaId: args.ideaId,
             templateTypeId: args.templateTypeId === "regular" ? "regular" : "enhanced",
             savedPromptId: args.savedPromptId,
+            itemId: digestIdeasSession?.swipeItemId || selectedItem?.id || null,
+            sourceDigestTopicId: digestIdeasSession?.topic.id || null,
           });
         }}
       />
-      ) : null}
 
-      {activeTab === "swipe" ? (
       <CarouselMapModal
         open={carouselMapOpen}
-        onClose={() => setCarouselMapOpen(false)}
-        swipeItemId={selectedItem?.id || null}
-        swipeItemLabel={selectedItem?.title || selectedItem?.url || "Swipe item"}
+        onClose={() => {
+          setCarouselMapOpen(false);
+          if (digestMapSession) setDigestMapSession(null);
+        }}
+        swipeItemId={digestMapSession ? null : selectedItem?.id || null}
+        mapId={digestMapSession?.mapId || null}
+        swipeItemLabel={digestMapSession?.topic.videoTitle || selectedItem?.title || selectedItem?.url || "Swipe item"}
         onLoadProject={(projectId) => {
           pendingAutoGenerateProjectIdRef.current = String(projectId);
           actions.onCloseSwipeFileModal?.();
           actions.onLoadProject?.(String(projectId));
         }}
       />
-      ) : null}
 
       {activeTab === "swipe" && captureModalOpen ? (
         <div

@@ -28,13 +28,22 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       body = {};
     }
     const chatMode = normalizeSwipeIdeasChatMode(body?.chatMode);
+    const sourceDigestTopicId = String(body?.sourceDigestTopicId || '').trim();
+    if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+      return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
+    }
 
-    const { error: delErr } = await supabase
+    const query = supabase
       .from('swipe_file_idea_threads')
       .delete()
       .eq('account_id', accountId)
-      .eq('swipe_item_id', swipeItemId)
       .eq('chat_mode', chatMode);
+    if (sourceDigestTopicId) {
+      query.eq('source_digest_topic_id', sourceDigestTopicId);
+    } else {
+      query.eq('swipe_item_id', swipeItemId).is('source_digest_topic_id', null);
+    }
+    const { error: delErr } = await query;
     if (delErr) return NextResponse.json({ success: false, error: delErr.message } satisfies Resp, { status: 500 });
 
     return NextResponse.json({ success: true } satisfies Resp);

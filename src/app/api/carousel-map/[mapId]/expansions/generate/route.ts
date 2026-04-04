@@ -93,6 +93,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     const system = buildCarouselMapExpansionsSystem({
       source: graph.source,
       topic,
+      digestTopic: graph.digestTopic,
       brandVoice,
       masterPrompt: expansionsPrompt.promptText,
       selectedSlide1Text,

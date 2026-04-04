@@ -1107,6 +1107,7 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - `GET/POST /api/daily-digest/creators`
   - `GET /api/daily-digest/videos`
   - `PATCH /api/daily-digest/topics/[id]`
+  - `POST /api/daily-digest/topics/[id]/create-carousel`
   - `GET/POST/DELETE /api/daily-digest/prompt`
 - Data model:
   - `public.daily_digest_creator_settings`: per-user-per-account creator toggle for auto-digest pipeline
@@ -1122,6 +1123,22 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - Distills transcripts via Claude into structured JSON (summary + topics + unique viewpoints)
   - Retry logic: 1 retry for failed videos across runs; terminal failures use `retry_count = 99`
   - Videos API hides rows tied to `running` runs so the panel only shows completed visibility states
+  - `Create carousel` creates or reuses an account-scoped Swipe File YouTube item by canonicalized watch URL, creates a `regular` project, snapshots digest topic context onto the project, then hands off to the existing Generate Copy flow
+
+### Manual QA (Daily Digest create carousel)
+- Open `/editor` as superadmin and open **Swipe File** → **Daily Digest**
+- Expand a video with at least one topic and click **Create carousel**
+  - Expected: the clicked topic button shows **Creating...** and other create buttons are temporarily disabled
+- Confirm the Swipe File modal closes and the new project loads in `/editor`
+- Confirm Generate Copy auto-runs after the project finishes loading
+- Confirm the project title matches the digest topic title
+- Confirm the project has a clickable **Source material** link pointing to the canonical YouTube watch URL
+- Retry the same topic again
+  - Expected: a second project can still be created; no server-side idempotency block
+- Trigger a topic whose source video has no transcript available
+  - Expected: no project is created and an inline red error appears beside that specific topic's create button
+- Click a different topic after an inline error
+  - Expected: the prior inline error clears when focus shifts to the new topic
 
 ### Manual QA (Swipe File add-item modal)
 - Open `/editor` as superadmin and click **Swipe File**

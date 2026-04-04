@@ -67,6 +67,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
       bestPracticesRaw,
       source: graph.source,
       topic,
+      digestTopic: graph.digestTopic,
       expansion,
       templateTypeId,
     });

@@ -17,6 +17,7 @@ import type {
 type Props = {
   open: boolean;
   swipeItemId: string | null;
+  mapId?: string | null;
   swipeItemLabel?: string | null;
   onClose: () => void;
   onLoadProject?: (projectId: string) => void;
@@ -281,7 +282,7 @@ function GenerateWithSteeringControls(props: {
   );
 }
 
-export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, onLoadProject }: Props) {
+export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onClose, onLoadProject }: Props) {
   const isSuperadmin = useEditorSelector((s: any) => !!(s as any).isSuperadmin);
   const [graph, setGraph] = useState<CarouselMapGraph | null>(null);
   const [loading, setLoading] = useState(false);
@@ -336,6 +337,7 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
     opening_pairs: "",
     expansions: "",
   });
+  const digestOrigin = !!graph?.digestTopic;
 
   useEffect(() => {
     templateTypeIdRef.current = templateTypeId;
@@ -347,20 +349,24 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
   }, [templateTypeId]);
 
   const loadGraph = useCallback(async (opts?: { preserveMessage?: boolean }) => {
-    const id = String(swipeItemId || "").trim();
-    if (!id) return;
+    const resolvedMapId = String(mapId || "").trim();
+    const resolvedSwipeItemId = String(swipeItemId || "").trim();
+    if (!resolvedMapId && !resolvedSwipeItemId) return;
     setLoading(true);
     setError(null);
     if (!opts?.preserveMessage) setNotice(null);
     try {
-      const json = await authedFetchJson(`/api/carousel-map/by-swipe-item/${encodeURIComponent(id)}`, { method: "GET" });
+      const url = resolvedMapId
+        ? `/api/carousel-map/${encodeURIComponent(resolvedMapId)}`
+        : `/api/carousel-map/by-swipe-item/${encodeURIComponent(resolvedSwipeItemId)}`;
+      const json = await authedFetchJson(url, { method: "GET" });
       setGraph((json.graph as CarouselMapGraph) || null);
     } catch (e: any) {
       setError(String(e?.message || e || "Failed to load Carousel Map"));
     } finally {
       setLoading(false);
     }
-  }, [swipeItemId]);
+  }, [mapId, swipeItemId]);
 
   const loadStagePrompts = useCallback(async () => {
     setPromptsLoading(true);
@@ -381,8 +387,9 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
   }, []);
 
   useEffect(() => {
-    if (!open || !swipeItemId) return;
-    const key = `${open}:${swipeItemId}`;
+    const resolvedId = String(mapId || swipeItemId || "").trim();
+    if (!open || !resolvedId) return;
+    const key = `${open}:${resolvedId}`;
     if (lastOpenRef.current === key) return;
     lastOpenRef.current = key;
     setGraph(null);
@@ -402,7 +409,7 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
     setSteeringError(null);
     void loadGraph();
     void loadStagePrompts();
-  }, [loadGraph, loadStagePrompts, open, swipeItemId]);
+  }, [loadGraph, loadStagePrompts, mapId, open, swipeItemId]);
 
   useEffect(() => {
     if (!open) {
@@ -837,6 +844,13 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
             <div className="min-w-0">
               <div className="text-lg font-semibold text-slate-900">Carousel Map</div>
               <div className="mt-1 truncate text-xs text-slate-500">{swipeItemLabel || graph?.source.title || "Source item"}</div>
+              {graph?.digestTopic ? (
+                <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-700">
+                  <div className="font-semibold text-sky-900">Locked digest topic</div>
+                  <div className="mt-1 font-semibold text-slate-900">{graph.digestTopic.title}</div>
+                  {graph.digestTopic.carouselAngle ? <div className="mt-1 text-slate-600">Carousel angle: {graph.digestTopic.carouselAngle}</div> : null}
+                </div>
+              ) : null}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -939,27 +953,57 @@ export function CarouselMapModal({ open, swipeItemId, swipeItemLabel, onClose, o
                   topicLaneScrollRef.current = node;
                 }}
                 action={
-                  <div className="flex items-center gap-2">
-                    {isSuperadmin ? (
-                      <button
-                        type="button"
-                        className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50"
-                        onClick={() => openPromptEditor("topics")}
-                        title="Edit Topics prompt"
-                      >
-                        ⚙
-                      </button>
-                    ) : null}
-                    <GenerateWithSteeringControls
-                      label={busyAction === "topics" ? "Working…" : graph?.topics.length ? "Regenerate" : "Generate"}
-                      disabled={!graph?.id || busyAction === "topics" || loading || promptsLoading || topicsPromptEmpty}
-                      onGenerate={() => onGenerateClick("topics")}
-                      onSteer={() => openSteeringModal("topics")}
-                    />
-                  </div>
+                  digestOrigin ? (
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">Locked</span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {isSuperadmin ? (
+                        <button
+                          type="button"
+                          className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50"
+                          onClick={() => openPromptEditor("topics")}
+                          title="Edit Topics prompt"
+                        >
+                          ⚙
+                        </button>
+                      ) : null}
+                      <GenerateWithSteeringControls
+                        label={busyAction === "topics" ? "Working…" : graph?.topics.length ? "Regenerate" : "Generate"}
+                        disabled={!graph?.id || busyAction === "topics" || loading || promptsLoading || topicsPromptEmpty}
+                        onGenerate={() => onGenerateClick("topics")}
+                        onSteer={() => openSteeringModal("topics")}
+                      />
+                    </div>
+                  )
                 }
               >
-                {topicsPromptEmpty ? (
+                {digestOrigin && graph?.topics.length ? (
+                  <div className="space-y-3">
+                    {graph.topics.map((topic) => {
+                      const active = topic.id === graph.selectedTopicId;
+                      return (
+                        <div
+                          key={topic.id}
+                          className={[
+                            "w-full rounded-xl border px-3 py-3 text-left shadow-sm",
+                            active ? "border-black bg-slate-900 text-white" : "border-slate-200 bg-white",
+                          ].join(" ")}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className={["text-sm font-semibold", active ? "text-white" : "text-slate-900"].join(" ")}>{topic.title}</div>
+                            <span className={["text-[11px] font-semibold", active ? "text-slate-300" : "text-sky-700"].join(" ")}>Locked</span>
+                          </div>
+                          <div className={["mt-2 text-xs leading-5", active ? "text-slate-200" : "text-slate-600"].join(" ")}>
+                            {topic.summary}
+                          </div>
+                          <div className={["mt-2 text-xs leading-5", active ? "text-slate-300" : "text-slate-500"].join(" ")}>
+                            Why it matters: {topic.whyItMatters}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : topicsPromptEmpty ? (
                   <div className="text-sm text-amber-700">{PROMPT_STAGE_META.topics.emptyError}</div>
                 ) : !graph?.topics.length ? (
                   <div className="text-sm text-slate-600">Generate topics to extract the strongest directions from the source.</div>

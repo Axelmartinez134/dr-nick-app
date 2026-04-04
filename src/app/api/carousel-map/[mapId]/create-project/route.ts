@@ -116,11 +116,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
       return NextResponse.json({ success: false, error: slidesErr.message } satisfies Resp, { status: 500 });
     }
 
-    await supabase
-      .from('swipe_file_items')
-      .update({ created_project_id: project.id, status: 'repurposed' } as any)
-      .eq('id', graph.source.swipeItemId)
-      .eq('account_id', accountId);
+    if (!graph.digestTopic) {
+      await supabase
+        .from('swipe_file_items')
+        .update({ created_project_id: project.id, status: 'repurposed' } as any)
+        .eq('id', graph.source.swipeItemId)
+        .eq('account_id', accountId);
+    }
 
     return NextResponse.json({ success: true, projectId: String(project.id) } satisfies Resp);
   } catch (e: any) {

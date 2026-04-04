@@ -54,9 +54,18 @@ export type CarouselMapSource = {
   note: string;
 };
 
+export type CarouselMapDigestTopicContext = {
+  id: string;
+  title: string;
+  whatItIs: string;
+  whyItMatters: string;
+  carouselAngle: string | null;
+};
+
 export type CarouselMapGraph = {
   id: string;
   source: CarouselMapSource;
+  digestTopic: CarouselMapDigestTopicContext | null;
   selectedTopicId: string | null;
   selectedSlide1SourcePairId: string | null;
   selectedSlide1Text: string | null;

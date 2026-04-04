@@ -7,6 +7,7 @@ import {
   sanitizePrompt,
 } from '../swipe-file/items/[id]/ideas/_shared';
 import type {
+  CarouselMapDigestTopicContext,
   CarouselMapExpansion,
   CarouselMapGraph,
   CarouselMapOpeningPair,
@@ -139,6 +140,7 @@ export async function ensureCarouselMap(args: {
     .select('id')
     .eq('account_id', accountId)
     .eq('swipe_item_id', swipeItemId)
+    .is('source_digest_topic_id', null)
     .maybeSingle();
   if (existingErr) throw new Error(existingErr.message);
   const existingId = String((existing as any)?.id || '').trim();
@@ -149,6 +151,7 @@ export async function ensureCarouselMap(args: {
     .insert({
       account_id: accountId,
       swipe_item_id: swipeItemId,
+      source_digest_topic_id: null,
       created_by_user_id: userId,
     } as any)
     .select('id')
@@ -164,6 +167,53 @@ export async function ensureCarouselMap(args: {
     .select('id')
     .eq('account_id', accountId)
     .eq('swipe_item_id', swipeItemId)
+    .is('source_digest_topic_id', null)
+    .maybeSingle();
+  if (rereadErr) throw new Error(rereadErr.message);
+  const rereadId = String((reread as any)?.id || '').trim();
+  if (!rereadId) throw new Error('Failed to create Carousel Map');
+  return rereadId;
+}
+
+export async function ensureCarouselMapForDigestTopic(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  swipeItemId: string;
+  sourceDigestTopicId: string;
+}) {
+  const { supabase, accountId, userId, swipeItemId, sourceDigestTopicId } = args;
+  const { data: existing, error: existingErr } = await supabase
+    .from('carousel_maps')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('source_digest_topic_id', sourceDigestTopicId)
+    .maybeSingle();
+  if (existingErr) throw new Error(existingErr.message);
+  const existingId = String((existing as any)?.id || '').trim();
+  if (existingId) return existingId;
+
+  const { data: inserted, error: insertedErr } = await supabase
+    .from('carousel_maps')
+    .insert({
+      account_id: accountId,
+      swipe_item_id: swipeItemId,
+      source_digest_topic_id: sourceDigestTopicId,
+      created_by_user_id: userId,
+    } as any)
+    .select('id')
+    .maybeSingle();
+  if (insertedErr && String((insertedErr as any)?.code || '') !== '23505') {
+    throw new Error(insertedErr.message);
+  }
+  const insertedId = String((inserted as any)?.id || '').trim();
+  if (insertedId) return insertedId;
+
+  const { data: reread, error: rereadErr } = await supabase
+    .from('carousel_maps')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('source_digest_topic_id', sourceDigestTopicId)
     .maybeSingle();
   if (rereadErr) throw new Error(rereadErr.message);
   const rereadId = String((reread as any)?.id || '').trim();
@@ -201,7 +251,7 @@ export async function loadCarouselMapGraph(args: {
   const { data: mapRow, error: mapErr } = await supabase
     .from('carousel_maps')
     .select(
-      'id, swipe_item_id, selected_topic_id, selected_slide1_source_pair_id, selected_slide1_text, selected_slide2_source_pair_id, selected_slide2_text'
+      'id, swipe_item_id, source_digest_topic_id, selected_topic_id, selected_slide1_source_pair_id, selected_slide1_text, selected_slide2_source_pair_id, selected_slide2_text'
     )
     .eq('account_id', accountId)
     .eq('id', mapId)
@@ -210,6 +260,7 @@ export async function loadCarouselMapGraph(args: {
   if (!mapRow?.id) throw new Error('Carousel Map not found');
 
   const swipeItemId = String((mapRow as any)?.swipe_item_id || '').trim();
+  const sourceDigestTopicId = String((mapRow as any)?.source_digest_topic_id || '').trim();
   const sourceContext = await loadSwipeIdeasContextOrThrow({ supabase, accountId, swipeItemId });
   const categoryName = sourceContext.categoryName || (await loadCategoryName({ supabase, accountId, swipeItemId }));
   const source: CarouselMapSource = {
@@ -223,6 +274,26 @@ export async function loadCarouselMapGraph(args: {
     transcript: sourceContext.transcript,
     note: sourceContext.note,
   };
+
+  let digestTopic: CarouselMapDigestTopicContext | null = null;
+  if (sourceDigestTopicId) {
+    const { data: digestRow, error: digestErr } = await supabase
+      .from('daily_digest_topics')
+      .select('id, title, what_it_is, why_it_matters, carousel_angle')
+      .eq('account_id', accountId)
+      .eq('id', sourceDigestTopicId)
+      .maybeSingle();
+    if (digestErr) throw new Error(digestErr.message);
+    if (digestRow?.id) {
+      digestTopic = {
+        id: String(digestRow.id),
+        title: String((digestRow as any)?.title || ''),
+        whatItIs: String((digestRow as any)?.what_it_is || ''),
+        whyItMatters: String((digestRow as any)?.why_it_matters || ''),
+        carouselAngle: String((digestRow as any)?.carousel_angle || '').trim() || null,
+      };
+    }
+  }
 
   const [topicsRes, pairsRes, expansionsRes] = await Promise.all([
     supabase
@@ -332,6 +403,7 @@ export async function loadCarouselMapGraph(args: {
   return {
     id: String(mapRow.id),
     source,
+    digestTopic,
     selectedTopicId: (mapRow as any)?.selected_topic_id ? String((mapRow as any).selected_topic_id) : null,
     selectedSlide1SourcePairId: (mapRow as any)?.selected_slide1_source_pair_id ? String((mapRow as any).selected_slide1_source_pair_id) : null,
     selectedSlide1Text: (mapRow as any)?.selected_slide1_text ? String((mapRow as any).selected_slide1_text) : null,
@@ -636,6 +708,7 @@ export function buildCarouselMapTopicsSystem(args: {
 export function buildCarouselMapOpeningsSystem(args: {
   source: CarouselMapSource;
   topic: CarouselMapTopic;
+  digestTopic?: CarouselMapDigestTopicContext | null;
   brandVoice: string;
   masterPrompt: string;
   steeringText?: string;
@@ -681,6 +754,8 @@ export function buildCarouselMapOpeningsSystem(args: {
       `- Title: ${args.topic.title}`,
       `- Summary: ${args.topic.summary}`,
       `- Why it matters: ${args.topic.whyItMatters}`,
+      args.digestTopic?.carouselAngle ? `DIGEST_TOPIC_CONTEXT:` : ``,
+      args.digestTopic?.carouselAngle ? `- Carousel angle: ${args.digestTopic.carouselAngle}` : ``,
       ``,
       `CURRENTLY_DISPLAYED_OPENING_PAIRS:`,
       formatCurrentOpeningPairsForPrompt(args.currentPairs || []),
@@ -707,6 +782,7 @@ export function buildCarouselMapOpeningsSystem(args: {
 export function buildCarouselMapExpansionsSystem(args: {
   source: CarouselMapSource;
   topic: CarouselMapTopic;
+  digestTopic?: CarouselMapDigestTopicContext | null;
   brandVoice: string;
   masterPrompt: string;
   selectedSlide1Text: string;
@@ -751,6 +827,8 @@ export function buildCarouselMapExpansionsSystem(args: {
       `- Title: ${args.topic.title}`,
       `- Summary: ${args.topic.summary}`,
       `- Why it matters: ${args.topic.whyItMatters}`,
+      args.digestTopic?.carouselAngle ? `DIGEST_TOPIC_CONTEXT:` : ``,
+      args.digestTopic?.carouselAngle ? `- Carousel angle: ${args.digestTopic.carouselAngle}` : ``,
       ``,
       `CHOSEN_OPENING:`,
       `- Slide 1: ${args.selectedSlide1Text}`,
@@ -871,6 +949,7 @@ export function buildCarouselMapPromptPreview(args: {
   bestPracticesRaw: string;
   source: CarouselMapSource;
   topic: CarouselMapTopic;
+  digestTopic?: CarouselMapDigestTopicContext | null;
   expansion: CarouselMapExpansion;
   templateTypeId: 'regular' | 'enhanced';
 }) {
@@ -883,6 +962,7 @@ export function buildCarouselMapPromptPreview(args: {
     `STYLE_PROMPT:\n${args.stylePromptRaw}`,
     ``,
     `CAROUSEL_MAP_SELECTED_TOPIC:\n${formatCarouselMapTopicSnapshot(args.topic)}`,
+    args.digestTopic?.carouselAngle ? `DIGEST_TOPIC_CONTEXT:\n- Carousel angle: ${args.digestTopic.carouselAngle}` : ``,
     ``,
     `CAROUSEL_MAP_OPENING:\n${formatCarouselMapOpeningSnapshot({
       slide1: args.expansion.selectedSlide1Text,

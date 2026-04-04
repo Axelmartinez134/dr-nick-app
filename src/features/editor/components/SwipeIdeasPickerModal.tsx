@@ -39,6 +39,8 @@ export function SwipeIdeasPickerModal(props: {
   initialTemplateTypeId: "regular" | "enhanced";
   initialSavedPromptId: string;
   angleNotesSnapshot: string;
+  sourceDigestTopicId?: string | null;
+  requireIdeaSelection?: boolean;
   onSelectionChange?: (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
   onPick: (args: { ideaId: string | null; templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
 }) {
@@ -50,6 +52,8 @@ export function SwipeIdeasPickerModal(props: {
     initialTemplateTypeId,
     initialSavedPromptId,
     angleNotesSnapshot,
+    sourceDigestTopicId,
+    requireIdeaSelection,
     onSelectionChange,
     onPick,
   } = props;
@@ -140,7 +144,10 @@ export function SwipeIdeasPickerModal(props: {
         const token = await getToken();
         if (!token) throw new Error("Missing auth token");
         const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...getActiveAccountHeader() };
-        const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas`, { method: "GET", headers });
+        const ideasQuery = String(sourceDigestTopicId || "").trim()
+          ? `?sourceDigestTopicId=${encodeURIComponent(String(sourceDigestTopicId || "").trim())}`
+          : "";
+        const res = await fetch(`/api/swipe-file/items/${encodeURIComponent(itemId)}/ideas${ideasQuery}`, { method: "GET", headers });
         const j = await res.json().catch(() => null);
         if (cancelled) return;
         if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load ideas (${res.status})`));
@@ -166,7 +173,7 @@ export function SwipeIdeasPickerModal(props: {
     return () => {
       cancelled = true;
     };
-  }, [open, swipeItemId]);
+  }, [open, sourceDigestTopicId, swipeItemId]);
 
   const loadPromptPreview = async (args: { ideaId: string | null }) => {
     const itemId = String(swipeItemId || "").trim();
@@ -186,6 +193,7 @@ export function SwipeIdeasPickerModal(props: {
           savedPromptId: String(savedPromptId || "").trim(),
           ideaId: args.ideaId,
           angleNotesSnapshot: String(angleNotesSnapshot || ""),
+          sourceDigestTopicId: String(sourceDigestTopicId || "").trim() || null,
         }),
       });
       const j = await res.json().catch(() => null);
@@ -360,7 +368,7 @@ export function SwipeIdeasPickerModal(props: {
                     Saved prompt: {savedPrompts.find((p) => p.id === savedPromptId)?.title || "No saved prompt selected"}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-600">
-                    Selected idea: {selectedIdea ? selectedIdea.title : "Continue without idea"}
+                    Selected idea: {selectedIdea ? selectedIdea.title : requireIdeaSelection ? "Select an idea" : "Continue without idea"}
                   </div>
                 </div>
               </div>
@@ -378,25 +386,27 @@ export function SwipeIdeasPickerModal(props: {
               >
                 Use selected idea
               </button>
-              <button
-                type="button"
-                className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
-                disabled={!savedPromptId}
-                onClick={() =>
-                  onPick({
-                    ideaId: null,
-                    templateTypeId,
-                    savedPromptId: String(savedPromptId || "").trim(),
-                  })
-                }
-                title="Continue using Angle/Notes (no idea selected)"
-              >
-                Continue without idea
-              </button>
+              {!requireIdeaSelection ? (
+                <button
+                  type="button"
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-700 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                  disabled={!savedPromptId}
+                  onClick={() =>
+                    onPick({
+                      ideaId: null,
+                      templateTypeId,
+                      savedPromptId: String(savedPromptId || "").trim(),
+                    })
+                  }
+                  title="Continue using Angle/Notes (no idea selected)"
+                >
+                  Continue without idea
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="w-full h-10 rounded-lg border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-50"
-                disabled={!String(swipeItemId || "").trim() || !String(savedPromptId || "").trim()}
+                disabled={!String(swipeItemId || "").trim() || !String(savedPromptId || "").trim() || (!!requireIdeaSelection && !selectedIdea)}
                 onClick={() => {
                   setPromptOpen(true);
                   void loadPromptPreview({ ideaId: selectedIdea ? selectedIdea.id : null });

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext, s } from '../../../_utils';
+import { loadSwipeIdeasDigestTopicContext } from './_shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -36,17 +37,25 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
 
   const { id } = await ctx.params;
   const swipeItemId = String(id || '').trim();
+  const sourceDigestTopicId = String(request.nextUrl.searchParams.get('sourceDigestTopicId') || '').trim();
   if (!swipeItemId || !isUuid(swipeItemId)) {
     return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
   }
+  if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+    return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
+  }
 
-  const { data: rows, error } = await supabase
+  const query = supabase
     .from('swipe_file_ideas')
     .select('id, created_at, title, slide_outline, angle_text, source_message_id')
     .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
-    .order('created_at', { ascending: false })
-    .limit(100);
+    .eq('swipe_item_id', swipeItemId);
+  if (sourceDigestTopicId) {
+    query.eq('source_digest_topic_id', sourceDigestTopicId);
+  } else {
+    query.is('source_digest_topic_id', null);
+  }
+  const { data: rows, error } = await query.order('created_at', { ascending: false }).limit(100);
   if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });
 
   const ideas: IdeaOut[] = Array.isArray(rows)
@@ -86,6 +95,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const slideOutline = normalizeSlideOutline(body?.slideOutline);
   const threadId = s(body?.threadId);
   const sourceMessageId = s(body?.sourceMessageId);
+  const sourceDigestTopicId = String(body?.sourceDigestTopicId || '').trim();
 
   if (!title) return NextResponse.json({ success: false, error: 'Missing title' } satisfies Resp, { status: 400 });
   if (!angleText) return NextResponse.json({ success: false, error: 'Missing angleText' } satisfies Resp, { status: 400 });
@@ -97,11 +107,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (sourceMessageId && !isUuid(sourceMessageId)) {
     return NextResponse.json({ success: false, error: 'Invalid sourceMessageId' } satisfies Resp, { status: 400 });
   }
+  if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+    return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
+  }
+  if (sourceDigestTopicId) {
+    await loadSwipeIdeasDigestTopicContext({ supabase, accountId, sourceDigestTopicId });
+  }
 
   const { error: insErr } = await supabase.from('swipe_file_ideas').insert({
     account_id: accountId,
     swipe_item_id: swipeItemId,
     thread_id: threadId || null,
+    source_digest_topic_id: sourceDigestTopicId || null,
     source_message_id: sourceMessageId || null,
     created_by_user_id: user.id,
     title,
@@ -110,13 +127,17 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   } as any);
   if (insErr) return NextResponse.json({ success: false, error: insErr.message } satisfies Resp, { status: 500 });
 
-  const { data: rows, error } = await supabase
+  const refreshQuery = supabase
     .from('swipe_file_ideas')
     .select('id, created_at, title, slide_outline, angle_text, source_message_id')
     .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
-    .order('created_at', { ascending: false })
-    .limit(100);
+    .eq('swipe_item_id', swipeItemId);
+  if (sourceDigestTopicId) {
+    refreshQuery.eq('source_digest_topic_id', sourceDigestTopicId);
+  } else {
+    refreshQuery.is('source_digest_topic_id', null);
+  }
+  const { data: rows, error } = await refreshQuery.order('created_at', { ascending: false }).limit(100);
   if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });
 
   const ideas: IdeaOut[] = Array.isArray(rows)

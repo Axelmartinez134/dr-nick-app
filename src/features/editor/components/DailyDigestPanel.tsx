@@ -65,6 +65,24 @@ type DigestVideo = {
   topics: DigestTopic[];
 };
 
+type Props = {
+  onCreateCarousel?: (projectId: string) => void;
+  onOpenDigestCarouselMap?: (payload: DigestTopicLaunchPayload) => void;
+  onOpenDigestIdeas?: (payload: DigestTopicLaunchPayload) => void;
+};
+
+export type DigestTopicLaunchPayload = {
+  id: string;
+  title: string;
+  whatItIs: string;
+  whyItMatters: string;
+  carouselAngle: string | null;
+  videoId: string;
+  videoTitle: string;
+  creatorName: string;
+  youtubeVideoUrl: string;
+};
+
 function getActiveAccountHeader(): Record<string, string> {
   try {
     const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
@@ -131,7 +149,21 @@ function runStatusTone(status: string) {
   return "bg-sky-100 text-sky-700";
 }
 
-export function DailyDigestPanel() {
+function buildLaunchPayload(video: DigestVideo, topic: DigestTopic): DigestTopicLaunchPayload {
+  return {
+    id: topic.id,
+    title: topic.title,
+    whatItIs: topic.whatItIs,
+    whyItMatters: topic.whyItMatters,
+    carouselAngle: topic.carouselAngle,
+    videoId: video.id,
+    videoTitle: video.videoTitle,
+    creatorName: video.creatorName,
+    youtubeVideoUrl: video.youtubeVideoUrl,
+  };
+}
+
+export function DailyDigestPanel({ onCreateCarousel, onOpenDigestCarouselMap, onOpenDigestIdeas }: Props) {
   const [creators, setCreators] = useState<DigestCreator[]>([]);
   const [videos, setVideos] = useState<DigestVideo[]>([]);
   const [runs, setRuns] = useState<DigestRun[]>([]);
@@ -161,6 +193,8 @@ export function DailyDigestPanel() {
   const [noteStatus, setNoteStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [noteError, setNoteError] = useState<string | null>(null);
   const noteSaveRef = useRef<number | null>(null);
+  const [createBusyTopicId, setCreateBusyTopicId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<{ topicId: string; message: string } | null>(null);
 
   useEffect(() => {
     const onResize = () => setIsWide(typeof window !== "undefined" ? window.innerWidth >= 1024 : true);
@@ -283,6 +317,13 @@ export function DailyDigestPanel() {
   }, [selectedTopicId, selectedTopic]);
 
   useEffect(() => {
+    if (!createError?.topicId) return;
+    if (!selectedTopicId) return;
+    if (selectedTopicId === createError.topicId) return;
+    setCreateError(null);
+  }, [createError?.topicId, selectedTopicId]);
+
+  useEffect(() => {
     setNoteDraft(selectedTopic?.topic.note || "");
     setNoteStatus("idle");
     setNoteError(null);
@@ -328,6 +369,32 @@ export function DailyDigestPanel() {
     } catch (e: any) {
       setPromptStatus("error");
       setPromptError(String(e?.message || e || "Failed to save prompt"));
+    }
+  };
+
+  const selectTopic = (topicId: string) => {
+    setSelectedTopicId(topicId);
+    setCreateError(null);
+  };
+
+  const createCarouselFromTopic = async (topicId: string) => {
+    setCreateBusyTopicId(topicId);
+    setCreateError(null);
+    try {
+      const json = await authedFetchJson(`/api/daily-digest/topics/${encodeURIComponent(topicId)}/create-carousel`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      const projectId = String(json?.projectId || "").trim();
+      if (!projectId) throw new Error("Create carousel succeeded without a project id");
+      onCreateCarousel?.(projectId);
+    } catch (e: any) {
+      setCreateError({
+        topicId,
+        message: String(e?.message || e || "Failed to create carousel"),
+      });
+    } finally {
+      setCreateBusyTopicId(null);
     }
   };
 
@@ -614,7 +681,7 @@ export function DailyDigestPanel() {
                                 const selected = selectedTopicId === topic.id;
                                 return (
                                   <div key={topic.id} className={`rounded-xl border p-3 ${selected ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
-                                    <button type="button" className="w-full text-left" onClick={() => setSelectedTopicId(topic.id)}>
+                                    <button type="button" className="w-full text-left" onClick={() => selectTopic(topic.id)}>
                                       <div className="flex items-center justify-between gap-2">
                                         <div className="text-sm font-semibold text-slate-900">{topic.title}</div>
                                         <span className="text-[10px] font-semibold text-slate-500">{topicStatusLabel(topic.status)}</span>
@@ -640,18 +707,36 @@ export function DailyDigestPanel() {
                                       <button
                                         type="button"
                                         className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700"
-                                        onClick={() => setSelectedTopicId(topic.id)}
+                                        onClick={() => selectTopic(topic.id)}
                                       >
                                         Note
                                       </button>
                                       <button
                                         type="button"
-                                        disabled
-                                        className="h-8 cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold text-slate-400"
+                                        disabled={!!createBusyTopicId}
+                                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                                        onClick={() => void createCarouselFromTopic(topic.id)}
                                       >
-                                        Create carousel
+                                        {createBusyTopicId === topic.id ? "Creating..." : "Create"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700"
+                                        onClick={() => onOpenDigestCarouselMap?.(buildLaunchPayload(video, topic))}
+                                      >
+                                        Carousel Map
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700"
+                                        onClick={() => onOpenDigestIdeas?.(buildLaunchPayload(video, topic))}
+                                      >
+                                        Explore Ideas
                                       </button>
                                     </div>
+                                    {createError?.topicId === topic.id ? (
+                                      <div className="mt-2 text-[11px] text-red-600">❌ {createError.message}</div>
+                                    ) : null}
                                     {!isWide && selected ? (
                                       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                                         <div className="font-semibold text-slate-900">{topic.title}</div>
@@ -762,12 +847,30 @@ export function DailyDigestPanel() {
                 </button>
                 <button
                   type="button"
-                  disabled
-                  className="h-9 cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-400 shadow-sm"
+                  disabled={!!createBusyTopicId}
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  onClick={() => void createCarouselFromTopic(selectedTopic.topic.id)}
                 >
-                  Create carousel
+                  {createBusyTopicId === selectedTopic.topic.id ? "Creating..." : "Create"}
+                </button>
+                <button
+                  type="button"
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  onClick={() => onOpenDigestCarouselMap?.(buildLaunchPayload(selectedTopic.video, selectedTopic.topic))}
+                >
+                  Carousel Map
+                </button>
+                <button
+                  type="button"
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                  onClick={() => onOpenDigestIdeas?.(buildLaunchPayload(selectedTopic.video, selectedTopic.topic))}
+                >
+                  Explore Ideas
                 </button>
               </div>
+              {createError?.topicId === selectedTopic.topic.id ? (
+                <div className="mt-2 text-[11px] text-red-600">❌ {createError.message}</div>
+              ) : null}
 
               {selectedTopic.video.rawTranscript ? (
                 <details className="mt-4 rounded-lg border border-slate-200 bg-white p-3">

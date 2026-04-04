@@ -3,6 +3,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext, s, type SwipePlatform } from '../../../_utils';
 import { loadEffectiveTemplateTypeSettings } from '@/app/api/editor/projects/_effective';
+import { buildDigestTopicSnapshot, loadDailyDigestTopicSourceOrThrow } from '@/app/api/daily-digest/_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -11,6 +12,7 @@ type Body = {
   templateTypeId: 'regular' | 'enhanced';
   savedPromptId: string;
   ideaId?: string | null;
+  sourceDigestTopicId?: string | null;
 };
 
 type Resp =
@@ -40,12 +42,19 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const templateTypeId = (body as any)?.templateTypeId === 'regular' ? 'regular' : (body as any)?.templateTypeId === 'enhanced' ? 'enhanced' : null;
   const savedPromptId = s((body as any)?.savedPromptId);
   const ideaId = s((body as any)?.ideaId);
+  const sourceDigestTopicId = s((body as any)?.sourceDigestTopicId);
   if (!templateTypeId) return NextResponse.json({ success: false, error: 'templateTypeId is required' } satisfies Resp, { status: 400 });
   if (!savedPromptId || !isUuid(savedPromptId)) {
     return NextResponse.json({ success: false, error: 'savedPromptId is required' } satisfies Resp, { status: 400 });
   }
   if (ideaId && !isUuid(ideaId)) {
     return NextResponse.json({ success: false, error: 'Invalid ideaId' } satisfies Resp, { status: 400 });
+  }
+  if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+    return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
+  }
+  if (sourceDigestTopicId && !ideaId) {
+    return NextResponse.json({ success: false, error: 'ideaId is required for digest-origin flow' } satisfies Resp, { status: 400 });
   }
 
   // Load swipe item (account scoped)
@@ -61,17 +70,40 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const platform = String((item as any)?.platform || 'unknown').trim() as SwipePlatform;
   const url = String((item as any)?.url || '').trim();
   const itemTitle = String((item as any)?.title || '').trim();
+  let digestTopicSnapshot: string | null = null;
+  if (sourceDigestTopicId) {
+    const digestSource = await loadDailyDigestTopicSourceOrThrow({
+      supabase,
+      accountId,
+      userId: user.id,
+      topicId: sourceDigestTopicId,
+    });
+    digestTopicSnapshot = buildDigestTopicSnapshot({
+      title: digestSource.title,
+      whatItIs: digestSource.whatItIs,
+      whyItMatters: digestSource.whyItMatters,
+      carouselAngle: digestSource.carouselAngle,
+      sourceVideoSummary: digestSource.summary,
+      sourceCreator: digestSource.creatorName,
+      sourceVideoTitle: digestSource.videoTitle,
+    });
+  }
 
   // Optional: load idea snapshot (must belong to this account+item)
   let ideaSnapshot: { id: string; title: string; slideOutline: string[]; angleText: string } | null = null;
   if (ideaId) {
-    const { data: ideaRow, error: ideaErr } = await supabase
+    const ideaQuery = supabase
       .from('swipe_file_ideas')
       .select('id, title, slide_outline, angle_text')
       .eq('account_id', accountId)
       .eq('swipe_item_id', itemId)
-      .eq('id', ideaId)
-      .maybeSingle();
+      .eq('id', ideaId);
+    if (sourceDigestTopicId) {
+      ideaQuery.eq('source_digest_topic_id', sourceDigestTopicId);
+    } else {
+      ideaQuery.is('source_digest_topic_id', null);
+    }
+    const { data: ideaRow, error: ideaErr } = await ideaQuery.maybeSingle();
     if (ideaErr) return NextResponse.json({ success: false, error: ideaErr.message } satisfies Resp, { status: 500 });
     const id = String((ideaRow as any)?.id || '').trim();
     const ideaTitle = String((ideaRow as any)?.title || '').trim();
@@ -152,6 +184,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             : null,
       source_swipe_idea_id: ideaSnapshot ? ideaSnapshot.id : null,
       source_swipe_idea_snapshot: ideaSnapshot ? formatIdeaSnapshotText(ideaSnapshot) : null,
+      source_digest_topic_snapshot: digestTopicSnapshot,
     } as any)
     .select(PROJECT_SELECT)
     .single();
@@ -175,11 +208,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   }
 
   // 2) Link swipe item → created project id
-  await supabase
-    .from('swipe_file_items')
-    .update({ created_project_id: project.id, status: 'repurposed' } as any)
-    .eq('id', itemId)
-    .eq('account_id', accountId);
+  if (!sourceDigestTopicId) {
+    await supabase
+      .from('swipe_file_items')
+      .update({ created_project_id: project.id, status: 'repurposed' } as any)
+      .eq('id', itemId)
+      .eq('account_id', accountId);
+  }
 
   return NextResponse.json({ success: true, projectId: String(project.id) } satisfies Resp);
 }

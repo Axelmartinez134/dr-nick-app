@@ -5,8 +5,10 @@ import { getAuthedSwipeContext, s } from '../../../../_utils';
 import {
   buildSwipeIdeasContextText,
   buildSwipeIdeasSystemText,
+  ensureSwipeIdeasThread,
   isUuid,
   loadSwipeIdeasContextOrThrow,
+  loadSwipeIdeasDigestTopicContext,
   loadSwipeIdeasMasterPrompt,
   normalizeSwipeIdeasChatMode,
   sanitizePrompt,
@@ -184,50 +186,6 @@ function parseCardsFromRaw(rawText: string, chatMode: SwipeIdeasChatMode): { ass
   return chatMode === 'opening_slides' ? assertOpeningSlidesCards(payload) : assertIdeasCards(payload);
 }
 
-async function ensureThread(args: {
-  supabase: any;
-  accountId: string;
-  userId: string;
-  swipeItemId: string;
-  chatMode: SwipeIdeasChatMode;
-}): Promise<string> {
-  const { supabase, accountId, userId, swipeItemId, chatMode } = args;
-  const { data: existing, error: exErr } = await supabase
-    .from('swipe_file_idea_threads')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
-    .eq('chat_mode', chatMode)
-    .maybeSingle();
-  if (exErr) throw new Error(exErr.message);
-  const existingId = String((existing as any)?.id || '').trim();
-  if (existingId) return existingId;
-
-  const { data: inserted, error: insErr } = await supabase
-    .from('swipe_file_idea_threads')
-    .insert({ account_id: accountId, swipe_item_id: swipeItemId, chat_mode: chatMode, created_by_user_id: userId } as any)
-    .select('id')
-    .maybeSingle();
-  if (insErr) {
-    const code = (insErr as any)?.code;
-    if (code !== '23505') throw new Error(insErr.message);
-  }
-  const insertedId = String((inserted as any)?.id || '').trim();
-  if (insertedId) return insertedId;
-
-  const { data: reread, error: rrErr } = await supabase
-    .from('swipe_file_idea_threads')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
-    .eq('chat_mode', chatMode)
-    .maybeSingle();
-  if (rrErr) throw new Error(rrErr.message);
-  const rereadId = String((reread as any)?.id || '').trim();
-  if (!rereadId) throw new Error('Failed to create idea thread');
-  return rereadId;
-}
-
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await getAuthedSwipeContext(request);
@@ -248,8 +206,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     }
     const content = String(s(body?.content) || '').trim();
     const chatMode = normalizeSwipeIdeasChatMode(body?.chatMode);
+    const sourceDigestTopicId = String(body?.sourceDigestTopicId || '').trim();
     if (!content) return NextResponse.json({ success: false, error: 'Missing content' } satisfies Resp, { status: 400 });
     if (content.length > 10_000) return NextResponse.json({ success: false, error: 'Message too long' } satisfies Resp, { status: 400 });
+    if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+      return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
+    }
 
     let swipeContext;
     try {
@@ -261,8 +223,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     }
 
     const { brandVoice, masterPrompt } = await loadSwipeIdeasMasterPrompt({ supabase, accountId, chatMode });
+    const digestTopicContext = sourceDigestTopicId
+      ? await loadSwipeIdeasDigestTopicContext({ supabase, accountId, sourceDigestTopicId })
+      : null;
 
-    const threadId = await ensureThread({ supabase, accountId, userId: user.id, swipeItemId, chatMode });
+    const threadId = await ensureSwipeIdeasThread({
+      supabase,
+      accountId,
+      userId: user.id,
+      swipeItemId,
+      chatMode,
+      sourceDigestTopicId: sourceDigestTopicId || null,
+    });
 
     // Persist user message.
     const { error: userMsgErr } = await supabase.from('swipe_file_idea_messages').insert({
@@ -292,7 +264,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       .reverse();
 
     const systemText = buildSwipeIdeasSystemText({ masterPrompt });
-    const contextText = buildSwipeIdeasContextText({ brandVoice, context: swipeContext });
+    const contextText = buildSwipeIdeasContextText({ brandVoice, context: swipeContext, digestTopicContext });
     const system = sanitizePrompt([systemText, contextText].filter(Boolean).join('\n\n'));
 
     const anthropic = await callAnthropicJson({ system, messages: history, temperature: 0.2, max_tokens: 2600 });

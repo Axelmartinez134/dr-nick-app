@@ -76,6 +76,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     const system = buildCarouselMapOpeningsSystem({
       source: graph.source,
       topic,
+      digestTopic: graph.digestTopic,
       brandVoice,
       masterPrompt: openingPairsPrompt.promptText,
       steeringText: effectiveSteeringText,

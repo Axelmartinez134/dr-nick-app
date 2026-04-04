@@ -2,7 +2,7 @@ import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext } from '../../../../_utils';
-import { normalizeSwipeIdeasChatMode, type SwipeIdeasChatMode } from '../_shared';
+import { ensureSwipeIdeasThread, normalizeSwipeIdeasChatMode } from '../_shared';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -17,54 +17,6 @@ function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(String(v || '').trim());
 }
 
-async function ensureThread(args: {
-  supabase: any;
-  accountId: string;
-  userId: string;
-  swipeItemId: string;
-  chatMode: SwipeIdeasChatMode;
-}): Promise<string> {
-  const { supabase, accountId, userId, swipeItemId, chatMode } = args;
-
-  // Load existing thread.
-  const { data: existing, error: exErr } = await supabase
-    .from('swipe_file_idea_threads')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
-    .eq('chat_mode', chatMode)
-    .maybeSingle();
-  if (exErr) throw new Error(exErr.message);
-  const existingId = String((existing as any)?.id || '').trim();
-  if (existingId) return existingId;
-
-  // Create thread (handle rare race via unique constraint).
-  const { data: inserted, error: insErr } = await supabase
-    .from('swipe_file_idea_threads')
-    .insert({ account_id: accountId, swipe_item_id: swipeItemId, chat_mode: chatMode, created_by_user_id: userId } as any)
-    .select('id')
-    .maybeSingle();
-  if (insErr) {
-    const code = (insErr as any)?.code;
-    if (code !== '23505') throw new Error(insErr.message);
-  }
-  const insertedId = String((inserted as any)?.id || '').trim();
-  if (insertedId) return insertedId;
-
-  // Race fallback: re-read.
-  const { data: reread, error: rrErr } = await supabase
-    .from('swipe_file_idea_threads')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('swipe_item_id', swipeItemId)
-    .eq('chat_mode', chatMode)
-    .maybeSingle();
-  if (rrErr) throw new Error(rrErr.message);
-  const rereadId = String((reread as any)?.id || '').trim();
-  if (!rereadId) throw new Error('Failed to create idea thread');
-  return rereadId;
-}
-
 export async function GET(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const auth = await getAuthedSwipeContext(request);
@@ -74,8 +26,12 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
     const { id } = await ctx.params;
     const swipeItemId = String(id || '').trim();
     const chatMode = normalizeSwipeIdeasChatMode(request.nextUrl.searchParams.get('chatMode'));
+    const sourceDigestTopicId = String(request.nextUrl.searchParams.get('sourceDigestTopicId') || '').trim();
     if (!swipeItemId || !isUuid(swipeItemId)) {
       return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
+    }
+    if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+      return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
     }
 
     // Ensure the swipe item exists (account-scoped).
@@ -88,7 +44,14 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
     if (itemErr) return NextResponse.json({ success: false, error: itemErr.message } satisfies Resp, { status: 500 });
     if (!itemRow?.id) return NextResponse.json({ success: false, error: 'Not found' } satisfies Resp, { status: 404 });
 
-    const threadId = await ensureThread({ supabase, accountId, userId: user.id, swipeItemId, chatMode });
+    const threadId = await ensureSwipeIdeasThread({
+      supabase,
+      accountId,
+      userId: user.id,
+      swipeItemId,
+      chatMode,
+      sourceDigestTopicId: sourceDigestTopicId || null,
+    });
 
     // Load recent messages (latest 50) and return oldest->newest.
     const { data: rows, error: msgErr } = await supabase

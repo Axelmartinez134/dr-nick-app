@@ -8,6 +8,7 @@ import {
   formatSwipeIdeasHistoryText,
   isUuid,
   loadSwipeIdeasContextOrThrow,
+  loadSwipeIdeasDigestTopicContext,
   loadSwipeIdeasMasterPrompt,
   normalizeSwipeIdeasChatMode,
 } from '../_shared';
@@ -34,22 +35,33 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ id: str
     const { id } = await ctx.params;
     const swipeItemId = String(id || '').trim();
     const chatMode = normalizeSwipeIdeasChatMode(request.nextUrl.searchParams.get('chatMode'));
+    const sourceDigestTopicId = String(request.nextUrl.searchParams.get('sourceDigestTopicId') || '').trim();
     if (!swipeItemId || !isUuid(swipeItemId)) {
       return NextResponse.json({ success: false, error: 'Invalid id' } satisfies Resp, { status: 400 });
+    }
+    if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+      return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
     }
 
     const swipeContext = await loadSwipeIdeasContextOrThrow({ supabase, accountId, swipeItemId });
     const { brandVoice, masterPrompt } = await loadSwipeIdeasMasterPrompt({ supabase, accountId, chatMode });
     const system = buildSwipeIdeasSystemText({ masterPrompt });
-    const contextText = buildSwipeIdeasContextText({ brandVoice, context: swipeContext });
+    const digestTopicContext = sourceDigestTopicId
+      ? await loadSwipeIdeasDigestTopicContext({ supabase, accountId, sourceDigestTopicId })
+      : null;
+    const contextText = buildSwipeIdeasContextText({ brandVoice, context: swipeContext, digestTopicContext });
 
-    const { data: threadRow, error: threadErr } = await supabase
+    const threadQuery = supabase
       .from('swipe_file_idea_threads')
       .select('id')
       .eq('account_id', accountId)
-      .eq('swipe_item_id', swipeItemId)
-      .eq('chat_mode', chatMode)
-      .maybeSingle();
+      .eq('chat_mode', chatMode);
+    if (sourceDigestTopicId) {
+      threadQuery.eq('source_digest_topic_id', sourceDigestTopicId);
+    } else {
+      threadQuery.eq('swipe_item_id', swipeItemId).is('source_digest_topic_id', null);
+    }
+    const { data: threadRow, error: threadErr } = await threadQuery.maybeSingle();
     if (threadErr) return NextResponse.json({ success: false, error: threadErr.message } satisfies Resp, { status: 500 });
 
     const threadId = String((threadRow as any)?.id || '').trim() || null;

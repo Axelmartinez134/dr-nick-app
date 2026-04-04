@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import { fetchYoutubeFeed, getAuthedYtContext, upsertCreatorVideos } from '../yt-rss/_utils';
 import { requireServiceClient } from '../_shared/reel_media';
 import { scrapeYoutubeViaApifyKaramelo } from '../swipe-file/_apify';
+import { canonicalizeYoutubeWatchUrl } from '../swipe-file/_utils';
 import { extractYoutubeTranscriptFromApify } from '../_shared/youtube-transcript';
 
 export const runtime = 'nodejs';
@@ -55,6 +56,216 @@ Respond with ONLY valid JSON (no markdown, no explanation):
 
 Extract 1-5 topics depending on the video's scope. A focused video might have 1 topic.
 A news roundup might have 5. Do not force topics where there aren't any.`;
+
+export const DIGEST_CAROUSEL_EXPANSION_INSTRUCTION = `You have been given structured guidance for what each slide should cover. This guidance is creative direction, not final copy. Your job is to write polished, concise carousel text that captures the essence of each point.
+
+Rules:
+- Each slide body should be a complete, standalone thought.
+- Aim for roughly 100-240 characters per slide body. Shorter is better if the point lands.
+- Do not copy the guidance verbatim. Rewrite it in natural, conversational language.
+- The topic title should inform slide 1's text (hook/opening).
+- The carousel angle (if provided) should inform the overall narrative arc.
+- Frame content for someone scrolling on their phone - every word must earn its place.`;
+
+export function buildDigestTopicSnapshot(args: {
+  title: string;
+  whatItIs: string;
+  whyItMatters: string;
+  carouselAngle: string | null;
+  sourceVideoSummary: string | null;
+  sourceCreator: string;
+  sourceVideoTitle: string;
+}): string {
+  const clean = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  return [
+    'TOPIC_TITLE:',
+    clean(args.title),
+    '',
+    'WHAT_IT_IS:',
+    clean(args.whatItIs),
+    '',
+    'WHY_IT_MATTERS:',
+    clean(args.whyItMatters),
+    '',
+    'CAROUSEL_ANGLE:',
+    clean(args.carouselAngle),
+    '',
+    'SOURCE_VIDEO_SUMMARY:',
+    clean(args.sourceVideoSummary),
+    '',
+    'SOURCE_CREATOR:',
+    clean(args.sourceCreator),
+    '',
+    'SOURCE_VIDEO_TITLE:',
+    clean(args.sourceVideoTitle),
+  ].join('\n');
+}
+
+function trimDigestText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-fA-F-]{36}$/.test(String(value || '').trim());
+}
+
+export type DailyDigestTopicSource = {
+  topicId: string;
+  digestVideoId: string;
+  title: string;
+  whatItIs: string;
+  whyItMatters: string;
+  carouselAngle: string | null;
+  youtubeVideoUrl: string;
+  videoTitle: string;
+  creatorName: string;
+  thumbnailUrl: string | null;
+  summary: string | null;
+  rawTranscript: string | null;
+};
+
+export async function loadDailyDigestTopicSourceOrThrow(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  topicId: string;
+}): Promise<DailyDigestTopicSource> {
+  const topicId = trimDigestText(args.topicId);
+  if (!topicId || !isUuid(topicId)) throw new Error('Invalid id');
+
+  const { data: topic, error: topicErr } = await args.supabase
+    .from('daily_digest_topics')
+    .select('id, digest_video_id, title, what_it_is, why_it_matters, carousel_angle')
+    .eq('id', topicId)
+    .eq('user_id', args.userId)
+    .eq('account_id', args.accountId)
+    .maybeSingle();
+  if (topicErr) throw new Error(topicErr.message);
+  if (!topic?.id) throw new Error('Topic not found');
+
+  const digestVideoId = trimDigestText((topic as any)?.digest_video_id);
+  if (!digestVideoId) throw new Error('Topic is missing its source video');
+
+  const { data: video, error: videoErr } = await args.supabase
+    .from('daily_digest_videos')
+    .select('id, youtube_video_url, video_title, creator_name, thumbnail_url, summary, raw_transcript')
+    .eq('id', digestVideoId)
+    .eq('user_id', args.userId)
+    .eq('account_id', args.accountId)
+    .maybeSingle();
+  if (videoErr) throw new Error(videoErr.message);
+  if (!video?.id) throw new Error('Source video not found');
+
+  return {
+    topicId,
+    digestVideoId,
+    title: trimDigestText((topic as any)?.title),
+    whatItIs: trimDigestText((topic as any)?.what_it_is),
+    whyItMatters: trimDigestText((topic as any)?.why_it_matters),
+    carouselAngle: trimDigestText((topic as any)?.carousel_angle) || null,
+    youtubeVideoUrl: trimDigestText((video as any)?.youtube_video_url),
+    videoTitle: trimDigestText((video as any)?.video_title),
+    creatorName: trimDigestText((video as any)?.creator_name),
+    thumbnailUrl: trimDigestText((video as any)?.thumbnail_url) || null,
+    summary: trimDigestText((video as any)?.summary) || null,
+    rawTranscript: trimDigestText((video as any)?.raw_transcript) || null,
+  };
+}
+
+export async function ensureDigestSwipeItemForTopic(args: {
+  supabase: any;
+  accountId: string;
+  userId: string;
+  digestVideo: {
+    youtubeVideoUrl: string;
+    videoTitle: string;
+    creatorName: string;
+    thumbnailUrl: string | null;
+    summary: string | null;
+    rawTranscript: string | null;
+  };
+}): Promise<{ swipeItemId: string; canonicalUrl: string; created: boolean }> {
+  const canonicalUrl = canonicalizeYoutubeWatchUrl(trimDigestText(args.digestVideo.youtubeVideoUrl));
+  if (!canonicalUrl) throw new Error('Invalid YouTube URL for this video');
+
+  const { data: existingSwipeItem, error: existingSwipeItemErr } = await args.supabase
+    .from('swipe_file_items')
+    .select('id, transcript, caption, title, thumb_url, author_handle')
+    .eq('account_id', args.accountId)
+    .eq('url', canonicalUrl)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existingSwipeItemErr) throw new Error(existingSwipeItemErr.message);
+
+  const existingTranscript = trimDigestText((existingSwipeItem as any)?.transcript);
+  const digestTranscript = trimDigestText(args.digestVideo.rawTranscript);
+  if (!existingTranscript && !digestTranscript) {
+    throw new Error('No transcript available for this video. Cannot continue.');
+  }
+
+  let swipeItemId = trimDigestText((existingSwipeItem as any)?.id);
+  if (swipeItemId) {
+    const patch: Record<string, string> = {};
+    if (!existingTranscript && digestTranscript) patch.transcript = digestTranscript;
+    if (!trimDigestText((existingSwipeItem as any)?.caption) && trimDigestText(args.digestVideo.summary)) {
+      patch.caption = trimDigestText(args.digestVideo.summary);
+    }
+    if (!trimDigestText((existingSwipeItem as any)?.title) && trimDigestText(args.digestVideo.videoTitle)) {
+      patch.title = trimDigestText(args.digestVideo.videoTitle);
+    }
+    if (!trimDigestText((existingSwipeItem as any)?.thumb_url) && trimDigestText(args.digestVideo.thumbnailUrl)) {
+      patch.thumb_url = trimDigestText(args.digestVideo.thumbnailUrl);
+    }
+    if (!trimDigestText((existingSwipeItem as any)?.author_handle) && trimDigestText(args.digestVideo.creatorName)) {
+      patch.author_handle = trimDigestText(args.digestVideo.creatorName);
+    }
+    if (Object.keys(patch).length > 0) {
+      const { error: updateSwipeErr } = await args.supabase
+        .from('swipe_file_items')
+        .update(patch as any)
+        .eq('id', swipeItemId)
+        .eq('account_id', args.accountId);
+      if (updateSwipeErr) throw new Error(updateSwipeErr.message);
+    }
+    return { swipeItemId, canonicalUrl, created: false };
+  }
+
+  const { data: categoryRow, error: categoryErr } = await args.supabase
+    .from('swipe_file_categories')
+    .select('id')
+    .eq('account_id', args.accountId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (categoryErr) throw new Error(categoryErr.message);
+
+  const { data: insertedSwipeItem, error: insertSwipeErr } = await args.supabase
+    .from('swipe_file_items')
+    .insert({
+      account_id: args.accountId,
+      created_by_user_id: args.userId,
+      url: canonicalUrl,
+      platform: 'youtube',
+      status: 'new',
+      category_id: trimDigestText((categoryRow as any)?.id) || null,
+      title: trimDigestText(args.digestVideo.videoTitle) || null,
+      transcript: digestTranscript,
+      caption: trimDigestText(args.digestVideo.summary) || null,
+      enrich_status: 'ok',
+      thumb_url: trimDigestText(args.digestVideo.thumbnailUrl) || null,
+      author_handle: trimDigestText(args.digestVideo.creatorName) || null,
+    } as any)
+    .select('id')
+    .single();
+  if (insertSwipeErr || !insertedSwipeItem?.id) {
+    throw new Error(insertSwipeErr?.message || 'Failed to create swipe item');
+  }
+
+  swipeItemId = trimDigestText(insertedSwipeItem.id);
+  if (!swipeItemId) throw new Error('Failed to create swipe item');
+  return { swipeItemId, canonicalUrl, created: true };
+}
 
 export function sanitizePrompt(input: string): string {
   return String(input || '')

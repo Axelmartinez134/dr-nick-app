@@ -3,6 +3,11 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSwipeContext, s } from '../../../../_utils';
 import { loadEffectiveTemplateTypeSettings } from '@/app/api/editor/projects/_effective';
+import {
+  buildDigestTopicSnapshot,
+  DIGEST_CAROUSEL_EXPANSION_INSTRUCTION,
+  loadDailyDigestTopicSourceOrThrow,
+} from '@/app/api/daily-digest/_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -18,6 +23,7 @@ type Body = {
   savedPromptId: string;
   ideaId?: string | null;
   angleNotesSnapshot?: string | null;
+  sourceDigestTopicId?: string | null;
 };
 
 function isUuid(v: string): boolean {
@@ -62,6 +68,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           : null;
     const savedPromptId = s((body as any)?.savedPromptId);
     const ideaId = s((body as any)?.ideaId);
+    const sourceDigestTopicId = s((body as any)?.sourceDigestTopicId);
     const angleNotesSnapshotRaw = (body as any)?.angleNotesSnapshot;
     const angleNotesSnapshot =
       typeof angleNotesSnapshotRaw === 'string' ? String(angleNotesSnapshotRaw).trim() : angleNotesSnapshotRaw == null ? null : String(angleNotesSnapshotRaw).trim();
@@ -71,6 +78,12 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       return NextResponse.json({ success: false, error: 'savedPromptId is required' } satisfies Resp, { status: 400 });
     }
     if (ideaId && !isUuid(ideaId)) return NextResponse.json({ success: false, error: 'Invalid ideaId' } satisfies Resp, { status: 400 });
+    if (sourceDigestTopicId && !isUuid(sourceDigestTopicId)) {
+      return NextResponse.json({ success: false, error: 'Invalid sourceDigestTopicId' } satisfies Resp, { status: 400 });
+    }
+    if (sourceDigestTopicId && !ideaId) {
+      return NextResponse.json({ success: false, error: 'ideaId is required for digest-origin flow' } satisfies Resp, { status: 400 });
+    }
 
     const { data: item, error: itemErr } = await supabase
       .from('swipe_file_items')
@@ -86,6 +99,25 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     const captionRaw = String((item as any)?.caption || '');
     const transcriptRaw = String((item as any)?.transcript || '');
     const noteRaw = String((item as any)?.note || '');
+
+    let digestTopicSnapshot = '';
+    if (sourceDigestTopicId) {
+      const digestSource = await loadDailyDigestTopicSourceOrThrow({
+        supabase,
+        accountId,
+        userId: user.id,
+        topicId: sourceDigestTopicId,
+      });
+      digestTopicSnapshot = buildDigestTopicSnapshot({
+        title: digestSource.title,
+        whatItIs: digestSource.whatItIs,
+        whyItMatters: digestSource.whyItMatters,
+        carouselAngle: digestSource.carouselAngle,
+        sourceVideoSummary: digestSource.summary,
+        sourceCreator: digestSource.creatorName,
+        sourceVideoTitle: digestSource.videoTitle,
+      });
+    }
 
     const transcriptTrim = transcriptRaw.trim();
     if (!transcriptTrim) {
@@ -111,13 +143,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     // Optional: load idea snapshot (matches create-project behavior).
     let swipeIdeaSnapshot = '';
     if (ideaId) {
-      const { data: ideaRow, error: ideaErr } = await supabase
+      const ideaQuery = supabase
         .from('swipe_file_ideas')
         .select('id, title, slide_outline, angle_text')
         .eq('account_id', accountId)
         .eq('swipe_item_id', swipeItemId)
-        .eq('id', ideaId)
-        .maybeSingle();
+        .eq('id', ideaId);
+      if (sourceDigestTopicId) {
+        ideaQuery.eq('source_digest_topic_id', sourceDigestTopicId);
+      } else {
+        ideaQuery.is('source_digest_topic_id', null);
+      }
+      const { data: ideaRow, error: ideaErr } = await ideaQuery.maybeSingle();
       if (ideaErr) return NextResponse.json({ success: false, error: ideaErr.message } satisfies Resp, { status: 500 });
       const title = String((ideaRow as any)?.title || '').trim();
       const angleText = String((ideaRow as any)?.angle_text || '').trim();
@@ -141,25 +178,45 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     // Effective template settings: best practices.
     const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
     const bestPracticesRaw = String((effective as any)?.bestPractices || '').trim();
+    const { data: brandRow, error: brandErr } = await supabase
+      .from('editor_account_settings')
+      .select('brand_alignment_prompt_override')
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (brandErr) return NextResponse.json({ success: false, error: brandErr.message } satisfies Resp, { status: 500 });
+    const brandVoiceRaw = String((brandRow as any)?.brand_alignment_prompt_override ?? '');
 
     // Compose primary instructions the same way Generate Copy does today for swipe-origin projects.
     const noteToUse = (typeof angleNotesSnapshot === 'string' ? angleNotesSnapshot : null) ?? noteRaw;
     const swipeAngleSnapshot = String(noteToUse || '').trim();
 
-    const composedPromptRaw = swipeIdeaSnapshot
+    const composedPromptRaw = digestTopicSnapshot
       ? [
+          `BRAND_VOICE:\n${brandVoiceRaw}`,
+          ``,
           `STYLE_PROMPT:\n${stylePromptRaw}`,
           ``,
-          `SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`,
+          `DIGEST_TOPIC_CONTEXT:\n${digestTopicSnapshot}`,
+          swipeIdeaSnapshot ? `\nSWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}` : ``,
+          ``,
+          `SOURCE_EXPANSION_INSTRUCTION:\n${DIGEST_CAROUSEL_EXPANSION_INSTRUCTION}`,
         ]
           .filter(Boolean)
           .join('\n')
-      : [
-          `STYLE_PROMPT:\n${stylePromptRaw}`,
-          !isFreestyle && swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
-        ]
-          .filter(Boolean)
-          .join('\n');
+      : swipeIdeaSnapshot
+        ? [
+            `STYLE_PROMPT:\n${stylePromptRaw}`,
+            ``,
+            `SWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : [
+            `STYLE_PROMPT:\n${stylePromptRaw}`,
+            !isFreestyle && swipeAngleSnapshot ? `\nSWIPE_ANGLE_NOTES:\n${swipeAngleSnapshot}` : ``,
+          ]
+            .filter(Boolean)
+            .join('\n');
 
     const prompt = sanitizePrompt(composedPromptRaw);
     const best = sanitizePrompt(bestPracticesRaw);
@@ -178,7 +235,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     ];
 
     const isSwipeSelectedIdea = String(composedPromptRaw || '').includes('SWIPE_SELECTED_IDEA:');
-    const primaryHeader = isSwipeSelectedIdea
+    const primaryHeader = digestTopicSnapshot
+      ? 'PRIMARY INSTRUCTIONS: Create the carousel from the selected Swipe Idea while staying grounded in the digest topic context.'
+      : isSwipeSelectedIdea
       ? 'PRIMARY INSTRUCTIONS: Create the carousel and enhance it from the generated Swipe Selected Idea.'
       : 'PRIMARY INSTRUCTIONS (user-provided "Poppy Prompt"):';
     const primary = `${primaryHeader}\n${prompt}`;

@@ -2,6 +2,7 @@ import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthedSupabase, resolveActiveAccountId } from '../../../../editor/_utils';
 import { loadEffectiveTemplateTypeSettings } from '../../_effective';
+import { DIGEST_CAROUSEL_EXPANSION_INSTRUCTION } from '../../../../daily-digest/_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -544,7 +545,7 @@ export async function POST(request: NextRequest) {
   let { data: project, error: projectErr } = await supabase
     .from('carousel_projects')
     .select(
-      'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot, source_carousel_map_id, source_carousel_map_expansion_id, source_carousel_map_topic_snapshot, source_carousel_map_selected_slide1_snapshot, source_carousel_map_selected_slide2_snapshot, source_carousel_map_expansion_snapshot'
+      'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot, source_carousel_map_id, source_carousel_map_expansion_id, source_carousel_map_topic_snapshot, source_carousel_map_selected_slide1_snapshot, source_carousel_map_selected_slide2_snapshot, source_carousel_map_expansion_snapshot, source_digest_topic_snapshot'
     )
     .eq('id', body.projectId)
     .eq('account_id', accountId)
@@ -555,7 +556,7 @@ export async function POST(request: NextRequest) {
     const legacy = await supabase
       .from('carousel_projects')
       .select(
-        'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot, source_carousel_map_id, source_carousel_map_expansion_id, source_carousel_map_topic_snapshot, source_carousel_map_selected_slide1_snapshot, source_carousel_map_selected_slide2_snapshot, source_carousel_map_expansion_snapshot'
+        'id, owner_user_id, template_type_id, prompt_snapshot, account_id, source_swipe_item_id, source_swipe_angle_snapshot, source_swipe_idea_id, source_swipe_idea_snapshot, source_carousel_map_id, source_carousel_map_expansion_id, source_carousel_map_topic_snapshot, source_carousel_map_selected_slide1_snapshot, source_carousel_map_selected_slide2_snapshot, source_carousel_map_expansion_snapshot, source_digest_topic_snapshot'
       )
       .eq('id', body.projectId)
       .eq('owner_user_id', user.id)
@@ -582,17 +583,24 @@ export async function POST(request: NextRequest) {
   const carouselMapSelectedSlide1Snapshot = String((project as any)?.source_carousel_map_selected_slide1_snapshot || '').trim();
   const carouselMapSelectedSlide2Snapshot = String((project as any)?.source_carousel_map_selected_slide2_snapshot || '').trim();
   const carouselMapExpansionSnapshot = String((project as any)?.source_carousel_map_expansion_snapshot || '').trim();
+  const digestTopicSnapshot = String((project as any)?.source_digest_topic_snapshot || '').trim();
+  const isDigestOrigin = !!swipeItemId && !!digestTopicSnapshot;
 
   // Phase 6: Generate Copy uses the user's active saved Poppy prompt (per-account, per template type).
   // Fallback to account-level effective prompt only if the saved prompt is missing/empty.
-  const loadedPrompt = await loadUserActivePoppyPrompt({ supabase, accountId, userId: user.id, templateTypeId });
-  const promptRaw = loadedPrompt.promptRaw;
-  const prompt = loadedPrompt.prompt;
-  if (!prompt) {
-    return NextResponse.json(
-      { success: false, error: 'Template type prompt is empty' },
-      { status: 400 }
-    );
+  let loadedPrompt: Awaited<ReturnType<typeof loadUserActivePoppyPrompt>> | null = null;
+  let promptRaw = '';
+  let prompt = '';
+  if (!isDigestOrigin) {
+    loadedPrompt = await loadUserActivePoppyPrompt({ supabase, accountId, userId: user.id, templateTypeId });
+    promptRaw = loadedPrompt.promptRaw;
+    prompt = loadedPrompt.prompt;
+    if (!prompt) {
+      return NextResponse.json(
+        { success: false, error: 'Template type prompt is empty' },
+        { status: 400 }
+      );
+    }
   }
 
   // Brand voice (per-account): reuse the existing Brand Alignment prompt field as the canonical voice doc.
@@ -613,7 +621,31 @@ export async function POST(request: NextRequest) {
   // IMPORTANT: Keep the existing sanitizePrompt behavior unchanged (even if it flattens newlines).
   const stylePromptRaw = swipeItemId ? String((project as any)?.prompt_snapshot || '') : promptRaw;
   const composedPromptRaw = swipeItemId
-    ? carouselMapExpansionId
+    ? isDigestOrigin
+      ? stylePromptRaw
+        ? [
+            `BRAND_VOICE:\n${brandVoiceRaw}`,
+            ``,
+            `STYLE_PROMPT:\n${stylePromptRaw}`,
+            ``,
+            `DIGEST_TOPIC_CONTEXT:\n${digestTopicSnapshot}`,
+            swipeIdeaSnapshot ? `\nSWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}` : ``,
+            ``,
+            `SOURCE_EXPANSION_INSTRUCTION:\n${DIGEST_CAROUSEL_EXPANSION_INSTRUCTION}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : [
+            `BRAND_VOICE:\n${brandVoiceRaw}`,
+            ``,
+            `DIGEST_TOPIC_CONTEXT:\n${digestTopicSnapshot}`,
+            swipeIdeaSnapshot ? `\nSWIPE_SELECTED_IDEA:\n${swipeIdeaSnapshot}` : ``,
+            ``,
+            `SOURCE_EXPANSION_INSTRUCTION:\n${DIGEST_CAROUSEL_EXPANSION_INSTRUCTION}`,
+          ]
+            .filter(Boolean)
+            .join('\n')
+      : carouselMapExpansionId
       ? [
           `STYLE_PROMPT:\n${stylePromptRaw}`,
           ``,
@@ -744,8 +776,8 @@ export async function POST(request: NextRequest) {
       ? { prompt: composedPrompt, model: poppyRoutingMeta.model }
       : { prompt: composedPrompt };
     poppyPromptDebug = {
-      promptSource: loadedPrompt.source,
-      savedPromptId: loadedPrompt.savedPromptId,
+      promptSource: loadedPrompt?.source || null,
+      savedPromptId: loadedPrompt?.savedPromptId || null,
       promptRaw: JSON.stringify(composedPromptRaw),
       promptSanitized: composedPrompt,
       requestBody: poppyRequestBody,
