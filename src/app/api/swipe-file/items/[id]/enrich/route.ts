@@ -10,6 +10,7 @@ import {
   uploadMp4ToReelsBucket,
   whisperTranscribeMp4Bytes,
 } from '@/app/api/_shared/reel_media';
+import { extractYoutubeTranscriptFromApify } from '@/app/api/_shared/youtube-transcript';
 import {
   canonicalizeInstagramUrl,
   canonicalizeYoutubeWatchUrl,
@@ -26,47 +27,6 @@ type Resp = { success: true } | { success: false; error: string };
 
 function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(v);
-}
-
-function decodeHtmlEntities(input: string): string {
-  const raw = String(input || '');
-  if (!raw) return '';
-  return raw
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&#(\d+);/g, (_m, num) => {
-      const code = Number.parseInt(String(num), 10);
-      if (!Number.isFinite(code)) return _m;
-      try {
-        return String.fromCodePoint(code);
-      } catch {
-        return _m;
-      }
-    })
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => {
-      const code = Number.parseInt(String(hex), 16);
-      if (!Number.isFinite(code)) return _m;
-      try {
-        return String.fromCodePoint(code);
-      } catch {
-        return _m;
-      }
-    });
-}
-
-function cleanTranscriptText(input: string): string {
-  let t = decodeHtmlEntities(input);
-  // Strip simple HTML tags (e.g. <i>...</i>).
-  t = t.replace(/<[^>]*>/g, '');
-  // Remove common “quote” markers that appear in some transcripts.
-  t = t.replace(/\s*>>\s*/g, ' ');
-  // Normalize whitespace.
-  t = t.replace(/\s+/g, ' ').trim();
-  return t;
 }
 
 function log(...args: any[]) {
@@ -137,26 +97,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       log('apify begin (youtube karamelo)', { outputFormat: 'captions' });
 
       const raw = await scrapeYoutubeViaApifyKaramelo({ videoUrl: url });
-      const title = s((raw as any)?.title);
-      const channelName = s((raw as any)?.channelName);
-      const thumbnailUrl = s((raw as any)?.thumbnailUrl);
-      const description = s((raw as any)?.description);
-
-      const captionsAny = (raw as any)?.captions ?? null;
-      let transcriptRaw: string | null = null;
-
-      if (Array.isArray(captionsAny)) {
-        // Most common: array of strings.
-        const strings = (captionsAny as any[])
-          .map((x) => (typeof x === 'string' ? x : typeof (x as any)?.text === 'string' ? String((x as any).text) : ''))
-          .map((x) => String(x || '').trim())
-          .filter(Boolean);
-        transcriptRaw = strings.length ? strings.join(' ') : null;
-      } else if (typeof captionsAny === 'string') {
-        transcriptRaw = String(captionsAny || '').trim() || null;
-      }
-
-      const transcript = transcriptRaw ? cleanTranscriptText(transcriptRaw) : null;
+      const { title, channelName, thumbnailUrl, description, captionsSource, transcript } = extractYoutubeTranscriptFromApify(raw);
       if (!transcript) {
         throw new Error('English transcript not available for this YouTube video.');
       }
@@ -174,7 +115,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
           title,
           thumb_url: thumbnailUrl,
           raw_json: raw ?? null,
-          source_captions_json: captionsAny ?? null,
+          source_captions_json: captionsSource ?? null,
           // Ensure YouTube never looks like it used the IG reel media pipeline.
           source_post_shortcode: null,
           source_post_video_storage_bucket: null,

@@ -1088,6 +1088,41 @@ Superadmin-only content library for saving links, enriching Instagram/YouTube co
   - `Enrich` is the bridge step: it creates/reuses an account-scoped Swipe File item, then runs the existing Swipe enrich route on that mirrored item
   - After that, Generate ideas / Create project + rewrite / Open existing project all use the mirrored Swipe item
 
+### Daily Digest tab (superadmin-only, inside Swipe File modal)
+- Canonical spec: `docs/DAILY_DIGEST_SPEC.md`
+- `src/features/editor/components/SwipeFileModal.tsx`
+  - Third tab: **Daily Digest** for superadmins only
+  - Tab state extended from `"swipe" | "yt_rss"` to `"swipe" | "yt_rss" | "daily_digest"`
+- `src/features/editor/components/DailyDigestPanel.tsx`
+  - Owns the Daily Digest UI: creator toggle management, run status banner, digest feed, topic detail panel, prompt editor
+  - Self-contained local state (no editor store changes needed)
+- `src/app/api/_shared/youtube-transcript.ts`
+  - Shared YouTube Apify transcript normalization helper used by both Daily Digest and Swipe File YouTube enrich
+- `src/app/api/daily-digest/_utils.ts`
+  - Shared helpers: auth context, prompt loading, feed refresh reuse, transcript scrape + Claude distillation, run orchestration
+- API surface:
+  - `POST /api/daily-digest/cron` (Vercel Cron entry point; `CRON_SECRET` auth)
+  - `POST /api/daily-digest/manual-run` (same pipeline, user auth, synchronous response)
+  - `GET /api/daily-digest/runs`
+  - `GET/POST /api/daily-digest/creators`
+  - `GET /api/daily-digest/videos`
+  - `PATCH /api/daily-digest/topics/[id]`
+  - `GET/POST/DELETE /api/daily-digest/prompt`
+- Data model:
+  - `public.daily_digest_creator_settings`: per-user-per-account creator toggle for auto-digest pipeline
+  - `public.daily_digest_runs`: run log with `running | completed | completed_with_errors | failed`, metrics, prompt snapshot, and run-level errors
+  - `public.daily_digest_videos`: processed videos with denormalized source snapshot, cached transcript, AI summary, and unique viewpoints
+  - `public.daily_digest_topics`: extracted topic cards (title, what_it_is, why_it_matters, carousel_angle) with personal triage state
+  - `public.daily_digest_prompt_overrides`: per-user-per-account editable distillation prompt
+- Cron behavior:
+  - Runs at 6am and 12pm UTC via Vercel Cron (`vercel.json`)
+  - Uses service role client (no user session)
+  - Reuses the shared user-scoped `yt_creators` / `yt_videos` cache and updates `last_refreshed_at` / `last_refresh_error`
+  - Scrapes transcripts via Apify Karamelo (direct server call, no Swipe File mirroring)
+  - Distills transcripts via Claude into structured JSON (summary + topics + unique viewpoints)
+  - Retry logic: 1 retry for failed videos across runs; terminal failures use `retry_count = 99`
+  - Videos API hides rows tied to `running` runs so the panel only shows completed visibility states
+
 ### Manual QA (Swipe File add-item modal)
 - Open `/editor` as superadmin and click **Swipe File**
 - On desktop, confirm a new **`+`** button appears immediately to the right of **Copy**

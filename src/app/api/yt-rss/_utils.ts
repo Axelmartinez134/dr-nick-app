@@ -122,6 +122,19 @@ function pickText(value: YtInitialText | null | undefined): string {
   return runs.map((run) => s(run?.text)).filter(Boolean).join('');
 }
 
+function isGenericYoutubeFeedName(value: string): boolean {
+  const raw = String(value || '').trim().toLowerCase();
+  return !raw || raw === 'videos' || raw === 'youtube creator' || raw === 'uploads';
+}
+
+function pickXmlText(value: any): string {
+  if (typeof value === 'string') return s(value);
+  if (typeof value?.['#text'] === 'string') return s(value['#text']);
+  if (typeof value?.name === 'string') return s(value.name);
+  if (typeof value?.title === 'string') return s(value.title);
+  return '';
+}
+
 function parseRelativePublishedAt(text: string): string {
   const raw = String(text || '').trim().toLowerCase();
   if (!raw) return new Date().toISOString();
@@ -214,6 +227,15 @@ async function fetchYoutubeVideosPageFallback(channelId: string): Promise<{ chan
   }
   if (videos.length === 0) throw new Error('Videos page fallback found no videos');
   return { channelName, videos };
+}
+
+export async function resolveYoutubeChannelDisplayName(channelId: string): Promise<string> {
+  const raw = String(channelId || '').trim();
+  if (!raw) throw new Error('channelId is required');
+  const { channelName } = await fetchYoutubeVideosPageFallback(raw);
+  const next = s(channelName);
+  if (!next || isGenericYoutubeFeedName(next)) throw new Error('Could not resolve channel display name');
+  return next;
 }
 
 export function validateYoutubeFeedUrl(input: string):
@@ -398,7 +420,6 @@ export async function fetchYoutubeFeed(feedUrl: string): Promise<{ channelName: 
   if (!xml.trim()) throw new Error(lastErrorMessage || 'Feed returned empty XML');
 
   const feed = await parser.parseString(xml);
-  const channelName = s((feed as any)?.title) || s((feed as any)?.author) || 'YouTube Creator';
 
   const xmlParser = new XMLParser({
     ignoreAttributes: false,
@@ -407,7 +428,22 @@ export async function fetchYoutubeFeed(feedUrl: string): Promise<{ channelName: 
     trimValues: true,
   });
   const rawParsed = xmlParser.parse(xml);
-  const entries = asArray((rawParsed as any)?.feed?.entry);
+  const rawFeed = (rawParsed as any)?.feed ?? null;
+  const rawAuthor = rawFeed?.author ?? null;
+  const xmlAuthorName = Array.isArray(rawAuthor)
+    ? rawAuthor.map((entry) => pickXmlText(entry?.name ?? entry)).filter(Boolean)[0] || ''
+    : pickXmlText(rawAuthor?.name ?? rawAuthor);
+  const xmlTitle = pickXmlText(rawFeed?.title);
+  const parsedFeedTitle = s((feed as any)?.title);
+  const parsedFeedAuthor = s((feed as any)?.author);
+  const channelName =
+    [xmlAuthorName, parsedFeedAuthor, xmlTitle, parsedFeedTitle].find((value) => !isGenericYoutubeFeedName(String(value || ''))) ||
+    xmlAuthorName ||
+    parsedFeedAuthor ||
+    xmlTitle ||
+    parsedFeedTitle ||
+    'YouTube Creator';
+  const entries = asArray(rawFeed?.entry);
   const statsByVideoId = new Map<string, { viewCount: number | null; likeCount: number | null; thumbnailUrl: string | null }>();
 
   for (const entry of entries) {

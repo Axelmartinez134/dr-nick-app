@@ -8,6 +8,7 @@ import { SwipeIdeasChatModal } from "@/features/editor/components/SwipeIdeasChat
 import { SwipeIdeasPickerModal } from "@/features/editor/components/SwipeIdeasPickerModal";
 import { SwipeFileCaptureForm, type SwipeFileCaptureItem } from "@/features/editor/components/SwipeFileCaptureForm";
 import { YoutubeCreatorFeedPanel } from "@/features/editor/components/YoutubeCreatorFeedPanel";
+import { DailyDigestPanel } from "@/features/editor/components/DailyDigestPanel";
 
 type Category = { id: string; name: string };
 type SwipeItem = SwipeFileCaptureItem;
@@ -130,10 +131,10 @@ export function SwipeFileModal() {
   const [captureModalOpen, setCaptureModalOpen] = useState(false);
   const [freestyleModalOpen, setFreestyleModalOpen] = useState(false);
   const [mobileSheet, setMobileSheet] = useState<null | { kind: "actions" | "repurpose" | "overflow"; itemId?: string }>(null);
-  const [activeTab, setActiveTab] = useState<"swipe" | "yt_rss">(() => {
+  const [activeTab, setActiveTab] = useState<"swipe" | "yt_rss" | "daily_digest">(() => {
     try {
       const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("swipeFile.activeTab") || "").trim() : "";
-      return raw === "yt_rss" ? "yt_rss" : "swipe";
+      return raw === "yt_rss" || raw === "daily_digest" ? raw : "swipe";
     } catch {
       return "swipe";
     }
@@ -188,7 +189,7 @@ export function SwipeFileModal() {
   }, [open]);
 
   useEffect(() => {
-    if (activeTab === "yt_rss" && !isSuperadmin) setActiveTab("swipe");
+    if ((activeTab === "yt_rss" || activeTab === "daily_digest") && !isSuperadmin) setActiveTab("swipe");
   }, [activeTab, isSuperadmin]);
 
   useEffect(() => {
@@ -608,11 +609,25 @@ export function SwipeFileModal() {
                   YouTube Creator Feed
                 </button>
               ) : null}
+              {isSuperadmin ? (
+                <button
+                  type="button"
+                  className={[
+                    "h-8 rounded-full border px-3 text-sm font-semibold shadow-sm transition-colors",
+                    activeTab === "daily_digest" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                  ].join(" ")}
+                  onClick={() => setActiveTab("daily_digest")}
+                >
+                  Daily Digest
+                </button>
+              ) : null}
             </div>
             <div className="mt-0.5 text-xs text-slate-500">
               {activeTab === "swipe"
                 ? "Save links on mobile, enrich on desktop, repurpose into carousels."
-                : "Track creator RSS feeds, cache videos, and route them into the same repurpose flow."}
+                : activeTab === "yt_rss"
+                  ? "Track creator RSS feeds, cache videos, and route them into the same repurpose flow."
+                  : "Auto-processed insights from tracked creators, grouped into a Daily Digest feed."}
             </div>
             {!isMobile && activeTab === "swipe" ? (
               <>
@@ -1407,8 +1422,10 @@ export function SwipeFileModal() {
           </aside>
         </div>
         </>
-        ) : (
+        ) : activeTab === "yt_rss" ? (
           <YoutubeCreatorFeedPanel />
+        ) : (
+          <DailyDigestPanel />
         )}
       </div>
 

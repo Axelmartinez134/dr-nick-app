@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchYoutubeFeed, getAuthedYtContext, resolveYoutubeFeedInput, upsertCreatorVideos } from '../_utils';
+import { fetchYoutubeFeed, getAuthedYtContext, resolveYoutubeChannelDisplayName, resolveYoutubeFeedInput, upsertCreatorVideos } from '../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -34,6 +34,36 @@ async function listCreators(supabase: any, userId: string): Promise<CreatorOut[]
   if (creatorsErr) throw new Error(creatorsErr.message);
   if (videosErr) throw new Error(videosErr.message);
 
+  const rows = Array.isArray(creatorRows) ? creatorRows : [];
+  const suspicious = rows.filter((row: any) => {
+    const channelName = String(row?.channel_name || '').trim().toLowerCase();
+    return channelName === 'videos' || channelName === 'youtube creator' || !channelName;
+  });
+
+  if (suspicious.length > 0) {
+    const fixes = await Promise.allSettled(
+      suspicious.map(async (row: any) => {
+        const creatorId = String(row?.id || '').trim();
+        const channelId = String(row?.channel_id || '').trim();
+        if (!creatorId || !channelId) return null;
+        const nextName = await resolveYoutubeChannelDisplayName(channelId);
+        const { error: updateErr } = await supabase
+          .from('yt_creators')
+          .update({ channel_name: nextName } as any)
+          .eq('id', creatorId)
+          .eq('user_id', userId);
+        if (updateErr) throw new Error(updateErr.message);
+        return { creatorId, nextName };
+      })
+    );
+
+    for (const result of fixes) {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      const hit = rows.find((row: any) => String(row?.id || '') === result.value?.creatorId);
+      if (hit) hit.channel_name = result.value.nextName;
+    }
+  }
+
   const counts = new Map<string, number>();
   for (const row of Array.isArray(videoRows) ? videoRows : []) {
     const creatorId = String((row as any)?.creator_id || '').trim();
@@ -41,7 +71,7 @@ async function listCreators(supabase: any, userId: string): Promise<CreatorOut[]
     counts.set(creatorId, (counts.get(creatorId) || 0) + 1);
   }
 
-  return (Array.isArray(creatorRows) ? creatorRows : []).map((row: any) => ({
+  return rows.map((row: any) => ({
     id: String(row.id || ''),
     channelId: String(row.channel_id || ''),
     channelName: String(row.channel_name || ''),
