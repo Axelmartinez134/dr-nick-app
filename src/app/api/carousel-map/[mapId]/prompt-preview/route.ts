@@ -31,10 +31,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     } catch {
       body = {};
     }
-    const templateTypeId = body?.templateTypeId === 'regular' ? 'regular' : body?.templateTypeId === 'enhanced' ? 'enhanced' : null;
+    const templateTypeId =
+      body?.templateTypeId === 'regular'
+        ? 'regular'
+        : body?.templateTypeId === 'enhanced'
+          ? 'enhanced'
+          : body?.templateTypeId === 'html'
+            ? 'html'
+            : null;
     const savedPromptId = String(body?.savedPromptId || '').trim();
     const expansionId = String(body?.expansionId || '').trim();
     if (!templateTypeId) return NextResponse.json({ success: false, error: 'templateTypeId is required' } satisfies Resp, { status: 400 });
+    const storedPromptTemplateTypeId = templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
     if (!savedPromptId || !isUuid(savedPromptId)) return NextResponse.json({ success: false, error: 'savedPromptId is required' } satisfies Resp, { status: 400 });
     if (!expansionId || !isUuid(expansionId)) return NextResponse.json({ success: false, error: 'expansionId is required' } satisfies Resp, { status: 400 });
 
@@ -51,7 +59,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
       .eq('id', savedPromptId)
       .eq('account_id', accountId)
       .eq('user_id', user.id)
-      .eq('template_type_id', templateTypeId)
+      .eq('template_type_id', storedPromptTemplateTypeId)
       .maybeSingle();
     if (promptErr) throw new Error(promptErr.message);
     const stylePromptRaw = String((promptRow as any)?.prompt || '').trim();

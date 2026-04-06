@@ -324,6 +324,7 @@ Allow users to create html projects from shared entry points, but not yet comple
 - `src/app/api/carousel-map/[mapId]/create-project/route.ts`
 - `src/app/api/carousel-map/[mapId]/prompt-preview/route.ts`
 - `src/app/api/editor/user-settings/poppy-prompts/list/route.ts`
+- `src/app/api/editor/user-settings/poppy-prompts/create/route.ts`
 - `src/features/editor/components/EditorSidebar.tsx`
 - `src/features/editor/components/SwipeIdeasPickerModal.tsx`
 - `src/features/editor/components/CarouselMapProjectPickerModal.tsx`
@@ -341,10 +342,12 @@ Allow users to create html projects from shared entry points, but not yet comple
 ### Implementation Notes
 
 - `type=html` prompt list requests should be accepted at the route level and resolved to the Regular prompt pool internally.
+- `templateTypeId=html` prompt create requests should also be accepted at the route level and stored in the Regular prompt pool internally.
 - The UI should not need to fake `type=regular`.
 - html create routes should persist the resolved prompt text into `carousel_projects.prompt_snapshot`.
 - Shared prompt-preview routes used by html-capable entry flows should be widened in this phase so the preview affordance does not break while creation is already enabled.
 - `set-template-type/route.ts` should explicitly block switching to or from `html` in v1 with a clear 400 response/message rather than leaving a generic invalid-type error.
+- Digest-origin shared picker flows should hide/block the html option in the UI so Daily Digest remains Regular-only in v1 without silently overriding the user's choice later.
 - It is acceptable if html projects still open into a shell with incomplete generation/editing behavior at this stage.
 
 ### What To Test After Phase 4
@@ -361,6 +364,7 @@ Allow users to create html projects from shared entry points, but not yet comple
 - Confirm attempting to switch an existing project to or from html returns the explicit v1 unsupported message.
 - Confirm `regular` and `enhanced` creation flows still work exactly as before.
 - Confirm Daily Digest remains Regular-only in v1.
+- Confirm digest-origin picker flows do not offer html as a selectable option.
 
 ### External AI Review Prompt After Phase 4
 
@@ -409,6 +413,7 @@ Mount a dedicated html runtime shell with the intended workspace structure, but 
 - `src/features/html-editor/store/*`
 - `src/features/html-editor/services/htmlProjectsApi.ts`
 - `src/features/editor/components/EditorTopBar.tsx` for shell-safe html branching and incomplete-action guarding
+- `src/features/editor/components/EditorSidebar.tsx` for hiding Fabric-only template-settings and prompt-override controls while preserving shared project navigation chrome
 
 ### Files Explicitly Not To Touch In This Phase
 
@@ -423,6 +428,7 @@ Mount a dedicated html runtime shell with the intended workspace structure, but 
 - The html runtime should be visibly separate from Fabric, but still feel like the same product.
 - Keep AI Designer visible but disabled.
 - `EditorTopBar.tsx` may need additive html-aware guards in this phase so the shared chrome can render safely before final export behavior is wired in Phase 8.
+- When an html project opens before copy exists, the shell should show a clear empty state with a primary **Generate Copy** call to action. Preset selection stays hidden or disabled until copy exists, then **Choose a Preset** becomes the next primary step, followed by **Generate Slides** once a preset is selected.
 - Do not attempt to finish behavior that belongs to later phases.
 
 ### What To Test After Phase 5
@@ -749,3 +755,39 @@ The goal is to build it in a way that:
 - makes regressions easier to catch early
 - keeps implementation aligned with the main architecture/spec document
 - gives both human testing and secondary AI review a clear checkpoint after every phase
+
+## 9. Post-MVP Follow-Up Backlog
+
+This section tracks the work that remains after the 8-phase MVP rollout. It is intentionally split into:
+
+- `must-fix` items where the shipped behavior still falls short of an intended contract
+- `doc-update` items where the code is acceptable but the docs had drifted from reality
+- `future-scope` items that remain explicitly deferred rather than accidentally forgotten
+
+### Must Fix To Match Intended Contract
+
+| Label | Priority | Item | Current State | Desired End State | Status |
+|---|---|---|---|---|---|
+| `must-fix` | High | Persist `html_preset_id` during generation | `html_style_guide` and generation state persist, but the selected preset id is not consistently written back during generate-slides | preset choice is stored as durable project state alongside the style guide so load/reload matches the intended preset contract | Open |
+| `must-fix` | Medium | Decide final save API contract | shipped `save-slides` is `POST` with `slides[]` | either keep the MVP contract and bless it in the architecture doc permanently, or move to a richer contract only if it materially improves reliability/workflow | Open |
+| `must-fix` | Medium | Decide final export API contract | shipped `render` route exports ZIP by `projectId` only | either keep the MVP export contract and treat it as canonical, or add `pages[]` / `format` / blob-storage variants if truly needed | Open |
+
+### Doc Reconciliation Required
+
+| Label | Priority | Item | Current State | Desired End State | Status |
+|---|---|---|---|---|---|
+| `doc-update` | Medium | Workspace layout description | the architecture doc previously described an active preview with thumbnails below | docs should describe the shipped horizontal old-editor-style row workspace with a persistent right inspector | Done |
+| `doc-update` | Medium | Aspect ratio / canvas geometry | parts of the architecture doc still emphasized `4:5` and Mirr-derived sizing | docs should clearly state that the shipped html editor/export path matches `EditorShell` at `3:4` / `1080x1440` | Done |
+| `doc-update` | Medium | Preset source of truth | the architecture doc previously implied DB-backed preset serving | docs should state that the MVP currently serves presets from a code-defined catalog while the DB table remains future-facing | Done |
+| `doc-update` | Low | `carousel_template_types` contradiction | earlier plan text said no compatibility row was needed for `"html"` | docs should reflect that the real schema required a compatibility row even though html does not use template overrides semantically | Done |
+
+### Deferred Feature Parity / Future Scope
+
+| Label | Priority | Item | Current State | Desired End State | Status |
+|---|---|---|---|---|---|
+| `future-scope` | High | Mirr-style in-iframe editing parity | shipped MVP uses iframe click-selection and parent-side parsing/patching | in-iframe interaction script, richer `postMessage`, drag/resize/rotate, inline rich-text editing, and parity with the Mirr interaction model | Deferred |
+| `future-scope` | Medium | Dedicated html store/file split | some responsibilities are implemented, but the exact planned file split was not completed | decide whether `htmlEditorStore.ts`, store `types.ts`, standalone parser/sanitizer/interaction-script files, and `useHtmlDragResize.ts` should be added for maintainability | Deferred |
+| `future-scope` | Medium | Missing planned html UI surfaces | `HtmlFontSelector`, `HtmlAddElementBar`, and `HtmlCaptionEditor` do not exist as standalone shipped components | either intentionally collapse these into existing UI permanently or build them as dedicated surfaces if the workflow requires it | Deferred |
+| `future-scope` | Medium | Bottom panel expansion | current html bottom panel covers workflow/status but not a true caption editor or debug log surface | decide how much of the original bottom-panel vision still matters and implement the missing surfaces if still desired | Deferred |
+| `future-scope` | Low | Editor polish parity | undo/redo, session persistence/history, keyboard shortcuts, project-switch unsaved-changes modal, add-element flows, and richer partial-generation retry UX are not shipped | selectively implement only the polish items that are still product-relevant after MVP usage feedback | Deferred |
+| `future-scope` | Low | Runtime rename breadcrumbs | router/runtime split exists, but the planned `FabricEditorShell` breadcrumb TODO comments are still missing | add the lightweight rename/extraction TODO comments if we still want to preserve that future refactor breadcrumb | Deferred |

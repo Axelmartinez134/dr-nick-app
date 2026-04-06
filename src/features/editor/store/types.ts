@@ -1,4 +1,4 @@
-export type TemplateTypeId = "regular" | "enhanced";
+export type TemplateTypeId = "regular" | "enhanced" | "html";
 export type PromptSection = "prompt" | "emphasis" | "image" | "caption";
 export type ProjectBackgroundEffectType = "none" | "dots_n8n";
 
@@ -838,6 +838,10 @@ export type EditorState = {
     review_approved: boolean;
     review_scheduled: boolean;
     review_drive_folder_url: string | null;
+    slides_textlines: Array<{
+      slide_index: number;
+      textLines: string[];
+    }>;
   }>;
   shareCarouselsSavingIds: Set<string>;
 

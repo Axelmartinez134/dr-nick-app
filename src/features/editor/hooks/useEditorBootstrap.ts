@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
 
-type TemplateTypeId = 'regular' | 'enhanced';
+type TemplateTypeId = 'regular' | 'enhanced' | 'html';
+type FabricTemplateTypeId = 'regular' | 'enhanced';
 
 type PromptSaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 export function useEditorBootstrap(params: {
   userId: string | null;
+  initialProjectId?: string | null;
   templateTypeId: TemplateTypeId;
   // Current template type can change during bootstrap (e.g. auto-load project).
   // Used to avoid overwriting newer effective settings with stale initial-state values.
@@ -25,7 +27,7 @@ export function useEditorBootstrap(params: {
 
   // Project bootstrap actions
   loadProject: (projectId: string) => Promise<void>;
-  createNewProject: (type: TemplateTypeId) => Promise<void>;
+  createNewProject: (type: FabricTemplateTypeId) => Promise<void>;
 
   // Template-type effective settings (per-user)
   setTemplateTypePrompt: (v: string) => void;
@@ -45,11 +47,12 @@ export function useEditorBootstrap(params: {
 
   // Fallback hooks (keep identical)
   loadTemplatesList: () => void | Promise<void>;
-  loadTemplateTypeEffective: (templateTypeId: TemplateTypeId) => void | Promise<void>;
+  loadTemplateTypeEffective: (templateTypeId: FabricTemplateTypeId) => void | Promise<void>;
   refreshProjectsList: () => void | Promise<void>;
 }) {
   const {
     userId,
+    initialProjectId,
     templateTypeId,
     templateTypeIdRef,
     fetchJson,
@@ -127,8 +130,13 @@ export function useEditorBootstrap(params: {
           if (!initialProjectAutoLoadDoneRef.current) {
             initialProjectAutoLoadDoneRef.current = true;
             if (sortedProjects.length > 0) {
+              const requestedProjectId = String(initialProjectId || '').trim();
+              const requestedProject = requestedProjectId
+                ? sortedProjects.find((project: any) => String(project?.id || '') === requestedProjectId)
+                : null;
+              const projectIdToLoad = String(requestedProject?.id || sortedProjects[0]?.id || '').trim();
               try {
-                await loadProject(String(sortedProjects[0]?.id || ''));
+                await loadProject(projectIdToLoad);
               } catch (e: any) {
                 addLog(`⚠️ Auto-load most recent project failed: ${String(e?.message || e || 'unknown error')}`);
               }
@@ -149,7 +157,7 @@ export function useEditorBootstrap(params: {
         // IMPORTANT: auto-loading a project can change templateTypeId while the request is in flight.
         // Only apply the initial-state effective settings if the current template type still matches
         // what we requested, otherwise we'd overwrite newer settings (and make reload look broken).
-        if (effective && templateTypeIdRef.current === templateTypeIdAtRequest) {
+        if (effective && templateTypeIdAtRequest !== 'html' && templateTypeIdRef.current === templateTypeIdAtRequest) {
           setTemplateTypeEmphasisPrompt(String(effective.emphasisPrompt || ''));
           setTemplateTypeImageGenPrompt(String(effective.imageGenPrompt || ''));
           setTemplateTypeMappingSlide1(effective.slide1TemplateId ?? null);
@@ -167,7 +175,9 @@ export function useEditorBootstrap(params: {
         addLog(`⚠️ Initial editor load failed: ${String(e?.message || e || 'unknown error')}`);
         // Fallback: best-effort load the two critical things.
         void loadTemplatesList();
-        void loadTemplateTypeEffective(templateTypeId);
+        if (templateTypeId !== 'html') {
+          void loadTemplateTypeEffective(templateTypeId);
+        }
         void refreshProjectsList();
       }
     })();

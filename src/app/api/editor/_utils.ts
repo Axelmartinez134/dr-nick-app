@@ -77,7 +77,7 @@ export async function resolveActiveAccountId(args: {
   return { ok: true, accountId: String(mem.account_id) };
 }
 
-export type TemplateTypeId = 'regular' | 'enhanced';
+export type TemplateTypeId = 'regular' | 'enhanced' | 'html';
 
 export type TemplateTypeDefaultsRow = {
   id: TemplateTypeId;

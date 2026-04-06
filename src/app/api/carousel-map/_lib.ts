@@ -951,8 +951,49 @@ export function buildCarouselMapPromptPreview(args: {
   topic: CarouselMapTopic;
   digestTopic?: CarouselMapDigestTopicContext | null;
   expansion: CarouselMapExpansion;
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: 'regular' | 'enhanced' | 'html';
 }) {
+  if (args.templateTypeId === 'html') {
+    const toLines = (value: string) =>
+      String(value || '')
+        .split(/\r?\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const projectTitle = String(args.topic.title || args.source.title || 'Untitled HTML Carousel').trim();
+    const draftSlides = [
+      args.expansion.selectedSlide1Text,
+      args.expansion.selectedSlide2Text,
+      args.expansion.slide3,
+      args.expansion.slide4,
+      args.expansion.slide5,
+      args.expansion.slide6,
+    ].map((text, index) => ({
+      slideNumber: index + 1,
+      textLines: toLines(String(text || '')).length ? toLines(String(text || '')) : [String(text || '').trim() || `Slide ${index + 1}`],
+    }));
+
+    const fullPrompt = [
+      'PROJECT_TITLE:',
+      projectTitle,
+      '',
+      'CAROUSEL_TEXTLINES:',
+      ...draftSlides.flatMap((slide) => [`SLIDE ${slide.slideNumber} (textLines):`, ...slide.textLines, '']),
+    ]
+      .join('\n')
+      .trim();
+
+    const sections: CarouselMapPromptSection[] = [
+      { id: 'project_title', title: 'Project Title', content: projectTitle },
+      ...draftSlides.map((slide) => ({
+        id: `slide_${slide.slideNumber}`,
+        title: `Slide ${slide.slideNumber}`,
+        content: slide.textLines.join('\n'),
+      })),
+    ];
+
+    return { fullPrompt, sections, composedPromptRaw: fullPrompt };
+  }
+
   const schema =
     args.templateTypeId === 'regular'
       ? `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- body must be a string (can be empty)\n- caption must be a string`

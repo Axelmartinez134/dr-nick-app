@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
 
+type TemplateTypeId = "regular" | "enhanced" | "html";
+
 type Idea = {
   id: string;
   createdAt: string;
@@ -36,13 +38,13 @@ export function SwipeIdeasPickerModal(props: {
   onClose: () => void;
   swipeItemId: string | null;
   swipeItemLabel: string;
-  initialTemplateTypeId: "regular" | "enhanced";
+  initialTemplateTypeId: TemplateTypeId;
   initialSavedPromptId: string;
   angleNotesSnapshot: string;
   sourceDigestTopicId?: string | null;
   requireIdeaSelection?: boolean;
-  onSelectionChange?: (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
-  onPick: (args: { ideaId: string | null; templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
+  onSelectionChange?: (args: { templateTypeId: TemplateTypeId; savedPromptId: string }) => void;
+  onPick: (args: { ideaId: string | null; templateTypeId: TemplateTypeId; savedPromptId: string }) => void;
 }) {
   const {
     open,
@@ -62,7 +64,7 @@ export function SwipeIdeasPickerModal(props: {
   const [error, setError] = useState<string | null>(null);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">(initialTemplateTypeId);
+  const [templateTypeId, setTemplateTypeId] = useState<TemplateTypeId>(initialTemplateTypeId);
   const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
   const [savedPromptId, setSavedPromptId] = useState<string>(initialSavedPromptId);
   const [promptsLoading, setPromptsLoading] = useState(false);
@@ -75,11 +77,13 @@ export function SwipeIdeasPickerModal(props: {
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptSections, setPromptSections] = useState<Array<{ id: string; title: string; content: string }>>([]);
 
-  const emitSelectionChange = (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => {
+  const allowHtml = !String(sourceDigestTopicId || "").trim();
+
+  const emitSelectionChange = (args: { templateTypeId: TemplateTypeId; savedPromptId: string }) => {
     onSelectionChange?.(args);
   };
 
-  const refreshPrompts = async (args: { templateTypeId: "regular" | "enhanced"; preferredPromptId?: string }) => {
+  const refreshPrompts = async (args: { templateTypeId: TemplateTypeId; preferredPromptId?: string }) => {
     setPromptsLoading(true);
     setPromptsError(null);
     try {
@@ -114,9 +118,9 @@ export function SwipeIdeasPickerModal(props: {
 
   useEffect(() => {
     if (!open) return;
-    setTemplateTypeId(initialTemplateTypeId);
+    setTemplateTypeId(initialTemplateTypeId === "html" && !allowHtml ? "enhanced" : initialTemplateTypeId);
     setSavedPromptId(initialSavedPromptId);
-  }, [open, initialTemplateTypeId, initialSavedPromptId]);
+  }, [open, initialTemplateTypeId, initialSavedPromptId, allowHtml]);
 
   useEffect(() => {
     if (!open) return;
@@ -316,7 +320,8 @@ export function SwipeIdeasPickerModal(props: {
                     className="mt-1 w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
                     value={templateTypeId}
                     onChange={(e) => {
-                      const next = e.target.value === "regular" ? "regular" : "enhanced";
+                      const next =
+                        e.target.value === "regular" ? "regular" : e.target.value === "html" ? "html" : "enhanced";
                       setTemplateTypeId(next);
                       setSavedPromptId("");
                       setPromptOpen(false);
@@ -327,6 +332,7 @@ export function SwipeIdeasPickerModal(props: {
                   >
                     <option value="enhanced">Enhanced</option>
                     <option value="regular">Regular</option>
+                    {allowHtml ? <option value="html">HTML</option> : null}
                   </select>
                 </div>
                 <div className="mt-3">
@@ -362,7 +368,7 @@ export function SwipeIdeasPickerModal(props: {
                 <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="text-[11px] font-semibold text-slate-700">Summary</div>
                   <div className="mt-1 text-[11px] text-slate-600">
-                    Template type: {templateTypeId === "regular" ? "Regular" : "Enhanced"}
+                    Template type: {templateTypeId === "regular" ? "Regular" : templateTypeId === "html" ? "HTML" : "Enhanced"}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-600">
                     Saved prompt: {savedPrompts.find((p) => p.id === savedPromptId)?.title || "No saved prompt selected"}

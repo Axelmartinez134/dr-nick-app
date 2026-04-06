@@ -1,5 +1,7 @@
 "use client";
 
+// Legacy Fabric runtime only. `html` projects are gated by `EditorRuntimeRouter`.
+
 import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./EditorShell.module.css";
 import dynamic from "next/dynamic";
@@ -116,7 +118,7 @@ const CarouselPreviewVision = dynamic(
     ssr: false,
   }
 );
-export default function EditorShell() {
+export default function EditorShell({ initialProjectId = null }: { initialProjectId?: string | null }) {
   const { user, signOut } = useAuth();
   const editorStore = useEditorStore();
   const actions = useEditorSelector((s: any) => (s as any).actions);
@@ -198,8 +200,8 @@ export default function EditorShell() {
   }, [templateTypeId]);
   // UX: Template Type is chosen ONLY when creating a new project (never mutates an existing project).
   // Defaults to Enhanced on each /editor load.
-  const newProjectTemplateTypeId = useEditorSelector((s) => (s.newProjectTemplateTypeId === "regular" ? "regular" : "enhanced"));
-  const setNewProjectTemplateTypeId = useCallback((next: "regular" | "enhanced") => {
+  const newProjectTemplateTypeId = useEditorSelector((s) => s.newProjectTemplateTypeId);
+  const setNewProjectTemplateTypeId = useCallback((next: "regular" | "enhanced" | "html") => {
     editorStore.setState({ newProjectTemplateTypeId: next } as any);
   }, [editorStore]);
   const projectSaveStatus = useEditorSelector((s) => (s.projectSaveStatus as any) || "idle");
@@ -868,6 +870,13 @@ export default function EditorShell() {
   useEffect(() => {
     editorStore.setState({ isMobile: !!isMobile } as any);
   }, [editorStore, isMobile]);
+  useEffect(() => {
+    try {
+      localStorage.removeItem("editor.runtimeProjectIdHint");
+    } catch {
+      // ignore
+    }
+  }, []);
   // Resizable left sidebar (desktop-only)
   const SIDEBAR_MIN = 320;
   const SIDEBAR_MAX = 560;
@@ -2324,6 +2333,7 @@ export default function EditorShell() {
 
   useEditorBootstrap({
     userId: user?.id || null,
+    initialProjectId,
     templateTypeId,
     templateTypeIdRef,
     fetchJson,
@@ -6344,9 +6354,10 @@ export default function EditorShell() {
   );
 
   const createCarouselFromIdea = useCallback(
-    async (args: { ideaId: string; templateTypeId: "regular" | "enhanced" }) => {
+    async (args: { ideaId: string; templateTypeId: "regular" | "enhanced" | "html" }) => {
       const ideaId = String(args?.ideaId || "").trim();
-      const templateTypeId = args?.templateTypeId === "regular" ? "regular" : "enhanced";
+      const templateTypeId =
+        args?.templateTypeId === "regular" ? "regular" : args?.templateTypeId === "html" ? "html" : "enhanced";
       if (!ideaId) throw new Error("ideaId is required");
 
       addLog?.(`💡 Create carousel from idea: idea=${ideaId} type=${templateTypeId.toUpperCase()}`);

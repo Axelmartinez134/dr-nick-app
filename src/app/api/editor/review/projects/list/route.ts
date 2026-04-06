@@ -14,7 +14,23 @@ type ProjectRow = {
   review_approved: boolean;
   review_scheduled: boolean;
   review_drive_folder_url: string | null;
+  slides_textlines: Array<{
+    slide_index: number;
+    textLines: string[];
+  }>;
 };
+
+function normalizeTextLinesFromLayoutSnapshot(layoutSnapshot: any, slideNumber: number): string[] {
+  const raw = Array.isArray(layoutSnapshot?.textLines) ? layoutSnapshot.textLines : [];
+  const lines = raw
+    .map((line: any) => {
+      if (typeof line === 'string') return line;
+      return String(line?.text ?? '');
+    })
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return lines.length > 0 ? lines : [`Slide ${slideNumber}`];
+}
 
 type Resp =
   | { success: true; projects: ProjectRow[] }
@@ -47,6 +63,26 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ success: false, error: error.message } satisfies Resp, { status: 500 });
 
+  const projectIds = Array.isArray(data) ? data.map((r: any) => String(r?.id || '').trim()).filter(Boolean) : [];
+  const slidesByProjectId: Record<string, any[]> = {};
+
+  if (projectIds.length > 0) {
+    const { data: slideRows, error: slideErr } = await supabase
+      .from('carousel_project_slides')
+      .select('project_id, slide_index, layout_snapshot')
+      .in('project_id', projectIds)
+      .order('slide_index', { ascending: true });
+
+    if (slideErr) return NextResponse.json({ success: false, error: slideErr.message } satisfies Resp, { status: 500 });
+
+    (slideRows || []).forEach((row: any) => {
+      const projectId = String(row?.project_id || '').trim();
+      if (!projectId) return;
+      if (!slidesByProjectId[projectId]) slidesByProjectId[projectId] = [];
+      slidesByProjectId[projectId].push(row);
+    });
+  }
+
   const projects: ProjectRow[] = (data || []).map((r: any) => ({
     id: String(r?.id || ''),
     title: String(r?.title || 'Untitled Project'),
@@ -56,6 +92,16 @@ export async function GET(req: NextRequest) {
     review_approved: !!r?.review_approved,
     review_scheduled: !!r?.review_scheduled,
     review_drive_folder_url: r?.review_drive_folder_url ? String(r.review_drive_folder_url) : null,
+    slides_textlines: Array.from({ length: 6 }).map((_, index) => {
+      const slideRow =
+        (Array.isArray(slidesByProjectId[String(r?.id || '')]) ? slidesByProjectId[String(r?.id || '')] : []).find(
+          (row: any) => Number(row?.slide_index) === index
+        ) || null;
+      return {
+        slide_index: index,
+        textLines: normalizeTextLinesFromLayoutSnapshot(slideRow?.layout_snapshot ?? null, index + 1),
+      };
+    }),
   }));
 
   return NextResponse.json({ success: true, projects } satisfies Resp);

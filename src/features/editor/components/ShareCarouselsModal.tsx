@@ -136,11 +136,17 @@ export function ShareCarouselsModal() {
   const [copied, setCopied] = useState(false);
   const [manualCopyOpen, setManualCopyOpen] = useState(false);
   const manualCopyRef = useRef<HTMLInputElement | null>(null);
+  const [copyAllSlidesStatus, setCopyAllSlidesStatus] = useState<"idle" | "loading" | "copied" | "error">("idle");
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(false), 1200);
     return () => window.clearTimeout(t);
   }, [copied]);
+  useEffect(() => {
+    if (copyAllSlidesStatus !== "copied" && copyAllSlidesStatus !== "error") return;
+    const t = window.setTimeout(() => setCopyAllSlidesStatus("idle"), copyAllSlidesStatus === "copied" ? 1200 : 1600);
+    return () => window.clearTimeout(t);
+  }, [copyAllSlidesStatus]);
 
   const fullUrl = useMemo(() => {
     if (!linkPath) return null;
@@ -155,7 +161,66 @@ export function ShareCarouselsModal() {
     if (!open) return;
     setCopied(false);
     setManualCopyOpen(false);
+    setCopyAllSlidesStatus("idle");
   }, [open]);
+
+  const copyPlainText = async (text: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+      const ok = document.execCommand("copy");
+      if (!ok) throw new Error("copy command failed");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const allCarouselSlidesCopyText = useMemo(() => {
+    return filteredProjects
+      .map((project: any, index: number) => {
+        const title = String(project?.title || "").trim() || "-";
+        const slideSections = Array.from({ length: 6 }).map((_, slideIndex) => {
+          const slideRow = Array.isArray(project?.slides_textlines)
+            ? project.slides_textlines.find((row: any) => Number(row?.slide_index) === slideIndex)
+            : null;
+          const lines = Array.isArray(slideRow?.textLines)
+            ? slideRow.textLines
+                .map((line: any) => String(line ?? "").trim())
+                .filter((line: string) => line.length > 0)
+            : [];
+          const joined = lines.length > 0 ? lines.join("\n") : "(no text lines)";
+          return `SLIDE ${slideIndex + 1} (textLines):\n${joined}`;
+        });
+        return [
+          `CAROUSEL #${index + 1}`,
+          `PROJECT_TITLE:\n${title}`,
+          `CAROUSEL_TEXTLINES:\n${slideSections.join("\n\n")}`,
+        ].join("\n\n");
+      })
+      .join("\n\n\n");
+  }, [filteredProjects]);
+
+  const copyAllCarouselSlides = async () => {
+    if (filteredProjects.length === 0 || copyAllSlidesStatus === "loading") return;
+    setCopyAllSlidesStatus("loading");
+    try {
+      await copyPlainText(allCarouselSlidesCopyText);
+      setCopyAllSlidesStatus("copied");
+    } catch {
+      setCopyAllSlidesStatus("error");
+    }
+  };
 
   useEffect(() => {
     // iOS Safari: when a fixed full-screen modal has a scrollable region,
@@ -341,6 +406,23 @@ export function ShareCarouselsModal() {
               />
             </svg>
           </button>
+          {filteredProjects.length > 0 ? (
+            <button
+              type="button"
+              className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+              disabled={!!loading || copyAllSlidesStatus === "loading"}
+              onClick={() => void copyAllCarouselSlides()}
+              title="Copy the carousel slide text lines for all projects currently shown in this modal"
+            >
+              {copyAllSlidesStatus === "copied"
+                ? "Copied ✓"
+                : copyAllSlidesStatus === "error"
+                  ? "Copy failed"
+                  : copyAllSlidesStatus === "loading"
+                    ? "Copying…"
+                    : "Copy all slides"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"

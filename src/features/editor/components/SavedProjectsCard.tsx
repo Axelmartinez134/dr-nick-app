@@ -11,6 +11,14 @@ export type SavedProjectListItem = {
 
 import { useEditorSelector } from "@/features/editor/store";
 
+function formatTemplateTypeLabel(templateTypeId: string | null | undefined) {
+  const normalized = String(templateTypeId || "").trim().toLowerCase();
+  if (normalized === "html") return "HTML";
+  if (normalized === "enhanced") return "Enhanced";
+  if (normalized === "regular") return "Regular";
+  return normalized ? normalized : "Unknown";
+}
+
 export function SavedProjectsCard() {
   const projects = useEditorSelector((s) => s.projects);
   const projectsLoading = useEditorSelector((s) => s.projectsLoading);
@@ -97,7 +105,7 @@ export function SavedProjectsCard() {
                       onClick={() => actions.onLoadProject(p.id)}
                     >
                       <div className="text-sm font-medium text-slate-900 truncate">{p.title}</div>
-                      <div className="text-xs text-slate-500 truncate">Type: {p.template_type_id}</div>
+                      <div className="text-xs text-slate-500 truncate">Type: {formatTemplateTypeLabel(p.template_type_id)}</div>
                       <div className="text-[11px] text-slate-400 mt-0.5">
                         Updated: {new Date(p.updated_at).toLocaleDateString()}
                       </div>

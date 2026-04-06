@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 30;
 
 type Body = {
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: 'regular' | 'enhanced' | 'html';
   savedPromptId: string;
   ideaId?: string | null;
   sourceDigestTopicId?: string | null;
@@ -21,6 +21,20 @@ type Resp =
 
 function isUuid(v: string): boolean {
   return /^[0-9a-fA-F-]{36}$/.test(v);
+}
+
+function resolveStoredPromptTemplateTypeId(templateTypeId: Body['templateTypeId']): 'regular' | 'enhanced' {
+  return templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
+}
+
+function buildHtmlPlaceholderSlideRows(projectId: string) {
+  return Array.from({ length: 6 }).map((_, slideIndex) => ({
+    project_id: projectId,
+    slide_index: slideIndex,
+    html: null,
+    page_title: null,
+    page_type: null,
+  }));
 }
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -39,7 +53,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     // ignore
   }
 
-  const templateTypeId = (body as any)?.templateTypeId === 'regular' ? 'regular' : (body as any)?.templateTypeId === 'enhanced' ? 'enhanced' : null;
+  const templateTypeId =
+    (body as any)?.templateTypeId === 'regular'
+      ? 'regular'
+      : (body as any)?.templateTypeId === 'enhanced'
+        ? 'enhanced'
+        : (body as any)?.templateTypeId === 'html'
+          ? 'html'
+          : null;
   const savedPromptId = s((body as any)?.savedPromptId);
   const ideaId = s((body as any)?.ideaId);
   const sourceDigestTopicId = s((body as any)?.sourceDigestTopicId);
@@ -56,6 +77,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (sourceDigestTopicId && !ideaId) {
     return NextResponse.json({ success: false, error: 'ideaId is required for digest-origin flow' } satisfies Resp, { status: 400 });
   }
+
+  const storedPromptTemplateTypeId = resolveStoredPromptTemplateTypeId(templateTypeId);
 
   // Load swipe item (account scoped)
   const { data: item, error: itemErr } = await supabase
@@ -123,7 +146,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     .eq('id', savedPromptId)
     .eq('account_id', accountId)
     .eq('user_id', user.id)
-    .eq('template_type_id', templateTypeId)
+    .eq('template_type_id', storedPromptTemplateTypeId)
     .maybeSingle();
   if (promptErr) return NextResponse.json({ success: false, error: promptErr.message } satisfies Resp, { status: 500 });
   const promptText = String((promptRow as any)?.prompt || '').trim();
@@ -205,6 +228,14 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (slidesErr) {
     await supabase.from('carousel_projects').delete().eq('id', project.id);
     return NextResponse.json({ success: false, error: slidesErr.message } satisfies Resp, { status: 500 });
+  }
+
+  if (templateTypeId === 'html') {
+    const { error: htmlSlidesErr } = await supabase.from('html_project_slides').insert(buildHtmlPlaceholderSlideRows(String(project.id)) as any);
+    if (htmlSlidesErr) {
+      await supabase.from('carousel_projects').delete().eq('id', project.id);
+      return NextResponse.json({ success: false, error: htmlSlidesErr.message } satisfies Resp, { status: 500 });
+    }
   }
 
   // 2) Link swipe item → created project id

@@ -49,16 +49,17 @@ async function loadUserActivePoppyPromptForIdeas(args: {
   supabase: any;
   accountId: string;
   userId: string;
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: 'regular' | 'enhanced' | 'html';
 }) {
   const { supabase, accountId, userId, templateTypeId } = args;
+  const storedPromptTemplateTypeId = templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
 
   const { data: bestRow, error: bestErr } = await supabase
     .from('editor_poppy_saved_prompts')
     .select('prompt, is_active, updated_at, created_at')
     .eq('account_id', accountId)
     .eq('user_id', userId)
-    .eq('template_type_id', templateTypeId)
+    .eq('template_type_id', storedPromptTemplateTypeId)
     .order('is_active', { ascending: false })
     .order('updated_at', { ascending: false })
     .order('created_at', { ascending: false })
@@ -93,7 +94,14 @@ export async function POST(request: NextRequest) {
   }
 
   const ideaId = String(body?.ideaId || '').trim();
-  const templateTypeId = body?.templateTypeId === 'regular' ? 'regular' : body?.templateTypeId === 'enhanced' ? 'enhanced' : null;
+  const templateTypeId =
+    body?.templateTypeId === 'regular'
+      ? 'regular'
+      : body?.templateTypeId === 'enhanced'
+        ? 'enhanced'
+        : body?.templateTypeId === 'html'
+          ? 'html'
+          : null;
   if (!ideaId) return NextResponse.json({ success: false, error: 'ideaId is required' }, { status: 400 });
   if (!templateTypeId) return NextResponse.json({ success: false, error: 'Invalid templateTypeId' }, { status: 400 });
 
@@ -214,6 +222,21 @@ export async function POST(request: NextRequest) {
   if (slidesErr) {
     await supabase.from('carousel_projects').delete().eq('id', project.id);
     return NextResponse.json({ success: false, error: slidesErr.message }, { status: 500 });
+  }
+
+  if (templateTypeId === 'html') {
+    const htmlSlideRows = Array.from({ length: 6 }).map((_, slideIndex) => ({
+      project_id: project.id,
+      slide_index: slideIndex,
+      html: null,
+      page_title: null,
+      page_type: null,
+    }));
+    const { error: htmlSlidesErr } = await supabase.from('html_project_slides').insert(htmlSlideRows);
+    if (htmlSlidesErr) {
+      await supabase.from('carousel_projects').delete().eq('id', project.id);
+      return NextResponse.json({ success: false, error: htmlSlidesErr.message }, { status: 500 });
+    }
   }
 
   // Audit row (prompt_rendered + routing meta)

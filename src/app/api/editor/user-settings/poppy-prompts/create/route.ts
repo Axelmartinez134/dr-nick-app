@@ -11,6 +11,10 @@ type Body = {
   prompt?: string | null;
 };
 
+function resolveStoredTemplateTypeId(templateTypeId: TemplateTypeId): 'regular' | 'enhanced' {
+  return templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
+}
+
 function sanitizeText(input: any): string {
   return String(input ?? '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ').trim();
 }
@@ -33,8 +37,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
   }
 
-  const templateTypeId = body.templateTypeId === 'enhanced' ? 'enhanced' : body.templateTypeId === 'regular' ? 'regular' : null;
+  const templateTypeId =
+    body.templateTypeId === 'enhanced' || body.templateTypeId === 'regular' || body.templateTypeId === 'html'
+      ? body.templateTypeId
+      : null;
   if (!templateTypeId) return NextResponse.json({ success: false, error: 'Invalid template type' }, { status: 400 });
+  const storedTemplateTypeId = resolveStoredTemplateTypeId(templateTypeId);
 
   const title = sanitizeText(body.title ?? 'New Prompt') || 'New Prompt';
   const prompt = String(body.prompt ?? '');
@@ -46,7 +54,7 @@ export async function POST(req: NextRequest) {
     .insert({
       account_id: accountId,
       user_id: user.id,
-      template_type_id: templateTypeId,
+      template_type_id: storedTemplateTypeId,
       title,
       prompt,
       is_active: false,
@@ -66,7 +74,7 @@ export async function POST(req: NextRequest) {
       .select('id')
       .eq('account_id', accountId)
       .eq('user_id', user.id)
-      .eq('template_type_id', templateTypeId)
+      .eq('template_type_id', storedTemplateTypeId)
       .eq('is_active', true)
       .maybeSingle();
 
@@ -76,7 +84,7 @@ export async function POST(req: NextRequest) {
         .update({ is_active: false })
         .eq('account_id', accountId)
         .eq('user_id', user.id)
-        .eq('template_type_id', templateTypeId);
+        .eq('template_type_id', storedTemplateTypeId);
       const { data: activated } = await supabase
         .from('editor_poppy_saved_prompts')
         .update({ is_active: true })

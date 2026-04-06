@@ -33,6 +33,7 @@ type TitleGroup = {
 };
 
 type SourceLite = { id: string; sourceUrl: string; ideaCount: number };
+type TemplateTypeId = "enhanced" | "regular" | "html";
 
 function tsToSortKey(ts: string | null | undefined): number {
   const t = ts ? Date.parse(ts) : NaN;
@@ -70,7 +71,7 @@ export function IdeasModal() {
   const [ideaBusyIds, setIdeaBusyIds] = useState<Set<string>>(() => new Set());
   const [ideaActionError, setIdeaActionError] = useState<string | null>(null);
 
-  const [carouselTemplateType, setCarouselTemplateType] = useState<"enhanced" | "regular">("enhanced");
+  const [carouselTemplateType, setCarouselTemplateType] = useState<TemplateTypeId>("enhanced");
   const [carouselByIdea, setCarouselByIdea] = useState<
     Record<string, { state: "idle" | "running" | "success" | "error"; label: string; error: string | null; projectId: string | null }>
   >({});
@@ -726,11 +727,16 @@ export function IdeasModal() {
                       <select
                         className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
                         value={carouselTemplateType}
-                        onChange={(e) => setCarouselTemplateType(e.target.value === "regular" ? "regular" : "enhanced")}
+                        onChange={(e) =>
+                          setCarouselTemplateType(
+                            e.target.value === "regular" ? "regular" : e.target.value === "html" ? "html" : "enhanced"
+                          )
+                        }
                         title="Template type for created carousel projects"
                       >
                         <option value="enhanced">Enhanced</option>
                         <option value="regular">Regular</option>
+                        <option value="html">HTML</option>
                       </select>
                       <div className="text-xs font-semibold text-slate-600">{approvedQueue.length}</div>
                     </div>
@@ -794,6 +800,10 @@ export function IdeasModal() {
                                         if (!projectId) throw new Error("Missing projectId");
                                         // Mark created immediately (so on reopen it’s instant; server fetch will also confirm).
                                         setCreatedByIdeaId((prev) => ({ ...prev, [ideaId]: { projectId, createdAt: new Date().toISOString() } }));
+                                        if (carouselTemplateType === "html") {
+                                          setCarouselUi(ideaId, { state: "success", label: "Created", projectId });
+                                          return;
+                                        }
                                         // Start polling Generate Copy job progress for this new project.
                                         setCarouselUi(ideaId, { label: "Starting…", projectId });
 

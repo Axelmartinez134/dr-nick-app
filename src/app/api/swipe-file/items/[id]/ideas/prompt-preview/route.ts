@@ -19,7 +19,7 @@ type Resp =
   | { success: false; error: string };
 
 type Body = {
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: 'regular' | 'enhanced' | 'html';
   savedPromptId: string;
   ideaId?: string | null;
   angleNotesSnapshot?: string | null;
@@ -35,10 +35,25 @@ function sanitizePrompt(input: string): string {
   return String(input || '').replace(/[\x00-\x1F\x7F]/g, ' ').trim();
 }
 
-function schemaFor(templateTypeId: 'regular' | 'enhanced'): string {
+function resolveStoredPromptTemplateTypeId(templateTypeId: Body['templateTypeId']): 'regular' | 'enhanced' {
+  return templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
+}
+
+function schemaFor(templateTypeId: Body['templateTypeId']): string {
+  if (templateTypeId === 'html') {
+    return `Return ONLY valid JSON in this exact shape:\n{\n  "projectTitle": "...",\n  "slides": [\n    {"slideNumber": 1, "textLines": ["..."]},\n    {"slideNumber": 2, "textLines": ["..."]},\n    {"slideNumber": 3, "textLines": ["..."]},\n    {"slideNumber": 4, "textLines": ["..."]},\n    {"slideNumber": 5, "textLines": ["..."]},\n    {"slideNumber": 6, "textLines": ["..."]}\n  ]\n}\nRules:\n- slides must be length 6\n- slideNumber must match 1..6 in order\n- textLines must be an array of strings with at least 1 line per slide\n- do not return caption`;
+  }
   return templateTypeId === 'regular'
     ? `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- body must be a string (can be empty)\n- caption must be a string`
     : `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- headline/body must be strings (can be empty)\n- caption must be a string`;
+}
+
+function draftLinesForPreview(input: string, fallback: string): string[] {
+  const lines = String(input || '')
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length ? lines : [fallback];
 }
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -60,11 +75,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       body = null;
     }
 
-    const templateTypeId: 'regular' | 'enhanced' | null =
+    const templateTypeId: Body['templateTypeId'] | null =
       (body as any)?.templateTypeId === 'regular'
         ? 'regular'
         : (body as any)?.templateTypeId === 'enhanced'
           ? 'enhanced'
+          : (body as any)?.templateTypeId === 'html'
+            ? 'html'
           : null;
     const savedPromptId = s((body as any)?.savedPromptId);
     const ideaId = s((body as any)?.ideaId);
@@ -74,6 +91,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       typeof angleNotesSnapshotRaw === 'string' ? String(angleNotesSnapshotRaw).trim() : angleNotesSnapshotRaw == null ? null : String(angleNotesSnapshotRaw).trim();
 
     if (!templateTypeId) return NextResponse.json({ success: false, error: 'templateTypeId is required' } satisfies Resp, { status: 400 });
+    const storedPromptTemplateTypeId = resolveStoredPromptTemplateTypeId(templateTypeId);
     if (!savedPromptId || !isUuid(savedPromptId)) {
       return NextResponse.json({ success: false, error: 'savedPromptId is required' } satisfies Resp, { status: 400 });
     }
@@ -134,7 +152,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
       .eq('id', savedPromptId)
       .eq('account_id', accountId)
       .eq('user_id', user.id)
-      .eq('template_type_id', templateTypeId)
+      .eq('template_type_id', storedPromptTemplateTypeId)
       .maybeSingle();
     if (promptErr) return NextResponse.json({ success: false, error: promptErr.message } satisfies Resp, { status: 500 });
     const stylePromptRaw = String((promptRow as any)?.prompt || '').trim();
@@ -224,6 +242,44 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     const transcript = sanitizePrompt(transcriptTrim);
     if (!prompt) return NextResponse.json({ success: false, error: 'Primary instructions are empty' } satisfies Resp, { status: 400 });
     if (!transcript) return NextResponse.json({ success: false, error: 'Missing transcript after sanitization' } satisfies Resp, { status: 400 });
+
+    if (templateTypeId === 'html') {
+      const projectTitle =
+        ideaId && swipeIdeaSnapshot
+          ? String(swipeIdeaSnapshot.match(/TITLE:\n([\s\S]*?)(?:\n\n|$)/)?.[1] || '').trim() || String((item as any)?.title || '').trim() || 'Untitled HTML Carousel'
+          : String((item as any)?.title || '').trim() || 'Untitled HTML Carousel';
+      const slideOutline =
+        ideaId && swipeIdeaSnapshot
+          ? swipeIdeaSnapshot
+              .split('SLIDE_OUTLINE (6 slides):\n')[1]
+              ?.split('\n\nANGLE_TEXT:')[0]
+              ?.split('\n')
+              .map((line) => line.replace(/^\d+\.\s*/, '').trim())
+              .filter(Boolean)
+          : [];
+      const draftSlides = Array.from({ length: 6 }).map((_, index) => ({
+        slideNumber: index + 1,
+        textLines: draftLinesForPreview(slideOutline?.[index] || '', `Slide ${index + 1} copy will be generated from the source material.`),
+      }));
+      const fullPrompt = [
+        'PROJECT_TITLE:',
+        projectTitle,
+        '',
+        'CAROUSEL_TEXTLINES:',
+        ...draftSlides.flatMap((slide) => [`SLIDE ${slide.slideNumber} (textLines):`, ...slide.textLines, '']),
+      ]
+        .join('\n')
+        .trim();
+      const sections: SectionOut[] = [
+        { id: 'project_title', title: 'Project Title', content: projectTitle },
+        ...draftSlides.map((slide) => ({
+          id: `slide_${slide.slideNumber}`,
+          title: `Slide ${slide.slideNumber}`,
+          content: slide.textLines.join('\n'),
+        })),
+      ];
+      return NextResponse.json({ success: true, fullPrompt, sections } satisfies Resp);
+    }
 
     const schema = schemaFor(templateTypeId);
 

@@ -8,6 +8,27 @@ export const maxDuration = 10;
 
 const PROJECT_SELECT = `id, owner_user_id, title, template_type_id, caption, prompt_snapshot, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, ai_image_autoremovebg_enabled, review_ready, review_posted, review_approved, review_scheduled, review_comment, review_source, created_at, updated_at` as const;
 
+function buildPlaceholderSlideRows(projectId: string) {
+  return Array.from({ length: 6 }).map((_, slideIndex) => ({
+    project_id: projectId,
+    slide_index: slideIndex,
+    headline: null,
+    body: null,
+    layout_snapshot: null,
+    input_snapshot: null,
+  }));
+}
+
+function buildHtmlPlaceholderSlideRows(projectId: string) {
+  return Array.from({ length: 6 }).map((_, slideIndex) => ({
+    project_id: projectId,
+    slide_index: slideIndex,
+    html: null,
+    page_title: null,
+    page_type: null,
+  }));
+}
+
 type Body = {
   title?: string;
   templateTypeId: TemplateTypeId;
@@ -31,7 +52,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
   }
 
-  if (body.templateTypeId !== 'regular' && body.templateTypeId !== 'enhanced') {
+  if (body.templateTypeId !== 'regular' && body.templateTypeId !== 'enhanced' && body.templateTypeId !== 'html') {
     return NextResponse.json({ success: false, error: 'Invalid template type' }, { status: 400 });
   }
 
@@ -60,20 +81,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: projectErr?.message || 'Failed to create project' }, { status: 500 });
     }
 
-    const slideRows = Array.from({ length: 6 }).map((_, slideIndex) => ({
-      project_id: project.id,
-      slide_index: slideIndex,
-      headline: null,
-      body: null,
-      layout_snapshot: null,
-      input_snapshot: null,
-    }));
+    const slideRows = buildPlaceholderSlideRows(String(project.id));
 
     const { error: slidesErr } = await supabase.from('carousel_project_slides').insert(slideRows);
     if (slidesErr) {
       // Best-effort cleanup; if it fails, RLS may block delete for some reason—rare.
       await supabase.from('carousel_projects').delete().eq('id', project.id);
       return NextResponse.json({ success: false, error: slidesErr.message }, { status: 500 });
+    }
+
+    if (body.templateTypeId === 'html') {
+      const { error: htmlSlidesErr } = await supabase.from('html_project_slides').insert(buildHtmlPlaceholderSlideRows(String(project.id)));
+      if (htmlSlidesErr) {
+        await supabase.from('carousel_projects').delete().eq('id', project.id);
+        return NextResponse.json({ success: false, error: htmlSlidesErr.message }, { status: 500 });
+      }
     }
 
     const { data: slides, error: slidesFetchErr } = await supabase

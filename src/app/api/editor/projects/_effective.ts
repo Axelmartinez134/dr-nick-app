@@ -6,11 +6,47 @@ import {
   type TemplateTypeId,
 } from '../_utils';
 
+const HTML_SAFE_DEFAULTS_UPDATED_AT = new Date(0).toISOString();
+
+function getHtmlSafeTemplateTypeSettings() {
+  const defaults: TemplateTypeDefaultsRow = {
+    id: 'html',
+    label: 'HTML',
+    default_prompt: '',
+    default_emphasis_prompt: '',
+    default_image_gen_prompt: '',
+    default_slide1_template_id: null,
+    default_slide2_5_template_id: null,
+    default_slide6_template_id: null,
+    updated_at: HTML_SAFE_DEFAULTS_UPDATED_AT,
+    updated_by: null,
+  };
+
+  const effective = {
+    templateTypeId: 'html' as const,
+    label: 'HTML',
+    prompt: '',
+    bestPractices: '',
+    emphasisPrompt: '',
+    imageGenPrompt: '',
+    slide1TemplateId: null,
+    slide2to5TemplateId: null,
+    slide6TemplateId: null,
+    updatedAt: HTML_SAFE_DEFAULTS_UPDATED_AT,
+  };
+
+  return { defaults, override: null, effective };
+}
+
 export async function loadEffectiveTemplateTypeSettings(
   supabase: SupabaseClient,
   args: { accountId: string; actorUserId: string },
   templateTypeId: TemplateTypeId
 ) {
+  if (templateTypeId === 'html') {
+    return getHtmlSafeTemplateTypeSettings();
+  }
+
   const [defaultsRes, overrideRes] = await Promise.all([
     supabase
       .from('carousel_template_types')

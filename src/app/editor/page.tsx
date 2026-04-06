@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../components/auth/AuthContext";
-import EditorShell from "./EditorShell";
+import { EditorRuntimeRouter } from "./EditorRuntimeRouter";
 import { EditorStoreProvider } from "@/features/editor/store";
 
 function LoadingScreen({ message }: { message: string }) {
@@ -49,7 +49,7 @@ export default function EditorPage() {
   // Option A: Shell-first (pixel-perfect scaffolding first, then dock existing editor into it).
   return (
     <EditorStoreProvider>
-      <EditorShell />
+      <EditorRuntimeRouter />
     </EditorStoreProvider>
   );
 }

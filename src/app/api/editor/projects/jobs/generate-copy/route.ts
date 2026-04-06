@@ -11,6 +11,8 @@ type Body = {
   projectId: string;
 };
 
+type TemplateTypeId = 'regular' | 'enhanced' | 'html';
+
 type InlineStyleRange = {
   start: number;
   end: number;
@@ -18,6 +20,31 @@ type InlineStyleRange = {
   italic?: boolean;
   underline?: boolean;
 };
+
+type HtmlCopyDraft = {
+  projectTitle: string;
+  slides: Array<{
+    slideNumber: number;
+    textLines: string[];
+  }>;
+};
+
+function schemaForTemplateType(templateTypeId: TemplateTypeId): string {
+  if (templateTypeId === 'html') {
+    return `Return ONLY valid JSON in this exact shape:\n{\n  "projectTitle": "...",\n  "slides": [\n    {"slideNumber": 1, "textLines": ["..."]},\n    {"slideNumber": 2, "textLines": ["..."]},\n    {"slideNumber": 3, "textLines": ["..."]},\n    {"slideNumber": 4, "textLines": ["..."]},\n    {"slideNumber": 5, "textLines": ["..."]},\n    {"slideNumber": 6, "textLines": ["..."]}\n  ]\n}\nRules:\n- slides must be length 6\n- slideNumber must match 1..6 in order\n- textLines must be an array of strings with at least 1 line per slide\n- do not return caption`;
+  }
+  return templateTypeId === 'regular'
+    ? `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- body must be a string (can be empty)\n- caption must be a string`
+    : `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- headline/body must be strings (can be empty)\n- caption must be a string`;
+}
+
+function normalizeHtmlTextLines(input: any): string[] {
+  const raw = Array.isArray(input) ? input : [];
+  const out = raw
+    .map((line) => String(line ?? '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' ').trim())
+    .filter(Boolean);
+  return out.length ? out : [''];
+}
 
 function repairInnerQuotesInJsonStrings(input: string) {
   const s = String(input || '');
@@ -122,6 +149,34 @@ function assertValidPayload(payload: any, templateTypeId: 'regular' | 'enhanced'
       if (typeof s.headline !== 'string') throw new Error(`Invalid slide ${i + 1}: headline must be a string`);
     }
   }
+}
+
+function assertValidHtmlPayload(payload: any): HtmlCopyDraft {
+  const projectTitle = String(payload?.projectTitle || '').trim();
+  const slides = payload?.slides;
+  if (!projectTitle) {
+    throw new Error('Invalid html copy output: projectTitle must be a non-empty string');
+  }
+  if (!Array.isArray(slides) || slides.length !== 6) {
+    throw new Error('Invalid html copy output: slides must be an array of length 6');
+  }
+
+  const normalizedSlides = slides.map((slide: any, index: number) => {
+    if (!slide || typeof slide !== 'object') {
+      throw new Error(`Invalid html slide ${index + 1}: must be an object`);
+    }
+    const slideNumber = Number(slide.slideNumber);
+    if (slideNumber !== index + 1) {
+      throw new Error(`Invalid html slide ${index + 1}: slideNumber must equal ${index + 1}`);
+    }
+    const textLines = normalizeHtmlTextLines(slide.textLines);
+    if (!textLines.length) {
+      throw new Error(`Invalid html slide ${index + 1}: textLines must include at least one line`);
+    }
+    return { slideNumber, textLines };
+  });
+
+  return { projectTitle, slides: normalizedSlides };
 }
 
 function sanitizeInlineStyleRanges(text: string, ranges: any): InlineStyleRange[] {
@@ -248,17 +303,14 @@ async function updateJobProgress(
 }
 
 async function callAnthropicParse(opts: {
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: TemplateTypeId;
   rawToParse: string;
 }) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
   if (!apiKey) throw new Error('Missing env var: ANTHROPIC_API_KEY');
 
-  const schema =
-    opts.templateTypeId === 'regular'
-      ? `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- body must be a string (can be empty)\n- caption must be a string`
-      : `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- headline/body must be strings (can be empty)\n- caption must be a string`;
+  const schema = schemaForTemplateType(opts.templateTypeId);
 
   const userText = `${schema}\n\nData to structure:\n${opts.rawToParse}`;
 
@@ -388,7 +440,7 @@ RANGE RULES (HARD):
 }
 
 async function callAnthropicGenerateFromReel(opts: {
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: TemplateTypeId;
   poppyPromptRaw: string;
   bestPractices: string;
   reelCaption: string;
@@ -400,10 +452,7 @@ async function callAnthropicGenerateFromReel(opts: {
   // Explicit model requested for this feature (match emphasis model).
   const model = 'claude-sonnet-4-5-20250929';
 
-  const schema =
-    opts.templateTypeId === 'regular'
-      ? `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."},\n    {"body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- body must be a string (can be empty)\n- caption must be a string`
-      : `Return ONLY valid JSON in this exact shape:\n{\n  "slides": [\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."},\n    {"headline": "...", "body": "..."}\n  ],\n  "caption": "..."\n}\nRules:\n- slides must be length 6\n- headline/body must be strings (can be empty)\n- caption must be a string`;
+  const schema = schemaForTemplateType(opts.templateTypeId);
 
   const prompt = sanitizePrompt(String(opts.poppyPromptRaw || ''));
   const best = sanitizePrompt(String(opts.bestPractices || ''));
@@ -466,9 +515,10 @@ async function loadUserActivePoppyPrompt(args: {
   supabase: any;
   accountId: string;
   userId: string;
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: TemplateTypeId;
 }) {
   const { supabase, accountId, userId, templateTypeId } = args;
+  const storedPromptTemplateTypeId = templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
 
   // Prefer the active saved prompt; fall back to the most recently updated saved prompt
   // (hardening against any unexpected "no active" states).
@@ -480,7 +530,7 @@ async function loadUserActivePoppyPrompt(args: {
     .select('id, prompt, is_active, updated_at, created_at')
     .eq('account_id', accountId)
     .eq('user_id', userId)
-    .eq('template_type_id', templateTypeId)
+    .eq('template_type_id', storedPromptTemplateTypeId)
     .order('is_active', { ascending: false })
     .order('updated_at', { ascending: false })
     .order('created_at', { ascending: false })
@@ -507,7 +557,7 @@ async function loadUserActivePoppyPrompt(args: {
   const { effective } = await loadEffectiveTemplateTypeSettings(
     supabase,
     { accountId, actorUserId: userId },
-    templateTypeId
+    storedPromptTemplateTypeId
   );
   const effectiveRaw = String((effective as any)?.prompt || '');
   const effectivePrompt = sanitizePrompt(effectiveRaw);
@@ -572,7 +622,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: projectErr?.message || 'Project not found' }, { status: 404 });
   }
 
-  const templateTypeId = project.template_type_id === 'enhanced' ? 'enhanced' : 'regular';
+  const templateTypeId: TemplateTypeId =
+    project.template_type_id === 'enhanced' ? 'enhanced' : project.template_type_id === 'html' ? 'html' : 'regular';
 
   // Swipe File origin marker: project created from a swipe item should bypass Poppy and generate from the saved transcript.
   const swipeItemId = String((project as any)?.source_swipe_item_id || '').trim();
@@ -841,6 +892,48 @@ export async function POST(request: NextRequest) {
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
       const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
       payload = extractJsonObject(parsed.rawText);
+    }
+
+    if (templateTypeId === 'html') {
+      const htmlCopyDraft = assertValidHtmlPayload(payload);
+
+      await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:save' });
+
+      await Promise.all(
+        htmlCopyDraft.slides.map((slide, idx) => {
+          const [firstLine = '', ...remainingLines] = normalizeHtmlTextLines(slide.textLines);
+          return supabase
+            .from('carousel_project_slides')
+            .update({
+              headline: firstLine || null,
+              body: remainingLines.join('\n'),
+              input_snapshot: null,
+            })
+            .eq('project_id', project.id)
+            .eq('slide_index', idx);
+        })
+      );
+
+      await supabase
+        .from('carousel_projects')
+        .update({
+          title: htmlCopyDraft.projectTitle,
+        })
+        .eq('id', project.id);
+
+      await supabase
+        .from('carousel_generation_jobs')
+        .update({ status: 'completed', finished_at: new Date().toISOString(), error: null })
+        .eq('id', jobId);
+
+      return NextResponse.json({
+        success: true,
+        jobId,
+        templateTypeId,
+        poppyRoutingMeta,
+        ...(poppyPromptDebug ? { poppyPromptDebug } : {}),
+        htmlCopyDraft,
+      });
     }
 
     assertValidPayload(payload, templateTypeId);

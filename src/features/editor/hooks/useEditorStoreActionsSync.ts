@@ -9,6 +9,7 @@ import type {
   Slide1Style,
   Slide1TextNoise,
   SlideCallout,
+  TemplateTypeId,
 } from "@/features/editor/store/types";
 
 type Args = {
@@ -18,7 +19,7 @@ type Args = {
   // Current dependency list (kept intentionally identical to EditorShell’s original effect).
   archiveProjectBusy: boolean;
   archiveProjectById: (projectId: string, title: string) => Promise<void> | void;
-  createNewProject: (templateTypeId: "regular" | "enhanced") => Promise<void> | void;
+  createNewProject: (templateTypeId: TemplateTypeId) => Promise<void> | void;
   currentProjectId: string | null;
   handleDownloadAll: () => Promise<void> | void;
   handleDownloadPdf: () => Promise<void> | void;
@@ -27,7 +28,7 @@ type Args = {
   handleSignOut: () => Promise<void> | void;
   isMobile: boolean;
   loadProject: (projectId: string) => Promise<void> | void;
-  newProjectTemplateTypeId: "regular" | "enhanced";
+  newProjectTemplateTypeId: TemplateTypeId;
   persistCurrentProjectTemplateMappings: (patch: {
     slide1TemplateIdSnapshot?: string | null;
     slide2to5TemplateIdSnapshot?: string | null;
@@ -55,7 +56,7 @@ type Args = {
   // Captured values used inside actions (kept as-is; not added to deps to avoid behavior changes).
   setProjectTitle: (next: string) => void;
   scheduleDebouncedProjectTitleSave: (args: { projectId: string | null; title: string; debounceMs: number }) => void;
-  setNewProjectTemplateTypeId: (next: "regular" | "enhanced") => void;
+  setNewProjectTemplateTypeId: (next: TemplateTypeId) => void;
   setSlides: any;
   setTemplateSettingsOpen: (next: boolean) => void;
   setPromptModalOpen: (next: boolean) => void;
@@ -180,7 +181,7 @@ type Args = {
     | { action: "reorderApproved"; ideaIds: string[] }
   ) => Promise<any>;
   deleteIdeaSource: (sourceId: string) => Promise<any>;
-  createCarouselFromIdea: (args: { ideaId: string; templateTypeId: "regular" | "enhanced" }) => Promise<{ projectId: string }>;
+  createCarouselFromIdea: (args: { ideaId: string; templateTypeId: TemplateTypeId }) => Promise<{ projectId: string }>;
   fetchProjectJobStatus: (args: { projectId: string; jobType?: string }) => Promise<any>;
   fetchIdeaCarouselRuns: (ideaIds: string[]) => Promise<Record<string, { projectId: string; createdAt: string }>>;
 
@@ -628,7 +629,7 @@ export function useEditorStoreActionsSync(args: Args) {
     onChangeProjectReviewSource: (a: any) => onChangeProjectReviewSource(a),
     onChangeProjectReviewDriveFolderUrl: (a: any) => onChangeProjectReviewDriveFolderUrl(a),
 
-    onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") => {
+    onChangeNewProjectTemplateTypeId: (next: TemplateTypeId) => {
       setNewProjectTemplateTypeId(next);
       editorStore.setState({ newProjectTemplateTypeId: next } as any);
     },
@@ -997,7 +998,7 @@ export function useEditorStoreActionsSync(args: Args) {
       onChangeProjectReviewSource: (a: any) => implRef.current?.onChangeProjectReviewSource?.(a),
       onChangeProjectReviewDriveFolderUrl: (a: any) => implRef.current?.onChangeProjectReviewDriveFolderUrl?.(a),
 
-      onChangeNewProjectTemplateTypeId: (next: "regular" | "enhanced") =>
+      onChangeNewProjectTemplateTypeId: (next: TemplateTypeId) =>
         implRef.current?.onChangeNewProjectTemplateTypeId?.(next),
       onClickNewProject: () => implRef.current?.onClickNewProject?.(),
 

@@ -14,6 +14,7 @@ type Category = { id: string; name: string };
 type SwipeItem = SwipeFileCaptureItem;
 type DigestMapSession = { topic: DigestTopicLaunchPayload; mapId: string };
 type DigestIdeasSession = { topic: DigestTopicLaunchPayload; swipeItemId: string; initialDraft: string };
+type TemplateTypeId = "enhanced" | "regular" | "html";
 
 function getActiveAccountHeader(): Record<string, string> {
   try {
@@ -103,15 +104,15 @@ export function SwipeFileModal() {
   const [noteSaveError, setNoteSaveError] = useState<string | null>(null);
   const noteSaveTimeoutRef = useRef<number | null>(null);
 
-  const [templateTypeId, setTemplateTypeId] = useState<"enhanced" | "regular">(() => {
+  const [templateTypeId, setTemplateTypeId] = useState<TemplateTypeId>(() => {
     try {
       const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("swipeFile.templateTypeId") || "").trim() : "";
-      return raw === "regular" ? "regular" : "enhanced";
+      return raw === "regular" || raw === "html" ? raw : "enhanced";
     } catch {
       return "enhanced";
     }
   });
-  const templateTypeIdRef = useRef<"enhanced" | "regular">(templateTypeId);
+  const templateTypeIdRef = useRef<TemplateTypeId>(templateTypeId);
   useEffect(() => {
     templateTypeIdRef.current = templateTypeId;
     try {
@@ -472,7 +473,7 @@ export function SwipeFileModal() {
 
   const onCreateProject = async (opts: {
     ideaId: string | null;
-    templateTypeId: "enhanced" | "regular";
+    templateTypeId: TemplateTypeId;
     savedPromptId: string;
     itemId?: string | null;
     sourceDigestTopicId?: string | null;
@@ -482,7 +483,8 @@ export function SwipeFileModal() {
     try {
       const itemId = String(opts.itemId || selectedItem?.id || "").trim();
       if (!itemId) throw new Error("Select an item first");
-      const templateTypeId = opts.templateTypeId === "regular" ? "regular" : "enhanced";
+      const templateTypeId =
+        opts.templateTypeId === "regular" ? "regular" : opts.templateTypeId === "html" ? "html" : "enhanced";
       const savedPromptId = String(opts.savedPromptId || "").trim();
       const sourceDigestTopicId = String(opts.sourceDigestTopicId || "").trim();
       if (!savedPromptId) throw new Error("Select a prompt");
@@ -522,7 +524,9 @@ export function SwipeFileModal() {
       // Close modal, load project, then auto-generate copy if source material is present.
       actions.onCloseSwipeFileModal?.();
       actions.onLoadProject?.(projectId);
-      pendingAutoGenerateProjectIdRef.current = projectId;
+      if (templateTypeId !== "html") {
+        pendingAutoGenerateProjectIdRef.current = projectId;
+      }
     } catch (e: any) {
       setCreateError(String(e?.message || e || "Create project failed"));
     } finally {
@@ -1555,8 +1559,10 @@ export function SwipeFileModal() {
         swipeItemId={digestMapSession ? null : selectedItem?.id || null}
         mapId={digestMapSession?.mapId || null}
         swipeItemLabel={digestMapSession?.topic.videoTitle || selectedItem?.title || selectedItem?.url || "Swipe item"}
-        onLoadProject={(projectId) => {
-          pendingAutoGenerateProjectIdRef.current = String(projectId);
+        onLoadProject={(projectId, nextTemplateTypeId) => {
+          if (nextTemplateTypeId !== "html") {
+            pendingAutoGenerateProjectIdRef.current = String(projectId);
+          }
           actions.onCloseSwipeFileModal?.();
           actions.onLoadProject?.(String(projectId));
         }}

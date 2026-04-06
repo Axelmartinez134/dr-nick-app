@@ -171,6 +171,7 @@ const defaultState: EditorState = {
   promptSaveStatus: "idle",
   projectSaveStatus: "idle",
   slideSaveStatus: "idle",
+  // These are only pre-bootstrap defaults. The resolved project/runtime can still be `html`.
   currentProjectId: null,
   activeSlideIndex: 0,
   templateTypeId: "regular",

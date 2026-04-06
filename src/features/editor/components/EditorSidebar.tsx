@@ -33,6 +33,7 @@ export function EditorSidebar() {
   const themeIsCustomized = useEditorSelector((s: any) => (s as any).themeIsCustomized);
 
   const actions = useEditorSelector((s) => s.actions);
+  const isHtmlProject = templateTypeId === "html";
 
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [accountsError, setAccountsError] = useState<string | null>(null);
@@ -141,12 +142,17 @@ export function EditorSidebar() {
         <select
           className="mb-3 w-full h-10 rounded-lg border border-slate-200 px-3 text-sm text-slate-900 bg-white shadow-sm"
           value={newProjectTemplateTypeId}
-          onChange={(e) => actions.onChangeNewProjectTemplateTypeId(e.target.value === "regular" ? "regular" : "enhanced")}
+          onChange={(e) =>
+            actions.onChangeNewProjectTemplateTypeId(
+              e.target.value === "regular" ? "regular" : e.target.value === "html" ? "html" : "enhanced"
+            )
+          }
           disabled={switchingSlides}
           title="Choose the type for the next new project (does not change the current project)"
         >
           <option value="enhanced">Enhanced</option>
           <option value="regular">Regular</option>
+          <option value="html">HTML</option>
         </select>
         <button
           className="w-full h-10 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
@@ -237,37 +243,39 @@ export function EditorSidebar() {
               </button>
             </div>
 
-            <div className="rounded-lg border border-slate-200 bg-white p-3">
-              <div className="text-xs font-semibold text-slate-700 mb-2">Export / Save</div>
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  className="w-full h-11 rounded-md bg-[#6D28D9] text-white text-sm font-semibold disabled:opacity-50"
-                  disabled={topExporting || switchingSlides}
-                  onClick={() => {
-                    actions?.onCloseMobileDrawer?.();
-                    actions?.onShareAll?.();
-                  }}
-                  title="Download all slides using the iPhone share/save flow"
-                >
-                  {topExporting ? "Preparing..." : "Download All"}
-                </button>
-                <button
-                  type="button"
-                  className="w-full h-11 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold disabled:opacity-50"
-                  disabled={topExporting || switchingSlides}
-                  onClick={() => {
-                    actions?.onCloseMobileDrawer?.();
-                    actions?.onDownloadAll?.();
-                  }}
-                  title="Fallback: downloads a ZIP to the Files app"
-                >
-                  {topExporting ? "Preparing..." : "Download ZIP (Files)"}
-                </button>
+            {!isHtmlProject ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="text-xs font-semibold text-slate-700 mb-2">Export / Save</div>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    className="w-full h-11 rounded-md bg-[#6D28D9] text-white text-sm font-semibold disabled:opacity-50"
+                    disabled={topExporting || switchingSlides}
+                    onClick={() => {
+                      actions?.onCloseMobileDrawer?.();
+                      actions?.onShareAll?.();
+                    }}
+                    title="Download all slides using the iPhone share/save flow"
+                  >
+                    {topExporting ? "Preparing..." : "Download All"}
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full h-11 rounded-md border border-slate-200 bg-white text-slate-700 text-sm font-semibold disabled:opacity-50"
+                    disabled={topExporting || switchingSlides}
+                    onClick={() => {
+                      actions?.onCloseMobileDrawer?.();
+                      actions?.onDownloadAll?.();
+                    }}
+                    title="Fallback: downloads a ZIP to the Files app"
+                  >
+                    {topExporting ? "Preparing..." : "Download ZIP (Files)"}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : null}
 
-            {isSuperadmin ? (
+            {isSuperadmin && !isHtmlProject ? (
               <div className="rounded-lg border border-slate-200 bg-white p-3">
                 <div className="text-xs font-semibold text-slate-700 mb-2">Review &amp; Share</div>
                 <button
@@ -289,6 +297,7 @@ export function EditorSidebar() {
       ) : null}
 
       {/* Template Card */}
+      {!isHtmlProject ? (
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div className="flex items-center gap-2">
@@ -356,8 +365,10 @@ export function EditorSidebar() {
           )}
         </div>
       </div>
+      ) : null}
 
       {/* Typography Card */}
+      {!isHtmlProject ? (
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <span className="w-7 h-7 rounded-lg bg-slate-700 text-white text-xs font-bold flex items-center justify-center">Aa</span>
@@ -402,8 +413,10 @@ export function EditorSidebar() {
           </div>
         </div>
       </div>
+      ) : null}
 
       {/* Colors Card */}
+      {!isHtmlProject ? (
       <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-400 to-rose-500 text-white text-sm flex items-center justify-center">🖌️</span>
@@ -510,6 +523,7 @@ export function EditorSidebar() {
           </button>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }

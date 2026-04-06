@@ -19,10 +19,14 @@ type PromptRow = {
   updated_at: string;
 };
 
+function resolveStoredTemplateTypeId(templateTypeId: TemplateTypeId): 'regular' | 'enhanced' {
+  return templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
+}
+
 function parseTemplateTypeId(req: NextRequest): TemplateTypeId | null {
   const { searchParams } = new URL(req.url);
   const raw = String(searchParams.get('type') || '').trim();
-  if (raw === 'regular' || raw === 'enhanced') return raw;
+  if (raw === 'regular' || raw === 'enhanced' || raw === 'html') return raw;
   return null;
 }
 
@@ -41,6 +45,7 @@ export async function GET(req: NextRequest) {
   if (!templateTypeId) {
     return NextResponse.json({ success: false, error: 'Invalid template type' }, { status: 400 });
   }
+  const storedTemplateTypeId = resolveStoredTemplateTypeId(templateTypeId);
 
   const list = async () => {
     const { data, error } = await supabase
@@ -48,7 +53,7 @@ export async function GET(req: NextRequest) {
       .select('id, account_id, user_id, template_type_id, title, prompt, is_active, seed_key, created_at, updated_at')
       .eq('account_id', accountId)
       .eq('user_id', user.id)
-      .eq('template_type_id', templateTypeId)
+      .eq('template_type_id', storedTemplateTypeId)
       .order('is_active', { ascending: false })
       .order('updated_at', { ascending: false });
     if (error) throw new Error(error.message);
@@ -57,14 +62,14 @@ export async function GET(req: NextRequest) {
 
   const ensureSeeded = async () => {
     // Seed from the current effective account-level prompt (defaults + account overrides).
-    const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, templateTypeId);
+    const { effective } = await loadEffectiveTemplateTypeSettings(supabase as any, { accountId, actorUserId: user.id }, storedTemplateTypeId);
     const prompt = String((effective as any)?.prompt || '').trim();
     if (!prompt) return false;
 
     const { error } = await supabase.from('editor_poppy_saved_prompts').insert({
       account_id: accountId,
       user_id: user.id,
-      template_type_id: templateTypeId,
+      template_type_id: storedTemplateTypeId,
       title: 'Default Poppy Prompt',
       prompt,
       is_active: true,
@@ -89,7 +94,7 @@ export async function GET(req: NextRequest) {
       .update({ is_active: false })
       .eq('account_id', accountId)
       .eq('user_id', user.id)
-      .eq('template_type_id', templateTypeId);
+      .eq('template_type_id', storedTemplateTypeId);
     await supabase
       .from('editor_poppy_saved_prompts')
       .update({ is_active: true })

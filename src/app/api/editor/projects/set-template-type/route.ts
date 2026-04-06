@@ -30,8 +30,26 @@ export async function POST(request: NextRequest) {
   }
 
   if (!body.projectId) return NextResponse.json({ success: false, error: 'projectId is required' }, { status: 400 });
-  if (body.templateTypeId !== 'regular' && body.templateTypeId !== 'enhanced') {
+  if (body.templateTypeId !== 'regular' && body.templateTypeId !== 'enhanced' && body.templateTypeId !== 'html') {
     return NextResponse.json({ success: false, error: 'Invalid template type' }, { status: 400 });
+  }
+
+  const { data: currentProject, error: currentProjectErr } = await supabase
+    .from('carousel_projects')
+    .select('id, template_type_id')
+    .eq('id', body.projectId)
+    .eq('account_id', accountId)
+    .maybeSingle();
+
+  if (currentProjectErr || !currentProject?.id) {
+    return NextResponse.json({ success: false, error: currentProjectErr?.message || 'Project not found' }, { status: 404 });
+  }
+
+  if (body.templateTypeId === 'html' || String((currentProject as any)?.template_type_id || '').trim() === 'html') {
+    return NextResponse.json(
+      { success: false, error: 'Switching to or from html is not supported in v1.' },
+      { status: 400 }
+    );
   }
 
   // Load the effective (global default) prompt + template mapping for this template type.

@@ -20,8 +20,10 @@ type Props = {
   mapId?: string | null;
   swipeItemLabel?: string | null;
   onClose: () => void;
-  onLoadProject?: (projectId: string) => void;
+  onLoadProject?: (projectId: string, templateTypeId?: TemplateTypeId) => void;
 };
+
+type TemplateTypeId = "regular" | "enhanced" | "html";
 
 type LinePath = {
   id: string;
@@ -299,15 +301,15 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
   const [steeringDraft, setSteeringDraft] = useState("");
   const [steeringBusy, setSteeringBusy] = useState(false);
   const [steeringError, setSteeringError] = useState<string | null>(null);
-  const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">(() => {
+  const [templateTypeId, setTemplateTypeId] = useState<TemplateTypeId>(() => {
     try {
       const raw = typeof window !== "undefined" ? String(window.localStorage.getItem("swipeFile.templateTypeId") || "").trim() : "";
-      return raw === "regular" ? "regular" : "enhanced";
+      return raw === "regular" || raw === "html" ? raw : "enhanced";
     } catch {
       return "enhanced";
     }
   });
-  const templateTypeIdRef = useRef<"regular" | "enhanced">(templateTypeId);
+  const templateTypeIdRef = useRef<TemplateTypeId>(templateTypeId);
   const [savedPromptId, setSavedPromptId] = useState<string>("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerExpansionId, setPickerExpansionId] = useState<string | null>(null);
@@ -347,6 +349,12 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
       // ignore
     }
   }, [templateTypeId]);
+
+  useEffect(() => {
+    if (!digestOrigin) return;
+    if (templateTypeId !== "html") return;
+    setTemplateTypeId("enhanced");
+  }, [digestOrigin, templateTypeId]);
 
   const loadGraph = useCallback(async (opts?: { preserveMessage?: boolean }) => {
     const resolvedMapId = String(mapId || "").trim();
@@ -689,6 +697,50 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
     }
   };
 
+  const copyAllOpeningPairs = async () => {
+    if (!selectedTopic || openingPairs.length === 0) return;
+    const text = [
+      `Topic: ${selectedTopic.title}`,
+      "",
+      `Summary: ${selectedTopic.summary}`,
+      "",
+      ...openingPairs.flatMap((pair, index) => [
+        pair.title,
+        `Slide 1: ${pair.slide1}`,
+        "",
+        `Slide 2: ${pair.slide2}`,
+        ...(index < openingPairs.length - 1 ? ["", ""] : []),
+      ]),
+    ].join("\n");
+    await copyText(text);
+  };
+
+  const copyAllExpansions = async () => {
+    if (!selectedTopic || expansions.length === 0) return;
+    const text = [
+      `Topic: ${selectedTopic.title}`,
+      "",
+      `Summary: ${selectedTopic.summary}`,
+      "",
+      ...expansions.flatMap((expansion, index) => [
+        `Carousel #${index + 1}`,
+        `Slide 1: ${expansion.selectedSlide1Text}`,
+        "",
+        `Slide 2: ${expansion.selectedSlide2Text}`,
+        "",
+        `Slide 3: ${expansion.slide3}`,
+        "",
+        `Slide 4: ${expansion.slide4}`,
+        "",
+        `Slide 5: ${expansion.slide5}`,
+        "",
+        `Slide 6: ${expansion.slide6}`,
+        ...(index < expansions.length - 1 ? ["", ""] : []),
+      ]),
+    ].join("\n");
+    await copyText(text);
+  };
+
   const onUsePair = async (pair: CarouselMapOpeningPair) => {
     await runAction("use-pair", async () => {
       await patchSelection({
@@ -745,7 +797,7 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
     }
   };
 
-  const onCreateProject = async (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string; expansionId: string }) => {
+  const onCreateProject = async (args: { templateTypeId: TemplateTypeId; savedPromptId: string; expansionId: string }) => {
     if (!graph?.id) return;
     setCreateBusy(true);
     setError(null);
@@ -757,7 +809,7 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
       const projectId = String(json.projectId || "").trim();
       if (!projectId) throw new Error("Missing projectId");
       onClose();
-      onLoadProject?.(projectId);
+      onLoadProject?.(projectId, args.templateTypeId);
     } catch (e: any) {
       setError(String(e?.message || e || "Failed to create project"));
     } finally {
@@ -1058,6 +1110,15 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
                 }}
                 action={
                   <div className="flex items-center gap-2">
+                    {openingPairs.length > 0 ? (
+                      <button
+                        type="button"
+                        className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        onClick={() => void copyAllOpeningPairs()}
+                      >
+                        Copy all pairs
+                      </button>
+                    ) : null}
                     {isSuperadmin ? (
                       <button
                         type="button"
@@ -1279,6 +1340,17 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
                 contentRef={(node) => {
                   expansionLaneScrollRef.current = node;
                 }}
+                action={
+                  expansions.length > 0 ? (
+                    <button
+                      type="button"
+                      className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => void copyAllExpansions()}
+                    >
+                      Copy all Expansions
+                    </button>
+                  ) : undefined
+                }
               >
                 {!selectedTopic ? (
                   <div className="text-sm text-slate-600">Select a topic first.</div>
@@ -1286,7 +1358,7 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
                   <div className="text-sm text-slate-600">Generate slides 3-6 from the chosen opening.</div>
                 ) : (
                   <div className="space-y-3">
-                    {expansions.map((expansion) => (
+                    {expansions.map((expansion, index) => (
                       <div
                         key={expansion.id}
                         ref={(node) => {
@@ -1294,7 +1366,12 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
                         }}
                         className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
                       >
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Opening</div>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Opening</div>
+                          <div className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                            #{index + 1}
+                          </div>
+                        </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {selectedSlide1Pair ? (
                             <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
@@ -1365,6 +1442,7 @@ export function CarouselMapModal({ open, swipeItemId, mapId, swipeItemLabel, onC
         expansion={pickerExpansion}
         initialTemplateTypeId={templateTypeIdRef.current}
         initialSavedPromptId={savedPromptId}
+        allowHtml={!digestOrigin}
         onSelectionChange={(args) => {
           setTemplateTypeId(args.templateTypeId);
           setSavedPromptId(String(args.savedPromptId || "").trim());

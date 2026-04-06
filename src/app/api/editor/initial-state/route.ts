@@ -1,13 +1,11 @@
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import type { CarouselTemplateDefinitionV1 } from '@/lib/carousel-template-types';
-import { getAuthedSupabase, resolveActiveAccountId } from '../_utils';
+import { getAuthedSupabase, resolveActiveAccountId, type TemplateTypeId } from '../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../projects/_effective';
 
 export const runtime = 'nodejs';
 export const maxDuration = 10;
-
-type TemplateTypeId = 'regular' | 'enhanced';
 
 function starterTemplateDefinition(): CarouselTemplateDefinitionV1 {
   return {
@@ -65,7 +63,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => null)) as any;
     const raw = String(body?.templateTypeId || '').trim();
-    if (raw === 'enhanced' || raw === 'regular') templateTypeId = raw;
+    if (raw === 'enhanced' || raw === 'regular' || raw === 'html') templateTypeId = raw;
   } catch {
     // ignore
   }

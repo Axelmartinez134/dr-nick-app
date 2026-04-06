@@ -186,10 +186,10 @@ This means our plan can copy Mirr's **browser ↔ app-server contract** nearly v
 
 | File | Change |
 |------|--------|
-| `src/features/editor/components/EditorSidebar.tsx` | Add `"html"` option to template type `<select>` |
-| `src/features/editor/components/SwipeIdeasPickerModal.tsx` | Add `"html"` option. Keep the saved-prompt selector visible for html; in v1 it should resolve against the Regular prompt pool behind the scenes instead of requiring html-specific prompt rows. |
+| `src/features/editor/components/EditorSidebar.tsx` | Add `"html"` option to template type `<select>`. When the current project type is `html`, hide Fabric-only template-settings and prompt-override controls from the shared sidebar. |
+| `src/features/editor/components/SwipeIdeasPickerModal.tsx` | Add `"html"` option. Keep the saved-prompt selector visible for html; in v1 it should resolve against the Regular prompt pool behind the scenes instead of requiring html-specific prompt rows. If the modal is being used in a Daily Digest-origin flow, hide/disable the html option so Digest remains Regular-only in v1. |
 | `src/features/editor/components/CarouselMapProjectPickerModal.tsx` | Add `"html"` option. Keep the saved-prompt selector visible for html; in v1 it should resolve against the Regular prompt pool behind the scenes instead of requiring html-specific prompt rows. |
-| `src/features/editor/components/CarouselMapModal.tsx` | **CRITICAL:** Has its own `useState<"regular" \| "enhanced">`, localStorage restore, and create-project coercion logic. Must widen local type to include `"html"` and remove any binary ternary that collapses html to enhanced. |
+| `src/features/editor/components/CarouselMapModal.tsx` | **CRITICAL:** Has its own `useState<"regular" \| "enhanced">`, localStorage restore, and create-project coercion logic. Must widen local type to include `"html"` and remove any binary ternary that collapses html to enhanced. If the modal is being used from a Daily Digest session, hide/disable the html option so Digest remains Regular-only in v1. |
 | `src/features/editor/components/IdeasModal.tsx` | Add `"html"` option to `carouselTemplateType`. If this modal shows prompt-selection UI for html flows, keep that UI visible and back it with the same v1 html → Regular prompt-pool rule. |
 | `src/features/editor/components/SwipeFileModal.tsx` | **CRITICAL:** `useState<"enhanced" \| "regular">` and localStorage fallback force unknown values to `"enhanced"`. Widen type to include `"html"`. |
 
@@ -199,7 +199,7 @@ This means our plan can copy Mirr's **browser ↔ app-server contract** nearly v
 |------|--------|
 | `src/app/editor/EditorRuntimeRouter.tsx` | **NEW shared router.** Waits for bootstrap/load to resolve the actual `templateTypeId` before mounting an editor runtime. Shows a neutral loading state until then. Renders legacy `EditorShell.tsx` for `regular`/`enhanced`; renders `HtmlEditorShell.tsx` for `html`. Add TODO comment that this router should later point to `FabricEditorShell.tsx` once Regular/Enhanced are extracted from `EditorShell.tsx`. |
 | `src/app/editor/EditorShell.tsx` | **Temporary legacy Fabric runtime in v1.** Keep current behavior for `regular`/`enhanced`. Do NOT mount it for html. Add a breadcrumb comment/TODO that this file is expected to be renamed/extracted to `FabricEditorShell.tsx` in a later refactor. |
-| `src/features/html-editor/HtmlEditorShell.tsx` | **NEW dedicated html runtime shell.** Owns html workspace composition: active slide stage, html slides strip, html bottom panel, right-side inspector, html-specific actions wiring, and html-only hook graph. |
+| `src/features/html-editor/components/HtmlEditorShell.tsx` | **NEW dedicated html runtime shell.** Owns html workspace composition: active slide stage, html slides strip, html bottom panel, right-side inspector, html-specific actions wiring, and html-only hook graph. |
 
 ### E. Boot / Load / Hydration (prevent silent coercion to "regular")
 
@@ -253,9 +253,9 @@ These hooks are Fabric.js-only. They must NOT run when `templateTypeId === "html
 
 | File | Decision |
 |------|----------|
-| `carousel_template_types` table | **Decision for v1:** HTML does NOT participate in the prompt-override system. No row needed in `carousel_template_types`. All code paths that call `loadEffectiveTemplateTypeSettings` must early-return safe defaults when `templateTypeId === "html"`. |
+| `carousel_template_types` table | **Decision for v1:** HTML does NOT participate in the prompt-override system. However, the real schema currently requires a compatibility `"html"` row in `carousel_template_types` because `carousel_projects.template_type_id` is constrained by a foreign key. HTML still bypasses template-setting semantics at the application layer, and all code paths that call `loadEffectiveTemplateTypeSettings` must early-return safe defaults when `templateTypeId === "html"`. |
 | `carousel_template_type_overrides` table | No overrides for html. |
-| `editor_poppy_saved_prompts` table | HTML does NOT semantically inherit `regular` or `enhanced`. However, in v1, shared picker/create flows should keep the saved-prompt UI visible for html and resolve prompt content from the **Regular** saved-prompt pool behind the scenes. No html-specific prompt rows are required in v1 unless later evidence or product needs justify them. All routes must still branch explicitly on `html` rather than ternary-coercing the project type. |
+| `editor_poppy_saved_prompts` table | HTML does NOT semantically inherit `regular` or `enhanced`. However, in v1, shared picker/create flows and the saved prompt library remain visible for html and resolve prompt content from the **Regular** saved-prompt pool behind the scenes. Route-level prompt list/create requests for `html` should be accepted, then mapped internally to the Regular pool. No html-specific prompt rows are required in v1 unless later evidence or product needs justify them. All routes must still branch explicitly on `html` rather than ternary-coercing the project type. |
 
 ### Completely NEW files (isolated feature)
 
@@ -542,42 +542,45 @@ GRANT ALL ON public.html_design_presets TO authenticated;
 
 ### Template Type Settings Decision
 
-HTML does NOT participate in the `carousel_template_types` / `carousel_template_type_overrides` / `editor_poppy_saved_prompts` prompt-override system. No new row is needed in `carousel_template_types` for `"html"`. All code paths that call `loadEffectiveTemplateTypeSettings` must early-return safe defaults when `templateTypeId === "html"`.
+HTML does NOT participate in the `carousel_template_types` / `carousel_template_type_overrides` / `editor_poppy_saved_prompts` prompt-override system. In practice, the database still requires a compatibility `"html"` row in `carousel_template_types` because `carousel_projects.template_type_id` is foreign-keyed there. That compatibility row is schema plumbing only; html still bypasses template-setting semantics in app code. All code paths that call `loadEffectiveTemplateTypeSettings` must early-return safe defaults when `templateTypeId === "html"`.
 
 For v1 shared picker/create flows, the saved-prompt UI remains visible for html even though no html-specific prompt rows exist. The implementation rule is:
 
 - the UI still lets the user select a prompt when creating an html project from shared flows
 - behind the scenes, html resolves prompt content from the **Regular** saved-prompt pool for v1
+- route-level saved-prompt list/create requests that accept `html` should internally map that request to the **Regular** pool instead of requiring html-specific rows
+- row-id-based saved-prompt actions such as activate/update/duplicate can keep operating on the stored Regular rows without special html-only storage
 - the route logic must still branch explicitly on `html` rather than inheriting regular/enhanced semantics by coercion
 - later iterations may introduce true html-specific saved prompts, but v1 does not require them
+- shared template-settings and template-mapping surfaces do not apply to html and should be hidden rather than partially supported in v1
 
 ### V1 Constraint: slide_index 0–5 (6 slides fixed)
 
-The current app hardwires 6 slides everywhere (create routes, generate-copy, UI). HTML v1 matches this: `CHECK (slide_index >= 0 AND slide_index <= 5)`. Variable slide count is a Phase 5 feature.
+The current app hardwires 6 slides everywhere (create routes, generate-copy, UI). HTML v1 matches this: `CHECK (slide_index >= 0 AND slide_index <= 5)`. Variable slide count is future scope and out of v1.
 
 ---
 
 ## 5. The Workspace Layout (What the User Sees)
 
-When `templateTypeId === "html"`, the editor keeps the same overall shell and dotted workspace feel, but the runtime beneath that shell is different. `EditorRuntimeRouter.tsx` waits for bootstrap/load to resolve the real project type, then routes html projects into `HtmlEditorShell.tsx`, which owns the iframe-based HTML workspace. The left sidebar remains. The top bar remains. The workspace becomes a hybrid layout: center preview, bottom project tools, right-side selected-element inspector.
+When `templateTypeId === "html"`, the editor keeps the same overall shell and dotted workspace feel, but the runtime beneath that shell is different. `EditorRuntimeRouter.tsx` waits for bootstrap/load to resolve the real project type, then routes html projects into `HtmlEditorShell.tsx`, which owns the iframe-based HTML workspace. The left sidebar remains. The top bar remains. The current MVP workspace is intentionally aligned to the old editor's horizontal-row mental model rather than an "active preview + thumbnails below" layout.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
 │  EditorTopBar (shared chrome; html-specific actions §17e)           │
 ├──────────┬───────────────────────────────────────────────┬───────────┤
 │          │                                               │           │
-│ Editor   │   Active Slide Preview                        │ Edit /    │
-│ Sidebar  │   (scaled iframe, centered, dotted workspace) │ AI Design │
-│          │   [interaction happens inside iframe]         │ inspector │
-│ - Proj   │                                               │           │
-│   list   │   Slide thumbnails below preview              │ Selected  │
-│ - New    │   [1][2][3][4][5][6]                          │ element   │
+│ Editor   │   Horizontal HTML slide row                   │ Edit /    │
+│ Sidebar  │   (scaled iframes, centered active slide,     │ AI Design │
+│          │   neighboring slides visible in context)      │ inspector │
+│ - Proj   │   [1][2][3][4][5][6] in a single row          │           │
+│   list   │                                               │ Selected  │
+│ - New    │   dotted workspace background                 │ element   │
 │   proj   │                                               │ content + │
 │ - Preset │                                               │ styling   │
 │   select │                                               │ controls  │
 ├──────────┴───────────────────────────────────────────────┴───────────┤
-│  HTML bottom panel: caption, debug logs, generate copy, project-level │
-│  workflow/status surfaces                                              │
+│  HTML bottom panel: workflow CTA, status, prompt snapshot, caption   │
+│  presence, and project-level messaging                               │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -585,9 +588,9 @@ When `templateTypeId === "html"`, the editor keeps the same overall shell and do
 
 1. **The editor identity stays familiar.** Keep the same dotted workspace feel, centered slide focus, left project sidebar, top action bar, and bottom project-tools surface.
 
-2. **The center surface changes under the hood.** The active slide is a scaled iframe rendering HTML, not a Fabric canvas. The user should still experience it as “the slide in the middle.”
+2. **The center surface changes under the hood.** The active slide is a scaled iframe rendering HTML, not a Fabric canvas. The user should still experience it as “the slide in the middle,” but in the current MVP it lives inside a horizontal slide row rather than a separate top-stage preview.
 
-3. **The bottom panel stays.** For `html` projects, it becomes a dedicated HTML project-tools surface for caption, logs, generate-copy flow, and project-level messaging. The existing Fabric-specific `EditorBottomPanel` is not mounted as-is, but its role in the workspace remains.
+3. **The bottom panel stays.** For `html` projects, it becomes a dedicated HTML project-tools surface for generate-copy flow, workflow/status messaging, prompt snapshot visibility, and caption presence. A richer caption editor and debug-log surface remain future follow-up work.
 
 4. **The right side is secondary, not dominant.** A right-side inspector appears for selected-element editing. It should feel contextual and clean, not like a separate right-heavy app layout.
 
@@ -595,17 +598,19 @@ When `templateTypeId === "html"`, the editor keeps the same overall shell and do
 
 6. **The AI Designer tab is visible but disabled in V1.** It is included so we can validate the future workspace shape now, but it does not trigger backend refinement yet.
 
-7. **Slide thumbnails stay below the main preview.** Users navigate slides the same way they do today: by clicking a thumbnail strip below the main stage.
+7. **Slide navigation follows the old horizontal row model.** Users navigate slides in a single horizontal strip with the active slide centered and neighboring slides still visible in context.
 
 8. **Top bar actions branch for html.** Export/save behavior uses the HTML render/save endpoints when `templateTypeId === "html"` — see §17e.
 
-9. **Unsaved changes guard remains required.** `beforeunload` handling and project-switch confirmation still apply — see §17f.
+9. **Unsaved changes guard remains a future parity item.** `beforeunload` handling for browser exit can exist independently, but a true project-switch confirmation flow matching the original architecture is not yet implemented in the MVP.
 
 ---
 
 ## 6. Element-Level Editing Architecture (Reverse-Engineered from Mirr)
 
 This is the key engineering challenge. We've fully reverse-engineered how Mirr solves it.
+
+> **Current MVP status:** The shipped html editor does **not** yet implement this full Mirr-style in-iframe interaction model. The current implementation supports iframe click-selection plus parent-side parsing, property editing, and HTML patching/serialization. Drag, resize, rotation, inline `contentEditable`, the richer `postMessage` contract, and the dedicated interaction-script/store architecture described below remain the target architecture for follow-up work rather than shipped parity.
 
 ### The Core Insight: Everything Happens INSIDE the iframe
 
@@ -1148,6 +1153,8 @@ The iframe is rendered at full slide dimensions (e.g., 1080×1350) inside a cont
 
 ### Aspect Ratio Dimensions
 
+> **Current MVP decision:** The shipped html workspace now matches `EditorShell` geometry exactly and defaults to **`3:4` / `1080 x 1440`**. The wider aspect-ratio union remains documented because the underlying HTML rendering system can support it, and Mirr evidence still references `4:5` in places, but the current product decision for our editor/runtime/export path is `3:4`.
+
 ```typescript
 const DIMENSIONS = {
   "1:1":  { width: 1080, height: 1080 },
@@ -1249,6 +1256,7 @@ Implementation notes:
 - caption is NOT generated as part of the html copy branch in v1
 - only after the html copy draft exists do we ask the user to choose the visual preset in v1
 - the server then converts `HtmlCopyDraft` into the final `PROJECT_TITLE` / `CAROUSEL_TEXTLINES` string
+- v1 persists the html copy draft using existing shared tables: `carousel_projects.title` is the `projectTitle`, each slide's first `textLine` maps to `carousel_project_slides.headline` when present, and the remaining `textLines` map to `carousel_project_slides.body` joined with newlines
 
 ```typescript
 type HtmlGenerateContentInput = {
@@ -1287,7 +1295,8 @@ Rules for the content builder:
 - Preserve slide ordering exactly
 - Remove empty trailing lines, but preserve intentional paragraph breaks
 - Use existing copy-generation output as the source of truth for `textLines`
-- If a route like Carousel Map or Daily Digest creates the project, it must still normalize into this same `PROJECT_TITLE` / `CAROUSEL_TEXTLINES` format before HTML generation
+- If a shared flow like Swipe Ideas or Carousel Map creates the project, it must still normalize into this same `PROJECT_TITLE` / `CAROUSEL_TEXTLINES` format before HTML generation
+- Daily Digest direct project creation remains Regular-only in v1, and digest-origin shared picker flows should block html in the selector rather than creating an html project and silently coercing it later
 
 #### 7a3. Reconstructed Backend System Prompt Structure
 
@@ -1514,22 +1523,24 @@ The main plan only keeps enough structure to make those future additions non-bre
 
 ### 7c. Save Edited Slides to DB
 
-**Endpoint:** `PATCH /api/editor/html-projects/save-slides`
+> **Current MVP contract:** The shipped endpoint is currently `POST /api/editor/html-projects/save-slides`, not `PATCH`, and it accepts a simple `slides[]` payload. The richer Mirr-shaped contract below remains a future parity target if we decide the extra `generatedPages[]` / `htmlGenerationId` semantics are worth the added complexity.
+
+**Endpoint:** `POST /api/editor/html-projects/save-slides`
 
 **Request body:**
 ```typescript
 {
-  projectId: string;                  // UUID — REQUIRED
-  htmlGenerationId?: string | null;    // from generate-slides response, matches DB column
-  generatedPages: Array<{
-    pageIndex: number;                // 0-based (0–5)
-    html: string;                     // clean display HTML (editor attrs stripped)
-    pageTitle?: string;               // page title for sidebar display
+  projectId: string;               // UUID — REQUIRED
+  slides: Array<{
+    slideIndex: number;            // 0-based (0–5)
+    html: string;                  // clean display HTML
+    pageTitle?: string | null;
+    pageType?: string | null;
   }>
 }
 ```
 
-**Persistence contract:** Persisted `html_project_slides.html` stores **clean display HTML** — `data-editable-id`, `data-editor-overlay-root`, selection UI, and other editor-only nodes are stripped by the client's `A()` cleanup function BEFORE the save request. On reload, the parser re-injects `data-editable-id` from scratch.
+**Persistence contract:** Persisted `html_project_slides.html` stores the current cleaned display HTML for each slide. The MVP save flow updates `html_project_slides` and keeps the project `updated_at` fresh; it does not currently require `htmlGenerationId` to save.
 
 **Response:** `200 OK` with `{ saved: true, updatedAt: string }`
 
@@ -1543,39 +1554,19 @@ This is called when:
 
 ### 7d. Render HTML to Image (Export)
 
-**Single unified endpoint for both thumbnails and bulk export.**
+> **Current MVP contract:** The shipped export route is simpler than the original Mirr-shaped design. It currently renders by `projectId` and returns a ZIP export flow for the html editor. `storage` / `blob` modes and a unified `pages[] + aspectRatio + format` contract remain future follow-up work if we choose to broaden the API.
 
 **Endpoint:** `POST /api/editor/html-projects/render`
 
 **Request body:**
 ```typescript
 {
-  projectId?: string;                       // optional, for logging/storage path
-  pages: Array<{
-    pageIndex: number;
-    html: string;                           // clean display HTML
-  }>;
-  aspectRatio: "1:1" | "4:5" | "3:4" | "16:9" | "9:16";
-  format: "zip" | "storage" | "blob";
-  imageType?: "jpeg" | "png";              // default: "jpeg"
-  quality?: number;                         // 1-100, default: 90 (jpeg only)
+  projectId: string;
 }
 ```
 
-**Response (format="zip"):**
-`Content-Type: application/zip` — contains `slide-01.jpg`, `slide-02.jpg`, etc.
-
-**Response (format="storage"):**
-```typescript
-{
-  images: Array<{ pageIndex: number; url: string }>;
-  pageCount: number;
-  aspectRatio: string;
-}
-```
-
-**Response (format="blob"):**
-Only valid when `pages.length === 1`. Returns raw image bytes with `Content-Type: image/jpeg` or `image/png`.
+**Response:**
+`Content-Type: application/zip` — contains the rendered slide images for the project export.
 
 ### 7e. Copy Changes → Re-generate Visuals
 
@@ -1658,6 +1649,8 @@ For the slide strip thumbnails, we render each slide at 1/3 scale (360×450 for 
 ---
 
 ## 9. Design Preset System
+
+> **Current MVP status:** The live app currently serves presets from a code-defined `SYSTEM_HTML_PRESETS` catalog and uses `GET /api/editor/html-projects/presets` as a thin delivery layer over that catalog. The database table `html_design_presets` exists in schema, but the MVP does not yet use it as the runtime source of truth for reads. Also note that the selected preset's `html_style_guide` is persisted today, while `html_preset_id` persistence through generation still needs follow-up to fully match the intended contract.
 
 ### Verified Preset Contract (from Mirr capture)
 
@@ -1751,6 +1744,24 @@ This is explicitly out of scope for V1. All V1 presets are system-seeded.
 6. Each preset card shows an example image, name, and category badge
 7. User selects → `html_preset_id` and `html_style_guide` are stored on the project
 8. Generate Slides uses the html copy draft plus the preset's reference HTML templates and style guide as the visual direction
+
+### Html Shell Progression Before Editing
+
+When an html project opens, the shell should guide the user through the intended v1 funnel rather than exposing every later-stage control immediately:
+
+1. **No html copy yet**
+   - show the html shell
+   - show a prominent **Generate Copy** call to action
+   - keep preset selection hidden or disabled until copy exists
+   - keep the center workspace in an empty state
+2. **Copy exists, but no preset selected**
+   - show a prominent **Choose a Preset** call to action
+   - keep slide-generation controls unavailable until a preset is chosen
+3. **Copy exists and preset is selected, but slides are not generated yet**
+   - show a prominent **Generate Slides** call to action
+   - keep the center workspace in a pre-generation empty state
+4. **Slides exist**
+   - show the generated slides and unlock the normal preview/edit progression for the current implementation phase
 
 ---
 
@@ -1877,6 +1888,15 @@ This is explicitly out of scope for V1. All V1 presets are system-seeded.
    - keep AI Designer visibly present but disabled
 
 **Verification:** User can complete the full V1 flow: create HTML project → pick preset → generate copy → generate slides → edit → save → export images.
+
+### Post-MVP Audit Notes
+
+The MVP rollout is functionally in place, but several parts of this architecture document still describe the intended end-state rather than the exact shipped state. The most important follow-up buckets after the MVP are:
+
+1. **Mirr-style editing parity:** full in-iframe interaction script, richer `postMessage` protocol, drag/resize/rotate, and inline text editing remain future work.
+2. **Preset persistence/storage parity:** `html_preset_id` persistence through generation and DB-backed preset serving remain incomplete relative to this document's target contract.
+3. **API contract parity:** the save/export endpoints currently use simpler MVP contracts than the Mirr-shaped design described above.
+4. **Additional editor polish:** undo/redo, session persistence/history, keyboard shortcuts, project-switch unsaved-changes UX, add-element flows, and richer retry UX remain deferred.
 
 ---
 
@@ -2026,6 +2046,9 @@ interface PageState {
 - NOT supporting animations or video in HTML slides
 - NOT building a mobile editor
 - NOT allowing users to write raw HTML/CSS (they interact through the property editor and generation workflow)
+- NOT treating the current MVP as full Mirr-parity for in-iframe editing; drag/resize/rotate, inline rich-text editing, and the dedicated interaction-script architecture remain follow-up work
+- NOT shipping undo/redo, session persistence/history, keyboard shortcuts, add-element flows, or a project-switch unsaved-changes modal in the current MVP
+- NOT treating `html_design_presets` as the live preset source of truth yet; DB-backed preset management remains future work
 
 ---
 
@@ -2421,11 +2444,11 @@ These decisions resolve the audit's open questions:
 | 17 | Do we refactor Regular/Enhanced into `FabricEditorShell` now? | No. Leave the current `EditorShell.tsx` in place for v1 to avoid destabilizing existing users. Add breadcrumb comments that it should later be renamed/extracted to `FabricEditorShell.tsx`. |
 | 18 | Does html semantically inherit `regular` or `enhanced` copy behavior? | No. HTML is a first-class type. V1 uses the hybrid Path B flow, but `generate-copy/route.ts` must branch explicitly for `html` rather than silently coercing it to regular/enhanced. The html copy branch produces an explicit `HtmlCopyDraft` shape that is later converted into `PROJECT_TITLE` / `CAROUSEL_TEXTLINES`. |
 | 19 | Does html use `jobs/start`? | No. `jobs/start/route.ts` stays Fabric-only in v1. Html generation flows through `generate-copy` and then `/api/editor/html-projects/generate-slides`. |
-| 20 | Is Daily Digest → html in v1 scope? | No. Daily Digest continues to create Regular projects in v1 unless a later scoped change explicitly adds digest → html support. |
+| 20 | Is Daily Digest → html in v1 scope? | No. Daily Digest continues to create Regular projects in v1 unless a later scoped change explicitly adds digest → html support. Shared digest-origin picker flows should also hide/block the html option rather than allowing creation and overriding it later. |
 | 21 | What happens on mobile for html? | Phone editing is out of scope in v1. Show a desktop-only message rather than building a mobile html editor flow. |
 | 22 | What do we show in the top bar for html? | Keep "Download All" wired to html ZIP export and hide "Download PDF" in v1. |
 | 23 | Is html available from shared picker/create flows in v1? | Yes. `IdeasModal`, `SwipeIdeasPickerModal`, `CarouselMapModal`, `CarouselMapProjectPickerModal`, and related create-project flows may all create html projects in v1. |
-| 24 | How does prompt selection work for html in shared flows? | Keep the saved-prompt UI visible. In v1, html resolves prompt content from the Regular saved-prompt pool behind the scenes rather than requiring html-specific prompt rows. |
+| 24 | How does prompt selection work for html in shared flows? | Keep the saved-prompt UI visible. In v1, html resolves prompt content from the Regular saved-prompt pool behind the scenes rather than requiring html-specific prompt rows. Route-level prompt list/create requests for html should internally map to the Regular pool. |
 | 25 | Does the user pick a preset before or after html copy exists? | After. V1 flow is copy first, preset second, then `generate-slides`. |
 
 ---

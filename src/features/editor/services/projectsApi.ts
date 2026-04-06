@@ -1,3 +1,5 @@
+import type { TemplateTypeId } from '../store/types';
+
 export type FetchJson = (path: string, init?: RequestInit) => Promise<any>;
 
 export type ProjectListItem = {
@@ -17,7 +19,7 @@ export async function loadProject(fetchJson: FetchJson, projectId: string): Prom
   return { project: data?.project, slides: Array.isArray(data?.slides) ? data.slides : [] };
 }
 
-export async function createProject(fetchJson: FetchJson, args: { templateTypeId: 'regular' | 'enhanced'; title: string }) {
+export async function createProject(fetchJson: FetchJson, args: { templateTypeId: TemplateTypeId; title: string }) {
   const data = await fetchJson('/api/editor/projects/create', {
     method: 'POST',
     body: JSON.stringify({ templateTypeId: args.templateTypeId, title: args.title }),

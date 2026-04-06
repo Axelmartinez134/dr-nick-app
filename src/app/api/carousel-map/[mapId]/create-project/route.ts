@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 type Body = {
-  templateTypeId: 'regular' | 'enhanced';
+  templateTypeId: 'regular' | 'enhanced' | 'html';
   savedPromptId: string;
   expansionId: string;
 };
@@ -29,6 +29,10 @@ function buildProjectTitle(args: { sourceTitle: string; topicTitle: string }) {
   const primary = String(args.topicTitle || '').trim();
   if (primary) return primary.slice(0, 120);
   return (String(args.sourceTitle || '').trim() || 'Carousel Map Project').slice(0, 120);
+}
+
+function resolveStoredPromptTemplateTypeId(templateTypeId: Body['templateTypeId']): 'regular' | 'enhanced' {
+  return templateTypeId === 'enhanced' ? 'enhanced' : 'regular';
 }
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId: string }> }) {
@@ -47,10 +51,17 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
       body = null;
     }
     const templateTypeId =
-      body?.templateTypeId === 'regular' ? 'regular' : body?.templateTypeId === 'enhanced' ? 'enhanced' : null;
+      body?.templateTypeId === 'regular'
+        ? 'regular'
+        : body?.templateTypeId === 'enhanced'
+          ? 'enhanced'
+          : body?.templateTypeId === 'html'
+            ? 'html'
+            : null;
     const savedPromptId = String(body?.savedPromptId || '').trim();
     const expansionId = String(body?.expansionId || '').trim();
     if (!templateTypeId) return NextResponse.json({ success: false, error: 'templateTypeId is required' } satisfies Resp, { status: 400 });
+    const storedPromptTemplateTypeId = resolveStoredPromptTemplateTypeId(templateTypeId);
     if (!savedPromptId || !isUuid(savedPromptId)) return NextResponse.json({ success: false, error: 'savedPromptId is required' } satisfies Resp, { status: 400 });
     if (!expansionId || !isUuid(expansionId)) return NextResponse.json({ success: false, error: 'expansionId is required' } satisfies Resp, { status: 400 });
 
@@ -65,7 +76,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
       .eq('id', savedPromptId)
       .eq('account_id', accountId)
       .eq('user_id', user.id)
-      .eq('template_type_id', templateTypeId)
+      .eq('template_type_id', storedPromptTemplateTypeId)
       .maybeSingle();
     if (promptErr) throw new Error(promptErr.message);
     const promptText = String((promptRow as any)?.prompt || '').trim();
@@ -114,6 +125,21 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ mapId:
     if (slidesErr) {
       await supabase.from('carousel_projects').delete().eq('id', project.id);
       return NextResponse.json({ success: false, error: slidesErr.message } satisfies Resp, { status: 500 });
+    }
+
+    if (templateTypeId === 'html') {
+      const htmlSlideRows = Array.from({ length: 6 }).map((_, slideIndex) => ({
+        project_id: project.id,
+        slide_index: slideIndex,
+        html: null,
+        page_title: null,
+        page_type: null,
+      }));
+      const { error: htmlSlidesErr } = await supabase.from('html_project_slides').insert(htmlSlideRows as any);
+      if (htmlSlidesErr) {
+        await supabase.from('carousel_projects').delete().eq('id', project.id);
+        return NextResponse.json({ success: false, error: htmlSlidesErr.message } satisfies Resp, { status: 500 });
+      }
     }
 
     if (!graph.digestTopic) {

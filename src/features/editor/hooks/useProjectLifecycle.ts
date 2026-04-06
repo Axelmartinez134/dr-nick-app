@@ -3,6 +3,25 @@
 import { useCallback } from 'react';
 import * as projectsApi from '../services/projectsApi';
 import type { SlideState } from '../state';
+import type { TemplateTypeId } from '../store/types';
+
+const HTML_RUNTIME_PROJECT_ID_HINT_KEY = 'editor.runtimeProjectIdHint';
+
+function normalizeTemplateTypeId(raw: unknown): TemplateTypeId {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === 'html') return 'html';
+  if (value === 'enhanced') return 'enhanced';
+  return 'regular';
+}
+
+function hintHtmlRuntimeProject(projectId: string) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(HTML_RUNTIME_PROJECT_ID_HINT_KEY, String(projectId || '').trim());
+  } catch {
+    // ignore
+  }
+}
 
 export function useProjectLifecycle(params: {
   fetchJson: projectsApi.FetchJson;
@@ -108,9 +127,10 @@ export function useProjectLifecycle(params: {
       const data = await projectsApi.loadProject(fetchJson, projectId);
       const project = data.project;
       const loadedSlides = data.slides || [];
+      const templateTypeId = normalizeTemplateTypeId((project as any)?.template_type_id);
       setCurrentProjectId(project.id);
       setProjectTitle(project.title || 'Untitled Project');
-      setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
+      setTemplateTypeId(templateTypeId as 'regular' | 'enhanced');
       setCaptionDraft(project.caption || '');
       const outreachMessageRaw = (project as any)?.outreach_message;
       setOutreachMessageDraft(String(outreachMessageRaw || ''));
@@ -188,6 +208,16 @@ export function useProjectLifecycle(params: {
       setSlides(nextSlides);
       slidesRef.current = nextSlides;
       setActiveSlideIndex(0);
+      if (templateTypeId === 'html') {
+        hintHtmlRuntimeProject(String(project?.id || ''));
+        setLayoutData(null);
+        setInputData(null);
+        setLayoutHistory([]);
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+        return;
+      }
       // Restore slide 1 (index 0) snapshots into the engine immediately.
       if (nextSlides[0]?.layoutData && (nextSlides[0] as any)?.inputData) {
         setLayoutData((nextSlides[0] as any).layoutData);
@@ -222,13 +252,14 @@ export function useProjectLifecycle(params: {
   );
 
   const createNewProject = useCallback(
-    async (type: 'regular' | 'enhanced') => {
+    async (type: TemplateTypeId) => {
       const data = await projectsApi.createProject(fetchJson, { templateTypeId: type, title: 'Untitled Project' });
       const project = data.project;
       const slidesRows = data.slides || [];
+      const templateTypeId = normalizeTemplateTypeId((project as any)?.template_type_id);
       setCurrentProjectId(project.id);
       setProjectTitle(project.title || 'Untitled Project');
-      setTemplateTypeId(project.template_type_id === 'enhanced' ? 'enhanced' : 'regular');
+      setTemplateTypeId(templateTypeId as 'regular' | 'enhanced');
       setCaptionDraft(project.caption || '');
       setOutreachMessageDraft(String((project as any)?.outreach_message || ''));
       setIsOutreachProject(((project as any)?.outreach_message) !== null && ((project as any)?.outreach_message) !== undefined);
@@ -290,6 +321,13 @@ export function useProjectLifecycle(params: {
       setActiveSlideIndex(0);
       setProjectsDropdownOpen(false);
       await refreshProjectsListRef.current?.();
+      if (templateTypeId === 'html') {
+        hintHtmlRuntimeProject(String(project?.id || ''));
+        if (typeof window !== 'undefined') {
+          window.location.reload();
+        }
+        return;
+      }
       handleNewCarousel();
     },
     [

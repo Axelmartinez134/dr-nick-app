@@ -5,7 +5,7 @@ import { getAuthedSupabase, resolveActiveAccountId } from '../../_utils';
 export const runtime = 'nodejs';
 export const maxDuration = 10;
 
-const PROJECT_SELECT = `id, owner_user_id, title, template_type_id, caption, outreach_message, prompt_snapshot, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, ai_image_autoremovebg_enabled, review_ready, review_posted, review_approved, review_scheduled, review_comment, review_source, created_at, updated_at` as const;
+const PROJECT_SELECT = `id, owner_user_id, title, template_type_id, caption, outreach_message, prompt_snapshot, slide1_template_id_snapshot, slide2_5_template_id_snapshot, slide6_template_id_snapshot, background_effect_enabled, background_effect_type, project_background_color, project_text_color, background_effect_settings, theme_id_last_applied, theme_is_customized, theme_defaults_snapshot, last_manual_background_color, last_manual_text_color, ai_image_autoremovebg_enabled, review_ready, review_posted, review_approved, review_scheduled, review_comment, review_source, html_preset_id, html_style_guide, html_generation_status, html_generation_id, created_at, updated_at` as const;
 
 export async function GET(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
@@ -59,7 +59,49 @@ export async function GET(request: NextRequest) {
 
   if (slidesErr) return NextResponse.json({ success: false, error: slidesErr.message }, { status: 500 });
 
-  return NextResponse.json({ success: true, project, slides: slides || [] });
+  let htmlSlides: Array<{
+    id: string;
+    slideIndex: number;
+    html: string | null;
+    pageTitle: string | null;
+    pageType: string | null;
+  }> = [];
+
+  if (String((project as any)?.template_type_id || '').trim() === 'html') {
+    const { data: htmlSlidesRows, error: htmlSlidesErr } = await supabase
+      .from('html_project_slides')
+      .select('id, slide_index, html, page_title, page_type')
+      .eq('project_id', project.id)
+      .order('slide_index', { ascending: true });
+
+    if (htmlSlidesErr) {
+      return NextResponse.json({ success: false, error: htmlSlidesErr.message }, { status: 500 });
+    }
+
+    htmlSlides = (htmlSlidesRows || []).map((row: any) => ({
+      id: String(row.id),
+      slideIndex: Number(row.slide_index),
+      html: row?.html ?? null,
+      pageTitle: row?.page_title ?? null,
+      pageType: row?.page_type ?? null,
+    }));
+  }
+
+  return NextResponse.json({
+    success: true,
+    project,
+    slides: slides || [],
+    htmlSlides,
+    htmlPresetId: ((project as any)?.html_preset_id as string | null) ?? null,
+    htmlStyleGuide: ((project as any)?.html_style_guide as any) ?? null,
+    htmlGenerationStatus: String((project as any)?.html_generation_status || 'idle') as
+      | 'idle'
+      | 'generating'
+      | 'partial'
+      | 'complete'
+      | 'failed',
+    htmlGenerationId: ((project as any)?.html_generation_id as string | null) ?? null,
+  });
 }
 
 

@@ -11,6 +11,7 @@ export function EditorTopBar() {
   const projectTitleValue = useEditorSelector((s) => s.projectTitle);
   const projectTitleDisabled = useEditorSelector((s) => s.projectTitleDisabled);
   const isMobile = useEditorSelector((s) => s.isMobile);
+  const templateTypeId = useEditorSelector((s) => s.templateTypeId);
   const topExporting = useEditorSelector((s) => s.topExporting);
 
   const promptSaveStatus = useEditorSelector((s) => s.promptSaveStatus);
@@ -29,6 +30,7 @@ export function EditorTopBar() {
   const [mobileRenameDraft, setMobileRenameDraft] = useState<string>("");
   const mobileTitleRef = useRef<HTMLDivElement | null>(null);
   const [mobileTitleFontPx, setMobileTitleFontPx] = useState<number>(14);
+  const isHtmlProject = templateTypeId === "html";
 
   // Keep the editor store's superadmin flag in sync with the top-bar auth context.
   // Important: `actions` may be a noop object on first render, so this must re-run when `actions` updates.
@@ -419,25 +421,27 @@ export function EditorTopBar() {
               className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
               onClick={actions.onDownloadAll}
               disabled={topExporting}
-              title="Download all 6 slides as a ZIP"
+              title={isHtmlProject ? "Download all generated HTML slides as a ZIP" : "Download all 6 slides as a ZIP"}
             >
               {topExporting ? "Preparing..." : "Download All"}
             </button>
-            <button
-              className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
-              onClick={actions.onDownloadPdf}
-              disabled={topExporting}
-              title="Download all 6 slides as a PDF"
-            >
-              {topExporting ? "Preparing..." : "Download PDF"}
-            </button>
+            {!isHtmlProject ? (
+              <button
+                className="px-3 py-1.5 rounded-md bg-[#6D28D9] text-white text-sm shadow-sm disabled:opacity-50"
+                onClick={actions.onDownloadPdf}
+                disabled={topExporting}
+                title="Download all 6 slides as a PDF"
+              >
+                {topExporting ? "Preparing..." : "Download PDF"}
+              </button>
+            ) : null}
             {isSuperadmin ? (
               <div className="inline-flex overflow-hidden rounded-md shadow-sm">
                 <button
                   className="px-3 py-1.5 bg-black text-white text-sm disabled:opacity-50"
                   onClick={actions.onOpenShareCarousels}
-                  disabled={topExporting}
-                  title="Share carousels for client review"
+                  disabled={topExporting || isHtmlProject}
+                  title={isHtmlProject ? "HTML sharing/export is not wired yet." : "Share carousels for client review"}
                   type="button"
                 >
                   Share carousels
@@ -445,8 +449,8 @@ export function EditorTopBar() {
                 <button
                   className="w-9 bg-black text-white border-l border-white/20 disabled:opacity-50 inline-flex items-center justify-center"
                   onClick={() => void actions.onClickOpenShareCarouselsLink?.()}
-                  disabled={topExporting}
-                  title="Open share link in new tab"
+                  disabled={topExporting || isHtmlProject}
+                  title={isHtmlProject ? "HTML sharing/export is not wired yet." : "Open share link in new tab"}
                   aria-label="Open share link in new tab"
                   type="button"
                 >
@@ -471,8 +475,8 @@ export function EditorTopBar() {
             <button
               className="h-10 px-3 bg-black text-white text-sm font-semibold disabled:opacity-50"
               onClick={actions.onOpenShareCarousels}
-              disabled={topExporting}
-              title="Open review queue and share link"
+              disabled={topExporting || isHtmlProject}
+              title={isHtmlProject ? "HTML sharing/export is not wired yet." : "Open review queue and share link"}
               aria-label="Open share carousels"
               type="button"
             >
@@ -481,8 +485,8 @@ export function EditorTopBar() {
             <button
               className="h-10 w-10 bg-black text-white border-l border-white/20 disabled:opacity-50 inline-flex items-center justify-center"
               onClick={() => void actions.onClickOpenShareCarouselsLink?.()}
-              disabled={topExporting}
-              title="Open share link in new tab"
+              disabled={topExporting || isHtmlProject}
+              title={isHtmlProject ? "HTML sharing/export is not wired yet." : "Open share link in new tab"}
               aria-label="Open share link in new tab"
               type="button"
             >

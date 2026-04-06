@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/app/components/auth/AuthContext";
 import type { CarouselMapExpansion, CarouselMapPromptSection } from "@/features/editor/components/carousel-map/types";
 
+type TemplateTypeId = "regular" | "enhanced" | "html";
+
 type SavedPromptRow = {
   id: string;
   title: string;
@@ -15,10 +17,11 @@ type Props = {
   onClose: () => void;
   mapId: string | null;
   expansion: CarouselMapExpansion | null;
-  initialTemplateTypeId: "regular" | "enhanced";
+  initialTemplateTypeId: TemplateTypeId;
   initialSavedPromptId?: string | null;
-  onSelectionChange?: (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string }) => void;
-  onPick: (args: { templateTypeId: "regular" | "enhanced"; savedPromptId: string; expansionId: string }) => void;
+  allowHtml?: boolean;
+  onSelectionChange?: (args: { templateTypeId: TemplateTypeId; savedPromptId: string }) => void;
+  onPick: (args: { templateTypeId: TemplateTypeId; savedPromptId: string; expansionId: string }) => void;
 };
 
 function getActiveAccountHeader(): Record<string, string> {
@@ -57,10 +60,11 @@ export function CarouselMapProjectPickerModal({
   expansion,
   initialTemplateTypeId,
   initialSavedPromptId,
+  allowHtml = true,
   onSelectionChange,
   onPick,
 }: Props) {
-  const [templateTypeId, setTemplateTypeId] = useState<"regular" | "enhanced">(initialTemplateTypeId);
+  const [templateTypeId, setTemplateTypeId] = useState<TemplateTypeId>(initialTemplateTypeId);
   const [savedPromptId, setSavedPromptId] = useState<string>(String(initialSavedPromptId || "").trim());
   const [savedPrompts, setSavedPrompts] = useState<SavedPromptRow[]>([]);
   const [promptsLoading, setPromptsLoading] = useState(false);
@@ -72,12 +76,12 @@ export function CarouselMapProjectPickerModal({
 
   useEffect(() => {
     if (!open) return;
-    setTemplateTypeId(initialTemplateTypeId);
+    setTemplateTypeId(initialTemplateTypeId === "html" && !allowHtml ? "enhanced" : initialTemplateTypeId);
     setSavedPromptId(String(initialSavedPromptId || "").trim());
     setPromptOpen(false);
     setPromptError(null);
     setPromptSections([]);
-  }, [initialSavedPromptId, initialTemplateTypeId, open]);
+  }, [allowHtml, initialSavedPromptId, initialTemplateTypeId, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -217,7 +221,7 @@ export function CarouselMapProjectPickerModal({
                 className="mt-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
                 value={templateTypeId}
                 onChange={(e) => {
-                  setTemplateTypeId(e.target.value === "regular" ? "regular" : "enhanced");
+                  setTemplateTypeId(e.target.value === "regular" ? "regular" : e.target.value === "html" ? "html" : "enhanced");
                   setPromptOpen(false);
                   setPromptError(null);
                   setPromptSections([]);
@@ -225,6 +229,7 @@ export function CarouselMapProjectPickerModal({
               >
                 <option value="enhanced">Enhanced</option>
                 <option value="regular">Regular</option>
+                {allowHtml ? <option value="html">HTML</option> : null}
               </select>
 
               <div className="mt-4 text-xs font-semibold text-slate-700">Saved prompt</div>
@@ -254,7 +259,9 @@ export function CarouselMapProjectPickerModal({
 
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                 <div className="text-[11px] font-semibold text-slate-700">Summary</div>
-                <div className="mt-1 text-[11px] text-slate-600">Template type: {templateTypeId === "regular" ? "Regular" : "Enhanced"}</div>
+                <div className="mt-1 text-[11px] text-slate-600">
+                  Template type: {templateTypeId === "regular" ? "Regular" : templateTypeId === "html" ? "HTML" : "Enhanced"}
+                </div>
                 <div className="mt-1 text-[11px] text-slate-600">Saved prompt: {selectedPrompt?.title || "No saved prompt selected"}</div>
                 <div className="mt-1 text-[11px] text-slate-600">Expansion: Slides 1-6 selected</div>
               </div>
