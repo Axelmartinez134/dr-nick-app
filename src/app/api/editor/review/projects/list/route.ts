@@ -21,12 +21,12 @@ type ProjectRow = {
 };
 
 function normalizeTextLinesFromLayoutSnapshot(layoutSnapshot: any, slideNumber: number): string[] {
-  const raw = Array.isArray(layoutSnapshot?.textLines) ? layoutSnapshot.textLines : [];
-  const lines = raw
-    .map((line: any) => {
+  const raw: unknown[] = Array.isArray(layoutSnapshot?.textLines) ? layoutSnapshot.textLines : [];
+  const normalized: string[] = raw.map((line) => {
       if (typeof line === 'string') return line;
-      return String(line?.text ?? '');
-    })
+      return String((line as any)?.text ?? '');
+    });
+  const lines = normalized
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   return lines.length > 0 ? lines : [`Slide ${slideNumber}`];
