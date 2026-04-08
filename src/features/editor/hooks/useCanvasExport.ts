@@ -1,5 +1,63 @@
 import { useCallback } from "react";
 
+export function getFabricCanvasFromHandle(handle: any) {
+  return handle?.canvas || handle || null;
+}
+
+export async function exportFabricCanvasPngBlobFromHandle(handle: any) {
+  const fabricCanvas = getFabricCanvasFromHandle(handle);
+  if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") {
+    throw new Error("Canvas not ready");
+  }
+  const currentZoom = fabricCanvas.getZoom?.() ?? 1;
+  const savedVpt = fabricCanvas.viewportTransform ? [...fabricCanvas.viewportTransform] : null;
+  try {
+    try {
+      fabricCanvas.discardActiveObject?.();
+    } catch {
+      // ignore
+    }
+    fabricCanvas.setZoom?.(1);
+    if (fabricCanvas.viewportTransform && Array.isArray(fabricCanvas.viewportTransform)) {
+      fabricCanvas.viewportTransform[4] = 0;
+      fabricCanvas.viewportTransform[5] = 0;
+    }
+    fabricCanvas.renderAll?.();
+    await new Promise((r) => setTimeout(r, 80));
+    fabricCanvas.setZoom?.(1);
+    if (fabricCanvas.viewportTransform && Array.isArray(fabricCanvas.viewportTransform)) {
+      fabricCanvas.viewportTransform[4] = 0;
+      fabricCanvas.viewportTransform[5] = 0;
+    }
+    try {
+      const objs = fabricCanvas.getObjects?.() || [];
+      for (const o of objs) {
+        if (o && typeof o.setCoords === "function") {
+          (o as any).dirty = true;
+          o.setCoords();
+        }
+      }
+    } catch {
+      // ignore
+    }
+    fabricCanvas.renderAll?.();
+    const dataURL = fabricCanvas.toDataURL({
+      format: "png",
+      quality: 3.0,
+      multiplier: 3,
+    });
+    const res = await fetch(dataURL);
+    return await res.blob();
+  } finally {
+    if (savedVpt && fabricCanvas.viewportTransform) {
+      for (let i = 0; i < savedVpt.length; i++) fabricCanvas.viewportTransform[i] = savedVpt[i];
+    } else {
+      fabricCanvas.setZoom?.(currentZoom);
+    }
+    fabricCanvas.renderAll?.();
+  }
+}
+
 export function useCanvasExport(params: {
   slideCount: number;
   slideCanvasRefs: { current: Array<{ current: any }> };
@@ -41,13 +99,13 @@ export function useCanvasExport(params: {
     }
   }, []);
 
-  const getFabricCanvasFromHandle = useCallback((handle: any) => {
-    return handle?.canvas || handle || null;
+  const getFabricCanvasFromHandleCb = useCallback((handle: any) => {
+    return getFabricCanvasFromHandle(handle);
   }, []);
 
   const getFabricCanvasSize = useCallback(
     (handle: any): { w: number; h: number } => {
-      const fabricCanvas = getFabricCanvasFromHandle(handle);
+      const fabricCanvas = getFabricCanvasFromHandleCb(handle);
       const w = Number(fabricCanvas?.getWidth?.() ?? fabricCanvas?.width ?? 0);
       const h = Number(fabricCanvas?.getHeight?.() ?? fabricCanvas?.height ?? 0);
       if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
@@ -55,62 +113,12 @@ export function useCanvasExport(params: {
       }
       return { w, h };
     },
-    [getFabricCanvasFromHandle]
+    [getFabricCanvasFromHandleCb]
   );
 
   const exportFabricCanvasPngBlob = useCallback(async (handle: any) => {
-    const fabricCanvas = getFabricCanvasFromHandle(handle);
-    if (!fabricCanvas || typeof fabricCanvas.toDataURL !== "function") {
-      throw new Error("Canvas not ready");
-    }
-    const currentZoom = fabricCanvas.getZoom?.() ?? 1;
-    const savedVpt = fabricCanvas.viewportTransform ? [...fabricCanvas.viewportTransform] : null;
-    try {
-      try {
-        fabricCanvas.discardActiveObject?.();
-      } catch {
-        // ignore
-      }
-      fabricCanvas.setZoom?.(1);
-      if (fabricCanvas.viewportTransform && Array.isArray(fabricCanvas.viewportTransform)) {
-        fabricCanvas.viewportTransform[4] = 0;
-        fabricCanvas.viewportTransform[5] = 0;
-      }
-      fabricCanvas.renderAll?.();
-      await new Promise((r) => setTimeout(r, 80));
-      // Re-assert zoom/vpt after the delay in case a React effect changed them
-      fabricCanvas.setZoom?.(1);
-      if (fabricCanvas.viewportTransform && Array.isArray(fabricCanvas.viewportTransform)) {
-        fabricCanvas.viewportTransform[4] = 0;
-        fabricCanvas.viewportTransform[5] = 0;
-      }
-      // Force all objects to recalculate coords at the export zoom
-      try {
-        const objs = fabricCanvas.getObjects?.() || [];
-        for (const o of objs) {
-          if (o && typeof o.setCoords === 'function') {
-            (o as any).dirty = true;
-            o.setCoords();
-          }
-        }
-      } catch { /* ignore */ }
-      fabricCanvas.renderAll?.();
-      const dataURL = fabricCanvas.toDataURL({
-        format: "png",
-        quality: 3.0,
-        multiplier: 3,
-      });
-      const res = await fetch(dataURL);
-      return await res.blob();
-    } finally {
-      if (savedVpt && fabricCanvas.viewportTransform) {
-        for (let i = 0; i < savedVpt.length; i++) fabricCanvas.viewportTransform[i] = savedVpt[i];
-      } else {
-        fabricCanvas.setZoom?.(currentZoom);
-      }
-      fabricCanvas.renderAll?.();
-    }
-  }, [getFabricCanvasFromHandle]);
+    return exportFabricCanvasPngBlobFromHandle(handle);
+  }, []);
 
   const handleDownloadAll = useCallback(
     async (opts?: { allowWhenExporting?: boolean }) => {
@@ -122,7 +130,7 @@ export function useCanvasExport(params: {
 
         // Ensure all slide canvases are mounted.
         const handles = slideCanvasRefs.current.map((r) => r.current);
-        if (handles.some((h) => !getFabricCanvasFromHandle(h))) {
+        if (handles.some((h) => !getFabricCanvasFromHandleCb(h))) {
           alert("Slides are still rendering. Please wait a moment and try again.");
           return;
         }
@@ -154,7 +162,7 @@ export function useCanvasExport(params: {
     },
     [
       exportFabricCanvasPngBlob,
-      getFabricCanvasFromHandle,
+      getFabricCanvasFromHandleCb,
       getNextBundleName,
       projectTitle,
       sanitizeFileName,
@@ -175,7 +183,7 @@ export function useCanvasExport(params: {
 
         // Ensure all slide canvases are mounted.
         const handles = slideCanvasRefs.current.map((r) => r.current);
-        if (handles.some((h) => !getFabricCanvasFromHandle(h))) {
+        if (handles.some((h) => !getFabricCanvasFromHandleCb(h))) {
           alert("Slides are still rendering. Please wait a moment and try again.");
           return;
         }
@@ -215,7 +223,7 @@ export function useCanvasExport(params: {
     },
     [
       exportFabricCanvasPngBlob,
-      getFabricCanvasFromHandle,
+      getFabricCanvasFromHandleCb,
       getFabricCanvasSize,
       getNextBundleName,
       projectTitle,
@@ -230,7 +238,7 @@ export function useCanvasExport(params: {
   const shareSingleSlide = useCallback(
     async (slideIndex: number) => {
       const handle = slideCanvasRefs.current[slideIndex]?.current;
-      if (!getFabricCanvasFromHandle(handle)) {
+      if (!getFabricCanvasFromHandleCb(handle)) {
         alert("Slide is still rendering. Please wait a moment and try again.");
         return;
       }
@@ -263,7 +271,7 @@ export function useCanvasExport(params: {
     },
     [
       exportFabricCanvasPngBlob,
-      getFabricCanvasFromHandle,
+      getFabricCanvasFromHandleCb,
       projectTitle,
       sanitizeFileName,
       setMobileSaveBusy,
@@ -274,7 +282,7 @@ export function useCanvasExport(params: {
   const downloadSingleSlideDesktop = useCallback(
     async (slideIndex: number) => {
       const handle = slideCanvasRefs.current[slideIndex]?.current;
-      if (!getFabricCanvasFromHandle(handle)) {
+      if (!getFabricCanvasFromHandleCb(handle)) {
         alert("Slide is still rendering. Please wait a moment and try again.");
         return;
       }
@@ -291,7 +299,7 @@ export function useCanvasExport(params: {
         alert(e?.message || "Download failed. Please try again.");
       }
     },
-    [exportFabricCanvasPngBlob, getFabricCanvasFromHandle, slideCanvasRefs]
+    [exportFabricCanvasPngBlob, getFabricCanvasFromHandleCb, slideCanvasRefs]
   );
 
   const handleShareAll = useCallback(async () => {
@@ -301,7 +309,7 @@ export function useCanvasExport(params: {
       const baseName = sanitizeFileName(projectTitle);
       const bundleName = getNextBundleName(baseName);
       const handles = slideCanvasRefs.current.map((r) => r.current);
-      if (handles.some((h) => !getFabricCanvasFromHandle(h))) {
+      if (handles.some((h) => !getFabricCanvasFromHandleCb(h))) {
         alert("Slides are still rendering. Please wait a moment and try again.");
         return;
       }
@@ -350,7 +358,7 @@ export function useCanvasExport(params: {
     }
   }, [
     exportFabricCanvasPngBlob,
-    getFabricCanvasFromHandle,
+    getFabricCanvasFromHandleCb,
     getNextBundleName,
     handleDownloadAll,
     projectTitle,

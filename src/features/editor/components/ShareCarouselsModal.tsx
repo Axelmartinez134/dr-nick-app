@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEditorSelector } from "@/features/editor/store";
+import { supabase } from "@/app/components/auth/AuthContext";
 
 function formatUpdatedAt(s: string) {
   const t = Date.parse(String(s || ""));
@@ -11,6 +12,18 @@ function formatUpdatedAt(s: string) {
     return new Date(t).toLocaleString();
   } catch {
     return "";
+  }
+}
+
+function getSafeExternalUrl(input: string) {
+  const value = String(input || "").trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
   }
 }
 
@@ -78,18 +91,30 @@ export function ShareCarouselsModal() {
   }, [filteredProjects]);
 
   const [driveDraftById, setDriveDraftById] = useState<Record<string, string>>({});
+  const [driveErrorById, setDriveErrorById] = useState<Record<string, string>>({});
   const driveTimerByIdRef = useRef<Record<string, number | null>>({});
   const driveDirtyByIdRef = useRef<Record<string, boolean>>({});
   const saveDriveNow = useMemo(() => {
     return async (projectId: string, nextText: string) => {
       const pid = String(projectId || "").trim();
       if (!pid) return;
+      const nextTrimmed = String(nextText || "").trim();
+      if (nextTrimmed && !getSafeExternalUrl(nextTrimmed)) {
+        setDriveErrorById((prev) => ({ ...prev, [pid]: "Enter a valid URL" }));
+        return;
+      }
       try {
         const ok = await actions.onChangeProjectReviewDriveFolderUrl?.({ projectId: pid, next: nextText });
         if (ok === false) throw new Error("Save failed");
         driveDirtyByIdRef.current[pid] = false;
-      } catch {
-        // ignore; modal uses global "Saving..." disabled state like other Review fields
+        setDriveErrorById((prev) => {
+          if (!(pid in prev)) return prev;
+          const next = { ...prev };
+          delete next[pid];
+          return next;
+        });
+      } catch (e: any) {
+        setDriveErrorById((prev) => ({ ...prev, [pid]: String(e?.message || e || "Failed to save Drive link") }));
       }
     };
   }, [actions]);
@@ -107,6 +132,7 @@ export function ShareCarouselsModal() {
       driveTimerByIdRef.current = {};
       driveDirtyByIdRef.current = {};
       setDriveDraftById({});
+      setDriveErrorById({});
       return;
     }
 
@@ -137,6 +163,11 @@ export function ShareCarouselsModal() {
   const [manualCopyOpen, setManualCopyOpen] = useState(false);
   const manualCopyRef = useRef<HTMLInputElement | null>(null);
   const [copyAllSlidesStatus, setCopyAllSlidesStatus] = useState<"idle" | "loading" | "copied" | "error">("idle");
+  const [accountDriveFolderId, setAccountDriveFolderId] = useState("");
+  const [accountDriveSaveStatus, setAccountDriveSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [accountDriveError, setAccountDriveError] = useState<string | null>(null);
+  const accountDriveTimerRef = useRef<number | null>(null);
+  const accountDriveDirtyRef = useRef<boolean>(false);
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(false), 1200);
@@ -162,7 +193,66 @@ export function ShareCarouselsModal() {
     setCopied(false);
     setManualCopyOpen(false);
     setCopyAllSlidesStatus("idle");
+    accountDriveDirtyRef.current = false;
+    setAccountDriveSaveStatus("idle");
+    setAccountDriveError(null);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !isSuperadmin) return;
+    let cancelled = false;
+
+    const getActiveAccountHeader = () => {
+      try {
+        const id = typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+        return id ? ({ "x-account-id": id } as Record<string, string>) : ({} as Record<string, string>);
+      } catch {
+        return {} as Record<string, string>;
+      }
+    };
+
+    const loadAccountDriveFolderId = async () => {
+      try {
+        setAccountDriveError(null);
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token || "";
+        if (!token) throw new Error("Missing auth token");
+        const res = await fetch("/api/editor/user-settings/google-drive-folder-id", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            ...getActiveAccountHeader(),
+          },
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to load Drive Folder ID (${res.status})`));
+        if (cancelled) return;
+        accountDriveDirtyRef.current = false;
+        setAccountDriveFolderId(String(j?.googleDriveFolderId || ""));
+      } catch (e: any) {
+        if (cancelled) return;
+        setAccountDriveError(String(e?.message || e || "Failed to load Drive Folder ID"));
+      }
+    };
+
+    void loadAccountDriveFolderId();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperadmin, open]);
+
+  useEffect(() => {
+    if (accountDriveSaveStatus !== "saved") return;
+    const t = window.setTimeout(() => setAccountDriveSaveStatus("idle"), 1200);
+    return () => window.clearTimeout(t);
+  }, [accountDriveSaveStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (accountDriveTimerRef.current) window.clearTimeout(accountDriveTimerRef.current);
+    };
+  }, []);
 
   const copyPlainText = async (text: string) => {
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -281,6 +371,46 @@ export function ShareCarouselsModal() {
 
   const [currentThumb, setCurrentThumb] = useState<string | null>(null);
   const workspaceRefs = useEditorSelector((s: any) => (s as any).workspaceRefs);
+
+  const saveAccountDriveFolderIdNow = async (nextText: string) => {
+    try {
+      setAccountDriveSaveStatus("saving");
+      setAccountDriveError(null);
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token || "";
+      if (!token) throw new Error("Missing auth token");
+      const activeAccountId = (() => {
+        try {
+          return typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+        } catch {
+          return "";
+        }
+      })();
+      const res = await fetch("/api/editor/user-settings/google-drive-folder-id", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          ...(activeAccountId ? { "x-account-id": activeAccountId } : {}),
+        },
+        body: JSON.stringify({ googleDriveFolderId: nextText }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.success) throw new Error(String(j?.error || `Failed to save Drive Folder ID (${res.status})`));
+      accountDriveDirtyRef.current = false;
+      const savedValue = String(j?.googleDriveFolderId || "");
+      setAccountDriveFolderId(savedValue);
+      setAccountDriveSaveStatus("saved");
+      try {
+        window.dispatchEvent(new CustomEvent("editor:drive-folder-id-updated", { detail: { value: savedValue } }));
+      } catch {
+        // ignore
+      }
+    } catch (e: any) {
+      setAccountDriveSaveStatus("error");
+      setAccountDriveError(String(e?.message || e || "Failed to save Drive Folder ID"));
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -432,11 +562,6 @@ export function ShareCarouselsModal() {
           >
             Refresh
           </button>
-          {fullUrl ? (
-            <div className="min-w-0 text-xs text-slate-600 truncate">
-              Link: <span className="font-mono text-[11px]">{fullUrl}</span>
-            </div>
-          ) : null}
           {linkError ? <div className="w-full text-xs text-red-600">Link error: {linkError}</div> : null}
           {manualCopyOpen && fullUrl ? (
             <div className="w-full">
@@ -456,6 +581,32 @@ export function ShareCarouselsModal() {
               />
             </div>
           ) : null}
+          <div className="w-full pt-1">
+            <div className="text-[11px] font-semibold text-slate-700 mb-1">Drive Folder ID</div>
+            <input
+              className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] text-slate-900 shadow-sm"
+              value={accountDriveFolderId}
+              placeholder="Drive Folder ID"
+              onChange={(e) => {
+                const next = e.target.value;
+                accountDriveDirtyRef.current = true;
+                setAccountDriveFolderId(next);
+                setAccountDriveSaveStatus("idle");
+                setAccountDriveError(null);
+                if (accountDriveTimerRef.current) window.clearTimeout(accountDriveTimerRef.current);
+                accountDriveTimerRef.current = window.setTimeout(() => void saveAccountDriveFolderIdNow(next), 600);
+              }}
+              onBlur={() => {
+                if (accountDriveTimerRef.current) window.clearTimeout(accountDriveTimerRef.current);
+                accountDriveTimerRef.current = null;
+                if (!accountDriveDirtyRef.current) return;
+                void saveAccountDriveFolderIdNow(accountDriveFolderId);
+              }}
+            />
+            {accountDriveSaveStatus === "saving" ? <div className="mt-1 text-[11px] text-slate-500">Saving…</div> : null}
+            {accountDriveSaveStatus === "saved" ? <div className="mt-1 text-[11px] text-emerald-600">Saved ✓</div> : null}
+            {accountDriveError ? <div className="mt-1 text-[11px] text-red-600">{accountDriveError}</div> : null}
+          </div>
         </div>
 
         <div
@@ -478,6 +629,7 @@ export function ShareCarouselsModal() {
                 const busy = !!savingIds?.has?.(pid);
                 const showThumb = currentProjectId && pid === String(currentProjectId) && !!currentThumb;
                 const driveDraft = driveDraftById[pid] ?? String(p?.review_drive_folder_url || "");
+                const driveUrl = getSafeExternalUrl(driveDraft);
                 return (
                   <div key={pid} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <div className="p-3 flex gap-3">
@@ -502,6 +654,18 @@ export function ShareCarouselsModal() {
                     </div>
 
                     <div className="px-3 pb-3 space-y-2">
+                      <button
+                        type="button"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white text-slate-800 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                        onClick={() => {
+                          actions.onLoadProject?.(pid);
+                          actions.onCloseShareCarousels?.();
+                        }}
+                        disabled={busy}
+                        title="Open this project in the editor"
+                      >
+                        Open Project
+                      </button>
                       <IosToggle
                         label="Ready for approval"
                         value={!!p?.review_ready}
@@ -529,27 +693,81 @@ export function ShareCarouselsModal() {
 
                       <div className="pt-1">
                         <div className="text-[11px] font-semibold text-slate-700 mb-1">Google Drive folder link</div>
-                        <input
-                          className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] text-slate-900 shadow-sm disabled:opacity-60"
-                          value={driveDraft}
-                          disabled={busy}
-                          placeholder="Paste folder URL (optional)"
-                          onChange={(e) => {
-                            const next = e.target.value;
-                            driveDirtyByIdRef.current[pid] = true;
-                            setDriveDraftById((prev) => ({ ...prev, [pid]: next }));
-                            const t0 = driveTimerByIdRef.current[pid];
-                            if (t0) window.clearTimeout(t0);
-                            driveTimerByIdRef.current[pid] = window.setTimeout(() => void saveDriveNow(pid, next), 600);
-                          }}
-                          onBlur={() => {
-                            const t0 = driveTimerByIdRef.current[pid];
-                            if (t0) window.clearTimeout(t0);
-                            driveTimerByIdRef.current[pid] = null;
-                            const cur = String((driveDraftById as any)?.[pid] ?? driveDraft ?? "");
-                            void saveDriveNow(pid, cur);
-                          }}
-                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            className="min-w-0 flex-1 h-9 rounded-lg border border-slate-200 bg-white px-3 text-[12px] text-slate-900 shadow-sm disabled:opacity-60"
+                            value={driveDraft}
+                            disabled={busy}
+                            placeholder="Paste folder URL (optional)"
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              driveDirtyByIdRef.current[pid] = true;
+                              setDriveDraftById((prev) => ({ ...prev, [pid]: next }));
+                              setDriveErrorById((prev) => {
+                                if (!(pid in prev)) return prev;
+                                const copy = { ...prev };
+                                delete copy[pid];
+                                return copy;
+                              });
+                              const t0 = driveTimerByIdRef.current[pid];
+                              if (t0) window.clearTimeout(t0);
+                              driveTimerByIdRef.current[pid] = window.setTimeout(() => void saveDriveNow(pid, next), 600);
+                            }}
+                            onBlur={() => {
+                              const t0 = driveTimerByIdRef.current[pid];
+                              if (t0) window.clearTimeout(t0);
+                              driveTimerByIdRef.current[pid] = null;
+                              const cur = String((driveDraftById as any)?.[pid] ?? driveDraft ?? "");
+                              void saveDriveNow(pid, cur);
+                            }}
+                          />
+                          {driveUrl ? (
+                            <button
+                              type="button"
+                              className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 bg-white text-slate-800 shadow-sm hover:bg-slate-50 disabled:opacity-60 inline-flex items-center justify-center"
+                              disabled={busy}
+                              onClick={() => {
+                                try {
+                                  window.open(driveUrl, "_blank", "noopener,noreferrer");
+                                } catch {
+                                  // ignore
+                                }
+                              }}
+                              aria-label="Open Google Drive folder in new tab"
+                              title="Open Google Drive folder"
+                            >
+                              <svg
+                                aria-hidden="true"
+                                viewBox="0 0 20 20"
+                                fill="none"
+                                className="h-4 w-4"
+                              >
+                                <path
+                                  d="M11 4H16V9"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                                <path
+                                  d="M9 11L16 4"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                                <path
+                                  d="M16 11V14.5C16 15.3284 15.3284 16 14.5 16H5.5C4.67157 16 4 15.3284 4 14.5V5.5C4 4.67157 4.67157 4 5.5 4H9"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </button>
+                          ) : null}
+                        </div>
+                        {driveErrorById[pid] ? <div className="mt-1 text-[11px] text-red-600">{driveErrorById[pid]}</div> : null}
                       </div>
                       {busy ? <div className="text-[11px] text-slate-500">Saving…</div> : null}
                     </div>

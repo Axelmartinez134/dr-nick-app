@@ -42,10 +42,16 @@ function cleanReviewSource(input: unknown): string | null {
 
 function cleanReviewDriveFolderUrl(input: unknown): string | null {
   const raw = typeof input === 'string' ? input : input == null ? '' : String(input);
-  // Accept any URL string (no validation), but keep it reasonably bounded.
   const clipped = raw.length > 8000 ? raw.slice(0, 8000) : raw;
   const trimmed = clipped.trim();
-  return trimmed ? trimmed : null;
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -82,7 +88,13 @@ export async function POST(req: NextRequest) {
   if (typeof body.reviewApproved === 'boolean') patch.review_approved = body.reviewApproved;
   if (typeof body.reviewScheduled === 'boolean') patch.review_scheduled = body.reviewScheduled;
   if (body.reviewSource !== undefined) patch.review_source = cleanReviewSource(body.reviewSource);
-  if (body.reviewDriveFolderUrl !== undefined) patch.review_drive_folder_url = cleanReviewDriveFolderUrl(body.reviewDriveFolderUrl);
+  if (body.reviewDriveFolderUrl !== undefined) {
+    const nextDriveUrl = cleanReviewDriveFolderUrl(body.reviewDriveFolderUrl);
+    if (body.reviewDriveFolderUrl != null && String(body.reviewDriveFolderUrl).trim() && !nextDriveUrl) {
+      return NextResponse.json({ success: false, error: 'Google Drive folder link must be a valid URL' } satisfies Resp, { status: 400 });
+    }
+    patch.review_drive_folder_url = nextDriveUrl;
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ success: false, error: 'No fields to update' } satisfies Resp, { status: 400 });

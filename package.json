@@ -9,7 +9,15 @@
     "lint": "next lint",
     "test": "vitest run",
     "clean": "pkill -f 'next dev' || true && rm -rf .next && rm -rf node_modules/.cache && echo 'Cache cleared! Run npm run dev to start fresh.'",
-    "dm:discover-threads": "node scripts/instagram_dm/discover_threads.mjs"
+    "dm:discover-threads": "node scripts/instagram_dm/discover_threads.mjs",
+    "dm:resolve-threads": "node scripts/instagram_dm/reuse_or_discover_threads.mjs",
+    "dm:run-thread-network-pipeline": "node scripts/instagram_dm/run_thread_network_pipeline.mjs",
+    "dm:run-batch-thread-network-pipeline": "node scripts/instagram_dm/run_batch_thread_network_pipeline.mjs",
+    "dm:capture-thread-network": "node scripts/instagram_dm/capture_thread_network.mjs",
+    "dm:analyze-thread-network": "node scripts/instagram_dm/analyze_thread_network_payload.mjs",
+    "dm:classify-thread-network": "node scripts/instagram_dm/classify_thread_network_state.mjs",
+    "dm:inspect-threads": "node scripts/instagram_dm/inspect_thread_states.mjs",
+    "dm:import-threads": "node scripts/instagram_dm/import_discovered_threads.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
@@ -21,6 +29,7 @@
     "fabric": "^7.0.0",
     "fast-diff": "^1.3.0",
     "fast-xml-parser": "^5.5.8",
+    "googleapis": "^171.4.0",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "next": "15.3.8",
