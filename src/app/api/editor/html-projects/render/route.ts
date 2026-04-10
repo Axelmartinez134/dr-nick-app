@@ -71,8 +71,13 @@ export async function POST(request: NextRequest) {
     .order("slide_index", { ascending: true });
   if (slidesErr) return NextResponse.json({ success: false, error: slidesErr.message }, { status: 500 });
 
-  const browser = await chromium.launch({ headless: true });
+  if (!(slides || []).length) {
+    return NextResponse.json({ success: false, error: "No HTML slides found to export." }, { status: 400 });
+  }
+
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
   try {
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1080, height: 1440 } });
     const zip = new JSZip();
     const folder = zip.folder(sanitizeFileName(String((project as any)?.title || "html-carousel"))) || zip;
@@ -80,6 +85,7 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < (slides || []).length; i += 1) {
       const slide = slides?.[i];
       const html = stripEditorAttrs(String((slide as any)?.html || ""));
+      if (!html.trim()) continue;
       const doc = wrapHtmlDocument({ html, aspectRatio: "3:4", interactive: false });
       await page.setContent(doc, { waitUntil: "load" });
       const imageBuffer = await page.screenshot({
@@ -96,7 +102,18 @@ export async function POST(request: NextRequest) {
         "Content-Disposition": `attachment; filename="${sanitizeFileName(String((project as any)?.title || "html-carousel"))}.zip"`,
       },
     });
+  } catch (error: any) {
+    console.error("[html-export] render failed", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: String(error?.message || "Failed to render HTML slides for export"),
+      },
+      { status: 500 }
+    );
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
   }
 }

@@ -1,9 +1,11 @@
 "use client";
 
-import { useRef } from "react";
-import { HtmlSlidePreview } from "./HtmlSlidePreview";
+import { forwardRef, useRef } from "react";
+import { HtmlSlidePreview, type HtmlSlidePreviewHandle } from "./HtmlSlidePreview";
 import { useHtmlSlidesViewport } from "../hooks/useHtmlSlidesViewport";
 import { useHtmlWorkspaceNavigation } from "../hooks/useHtmlWorkspaceNavigation";
+import type { HtmlEditableElement, HtmlElementPatch } from "../models/htmlElementModel";
+import type { HtmlSlideRestyleStatus } from "./HtmlEditorWorkspace";
 
 type WorkflowStage = "generate-copy" | "choose-preset" | "generate-slides" | "editing";
 
@@ -67,17 +69,29 @@ function PlaceholderSlideCard(props: {
   );
 }
 
-export function HtmlSlidesStrip(props: {
+type StripProps = {
   stage: WorkflowStage;
+  documentKeyBase?: string | null;
   activeSlideIndex: number;
   htmlSlides: Array<{ id: string; slideIndex: number; html: string | null; pageTitle: string | null; pageType: string | null }>;
+  slideElements: HtmlEditableElement[][];
   copySlides: any[];
   selectedElementId: string | null;
-  onSelectEditableId: (editableId: string) => void;
+  onSelectEditableId: (editableId: string, slideIndex: number) => void;
+  onDeselectAll?: () => void;
+  onTextCommit?: (editableId: string, text: string, html: string, slideIndex: number) => void;
+  onTransform?: (editableId: string, patch: HtmlElementPatch, slideIndex: number) => void;
+  onRequestUndo?: () => void;
+  onRequestRedo?: () => void;
+  onRequestSave?: () => void;
+  onRequestDeleteSelected?: () => void;
   onSelectSlide: (slideIndex: number) => void;
   placeholderTitle: string;
   placeholderDescription: string;
-}) {
+  slideRestyleStatuses: Record<number, HtmlSlideRestyleStatus>;
+};
+
+export const HtmlSlidesStrip = forwardRef<HtmlSlidePreviewHandle, StripProps>(function HtmlSlidesStrip(props, ref) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const { canGoPrev, canGoNext, goPrev, goNext, switchToSlide } = useHtmlWorkspaceNavigation({
     slideCount: props.htmlSlides.length,
@@ -116,6 +130,7 @@ export function HtmlSlidesStrip(props: {
               const active = index === props.activeSlideIndex;
               const copySlide = props.copySlides[index] || null;
               const html = String(slide?.html || "");
+              const elements = props.slideElements[index] || [];
               const copyPreview = [String(copySlide?.headline || "").trim(), String(copySlide?.body || "").trim()].filter(Boolean).join("\n");
 
               return (
@@ -133,6 +148,20 @@ export function HtmlSlidesStrip(props: {
                     switchToSlide(index);
                   }}
                 >
+                  {props.slideRestyleStatuses[index] && props.slideRestyleStatuses[index].state !== "idle" ? (
+                    <div
+                      className={[
+                        "pointer-events-none absolute right-3 top-3 z-10 rounded-full px-3 py-1 text-[11px] font-semibold shadow-sm",
+                        props.slideRestyleStatuses[index].state === "error"
+                          ? "bg-rose-100 text-rose-700"
+                          : props.slideRestyleStatuses[index].state === "applied"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700",
+                      ].join(" ")}
+                    >
+                      {props.slideRestyleStatuses[index].label}
+                    </div>
+                  ) : null}
                   <div
                     className={[
                       "w-[420px] overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(2,6,23,0.10)] transition-all duration-300",
@@ -142,15 +171,26 @@ export function HtmlSlidesStrip(props: {
                     {html.trim() ? (
                       <div className={active ? "" : "pointer-events-none"}>
                         <HtmlSlidePreview
+                          ref={active ? ref : undefined}
+                          slideIndex={index}
                           html={html}
                           title={String(slide?.pageTitle || `Slide ${index + 1}`)}
                           interactive={active}
+                          documentKey={active ? `${String(props.documentKeyBase || "html")}::${String(slide.id || index)}` : undefined}
+                          elements={active ? elements : []}
                           selectedEditableId={active ? props.selectedElementId : null}
                           onSelectEditableId={active ? props.onSelectEditableId : undefined}
+                          onDeselectAll={active ? props.onDeselectAll : undefined}
+                          onTextCommit={active ? props.onTextCommit : undefined}
+                          onTransform={active ? props.onTransform : undefined}
+                          onRequestUndo={active ? props.onRequestUndo : undefined}
+                          onRequestRedo={active ? props.onRequestRedo : undefined}
+                          onRequestSave={active ? props.onRequestSave : undefined}
+                          onRequestDeleteSelected={active ? props.onRequestDeleteSelected : undefined}
                           showHeader={false}
                           className="rounded-none border-0 bg-transparent shadow-none"
                           bodyClassName="p-0"
-                          previewLabel={active ? "Interactive iframe preview" : "Read-only iframe preview"}
+                          previewLabel={active ? "Active slide runtime" : "Read-only slide preview"}
                         />
                       </div>
                     ) : (
@@ -182,4 +222,4 @@ export function HtmlSlidesStrip(props: {
       </div>
     </div>
   );
-}
+});

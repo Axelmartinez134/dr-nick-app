@@ -1,14 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { HtmlSlidePreviewHandle } from "./HtmlSlidePreview";
 import { EditorTopBar } from "@/features/editor/components/EditorTopBar";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { SwipeFileModal } from "@/features/editor/components/SwipeFileModal";
 import { useEditorSelector, useEditorStore } from "@/features/editor/store";
 import { supabase } from "@/app/components/auth/AuthContext";
 import { HtmlBottomPanel } from "./HtmlBottomPanel";
-import { HtmlEditorWorkspace } from "./HtmlEditorWorkspace";
+import { HtmlEditorWorkspace, type HtmlSlideRestyleStatus } from "./HtmlEditorWorkspace";
 import { HtmlInspectorPanel } from "./HtmlInspectorPanel";
+import { HtmlUnsavedChangesDialog } from "./HtmlUnsavedChangesDialog";
+import { ResizablePanel } from "./ResizablePanel";
 import {
   archiveProject,
   createProject,
@@ -19,16 +22,61 @@ import {
   type HtmlProjectShellData,
 } from "../services/htmlProjectsApi";
 import { useHtmlGenerateCopy } from "../hooks/useHtmlGenerateCopy";
+import { useHtmlCarouselRefinement } from "../hooks/useHtmlCarouselRefinement";
+import { useHtmlPageRefinement } from "../hooks/useHtmlPageRefinement";
 import { useHtmlSlideGeneration } from "../hooks/useHtmlSlideGeneration";
+import { buildManualEditsSummary } from "../lib/htmlManualEdits";
 import type { HtmlDesignPreset } from "../lib/presets";
-import { useHtmlElementParser } from "../hooks/useHtmlElementParser";
-import { applyElementPatchToHtml, type HtmlElementPatch } from "../hooks/useHtmlElementSerializer";
+import { createHtmlSlidePageState, patchHtmlSlidePageState, renderHtmlSlidePageState, type HtmlSlidePageState } from "../lib/htmlPageState";
+import { addElementToHtml, duplicateElementInHtml, deleteElementInHtml, type AddElementKind, type HtmlElementPatch } from "../hooks/useHtmlElementSerializer";
 import { useHtmlSlideExport } from "../hooks/useHtmlSlideExport";
+import { getFontCssImport } from "../lib/fontOptimizer";
+import {
+  buildPageStatesFromHtmlSlides,
+  captureHtmlEditorSnapshot,
+  cloneHtmlSlidesForSnapshot,
+  normalizeSelectionForSnapshot,
+  type HtmlEditorSelectionSnapshot,
+  type HtmlEditorSlideSnapshot,
+  type HtmlEditorSnapshot,
+} from "../lib/htmlEditorSnapshots";
+import {
+  clearHtmlSessionDraft,
+  getHtmlEditorActiveAccountId,
+  readHtmlSessionDraft,
+  writeHtmlSessionDraft,
+} from "../lib/htmlSessionRecovery";
 
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | ({ status: "ready" } & HtmlProjectShellData);
+
+type PendingNavigationAction =
+  | { type: "load-project"; projectId: string }
+  | { type: "create-project"; templateTypeId: "regular" | "enhanced" | "html" };
+
+function shouldIgnoreShellShortcut(target: EventTarget | null) {
+  const element = target instanceof HTMLElement ? target : null;
+  if (!element) return false;
+  const tagName = String(element.tagName || "").toLowerCase();
+  if (tagName === "input" || tagName === "textarea" || tagName === "select") return true;
+  if (element.isContentEditable) return true;
+  return Boolean(element.closest('[contenteditable="true"]'));
+}
+
+function normalizeHtmlSlidesForEditor(
+  slides: Array<{ id: string; slideIndex: number; html: string | null; pageTitle: string | null; pageType: string | null }>
+) {
+  const pageStates = slides.map((slide) => createHtmlSlidePageState(String(slide?.html || "")));
+  const normalizedSlides = slides.map((slide, index) => {
+    const html = String(slide?.html || "");
+    if (!html.trim()) return slide;
+    const parsed = pageStates[index];
+    return parsed.baseHtml === html ? slide : { ...slide, html: parsed.baseHtml };
+  });
+  return { normalizedSlides, pageStates };
+}
 
 function buildHtmlContentString(projectTitle: string, slides: any[]) {
   return [
@@ -52,13 +100,369 @@ export function HtmlEditorShell() {
   const activeSlideIndex = useEditorSelector((s) => s.activeSlideIndex);
   const isMobile = useEditorSelector((s) => s.isMobile);
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
+  const [pageStates, setPageStates] = useState<HtmlSlidePageState[]>([]);
   const [presets, setPresets] = useState<HtmlDesignPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedElementSelection, setSelectedElementSelection] = useState<{ slideIndex: number; elementId: string } | null>(null);
   const [htmlDirtyRevision, setHtmlDirtyRevision] = useState(0);
   const [hasUnsavedHtmlChanges, setHasUnsavedHtmlChanges] = useState(false);
+  const [undoStack, setUndoStack] = useState<HtmlEditorSnapshot[]>([]);
+  const [redoStack, setRedoStack] = useState<HtmlEditorSnapshot[]>([]);
+  const [pendingNavigationAction, setPendingNavigationAction] = useState<PendingNavigationAction | null>(null);
+  const [unsavedDialogMode, setUnsavedDialogMode] = useState<"unsaved-navigation" | "restore-session" | null>(null);
+  const [unsavedDialogBusy, setUnsavedDialogBusy] = useState(false);
+  const [unsavedDialogError, setUnsavedDialogError] = useState<string | null>(null);
+  const [pendingSessionDraft, setPendingSessionDraft] = useState<HtmlEditorSnapshot | null>(null);
   const htmlSaveTimeoutRef = useRef<number | null>(null);
   const htmlSaveResetTimeoutRef = useRef<number | null>(null);
+  const historyGroupTimeoutRef = useRef<number | null>(null);
+  const sessionDraftTimeoutRef = useRef<number | null>(null);
+  const slideRestyleFadeTimeoutRef = useRef<number | null>(null);
+  const activePreviewRef = useRef<HtmlSlidePreviewHandle | null>(null);
+  const pageStatesRef = useRef<HtmlSlidePageState[]>([]);
+  const baselinePageStatesRef = useRef<HtmlSlidePageState[]>([]);
+  const loadStateRef = useRef<LoadState>({ status: "loading" });
+  const currentRevisionRef = useRef(0);
+  const lastSavedRevisionRef = useRef(0);
+  const inFlightSavePromiseRef = useRef<Promise<boolean> | null>(null);
+  const inFlightSaveRevisionRef = useRef<number | null>(null);
+  const skipNextHistoryCheckpointRef = useRef(false);
+  const sessionAccountIdRef = useRef(getHtmlEditorActiveAccountId());
+  const [slideRestyleStatuses, setSlideRestyleStatuses] = useState<Record<number, HtmlSlideRestyleStatus>>({});
+
+  const debugLog = useCallback((_stage: string, _payload?: unknown) => {}, []);
+
+  useEffect(() => {
+    pageStatesRef.current = pageStates;
+  }, [pageStates]);
+
+  useEffect(() => {
+    loadStateRef.current = loadState;
+  }, [loadState]);
+
+  useEffect(() => {
+    return () => {
+      if (historyGroupTimeoutRef.current) window.clearTimeout(historyGroupTimeoutRef.current);
+      if (sessionDraftTimeoutRef.current) window.clearTimeout(sessionDraftTimeoutRef.current);
+    };
+  }, []);
+
+  const createSnapshotFromCurrentState = useCallback(
+    (reason?: string) => {
+      const current = loadStateRef.current;
+      if (current.status !== "ready") return null;
+      const htmlSlides = cloneHtmlSlidesForSnapshot(current.htmlSlides as HtmlEditorSlideSnapshot[]);
+      const baselineHtmlSlides = cloneHtmlSlidesForSnapshot(
+        htmlSlides.map((slide, index) => ({
+          ...slide,
+          html: String(baselinePageStatesRef.current[index]?.baseHtml || slide.html || ""),
+        }))
+      );
+      return captureHtmlEditorSnapshot({
+        projectId: String(current.project?.id || ""),
+        accountId: sessionAccountIdRef.current,
+        activeSlideIndex: Number(editorStore.getState().activeSlideIndex || 0),
+        selectedElementSelection: selectedElementSelection as HtmlEditorSelectionSnapshot,
+        htmlSlides,
+        baselineHtmlSlides,
+        reason,
+      });
+    },
+    [editorStore, selectedElementSelection]
+  );
+
+  const snapshotSignature = useCallback((snapshot: HtmlEditorSnapshot | null) => {
+    if (!snapshot) return "";
+    return JSON.stringify({
+      projectId: snapshot.projectId,
+      activeSlideIndex: snapshot.activeSlideIndex,
+      selectedElementSelection: snapshot.selectedElementSelection,
+      htmlSlides: snapshot.htmlSlides.map((slide) => ({
+        slideIndex: slide.slideIndex,
+        html: slide.html,
+        pageTitle: slide.pageTitle,
+        pageType: slide.pageType,
+      })),
+      baselineHtmlSlides: snapshot.baselineHtmlSlides.map((slide) => ({
+        slideIndex: slide.slideIndex,
+        html: slide.html,
+      })),
+    });
+  }, []);
+
+  const pushUndoCheckpoint = useCallback(
+    (reason: string, options?: { clearRedo?: boolean }) => {
+      if (skipNextHistoryCheckpointRef.current) {
+        skipNextHistoryCheckpointRef.current = false;
+        return;
+      }
+      const snapshot = createSnapshotFromCurrentState(reason);
+      if (!snapshot) return;
+      const signature = snapshotSignature(snapshot);
+      setUndoStack((current) => {
+        const previous = current[current.length - 1] || null;
+        if (snapshotSignature(previous) === signature) return current;
+        return [...current.slice(-49), snapshot];
+      });
+      if (options?.clearRedo !== false) {
+        setRedoStack([]);
+      }
+    },
+    [createSnapshotFromCurrentState, snapshotSignature]
+  );
+
+  const queueGroupedUndoCheckpoint = useCallback(
+    (reason: string) => {
+      if (historyGroupTimeoutRef.current) return;
+      pushUndoCheckpoint(reason);
+      historyGroupTimeoutRef.current = window.setTimeout(() => {
+        historyGroupTimeoutRef.current = null;
+      }, 450);
+    },
+    [pushUndoCheckpoint]
+  );
+
+  const markHtmlDirty = useCallback(() => {
+    const nextRevision = currentRevisionRef.current + 1;
+    currentRevisionRef.current = nextRevision;
+    setHtmlDirtyRevision(nextRevision);
+    setHasUnsavedHtmlChanges(nextRevision !== lastSavedRevisionRef.current);
+  }, []);
+
+  const applySnapshot = useCallback(
+    (snapshot: HtmlEditorSnapshot, options?: { preserveHistory?: boolean }) => {
+      const current = loadStateRef.current;
+      if (current.status !== "ready") return;
+      const nextSlides = cloneHtmlSlidesForSnapshot(snapshot.htmlSlides);
+      const nextPageStates = buildPageStatesFromHtmlSlides(nextSlides);
+      const nextBaselineStates = buildPageStatesFromHtmlSlides(snapshot.baselineHtmlSlides);
+      const nextSelection = normalizeSelectionForSnapshot(snapshot.selectedElementSelection, nextPageStates);
+      const nextActiveSlideIndex = Math.max(0, Math.min(snapshot.activeSlideIndex, Math.max(nextSlides.length - 1, 0)));
+
+      skipNextHistoryCheckpointRef.current = true;
+      pageStatesRef.current = nextPageStates;
+      baselinePageStatesRef.current = nextBaselineStates;
+      setPageStates(nextPageStates);
+      setSelectedElementSelection(nextSelection as { slideIndex: number; elementId: string } | null);
+      editorStore.setState({ activeSlideIndex: nextActiveSlideIndex } as any);
+      setLoadState({
+        ...current,
+        status: "ready",
+        htmlSlides: nextSlides,
+      });
+      activePreviewRef.current?.flushInlineEdit();
+      activePreviewRef.current?.syncStructure(String(nextSlides[nextActiveSlideIndex]?.html || ""));
+      activePreviewRef.current?.highlight(nextSelection?.slideIndex === nextActiveSlideIndex ? nextSelection.elementId : null);
+      if (!options?.preserveHistory) {
+        markHtmlDirty();
+      }
+    },
+    [editorStore, markHtmlDirty]
+  );
+
+  const flushHtmlSave = useCallback(
+    async (options?: { blocking?: boolean; reason?: string }) => {
+      while (true) {
+        const current = loadStateRef.current;
+        const projectId = current.status === "ready" ? String(current.project?.id || "").trim() : "";
+        const revisionToSave = currentRevisionRef.current;
+        if (!projectId) return false;
+        if (!hasUnsavedHtmlChanges && revisionToSave === lastSavedRevisionRef.current) return true;
+        if (inFlightSavePromiseRef.current && inFlightSaveRevisionRef.current === revisionToSave) {
+          const result = await inFlightSavePromiseRef.current;
+          if (!options?.blocking || currentRevisionRef.current === revisionToSave) return result;
+          continue;
+        }
+
+        const promise = saveHtmlSlides({
+          projectId,
+          slides: (current.status === "ready" ? current.htmlSlides : []).map((slide, index) => ({
+            slideIndex: index,
+            html: String(slide?.html || ""),
+            pageTitle: slide?.pageTitle ?? null,
+            pageType: slide?.pageType ?? null,
+          })),
+        })
+          .then(() => {
+            if (currentRevisionRef.current === revisionToSave) {
+              lastSavedRevisionRef.current = revisionToSave;
+              setHasUnsavedHtmlChanges(false);
+              clearHtmlSessionDraft(projectId, sessionAccountIdRef.current);
+            }
+            editorStore.setState({ slideSaveStatus: "saved" } as any);
+            if (htmlSaveResetTimeoutRef.current) window.clearTimeout(htmlSaveResetTimeoutRef.current);
+            htmlSaveResetTimeoutRef.current = window.setTimeout(() => {
+              editorStore.setState({ slideSaveStatus: "idle" } as any);
+            }, 1200);
+            return true;
+          })
+          .catch((error: any) => {
+            editorStore.setState({ slideSaveStatus: "error" } as any);
+            throw error;
+          })
+          .finally(() => {
+            inFlightSavePromiseRef.current = null;
+            inFlightSaveRevisionRef.current = null;
+          });
+
+        inFlightSavePromiseRef.current = promise;
+        inFlightSaveRevisionRef.current = revisionToSave;
+        editorStore.setState({ slideSaveStatus: "saving" } as any);
+
+        try {
+          const result = await promise;
+          if (!options?.blocking || currentRevisionRef.current === revisionToSave) return result;
+        } catch {
+          return false;
+        }
+      }
+    },
+    [editorStore, hasUnsavedHtmlChanges]
+  );
+
+  const restoreSessionDraft = useCallback(() => {
+    if (!pendingSessionDraft) return;
+    applySnapshot(pendingSessionDraft);
+    setPendingSessionDraft(null);
+    setUnsavedDialogMode(null);
+    setUnsavedDialogError(null);
+  }, [applySnapshot, pendingSessionDraft]);
+
+  const discardSessionDraft = useCallback(() => {
+    const current = loadStateRef.current;
+    if (current.status === "ready") {
+      clearHtmlSessionDraft(String(current.project?.id || ""), sessionAccountIdRef.current);
+    }
+    setPendingSessionDraft(null);
+    setUnsavedDialogMode(null);
+    setUnsavedDialogError(null);
+  }, []);
+
+  const performUndo = useCallback(() => {
+    if (!undoStack.length) return;
+    const currentSnapshot = createSnapshotFromCurrentState("redo");
+    const previous = undoStack[undoStack.length - 1];
+    if (!previous) return;
+    setUndoStack((current) => current.slice(0, -1));
+    if (currentSnapshot) {
+      setRedoStack((current) => [...current.slice(-49), currentSnapshot]);
+    }
+    applySnapshot(previous);
+  }, [applySnapshot, createSnapshotFromCurrentState, undoStack]);
+
+  const performRedo = useCallback(() => {
+    if (!redoStack.length) return;
+    const currentSnapshot = createSnapshotFromCurrentState("undo");
+    const nextSnapshot = redoStack[redoStack.length - 1];
+    if (!nextSnapshot) return;
+    setRedoStack((current) => current.slice(0, -1));
+    if (currentSnapshot) {
+      setUndoStack((current) => [...current.slice(-49), currentSnapshot]);
+    }
+    applySnapshot(nextSnapshot);
+  }, [applySnapshot, createSnapshotFromCurrentState, redoStack]);
+
+  const continueNavigationAction = useCallback(
+    async (action: PendingNavigationAction) => {
+      if (action.type === "load-project") {
+        setRuntimeProjectIdHint(action.projectId);
+        window.location.reload();
+        return;
+      }
+      const data = await createProject(action.templateTypeId);
+      const projectId = String(data?.project?.id || "").trim();
+      if (!projectId) return;
+      setRuntimeProjectIdHint(projectId);
+      window.location.reload();
+    },
+    []
+  );
+
+  const requestNavigationAction = useCallback(
+    (action: PendingNavigationAction) => {
+      if (!hasUnsavedHtmlChanges) {
+        void continueNavigationAction(action);
+        return;
+      }
+      setPendingNavigationAction(action);
+      setUnsavedDialogError(null);
+      setUnsavedDialogMode("unsaved-navigation");
+    },
+    [continueNavigationAction, hasUnsavedHtmlChanges]
+  );
+
+  const dismissUnsavedDialog = useCallback(() => {
+    if (unsavedDialogBusy) return;
+    setPendingNavigationAction(null);
+    setPendingSessionDraft(null);
+    setUnsavedDialogMode(null);
+    setUnsavedDialogError(null);
+  }, [unsavedDialogBusy]);
+
+  const performSave = useCallback(async () => {
+    activePreviewRef.current?.flushInlineEdit();
+    return flushHtmlSave({ blocking: true, reason: "manual-save" });
+  }, [flushHtmlSave]);
+
+  const handleUnsavedDialogPrimary = useCallback(async () => {
+    if (unsavedDialogMode === "restore-session") {
+      restoreSessionDraft();
+      return;
+    }
+    if (!pendingNavigationAction) return;
+    setUnsavedDialogBusy(true);
+    setUnsavedDialogError(null);
+    const saved = await performSave();
+    if (!saved) {
+      setUnsavedDialogBusy(false);
+      setUnsavedDialogError("Could not save this project. Fix the save issue or discard your changes.");
+      return;
+    }
+    setUnsavedDialogBusy(false);
+    setUnsavedDialogMode(null);
+    setPendingNavigationAction(null);
+    await continueNavigationAction(pendingNavigationAction);
+  }, [continueNavigationAction, pendingNavigationAction, performSave, restoreSessionDraft, unsavedDialogMode]);
+
+  const handleUnsavedDialogDiscard = useCallback(async () => {
+    if (unsavedDialogMode === "restore-session") {
+      discardSessionDraft();
+      return;
+    }
+    if (!pendingNavigationAction) return;
+    const action = pendingNavigationAction;
+    setPendingNavigationAction(null);
+    setUnsavedDialogMode(null);
+    setUnsavedDialogError(null);
+    await continueNavigationAction(action);
+  }, [continueNavigationAction, discardSessionDraft, pendingNavigationAction, unsavedDialogMode]);
+
+  const resetBaselineForSlide = useCallback((slideIndex: number, state: HtmlSlidePageState) => {
+    const nextBaseline = [...baselinePageStatesRef.current];
+    nextBaseline[slideIndex] = state;
+    baselinePageStatesRef.current = nextBaseline;
+  }, []);
+
+  const clearSlideRestyleFadeTimer = useCallback(() => {
+    if (slideRestyleFadeTimeoutRef.current) {
+      window.clearTimeout(slideRestyleFadeTimeoutRef.current);
+      slideRestyleFadeTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleSlideRestyleStatusReset = useCallback(() => {
+    clearSlideRestyleFadeTimer();
+    slideRestyleFadeTimeoutRef.current = window.setTimeout(() => {
+      setSlideRestyleStatuses({});
+      slideRestyleFadeTimeoutRef.current = null;
+    }, 4000);
+  }, [clearSlideRestyleFadeTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearSlideRestyleFadeTimer();
+    };
+  }, [clearSlideRestyleFadeTimer]);
 
   const hydrate = useCallback(
     async (preferredProjectId?: string | null) => {
@@ -71,10 +475,13 @@ export function HtmlEditorShell() {
       } as any);
 
       const data = await loadHtmlProjectShellData(preferredProjectId);
+      const { normalizedSlides: normalizedHtmlSlides, pageStates: nextPageStates } = normalizeHtmlSlidesForEditor(
+        Array.isArray(data.htmlSlides) ? data.htmlSlides : []
+      );
       const currentActiveSlideIndex = Number(editorStore.getState().activeSlideIndex || 0);
       const clampedActiveSlideIndex = Math.max(
         0,
-        Math.min(currentActiveSlideIndex, Math.max((data.htmlSlides?.length || 1) - 1, 0))
+        Math.min(currentActiveSlideIndex, Math.max((normalizedHtmlSlides?.length || 1) - 1, 0))
       );
       editorStore.setState({
         loading: false,
@@ -88,10 +495,52 @@ export function HtmlEditorShell() {
         captionDraft: String(data.project?.caption || ""),
         activeSlideIndex: clampedActiveSlideIndex,
       } as any);
-      setLoadState({ status: "ready", ...data });
-      return data;
+      const normalizedData = { ...data, htmlSlides: normalizedHtmlSlides };
+      debugLog("hydrate-ready", {
+        preferredProjectId: preferredProjectId || null,
+        slideCount: normalizedHtmlSlides.length,
+        pageStates: nextPageStates.map((state, index) => ({
+          index,
+          baseHtmlLength: state.baseHtml.length,
+          elementCount: state.elements.length,
+        })),
+      });
+      pageStatesRef.current = nextPageStates;
+      baselinePageStatesRef.current = nextPageStates;
+      sessionAccountIdRef.current = getHtmlEditorActiveAccountId();
+      currentRevisionRef.current = 0;
+      lastSavedRevisionRef.current = 0;
+      setHtmlDirtyRevision(0);
+      setHasUnsavedHtmlChanges(false);
+      setUndoStack([]);
+      setRedoStack([]);
+      setPendingNavigationAction(null);
+      setPendingSessionDraft(null);
+      setUnsavedDialogMode(null);
+      setUnsavedDialogBusy(false);
+      setUnsavedDialogError(null);
+      setPageStates(nextPageStates);
+      setLoadState({ status: "ready", ...normalizedData });
+      const sessionDraft = readHtmlSessionDraft(String(data.project?.id || ""), sessionAccountIdRef.current);
+      if (sessionDraft) {
+        const serverSnapshot = captureHtmlEditorSnapshot({
+          projectId: String(data.project?.id || ""),
+          accountId: sessionAccountIdRef.current,
+          activeSlideIndex: clampedActiveSlideIndex,
+          selectedElementSelection: null,
+          htmlSlides: normalizedHtmlSlides as HtmlEditorSlideSnapshot[],
+          baselineHtmlSlides: normalizedHtmlSlides.map((slide) => ({ ...slide, html: String(slide?.html || "") })),
+        });
+        if (snapshotSignature(sessionDraft) !== snapshotSignature(serverSnapshot)) {
+          setPendingSessionDraft(sessionDraft);
+          setUnsavedDialogMode("restore-session");
+        } else {
+          clearHtmlSessionDraft(String(data.project?.id || ""), sessionAccountIdRef.current);
+        }
+      }
+      return normalizedData;
     },
-    [editorStore]
+    [editorStore, snapshotSignature]
   );
 
   useEffect(() => {
@@ -166,10 +615,17 @@ export function HtmlEditorShell() {
   const { runGenerateSlides, generation } = useHtmlSlideGeneration({
     projectId: currentProjectId,
     onPage: (payload) => {
+      const pageIndex = Math.max(0, Math.min(Number(payload?.pageIndex || 0), 5));
+      const nextPageState = createHtmlSlidePageState(String(payload?.page?.html || ""));
+      setPageStates((prev) => {
+        const next = [...prev];
+        next[pageIndex] = nextPageState;
+        pageStatesRef.current = next;
+        return next;
+      });
       setLoadState((prev) => {
         if (prev.status !== "ready") return prev;
         const nextSlides = [...prev.htmlSlides];
-        const pageIndex = Math.max(0, Math.min(Number(payload?.pageIndex || 0), 5));
         const existing = nextSlides[pageIndex] || {
           id: `generated-${pageIndex}`,
           slideIndex: pageIndex,
@@ -179,7 +635,7 @@ export function HtmlEditorShell() {
         };
         nextSlides[pageIndex] = {
           ...existing,
-          html: String(payload?.page?.html || ""),
+          html: nextPageState.baseHtml,
           pageTitle: String(payload?.page?.title || `Slide ${pageIndex + 1}`),
           pageType: pageIndex === 0 ? "cover" : pageIndex === 5 ? "cta" : "content",
         };
@@ -200,91 +656,438 @@ export function HtmlEditorShell() {
       ? presets.find((preset) => JSON.stringify(preset.styleGuide) === JSON.stringify(loadState.htmlStyleGuide))
       : null) ||
     null;
+  const commitRenderedSlideHtml = useCallback(
+    (slideIndex: number, nextState: HtmlSlidePageState) => {
+      const renderedHtml = renderHtmlSlidePageState(nextState);
+      debugLog("commit-rendered-slide-html", {
+        slideIndex,
+        baseHtmlLength: nextState.baseHtml.length,
+        renderedHtmlLength: renderedHtml.length,
+        elementCount: nextState.elements.length,
+        elements: nextState.elements.map((element) => ({
+          id: element.id,
+          type: element.type,
+          translateX: element.translateX,
+          translateY: element.translateY,
+          width: element.width,
+          height: element.height,
+          rotate: element.rotate,
+        })),
+      });
+      const nextStates = [...pageStatesRef.current];
+      nextStates[slideIndex] = nextState;
+      pageStatesRef.current = nextStates;
+      setPageStates(nextStates);
+      setLoadState((prev) => {
+        if (prev.status !== "ready") return prev;
+        const nextSlides = [...prev.htmlSlides];
+        const existing = nextSlides[slideIndex] || {
+          id: `generated-${slideIndex}`,
+          slideIndex,
+          html: null,
+          pageTitle: null,
+          pageType: null,
+        };
+        nextSlides[slideIndex] = {
+          ...existing,
+          html: renderedHtml,
+        };
+        return { ...prev, htmlSlides: nextSlides };
+      });
+      return renderedHtml;
+    },
+    []
+  );
+  const updateSlidePageStateByIndex = useCallback(
+    (slideIndex: number, updater: (state: HtmlSlidePageState) => HtmlSlidePageState | null) => {
+      if (loadState.status !== "ready") return null;
+      const safeIndex = Math.max(0, Math.min(slideIndex, Math.max(loadState.htmlSlides.length - 1, 0)));
+      const fallbackHtml = String((loadState.htmlSlides[safeIndex] || loadState.htmlSlides[0] || null)?.html || "");
+      const currentState = pageStatesRef.current[safeIndex] || createHtmlSlidePageState(fallbackHtml);
+      const nextState = updater(currentState);
+      if (!nextState) return null;
+      const renderedHtml = commitRenderedSlideHtml(safeIndex, nextState);
+      return { slideIndex: safeIndex, nextState, renderedHtml };
+    },
+    [commitRenderedSlideHtml, loadState]
+  );
+  const updateActiveSlidePageState = useCallback(
+    (updater: (state: HtmlSlidePageState) => HtmlSlidePageState | null) => {
+      if (loadState.status !== "ready") return null;
+      const slideIndex = Math.max(0, Math.min(activeSlideIndex, Math.max(loadState.htmlSlides.length - 1, 0)));
+      const fallbackHtml = String((loadState.htmlSlides[slideIndex] || loadState.htmlSlides[0] || null)?.html || "");
+      const currentState = pageStatesRef.current[slideIndex] || createHtmlSlidePageState(fallbackHtml);
+      debugLog("update-active-slide-state-before", {
+        slideIndex,
+        fallbackHtmlLength: fallbackHtml.length,
+        currentElements: currentState.elements.map((element) => ({
+          id: element.id,
+          type: element.type,
+          translateX: element.translateX,
+          translateY: element.translateY,
+          width: element.width,
+          height: element.height,
+          rotate: element.rotate,
+        })),
+      });
+      const nextState = updater(currentState);
+      if (!nextState) return null;
+      const renderedHtml = commitRenderedSlideHtml(slideIndex, nextState);
+      debugLog("update-active-slide-state-after", {
+        slideIndex,
+        renderedHtmlLength: renderedHtml.length,
+        nextElements: nextState.elements.map((element) => ({
+          id: element.id,
+          type: element.type,
+          translateX: element.translateX,
+          translateY: element.translateY,
+          width: element.width,
+          height: element.height,
+          rotate: element.rotate,
+        })),
+      });
+      return { slideIndex, nextState, renderedHtml };
+    },
+    [activeSlideIndex, commitRenderedSlideHtml, debugLog, loadState]
+  );
   const activeSlideHtml =
     loadState.status === "ready"
       ? String((loadState.htmlSlides[activeSlideIndex] || loadState.htmlSlides[0] || null)?.html || "")
       : "";
-  const parsedActiveSlide = useHtmlElementParser(activeSlideHtml);
-  const selectedElement = parsedActiveSlide.elements.find((element) => element.id === selectedElementId) || null;
+  const activePageState =
+    pageStates[activeSlideIndex] ||
+    (activeSlideHtml.trim() ? createHtmlSlidePageState(activeSlideHtml) : null);
+  const activeElements = activePageState?.elements || [];
+  const activeSelectedElementId =
+    selectedElementSelection && selectedElementSelection.slideIndex === activeSlideIndex
+      ? selectedElementSelection.elementId
+      : null;
+  const selectedElement = activeElements.find((element) => element.id === activeSelectedElementId) || null;
   const { downloadAll } = useHtmlSlideExport();
+  const setRestyleStatusForSlide = useCallback((slideIndex: number, status: HtmlSlideRestyleStatus) => {
+    setSlideRestyleStatuses((current) => ({
+      ...current,
+      [slideIndex]: status,
+    }));
+  }, []);
+  const { runRefinePage, refinement } = useHtmlPageRefinement({
+    projectId: currentProjectId,
+    onPage: (payload) => {
+      const pageIndex = Math.max(0, Number(payload?.pageIndex || 0));
+      const nextState = createHtmlSlidePageState(String(payload?.page?.html || ""));
+      const renderedHtml = commitRenderedSlideHtml(pageIndex, nextState);
+      resetBaselineForSlide(pageIndex, nextState);
+      setSelectedElementSelection((current) => (current?.slideIndex === pageIndex ? null : current));
+      markHtmlDirty();
+      if (Number(editorStore.getState().activeSlideIndex || 0) === pageIndex) {
+        activePreviewRef.current?.syncStructure(renderedHtml);
+        activePreviewRef.current?.highlight(null);
+      }
+    },
+  });
+  const { runRefineCarousel, carouselRefinement } = useHtmlCarouselRefinement({
+    projectId: currentProjectId,
+    onStatus: (payload) => {
+      if (payload.phase === "refining-page" && typeof payload.pageIndex === "number") {
+        setRestyleStatusForSlide(payload.pageIndex, {
+          state: "refining",
+          label: "Refining...",
+        });
+      }
+    },
+    onPage: (payload) => {
+      const pageIndex = Math.max(0, Number(payload?.pageIndex || 0));
+      const nextState = createHtmlSlidePageState(String(payload?.page?.html || ""));
+      const renderedHtml = commitRenderedSlideHtml(pageIndex, nextState);
+      resetBaselineForSlide(pageIndex, nextState);
+      setSelectedElementSelection((current) => (current?.slideIndex === pageIndex ? null : current));
+      markHtmlDirty();
+      setRestyleStatusForSlide(pageIndex, {
+        state: "applied",
+        label: "Updated",
+      });
+      if (Number(editorStore.getState().activeSlideIndex || 0) === pageIndex) {
+        activePreviewRef.current?.syncStructure(renderedHtml);
+        activePreviewRef.current?.highlight(null);
+      }
+    },
+    onPageError: (payload) => {
+      if (typeof payload.pageIndex !== "number") return;
+      setRestyleStatusForSlide(payload.pageIndex, {
+        state: "error",
+        label: "Failed",
+        error: payload.message,
+      });
+    },
+    onComplete: async () => {
+      scheduleSlideRestyleStatusReset();
+    },
+  });
+  const isAnyRefinementRunning = refinement.refining || carouselRefinement.running;
+  const effectiveAiStatusLabel = carouselRefinement.running ? carouselRefinement.label : refinement.label;
+  const effectiveAiError = carouselRefinement.error || refinement.error;
+
+  const onRefineActivePage = useCallback(
+    (prompt: string) => {
+      if (loadState.status !== "ready" || !activePageState || !currentProjectId || isAnyRefinementRunning) return;
+      activePreviewRef.current?.flushInlineEdit();
+      const latestSlideIndex = Math.max(0, Math.min(Number(editorStore.getState().activeSlideIndex || 0), Math.max(loadState.htmlSlides.length - 1, 0)));
+      const latestState =
+        pageStatesRef.current[latestSlideIndex] ||
+        createHtmlSlidePageState(String((loadState.htmlSlides[latestSlideIndex] || loadState.htmlSlides[0] || null)?.html || ""));
+      const renderedHtml = renderHtmlSlidePageState(latestState);
+      const baselineState = baselinePageStatesRef.current[latestSlideIndex] || latestState;
+      const manualEdits = buildManualEditsSummary({
+        baseline: baselineState,
+        current: latestState,
+      });
+      pushUndoCheckpoint("ai-refine-page");
+      debugLog("refine-page-request", {
+        slideIndex: latestSlideIndex,
+        promptLength: prompt.length,
+        htmlLength: renderedHtml.length,
+        manualEditsLength: manualEdits.length,
+      });
+      void runRefinePage({
+        pageIndex: latestSlideIndex,
+        html: renderedHtml,
+        prompt,
+        aspectRatio: "3:4",
+        manualEdits,
+        htmlGenerationId: loadState.htmlGenerationId,
+      });
+    },
+    [activePageState, currentProjectId, debugLog, editorStore, isAnyRefinementRunning, loadState, runRefinePage]
+  );
+  const onRefineCarouselSlides = useCallback(
+    (prompt: string) => {
+      if (loadState.status !== "ready" || !currentProjectId || isAnyRefinementRunning) return;
+      activePreviewRef.current?.flushInlineEdit();
+      clearSlideRestyleFadeTimer();
+      const pages = loadState.htmlSlides
+        .map((slide, index) => {
+          const currentState =
+            pageStatesRef.current[index] || createHtmlSlidePageState(String(slide?.html || ""));
+          const renderedHtml = renderHtmlSlidePageState(currentState);
+          if (!renderedHtml.trim()) return null;
+          const baselineState = baselinePageStatesRef.current[index] || currentState;
+          const manualEdits = buildManualEditsSummary({
+            baseline: baselineState,
+            current: currentState,
+          });
+          return {
+            pageIndex: index,
+            html: renderedHtml,
+            manualEdits,
+          };
+        })
+        .filter(Boolean) as Array<{ pageIndex: number; html: string; manualEdits?: string }>;
+      if (!pages.length) return;
+      pushUndoCheckpoint("ai-refine-carousel");
+      setSlideRestyleStatuses(
+        Object.fromEntries(
+          pages.map((page) => [
+            page.pageIndex,
+            {
+              state: "queued",
+              label: "Queued",
+            } satisfies HtmlSlideRestyleStatus,
+          ])
+        )
+      );
+      debugLog("refine-carousel-request", {
+        promptLength: prompt.length,
+        pageCount: pages.length,
+        pages: pages.map((page) => ({
+          pageIndex: page.pageIndex,
+          htmlLength: page.html.length,
+          manualEditsLength: String(page.manualEdits || "").length,
+        })),
+      });
+      void runRefineCarousel({
+        pages,
+        prompt,
+        aspectRatio: "3:4",
+        htmlGenerationId: loadState.htmlGenerationId,
+      });
+    },
+    [clearSlideRestyleFadeTimer, currentProjectId, debugLog, isAnyRefinementRunning, loadState, runRefineCarousel]
+  );
+
   const onPatchSelectedElement = useCallback(
     (patch: HtmlElementPatch) => {
-      if (loadState.status !== "ready" || !selectedElementId) return;
-      setLoadState((prev) => {
-        if (prev.status !== "ready") return prev;
-        const nextSlides = [...prev.htmlSlides];
-        const index = Math.max(0, Math.min(activeSlideIndex, nextSlides.length - 1));
-        const target = nextSlides[index];
-        if (!target) return prev;
-        const nextHtml = applyElementPatchToHtml(String(target.html || ""), selectedElementId, patch);
-        nextSlides[index] = { ...target, html: nextHtml };
-        return { ...prev, htmlSlides: nextSlides };
-      });
-      setHtmlDirtyRevision((value) => value + 1);
-      setHasUnsavedHtmlChanges(true);
+      if (loadState.status !== "ready" || !activeSelectedElementId) return;
+      queueGroupedUndoCheckpoint("inspector-patch");
+      debugLog("inspector-patch", { editableId: activeSelectedElementId, slideIndex: activeSlideIndex, patch });
+      updateActiveSlidePageState((state) => patchHtmlSlidePageState(state, activeSelectedElementId, patch));
+      markHtmlDirty();
+      if (typeof patch.fontFamily === "string") {
+        const cssImport = getFontCssImport(patch.fontFamily);
+        if (cssImport) activePreviewRef.current?.sendFontCss(cssImport);
+      }
     },
-    [activeSlideIndex, loadState.status, selectedElementId]
+    [activeSelectedElementId, activeSlideIndex, debugLog, loadState.status, markHtmlDirty, queueGroupedUndoCheckpoint, updateActiveSlidePageState]
+  );
+
+  const onTextCommit = useCallback(
+    (editableId: string, _text: string, html: string, slideIndex: number) => {
+      if (loadState.status !== "ready" || !editableId) return;
+      pushUndoCheckpoint("text-commit");
+      debugLog("text-commit", { editableId, slideIndex, htmlLength: html.length });
+      updateSlidePageStateByIndex(slideIndex, (state) => patchHtmlSlidePageState(state, editableId, { html }));
+      markHtmlDirty();
+    },
+    [debugLog, loadState.status, markHtmlDirty, pushUndoCheckpoint, updateSlidePageStateByIndex]
+  );
+
+  const onDeselectAll = useCallback(() => {
+    setSelectedElementSelection((current) => (current?.slideIndex === activeSlideIndex ? null : current));
+  }, [activeSlideIndex]);
+  const onTransformElement = useCallback(
+    (editableId: string, patch: HtmlElementPatch, slideIndex: number) => {
+      if (loadState.status !== "ready" || !editableId) return;
+      pushUndoCheckpoint("transform");
+      debugLog("transform-received", { editableId, slideIndex, patch });
+      updateSlidePageStateByIndex(slideIndex, (state) => patchHtmlSlidePageState(state, editableId, patch));
+      markHtmlDirty();
+    },
+    [debugLog, loadState.status, markHtmlDirty, pushUndoCheckpoint, updateSlidePageStateByIndex]
+  );
+  const onAddElement = useCallback(
+    (kind: AddElementKind) => {
+      if (loadState.status !== "ready") return;
+      pushUndoCheckpoint("add-element");
+      activePreviewRef.current?.flushInlineEdit();
+      let insertedId: string | null = null;
+      let nextHtmlForSync: string | null = null;
+      updateActiveSlidePageState((state) => {
+        const renderedHtml = renderHtmlSlidePageState(state);
+        const result = addElementToHtml(renderedHtml, kind);
+        insertedId = String(result?.editableId || "").trim() || null;
+        nextHtmlForSync = String(result?.html || "");
+        return createHtmlSlidePageState(nextHtmlForSync);
+      });
+      if (nextHtmlForSync) {
+        activePreviewRef.current?.syncStructure(nextHtmlForSync);
+      }
+      if (insertedId) {
+        setSelectedElementSelection({ slideIndex: activeSlideIndex, elementId: insertedId });
+      }
+      markHtmlDirty();
+    },
+    [activeSlideIndex, loadState.status, markHtmlDirty, pushUndoCheckpoint, updateActiveSlidePageState]
+  );
+  const onDuplicateElement = useCallback(
+    (elementId: string) => {
+      if (loadState.status !== "ready" || !elementId) return;
+      pushUndoCheckpoint("duplicate-element");
+      activePreviewRef.current?.flushInlineEdit();
+      let nextHtmlForSync: string | null = null;
+      let duplicatedId: string | null = null;
+      updateActiveSlidePageState((state) => {
+        const renderedHtml = renderHtmlSlidePageState(state);
+        const result = duplicateElementInHtml(renderedHtml, elementId);
+        nextHtmlForSync = String(result?.html || "");
+        duplicatedId = String(result?.editableId || "").trim() || null;
+        return createHtmlSlidePageState(nextHtmlForSync);
+      });
+      if (nextHtmlForSync) {
+        activePreviewRef.current?.syncStructure(nextHtmlForSync);
+      }
+      if (duplicatedId) {
+        setSelectedElementSelection({ slideIndex: activeSlideIndex, elementId: duplicatedId });
+      }
+      markHtmlDirty();
+    },
+    [activeSlideIndex, loadState.status, markHtmlDirty, pushUndoCheckpoint, updateActiveSlidePageState]
+  );
+  const onDeleteElement = useCallback(
+    (elementId: string) => {
+      if (loadState.status !== "ready" || !elementId) return;
+      pushUndoCheckpoint("delete-element");
+      activePreviewRef.current?.flushInlineEdit();
+      let nextHtmlForSync: string | null = null;
+      updateActiveSlidePageState((state) => {
+        const renderedHtml = renderHtmlSlidePageState(state);
+        const result = deleteElementInHtml(renderedHtml, elementId);
+        nextHtmlForSync = result;
+        return createHtmlSlidePageState(result);
+      });
+      if (nextHtmlForSync) {
+        activePreviewRef.current?.syncStructure(nextHtmlForSync);
+      }
+      setSelectedElementSelection(null);
+      markHtmlDirty();
+    },
+    [loadState.status, markHtmlDirty, pushUndoCheckpoint, updateActiveSlidePageState]
+  );
+  const onClearRichText = useCallback(
+    (elementId: string, plainText: string) => {
+      if (loadState.status !== "ready" || !elementId) return;
+      pushUndoCheckpoint("clear-rich-text");
+      activePreviewRef.current?.flushInlineEdit();
+      updateActiveSlidePageState((state) => patchHtmlSlidePageState(state, elementId, { text: plainText }));
+      markHtmlDirty();
+    },
+    [loadState.status, markHtmlDirty, pushUndoCheckpoint, updateActiveSlidePageState]
+  );
+  const onApplyFontToAllPages = useCallback(
+    (fontFamily: string) => {
+      const normalizedFont = String(fontFamily || "").trim();
+      if (loadState.status !== "ready" || !normalizedFont || normalizedFont === "inherit") return;
+      pushUndoCheckpoint("apply-font-to-all-pages");
+      for (let index = 0; index < loadState.htmlSlides.length; index += 1) {
+        updateSlidePageStateByIndex(index, (state) => {
+          let changed = false;
+          const elements = state.elements.map((element) => {
+            if (element.type !== "text" || element.fontFamily === normalizedFont) return element;
+            changed = true;
+            return {
+              ...element,
+              fontFamily: normalizedFont,
+            };
+          });
+          return changed ? { ...state, elements } : state;
+        });
+      }
+      const cssImport = getFontCssImport(normalizedFont);
+      if (cssImport) activePreviewRef.current?.sendFontCss(cssImport);
+      markHtmlDirty();
+    },
+    [loadState, markHtmlDirty, pushUndoCheckpoint, updateSlidePageStateByIndex]
   );
   const onSelectSlide = useCallback(
     (nextIndex: number) => {
+      activePreviewRef.current?.flushInlineEdit();
+      setSelectedElementSelection(null);
       editorStore.setState({ activeSlideIndex: nextIndex } as any);
     },
     [editorStore]
   );
+  const performDeleteSelected = useCallback(() => {
+    const currentSelection = selectedElementSelection;
+    if (!currentSelection) return;
+    if (currentSelection.slideIndex !== Number(editorStore.getState().activeSlideIndex || 0)) return;
+    onDeleteElement(currentSelection.elementId);
+  }, [editorStore, onDeleteElement, selectedElementSelection]);
 
   useEffect(() => {
-    if (loadState.status !== "ready") return;
-    const active = loadState.htmlSlides[activeSlideIndex] || loadState.htmlSlides[0] || null;
-    if (!active || !String(active.html || "").trim()) return;
-    if (parsedActiveSlide.normalizedHtml === String(active.html || "")) return;
-    setLoadState((prev) => {
-      if (prev.status !== "ready") return prev;
-      const nextSlides = [...prev.htmlSlides];
-      const index = Math.max(0, Math.min(activeSlideIndex, nextSlides.length - 1));
-      const target = nextSlides[index];
-      if (!target) return prev;
-      nextSlides[index] = { ...target, html: parsedActiveSlide.normalizedHtml };
-      return { ...prev, htmlSlides: nextSlides };
-    });
-    setHtmlDirtyRevision((value) => value + 1);
-    setHasUnsavedHtmlChanges(true);
-  }, [activeSlideIndex, loadState, parsedActiveSlide.normalizedHtml]);
-
-  useEffect(() => {
-    setSelectedElementId(null);
-  }, [activeSlideIndex, currentProjectId]);
+    setSelectedElementSelection(null);
+    setSlideRestyleStatuses({});
+    clearSlideRestyleFadeTimer();
+  }, [currentProjectId]);
 
   useEffect(() => {
     if (loadState.status !== "ready" || !currentProjectId || !hasUnsavedHtmlChanges) return;
     if (htmlSaveTimeoutRef.current) window.clearTimeout(htmlSaveTimeoutRef.current);
     htmlSaveTimeoutRef.current = window.setTimeout(() => {
-      editorStore.setState({ slideSaveStatus: "saving" } as any);
-      void saveHtmlSlides({
-        projectId: currentProjectId,
-        slides: loadState.htmlSlides.map((slide, index) => ({
-          slideIndex: index,
-          html: String(slide?.html || ""),
-          pageTitle: slide?.pageTitle ?? null,
-          pageType: slide?.pageType ?? null,
-        })),
-      })
-        .then(() => {
-          setHasUnsavedHtmlChanges(false);
-          editorStore.setState({ slideSaveStatus: "saved" } as any);
-          if (htmlSaveResetTimeoutRef.current) window.clearTimeout(htmlSaveResetTimeoutRef.current);
-          htmlSaveResetTimeoutRef.current = window.setTimeout(() => {
-            editorStore.setState({ slideSaveStatus: "idle" } as any);
-          }, 1200);
-        })
-        .catch(() => {
-          editorStore.setState({ slideSaveStatus: "error" } as any);
-        });
+      void flushHtmlSave({ reason: "autosave" });
     }, 700);
 
     return () => {
       if (htmlSaveTimeoutRef.current) window.clearTimeout(htmlSaveTimeoutRef.current);
     };
-  }, [currentProjectId, editorStore, hasUnsavedHtmlChanges, htmlDirtyRevision, loadState]);
+  }, [currentProjectId, flushHtmlSave, hasUnsavedHtmlChanges, htmlDirtyRevision, loadState.status]);
 
   useEffect(() => {
     if (!hasUnsavedHtmlChanges && editorStore.getState().slideSaveStatus !== "saving") return;
@@ -295,6 +1098,64 @@ export function HtmlEditorShell() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [editorStore, hasUnsavedHtmlChanges]);
+
+  useEffect(() => {
+    if (loadState.status !== "ready" || !hasUnsavedHtmlChanges) return;
+    if (sessionDraftTimeoutRef.current) window.clearTimeout(sessionDraftTimeoutRef.current);
+    sessionDraftTimeoutRef.current = window.setTimeout(() => {
+      const snapshot = createSnapshotFromCurrentState("session-draft");
+      if (snapshot) writeHtmlSessionDraft(snapshot);
+      sessionDraftTimeoutRef.current = null;
+    }, 500);
+    return () => {
+      if (sessionDraftTimeoutRef.current) window.clearTimeout(sessionDraftTimeoutRef.current);
+    };
+  }, [createSnapshotFromCurrentState, hasUnsavedHtmlChanges, htmlDirtyRevision, loadState.status]);
+
+  useEffect(() => {
+    if (loadState.status !== "ready") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = event.metaKey || event.ctrlKey;
+      if (unsavedDialogMode) return;
+      if (command && (event.key === "s" || event.key === "S")) {
+        event.preventDefault();
+        void performSave();
+        return;
+      }
+      if (shouldIgnoreShellShortcut(event.target)) return;
+      if (command && !event.shiftKey && (event.key === "z" || event.key === "Z")) {
+        event.preventDefault();
+        performUndo();
+        return;
+      }
+      if (command && event.shiftKey && (event.key === "z" || event.key === "Z")) {
+        event.preventDefault();
+        performRedo();
+        return;
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && activeSelectedElementId) {
+        event.preventDefault();
+        performDeleteSelected();
+        return;
+      }
+      if (event.key === "Escape" && selectedElementSelection) {
+        event.preventDefault();
+        activePreviewRef.current?.flushInlineEdit();
+        setSelectedElementSelection(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    activeSelectedElementId,
+    loadState.status,
+    performDeleteSelected,
+    performRedo,
+    performSave,
+    performUndo,
+    selectedElementSelection,
+    unsavedDialogMode,
+  ]);
 
   useEffect(() => {
     const baseActions = editorStore.getState().actions as any;
@@ -320,19 +1181,8 @@ export function HtmlEditorShell() {
           if (!projectId) return;
           editorStore.setState({ topExporting: true } as any);
           try {
-            const currentState = loadState.status === "ready" ? loadState : null;
-            if (currentState) {
-              await saveHtmlSlides({
-                projectId,
-                slides: currentState.htmlSlides.map((slide, index) => ({
-                  slideIndex: index,
-                  html: String(slide?.html || ""),
-                  pageTitle: slide?.pageTitle ?? null,
-                  pageType: slide?.pageType ?? null,
-                })),
-              });
-              setHasUnsavedHtmlChanges(false);
-            }
+            const saved = await performSave();
+            if (!saved) return;
             await downloadAll({ projectId, projectTitle });
           } finally {
             editorStore.setState({ topExporting: false } as any);
@@ -341,19 +1191,17 @@ export function HtmlEditorShell() {
         onDownloadPdf: () => {},
         onClickNewProject: async () => {
           const type = (editorStore.getState().newProjectTemplateTypeId || "enhanced") as "regular" | "enhanced" | "html";
-          const data = await createProject(type);
-          const projectId = String(data?.project?.id || "").trim();
-          if (!projectId) return;
-          setRuntimeProjectIdHint(projectId);
-          window.location.reload();
+          requestNavigationAction({ type: "create-project", templateTypeId: type });
         },
         onToggleProjectsDropdown: () => {
           const open = !!editorStore.getState().projectsDropdownOpen;
           editorStore.setState({ projectsDropdownOpen: !open } as any);
         },
         onLoadProject: (projectId: string) => {
-          setRuntimeProjectIdHint(projectId);
-          window.location.reload();
+          requestNavigationAction({ type: "load-project", projectId });
+        },
+        onClickUndo: () => {
+          performUndo();
         },
         onRequestArchive: (target: { id: string; title: string }) => {
           editorStore.setState({ archiveProjectModalOpen: true, archiveProjectTarget: target } as any);
@@ -381,7 +1229,7 @@ export function HtmlEditorShell() {
         },
       },
     } as any);
-  }, [downloadAll, editorStore, hydrate, loadState]);
+  }, [downloadAll, editorStore, hydrate, performSave, performUndo, requestNavigationAction]);
 
   const content = useMemo(() => {
     if (loadState.status === "loading") {
@@ -460,9 +1308,11 @@ export function HtmlEditorShell() {
     return (
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {!isMobile ? (
-          <aside className="w-[380px] shrink-0 border-r border-slate-200 bg-white">
-            <EditorSidebar />
-          </aside>
+          <ResizablePanel side="left" defaultWidth={380} minWidth={280} maxWidth={520} className="border-r border-slate-200 bg-white">
+            <div className="h-full overflow-y-auto">
+              <EditorSidebar />
+            </div>
+          </ResizablePanel>
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-100">
@@ -479,15 +1329,35 @@ export function HtmlEditorShell() {
             <>
               <div className="flex min-h-0 flex-1 overflow-hidden">
                 <HtmlEditorWorkspace
+                  ref={activePreviewRef}
                   stage={stage}
+                  documentKeyBase={
+                    loadState.status === "ready"
+                      ? `${String(loadState.project?.id || "html")}::${String(loadState.htmlGenerationId || "base")}`
+                      : "html"
+                  }
                   activeSlideIndex={activeSlideIndex}
                   htmlSlides={workspaceHtmlSlides}
+                  slideElements={pageStates.map((state) => state.elements)}
                   copySlides={loadState.slides}
-                  selectedElementId={selectedElementId}
-                  onSelectEditableId={(editableId) => setSelectedElementId(editableId)}
+                  selectedElementId={activeSelectedElementId}
+                  onSelectEditableId={(editableId, slideIndex) => {
+                    editorStore.setState({ activeSlideIndex: slideIndex } as any);
+                    setSelectedElementSelection({ slideIndex, elementId: editableId });
+                  }}
+                  onDeselectAll={onDeselectAll}
+                  onTextCommit={onTextCommit}
+                  onTransform={onTransformElement}
+                  onRequestUndo={performUndo}
+                  onRequestRedo={performRedo}
+                  onRequestSave={() => {
+                    void performSave();
+                  }}
+                  onRequestDeleteSelected={performDeleteSelected}
                   onSelectSlide={onSelectSlide}
                   placeholderTitle={placeholderTitle}
                   placeholderDescription={placeholderDescription}
+                  slideRestyleStatuses={slideRestyleStatuses}
                   hasCopy={hasCopy}
                   hasGeneratedSlides={hasGeneratedSlides}
                   presets={presets}
@@ -495,20 +1365,28 @@ export function HtmlEditorShell() {
                   onSelectPreset={(presetId) => setSelectedPresetId(presetId)}
                 />
 
-                <HtmlInspectorPanel
-                  selectedElement={selectedElement}
-                  elements={parsedActiveSlide.elements}
-                  selectedElementId={selectedElementId}
-                  onSelectElement={(editableId) => setSelectedElementId(editableId)}
-                  onPatchSelectedElement={onPatchSelectedElement}
-                  projectTitle={String(loadState.project?.title || "Untitled Project")}
-                  stage={stage}
-                  selectedPreset={selectedPreset}
-                  persistedPresetSelected={persistedPresetSelected}
-                  generationStatus={generation.generating ? "generating" : loadState.htmlGenerationStatus}
-                  presetsCount={presets.length}
-                  hasUnsavedHtmlChanges={hasUnsavedHtmlChanges}
-                />
+                <ResizablePanel side="right" defaultWidth={340} minWidth={280} maxWidth={520} className="border-l border-slate-200 bg-white">
+                  <HtmlInspectorPanel
+                    selectedElement={selectedElement}
+                    elements={activeElements}
+                    selectedElementId={activeSelectedElementId}
+                    onSelectElement={(editableId) => setSelectedElementSelection({ slideIndex: activeSlideIndex, elementId: editableId })}
+                    onDeselectElement={onDeselectAll}
+                    onAddElement={onAddElement}
+                    onDuplicateElement={onDuplicateElement}
+                    onDeleteElement={onDeleteElement}
+                    onClearRichText={onClearRichText}
+                    onApplyFontToAllPages={onApplyFontToAllPages}
+                    totalPages={loadState.htmlSlides.length}
+                    onPatchSelectedElement={onPatchSelectedElement}
+                    onRefinePage={onRefineActivePage}
+                    onRefineCarousel={onRefineCarouselSlides}
+                    aiBusy={isAnyRefinementRunning}
+                    aiStatusLabel={effectiveAiStatusLabel}
+                    aiError={effectiveAiError}
+                    stage={stage}
+                  />
+                </ResizablePanel>
               </div>
 
               <HtmlBottomPanel
@@ -559,23 +1437,55 @@ export function HtmlEditorShell() {
     generation.label,
     hasUnsavedHtmlChanges,
     isMobile,
+    isAnyRefinementRunning,
     loadState,
+    onAddElement,
+    onApplyFontToAllPages,
+    onClearRichText,
+    onDeleteElement,
+    onDeselectAll,
+    onDuplicateElement,
+    onRefineActivePage,
+    onRefineCarouselSlides,
     onSelectSlide,
+    onTransformElement,
     onPatchSelectedElement,
-    parsedActiveSlide.elements,
+    performDeleteSelected,
+    performRedo,
+    performSave,
+    performUndo,
+    onTextCommit,
+    activeElements,
+    pageStates,
     presets,
     runGenerateCopy,
     runGenerateSlides,
     selectedElement,
-    selectedElementId,
+    activeSelectedElementId,
     selectedPreset,
     selectedPresetId,
+    effectiveAiError,
+    effectiveAiStatusLabel,
+    slideRestyleStatuses,
   ]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <EditorTopBar />
       {content}
+      <HtmlUnsavedChangesDialog
+        open={!!unsavedDialogMode}
+        mode={unsavedDialogMode || "unsaved-navigation"}
+        busy={unsavedDialogBusy}
+        error={unsavedDialogError}
+        onCancel={dismissUnsavedDialog}
+        onDiscard={() => {
+          void handleUnsavedDialogDiscard();
+        }}
+        onPrimary={() => {
+          void handleUnsavedDialogPrimary();
+        }}
+      />
     </div>
   );
 }
