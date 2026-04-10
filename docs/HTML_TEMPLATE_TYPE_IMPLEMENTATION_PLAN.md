@@ -5,6 +5,8 @@
 > The main plan remains the source of truth for product behavior, architecture, API contracts, database rules, UI rules, and V1 scope decisions.
 >
 > This implementation plan defines the safest rollout order for building the HTML project type without destabilizing existing `regular` and `enhanced` flows.
+>
+> Visibility note: the currently deferred "structural wrapper misclassified as editable block" bug is documented at the top of `docs/HTML_MIRR_PARITY_GAP_ANALYSIS.md` and should be reviewed before any future parser-side block eligibility changes.
 
 ## 1. Purpose
 
@@ -597,6 +599,17 @@ Please review for:
 Focus on html generation correctness, security, preview fidelity, and regression risk.
 ```
 
+### Follow-on: Mirr-style browse + template detail (Phase 17F)
+
+Phase 7 delivered **preset selection inside the project flow** and **generation**. Separately, the HTML editor now has (or will have) a **Browse templates** entry that must converge with Mirr’s **catalog + detail** UX.
+
+**Canonical spec and implementation checklist:** `docs/TEMPLATE_SYSTEM_PARITY_PLAN.md`
+
+- **§4 — Phase 17F** — Entry surface (All / Featured / My Templates / Favorites scaffolding) **plus** **template detail** inside the browse modal: tabs **Example results** (from `exampleImages`) and **Design structure** (from `templates[].html` + `styleGuide` + `pageType`), with **Edit design** / **Use this template** **visible but disabled** until a later milestone.
+- **§9 — Active implementation plan** — ordered steps, file list (`HtmlTemplatesBrowseModal.tsx`, `HtmlPresetGallery.tsx`, new `HtmlTemplateDetailView.tsx`, optional `HtmlPresetSlidePreview.tsx`), and explicit **non-goals** for that slice (no mutation of selected preset from browse).
+
+**Relationship to this document:** Milestone B (Phase 7) remains the source of truth for **choose preset → generate**. Phase **17F** is **browse-only inspection** parity with Mirr; wiring **Use this template** from the modal into the same preset + generation path is a **later** change and should be tracked as a small milestone when enabled.
+
 ---
 
 ## Phase 8. Editing + Save + Export
@@ -791,3 +804,199 @@ This section tracks the work that remains after the 8-phase MVP rollout. It is i
 | `future-scope` | Medium | Bottom panel expansion | current html bottom panel covers workflow/status but not a true caption editor or debug log surface | decide how much of the original bottom-panel vision still matters and implement the missing surfaces if still desired | Deferred |
 | `future-scope` | Low | Editor polish parity | undo/redo, session persistence/history, keyboard shortcuts, project-switch unsaved-changes modal, add-element flows, and richer partial-generation retry UX are not shipped | selectively implement only the polish items that are still product-relevant after MVP usage feedback | Deferred |
 | `future-scope` | Low | Runtime rename breadcrumbs | router/runtime split exists, but the planned `FabricEditorShell` breadcrumb TODO comments are still missing | add the lightweight rename/extraction TODO comments if we still want to preserve that future refactor breadcrumb | Deferred |
+
+
+## 10. Post-MVP Phase Sequence
+
+The sections above track what remains. This section converts that backlog into the recommended execution order for the next implementation cycle.
+
+Guiding rule:
+
+- lock down persistence/contracts first
+- then improve internal structure where it materially helps Mirr parity
+- then build interaction parity before secondary polish surfaces
+- then finish workflow parity, asset parity, and final polish
+
+If the end goal is to get as close to Mirr as possible, including internal structure where it helps us reproduce Mirr behavior more reliably, continue in this order.
+
+### Phase 9. Contract Stabilization
+
+Goal:
+
+- close the remaining MVP contract gaps before deeper parity work begins
+
+Includes:
+
+- persist `html_preset_id` durably during slide generation and reload flows
+- decide whether the shipped `save-slides` contract remains canonical or should be expanded
+- decide whether the shipped `render` contract remains canonical or should be expanded
+- update `docs/HTML_TEMPLATE_TYPE_PLAN.md` if the MVP contracts are blessed as final
+
+Why this phase goes first:
+
+- Mirr-style editing parity will sit on top of these persistence rules
+- changing project-level preset/save/export contracts later would create avoidable rework
+
+Done when:
+
+- preset choice survives generation, save, reload, and runtime handoff
+- the save contract is either explicitly frozen or explicitly replaced
+- the export contract is either explicitly frozen or explicitly replaced
+- docs and code agree on the canonical contract
+
+### Phase 10. Mirr Runtime Foundation
+
+Goal:
+
+- reshape the html runtime internals so later parity work lands on stable boundaries instead of ad hoc shell code
+
+Includes:
+
+- extract or formalize `htmlEditorStore.ts` ownership for pages, selection, dirty state, and history state
+- split parser/sanitizer/serializer/interaction responsibilities into dedicated html files where that improves maintainability and parity work
+- define a stable iframe `postMessage` contract for selection, hover, inline edit lifecycle, and transform events
+- add or restore the lightweight runtime breadcrumbs around future `FabricEditorShell` naming if still desired
+
+Why this phase happens before deeper UI work:
+
+- true Mirr parity depends on a stronger ownership model between parent shell and iframe runtime
+- drag/resize/inline editing will be riskier if state is still scattered across shell-local hooks
+
+Done when:
+
+- html state ownership is explicit and no longer spread across unrelated shell concerns
+- parser/sanitizer/serializer/interaction boundaries are clear enough to support rapid parity work
+- iframe communication is stable enough to support interaction-heavy features
+
+### Phase 11. Mirr Core Interaction Parity
+
+Goal:
+
+- make the slide itself behave like Mirr, not just look similar in layout
+
+Includes:
+
+- in-iframe selection overlays and stronger hovered/selected element affordances
+- drag
+- resize
+- rotate
+- inline text editing inside the iframe editing surface
+- richer `postMessage` events so parent inspector state stays synchronized with iframe interactions
+- page-local selection lifecycle cleanup when switching slides/projects
+
+Why this is the highest-value parity phase:
+
+- this is the biggest current gap between the shipped MVP and the intended Mirr-like editor behavior
+- if this phase is not completed, the editor will still feel meaningfully less capable than Mirr even if the surrounding chrome improves
+
+Done when:
+
+- a user can interact with html slide elements directly in the canvas area rather than relying primarily on parent-side patching
+- selection, transforms, and inline editing feel first-class rather than bolted on
+- switching slides/projects does not leak stale iframe interaction state
+
+### Phase 12. Mirr Editing Surface Parity
+
+Goal:
+
+- bring the inspector and secondary controls closer to Mirr's editing toolkit once core interactions exist
+
+Includes:
+
+- build or formalize `HtmlFontSelector`
+- build or formalize `HtmlAddElementBar`
+- expand inspector controls for typography, alignment, spacing, sizing, colors, and layout properties
+- decide whether `HtmlCaptionEditor` should become a dedicated shipped surface or remain intentionally collapsed into existing UI
+- improve `HtmlElementList` / layer management behavior if Mirr parity requires it
+
+Why this phase follows interaction parity:
+
+- richer controls matter more once the canvas itself supports Mirr-style direct manipulation
+- otherwise the product risks adding more settings without improving the actual editing feel
+
+Done when:
+
+- the inspector and related controls cover the element-editing tasks needed for Mirr-like workflows
+- add-element and font-selection flows feel like deliberate editor features rather than missing placeholders
+
+### Phase 13. Workflow Parity And Resilience
+
+Goal:
+
+- make the editor resilient and production-friendly under real editing sessions
+
+Includes:
+
+- undo/redo
+- unsaved-changes guard for project switching and unload
+- stronger autosave coordination with export
+- keyboard shortcuts where they materially match Mirr behavior
+- session persistence/history restoration if still desired after usage review
+- better whole-job retry and generation-state recovery flows
+
+Why this phase is separate:
+
+- these features matter, but they are most valuable after the editing model itself is already strong
+- this phase should harden the experience instead of being asked to compensate for weak core interactions
+
+Done when:
+
+- normal editing mistakes and navigation flows no longer feel fragile
+- save/export/switching behavior behaves predictably under dirty-state conditions
+- the editor can withstand longer sessions without feeling brittle
+
+### Phase 14. Asset And Media Parity
+
+Goal:
+
+- close the remaining gap for image and slot-driven workflows that make templates feel complete
+
+Includes:
+
+- decide how far to extend slot-image workflows toward Mirr behavior
+- add image replacement/search flows if still product-relevant
+- improve logo/media slot targeting and replacement behavior if required
+- preserve the existing V1 silent-prefill path while extending it rather than replacing it with a second incompatible model
+
+Why this is after workflow parity:
+
+- media tooling benefits from having stable interaction/state foundations already in place
+- asset flows often touch both UX and async state, so they are safer once the editor core is hardened
+
+Done when:
+
+- image/media workflows no longer feel like an MVP compromise relative to the Mirr target behavior
+- slot targeting remains page-specific and resilient during async operations
+
+### Phase 15. Final Mirr Parity Polish And Audit
+
+Goal:
+
+- use the now-mature html runtime to close the remaining behavioral and visual parity gaps and explicitly audit what still differs
+
+Includes:
+
+- motion, micro-interactions, spacing, loading states, and inspector polish
+- final workspace/selection/export fidelity pass
+- review whether any remaining Mirr-specific behavior still differs in meaningful ways
+- document any intentional differences that remain for product reasons rather than accidental drift
+
+Why this is last:
+
+- parity polish only makes sense after the deeper interaction/workflow gaps are already addressed
+- this phase should be about tightening, not inventing core behavior late
+
+Done when:
+
+- the html runtime feels substantially equivalent to the Mirr target in day-to-day usage
+- remaining differences are intentional and documented rather than accidental omissions
+
+## 11. Recommended Next Move
+
+If implementation resumes now, continue with:
+
+1. Phase 9. Contract Stabilization
+2. Phase 10. Mirr Runtime Foundation
+3. Phase 11. Mirr Core Interaction Parity
+
+This keeps the next cycle focused on the highest-leverage work first instead of diffusing effort across lower-value polish before the editing model is truly Mirr-like.

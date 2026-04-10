@@ -371,6 +371,8 @@ export type EditorActions = {
   // Swipe File (Phase 1: superadmin-only)
   onOpenSwipeFileModal: () => void;
   onCloseSwipeFileModal: () => void;
+  onOpenHtmlTemplatesBrowseModal: () => void;
+  onCloseHtmlTemplatesBrowseModal: () => void;
   // Script Chat (MVP: superadmin-only)
   onOpenScriptChatModal: (projectId: string) => void;
   onCloseScriptChatModal: () => void;
@@ -787,6 +789,7 @@ export type EditorState = {
   deleteAccountModalOpen: boolean;
   outreachModalOpen: boolean;
   swipeFileModalOpen: boolean;
+  htmlTemplatesBrowseModalOpen: boolean;
   scriptChatModalOpen: boolean;
   scriptChatProjectId: string | null;
   brandAlignmentModalOpen: boolean;

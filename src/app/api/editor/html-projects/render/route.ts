@@ -1,10 +1,12 @@
 import "server-only";
 
 import JSZip from "jszip";
-import { chromium } from "playwright";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthedSupabase, resolveActiveAccountId } from "../../_utils";
-import { wrapHtmlDocument } from "@/features/html-editor/lib/htmlDocumentWrapper";
+import {
+  renderHtmlPagesToImages,
+  sanitizeFileName,
+} from "@/features/html-editor/server/renderHtmlPages";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,24 +15,6 @@ type Body = {
   projectId: string;
   format?: "zip";
 };
-
-function stripEditorAttrs(input: string) {
-  return String(input || "")
-    .replace(/\sdata-editable-id=(['"]).*?\1/gi, "")
-    .replace(/\sdata-selected-editable=(['"]).*?\1/gi, "")
-    .replace(/\sdata-editor-[a-z-]+=(['"]).*?\1/gi, "")
-    .trim();
-}
-
-function sanitizeFileName(input: string) {
-  const base = String(input || "html-carousel")
-    .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return base || "html-carousel";
-}
 
 export async function POST(request: NextRequest) {
   const authed = await getAuthedSupabase(request);
@@ -75,25 +59,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "No HTML slides found to export." }, { status: 400 });
   }
 
-  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
   try {
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1080, height: 1440 } });
     const zip = new JSZip();
     const folder = zip.folder(sanitizeFileName(String((project as any)?.title || "html-carousel"))) || zip;
-
-    for (let i = 0; i < (slides || []).length; i += 1) {
-      const slide = slides?.[i];
-      const html = stripEditorAttrs(String((slide as any)?.html || ""));
-      if (!html.trim()) continue;
-      const doc = wrapHtmlDocument({ html, aspectRatio: "3:4", interactive: false });
-      await page.setContent(doc, { waitUntil: "load" });
-      const imageBuffer = await page.screenshot({
-        type: "png",
-        clip: { x: 0, y: 0, width: 1080, height: 1440 },
-      });
-      folder.file(`slide-${Number((slide as any)?.slide_index || i) + 1}.png`, imageBuffer);
-    }
+    const rendered = await renderHtmlPagesToImages({
+      pages: (slides || []).map((slide: any, index: number) => ({
+        pageNumber: Number(slide?.slide_index || index) + 1,
+        html: String(slide?.html || ""),
+      })),
+      aspectRatio: "3:4",
+      imageType: "png",
+    });
+    rendered.pages.forEach((page) => {
+      folder.file(`slide-${page.pageNumber}.png`, page.buffer);
+    });
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     return new Response(zipBuffer, {
@@ -111,9 +90,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
   }
 }

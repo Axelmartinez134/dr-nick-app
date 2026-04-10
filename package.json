@@ -16,6 +16,10 @@
     "dm:capture-thread-network": "node scripts/instagram_dm/capture_thread_network.mjs",
     "dm:analyze-thread-network": "node scripts/instagram_dm/analyze_thread_network_payload.mjs",
     "dm:classify-thread-network": "node scripts/instagram_dm/classify_thread_network_state.mjs",
+    "dm:import-thread-network-classifications": "node scripts/instagram_dm/import_thread_network_classifications.mjs",
+    "dm:execute-safe-followups": "node scripts/instagram_dm/execute_safe_followups.mjs",
+    "dm:run-unified-followup-workflow": "node scripts/instagram_dm/run_outreach_followup_workflow.mjs",
+    "dm:start-local-bridge": "node scripts/instagram_dm/start_local_bridge.mjs",
     "dm:inspect-threads": "node scripts/instagram_dm/inspect_thread_states.mjs",
     "dm:import-threads": "node scripts/instagram_dm/import_discovered_threads.mjs"
   },

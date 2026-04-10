@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthedSupabase, resolveActiveAccountId } from "../../_utils";
+import { extractJsonObject, sanitizeHtmlForAspectRatio, sanitizeText } from "../_shared";
 import { getHtmlPresetById, type HtmlDesignPreset } from "@/features/html-editor/lib/presets";
 import { HTML_SLIDE_DIMENSIONS, type HtmlAspectRatio } from "@/features/html-editor/lib/htmlDocumentWrapper";
 
@@ -31,63 +32,6 @@ type GeneratedPage = {
   html: string;
   needsImage: boolean;
 };
-
-function sanitizeText(input: string) {
-  return String(input || "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, " ").trim();
-}
-
-function extractFirstBalancedJsonObject(text: string): string {
-  const raw = String(text || "");
-  let start = -1;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < raw.length; i += 1) {
-    const ch = raw[i] || "";
-    if (start === -1) {
-      if (ch === "{") {
-        start = i;
-        depth = 1;
-      }
-      continue;
-    }
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escaped = true;
-        continue;
-      }
-      if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      depth += 1;
-      continue;
-    }
-    if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) return raw.slice(start, i + 1);
-    }
-  }
-  throw new Error("Model did not return valid JSON");
-}
-
-function extractJsonObject(text: string) {
-  const trimmed = String(text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return JSON.parse(extractFirstBalancedJsonObject(trimmed));
-  }
-}
 
 function escapeHtml(text: string) {
   return String(text || "")
@@ -162,7 +106,7 @@ function buildGenerationPrompt(args: {
   const presetTemplates = args.preset.templates
     .map(
       (template, index) =>
-        `Template ${index + 1} (${template.role} - ${template.name}):\n${template.html}`
+        `Template ${index + 1} (${template.pageType || "content"} - ${template.name}):\n${template.html}`
     )
     .join("\n\n");
 
@@ -299,31 +243,10 @@ function buildDeterministicPage(args: {
 }
 
 function sanitizeGeneratedHtml(args: { html: string; aspectRatio: HtmlAspectRatio; preset: HtmlDesignPreset }) {
-  const { width, height } = HTML_SLIDE_DIMENSIONS[args.aspectRatio];
-  let html = String(args.html || "")
-    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
-    .replace(/\son[a-z-]+\s*=\s*(['"]).*?\1/gi, "")
-    .replace(/\son[a-z-]+\s*=\s*[^\s>]+/gi, "")
-    .replace(/\s(srcdoc|srcset)\s*=\s*(['"]).*?\2/gi, "")
-    .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, ` $1="#"`)
-    .trim();
-
-  html = ensureImageSlotPrefill(html, args.preset);
-
-  const dimensionRegex = new RegExp(`width\\s*:\\s*${width}px`, "i");
-  const heightRegex = new RegExp(`height\\s*:\\s*${height}px`, "i");
-  const overflowRegex = /overflow\s*:\s*hidden/i;
-  if (!dimensionRegex.test(html) || !heightRegex.test(html) || !overflowRegex.test(html)) {
-    html = `<div style="width:${width}px;height:${height}px;overflow:hidden;position:relative;">${html}</div>`;
-  }
-
-  const hasSlot = /class=["'][^"']*image-slot/i.test(html);
-  return {
-    valid: true,
-    normalizedHtml: html,
-    errors: [] as string[],
-    needsImage: hasSlot,
-  };
+  return sanitizeHtmlForAspectRatio({
+    html: ensureImageSlotPrefill(args.html, args.preset),
+    aspectRatio: args.aspectRatio,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -394,20 +317,24 @@ export async function POST(request: NextRequest) {
     .join("\n")
     .trim();
 
-  const htmlGenerationId = randomUUID();
-  await supabase
-    .from("carousel_projects")
-    .update({
-      html_generation_id: htmlGenerationId,
-      html_generation_status: "generating",
-      html_style_guide: preset.styleGuide,
-    })
-    .eq("id", projectId);
-
   const wantsStream =
     String(request.headers.get("accept") || "").includes("text/event-stream") || Boolean((body as any)?.stream);
   if (!wantsStream) {
     return NextResponse.json({ success: false, error: "Streaming not requested" }, { status: 400 });
+  }
+
+  const htmlGenerationId = randomUUID();
+  const { error: initUpdateErr } = await supabase
+    .from("carousel_projects")
+    .update({
+      html_generation_id: htmlGenerationId,
+      html_generation_status: "generating",
+      html_preset_id: preset.id,
+      html_style_guide: preset.styleGuide,
+    })
+    .eq("id", projectId);
+  if (initUpdateErr) {
+    return NextResponse.json({ success: false, error: `Failed to initialize generation state: ${initUpdateErr.message}` }, { status: 500 });
   }
 
   const stream = new ReadableStream({
@@ -450,7 +377,7 @@ export async function POST(request: NextRequest) {
               throw new Error(`Slide ${index + 1} failed html validation`);
             }
             const pageType = deriveRole(index, pages.length);
-            await supabase
+            const { error: slideUpdateErr } = await supabase
               .from("html_project_slides")
               .update({
                 html: sanitized.normalizedHtml,
@@ -459,6 +386,9 @@ export async function POST(request: NextRequest) {
               })
               .eq("project_id", projectId)
               .eq("slide_index", index);
+            if (slideUpdateErr) {
+              throw new Error(`Slide ${index + 1} failed to persist: ${slideUpdateErr.message}`);
+            }
 
             emittedPages += 1;
             send("page", {
@@ -473,14 +403,18 @@ export async function POST(request: NextRequest) {
             });
           }
 
-          await supabase
+          const { error: completeUpdateErr } = await supabase
             .from("carousel_projects")
             .update({
               html_generation_status: "complete",
               html_generation_id: htmlGenerationId,
+              html_preset_id: preset.id,
               html_style_guide: preset.styleGuide,
             })
             .eq("id", projectId);
+          if (completeUpdateErr) {
+            send("warning", { message: `Slides generated but project state failed to save: ${completeUpdateErr.message}` });
+          }
 
           send("complete", {
             htmlGenerationId,
@@ -498,9 +432,15 @@ export async function POST(request: NextRequest) {
             .update({
               html_generation_status: emittedPages > 0 ? "partial" : "failed",
               html_generation_id: htmlGenerationId,
+              html_preset_id: preset.id,
               html_style_guide: preset.styleGuide,
             })
-            .eq("id", projectId);
+            .eq("id", projectId)
+            .then(({ error: errUpdateErr }) => {
+              if (errUpdateErr) {
+                send("warning", { message: `Error state also failed to persist: ${errUpdateErr.message}` });
+              }
+            });
           send("error", {
             message: String(error?.message || "HTML generation failed"),
             partial: emittedPages > 0,

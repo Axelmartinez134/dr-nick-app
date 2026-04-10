@@ -579,10 +579,24 @@ export type PipelineStage = 'todo' | 'dm_sent' | 'responded_needs_followup' | 'b
 
 export type PipelineLead = {
   id: string;
+  createdAt: string | null;
   username: string;
   fullName: string | null;
   profilePicUrl: string | null;
   profilePicUrlHD: string | null;
+  instagramDmThreadUrl: string | null;
+  instagramDmThreadId: string | null;
+  instagramDmThreadDiscoveredAt: string | null;
+  instagramDmThreadLastState: string | null;
+  instagramDmThreadLastRecommendedAction: string | null;
+  instagramDmThreadLastClassifiedAt: string | null;
+  instagramDmThreadLastRunArtifactPath: string | null;
+  instagramDmLastExecutionState: string | null;
+  instagramDmLastExecutionAt: string | null;
+  instagramDmLastExecutionError: string | null;
+  instagramDmLastFollowupNumber: number | null;
+  instagramDmLastFollowupMessage: string | null;
+  instagramDmLastExecutionRunArtifactPath: string | null;
   aiScore: number | null;
   aiNiche: string | null;
   aiReason: string | null;
@@ -691,6 +705,19 @@ export async function pipelineUpdate(args: {
     pipelineStage?: PipelineStage | null;
     lastContactDate?: string | null;
     followupSentCount?: number | null;
+    instagramDmThreadUrl?: string | null;
+    instagramDmThreadId?: string | null;
+    instagramDmThreadDiscoveredAt?: string | null;
+    instagramDmThreadLastState?: string | null;
+    instagramDmThreadLastRecommendedAction?: string | null;
+    instagramDmThreadLastClassifiedAt?: string | null;
+    instagramDmThreadLastRunArtifactPath?: string | null;
+    instagramDmLastExecutionState?: string | null;
+    instagramDmLastExecutionAt?: string | null;
+    instagramDmLastExecutionError?: string | null;
+    instagramDmLastFollowupNumber?: number | null;
+    instagramDmLastFollowupMessage?: string | null;
+    instagramDmLastExecutionRunArtifactPath?: string | null;
     sourcePostUrl?: string | null;
     createdProjectId?: string | null;
     createdTemplateId?: string | null;
@@ -809,5 +836,254 @@ export async function markCreated(args: {
   });
   const j = await res.json().catch(() => null);
   if (!res.ok || !j?.success) throw new Error(String(j?.error || `Mark created failed (${res.status})`));
+}
+
+export type LocalWorkflowBucket =
+  | 'actionable'
+  | 'missing_thread'
+  | 'ready_followup'
+  | 'manual_review'
+  | 'wait_window_not_met'
+  | 'all';
+
+export type LocalWorkflowPreview = {
+  account_id: string;
+  bucket: LocalWorkflowBucket;
+  total_candidates: number;
+  total_matching: number;
+  total_selected: number;
+  limit: number;
+  offset: number;
+  min_days_since_last_contact: number;
+  duplicate_guard_hours: number;
+  counts_by_bucket: Record<string, number>;
+  exclusion_reason_counts: Record<string, number>;
+  selected_preview: Array<{
+    lead_id: string | null;
+    username: string | null;
+    next_action: string;
+    workflow_bucket: string;
+    next_followup_number: number;
+    thread_known: boolean;
+  }>;
+};
+
+export type LocalAutomationReadiness = {
+  bridge: {
+    ok: boolean;
+    host: string;
+    port: number;
+  };
+  chrome_debugger: {
+    ok: boolean;
+    debugger_url: string;
+    browser: string | null;
+    status: number | null;
+    web_socket_debugger_url: string | null;
+    error: string | null;
+  };
+  running_job_id: string | null;
+};
+
+export type LocalWorkflowJob = {
+  id: string;
+  status: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed';
+  cancelRequested?: boolean;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  preview: LocalWorkflowPreview;
+  progress: {
+    processed: number;
+    total: number;
+    successfulSends: number;
+    lastMessage: string | null;
+  };
+  result: any;
+  error: string | null;
+  logs: string[];
+};
+
+function localBridgeUrl(baseUrl: string | undefined, pathname: string) {
+  const root = String(baseUrl || 'http://127.0.0.1:4471').trim().replace(/\/+$/, '');
+  return `${root}${pathname}`;
+}
+
+async function readBridgeResponseError(res: Response, fallbackLabel: string, preloadedText?: string): Promise<string> {
+  const text = typeof preloadedText === 'string' ? preloadedText : await res.text().catch(() => '');
+  let parsed: any = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+  const requestId = String(res.headers.get('x-bridge-request-id') || parsed?.debug_id || '').trim();
+  const errorMessage = String(parsed?.error || parsed?.message || '').trim();
+  const debugMessage =
+    parsed?.debug && typeof parsed.debug === 'object'
+      ? String(parsed.debug?.message || parsed.debug?.cause?.message || '').trim()
+      : '';
+  const detailParts = [
+    errorMessage || fallbackLabel,
+    debugMessage && debugMessage !== errorMessage ? `detail=${debugMessage}` : '',
+    requestId ? `debug_id=${requestId}` : '',
+    parsed?.debug?.stack ? `stack=${String(parsed.debug.stack)}` : '',
+    !parsed && text ? `raw=${text}` : '',
+  ].filter(Boolean);
+  return detailParts.join(' | ') || `${fallbackLabel} (${res.status})`;
+}
+
+export async function localWorkflowBridgeHealth(args?: { baseUrl?: string }) {
+  const res = await fetch(localBridgeUrl(args?.baseUrl, '/health'), {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const text = await res.text().catch(() => '');
+  let j: any = null;
+  try {
+    j = text ? JSON.parse(text) : null;
+  } catch {
+    j = null;
+  }
+  if (!res.ok || !j?.success) {
+    const message = await readBridgeResponseError(res, `Bridge health failed (${res.status})`, text);
+    throw new Error(message);
+  }
+  return j as { success: true; host: string; port: number; running_job_id: string | null };
+}
+
+export async function localAutomationReadiness(args?: { baseUrl?: string }): Promise<LocalAutomationReadiness> {
+  const res = await fetch(localBridgeUrl(args?.baseUrl, '/readiness'), {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const text = await res.text().catch(() => '');
+  let j: any = null;
+  try {
+    j = text ? JSON.parse(text) : null;
+  } catch {
+    j = null;
+  }
+  if (!res.ok || !j?.success) {
+    const message = await readBridgeResponseError(res, `Automation readiness failed (${res.status})`, text);
+    throw new Error(message);
+  }
+  return j as LocalAutomationReadiness;
+}
+
+export async function localWorkflowPreview(args: {
+  baseUrl?: string;
+  accountId: string;
+  bucket: LocalWorkflowBucket;
+  limit: number;
+  offset?: number;
+  minDaysSinceLastContact: number;
+  duplicateGuardHours: number;
+  sendLive?: boolean;
+  maxSends?: number;
+  stopAfterFailures?: number;
+  delayMsMin?: number;
+  delayMsMax?: number;
+  preSendDelayMsMin?: number;
+  preSendDelayMsMax?: number;
+  postSendDelayMsMin?: number;
+  postSendDelayMsMax?: number;
+}): Promise<LocalWorkflowPreview> {
+  try {
+    const res = await fetch(localBridgeUrl(args.baseUrl, '/workflow/preview'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+    });
+    const text = await res.text().catch(() => '');
+    let j: any = null;
+    try {
+      j = text ? JSON.parse(text) : null;
+    } catch {
+      j = null;
+    }
+    if (!res.ok || !j?.success) {
+      const message = await readBridgeResponseError(res, `Workflow preview failed (${res.status})`, text);
+      throw new Error(message);
+    }
+    return j.preview as LocalWorkflowPreview;
+  } catch (error: any) {
+    throw new Error(String(error?.message || error || 'Workflow preview fetch failed'));
+  }
+}
+
+export async function localWorkflowStart(args: {
+  baseUrl?: string;
+  accountId: string;
+  bucket: LocalWorkflowBucket;
+  limit: number;
+  offset?: number;
+  minDaysSinceLastContact: number;
+  duplicateGuardHours: number;
+  sendLive: boolean;
+  maxSends: number;
+  stopAfterFailures: number;
+  delayMsMin: number;
+  delayMsMax: number;
+  preSendDelayMsMin: number;
+  preSendDelayMsMax: number;
+  postSendDelayMsMin: number;
+  postSendDelayMsMax: number;
+}) {
+  try {
+    const res = await fetch(localBridgeUrl(args.baseUrl, '/workflow/start'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+    });
+    const text = await res.text().catch(() => '');
+    let j: any = null;
+    try {
+      j = text ? JSON.parse(text) : null;
+    } catch {
+      j = null;
+    }
+    if (!res.ok || !j?.success) {
+      const message = await readBridgeResponseError(res, `Workflow start failed (${res.status})`, text);
+      throw new Error(message);
+    }
+    return j as { success: true; jobId: string; preview: LocalWorkflowPreview };
+  } catch (error: any) {
+    throw new Error(String(error?.message || error || 'Workflow start fetch failed'));
+  }
+}
+
+export async function localWorkflowJob(args: { baseUrl?: string; jobId: string }): Promise<LocalWorkflowJob> {
+  const res = await fetch(localBridgeUrl(args.baseUrl, `/workflow/jobs/${encodeURIComponent(String(args.jobId || ''))}`), {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.success) throw new Error(String(j?.error || `Workflow job failed (${res.status})`));
+  return j.job as LocalWorkflowJob;
+}
+
+export async function localWorkflowCancel(args: { baseUrl?: string; jobId: string }): Promise<LocalWorkflowJob> {
+  try {
+    const res = await fetch(localBridgeUrl(args.baseUrl, `/workflow/jobs/${encodeURIComponent(String(args.jobId || ''))}/cancel`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const text = await res.text().catch(() => '');
+    let j: any = null;
+    try {
+      j = text ? JSON.parse(text) : null;
+    } catch {
+      j = null;
+    }
+    if (!res.ok || !j?.success) {
+      const message = await readBridgeResponseError(res, `Workflow cancel failed (${res.status})`, text);
+      throw new Error(message);
+    }
+    return j.job as LocalWorkflowJob;
+  } catch (error: any) {
+    throw new Error(String(error?.message || error || 'Workflow cancel fetch failed'));
+  }
 }
 

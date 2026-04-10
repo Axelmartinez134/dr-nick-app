@@ -1,13 +1,14 @@
 import 'server-only';
 import { Readable } from 'node:stream';
 import { NextRequest, NextResponse } from 'next/server';
-import { google, drive_v3 } from 'googleapis';
+import { google, docs_v1, drive_v3 } from 'googleapis';
 import { getAuthedSupabase, resolveActiveAccountId } from '../../../_utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
+const GOOGLE_DOC_MIME = 'application/vnd.google-apps.document';
 
 class RouteError extends Error {
   status: number;
@@ -244,7 +245,7 @@ export async function POST(req: NextRequest) {
 
   const { data: projectRow, error: projectErr } = await auth.supabase
     .from('carousel_projects')
-    .select('id, title, review_ready, review_posted')
+    .select('id, title, caption, review_ready, review_posted')
     .eq('id', projectId)
     .eq('account_id', auth.accountId)
     .is('archived_at', null)
@@ -264,6 +265,7 @@ export async function POST(req: NextRequest) {
   });
 
   let drive: drive_v3.Drive | null = null;
+  let docs: docs_v1.Docs | null = null;
   let createdFolderId: string | null = null;
   try {
     if (!(projectRow as any)?.review_ready || !!(projectRow as any)?.review_posted) {
@@ -279,6 +281,7 @@ export async function POST(req: NextRequest) {
     const authClient = getGoogleDriveAuth();
     log('google-auth:init:ok');
     drive = google.drive({ version: 'v3', auth: authClient });
+    docs = google.docs({ version: 'v1', auth: authClient });
     log('drive:validate-parent-folder:start', { parentFolderId });
     let parentMeta: drive_v3.Schema$File | null = null;
     try {
@@ -343,6 +346,41 @@ export async function POST(req: NextRequest) {
         supportsAllDrives: true,
       });
       log('drive:upload-slide:ok', { name: slide.name });
+    }
+
+    log('drive:create-caption-doc:start');
+    const createdCaptionDoc = await drive.files.create({
+      requestBody: {
+        name: 'Caption',
+        mimeType: GOOGLE_DOC_MIME,
+        parents: [createdFolderId],
+      },
+      fields: 'id',
+      supportsAllDrives: true,
+    });
+    const captionDocId = String(createdCaptionDoc.data.id || '').trim();
+    if (!captionDocId) {
+      throw new Error('Google Drive did not return a caption doc id');
+    }
+    log('drive:create-caption-doc:ok', { docId: captionDocId });
+
+    const captionText = String((projectRow as any)?.caption || '');
+    if (captionText && docs) {
+      log('docs:write-caption:start', { length: captionText.length });
+      await docs.documents.batchUpdate({
+        documentId: captionDocId,
+        requestBody: {
+          requests: [
+            {
+              insertText: {
+                location: { index: 1 },
+                text: captionText,
+              },
+            },
+          ],
+        },
+      });
+      log('docs:write-caption:ok', { docId: captionDocId });
     }
 
     const folderUrl = String(createdFolder.data.webViewLink || `https://drive.google.com/drive/folders/${createdFolderId}`);

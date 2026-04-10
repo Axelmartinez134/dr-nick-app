@@ -1,64 +1,89 @@
 "use client";
 
+import { useState } from "react";
 import { HtmlAiDesigner } from "./HtmlAiDesigner";
-import { HtmlElementEditor } from "./HtmlElementEditor";
-import { HtmlElementList } from "./HtmlElementList";
-import type { HtmlEditableElement } from "../hooks/useHtmlElementParser";
-import type { HtmlElementPatch } from "../hooks/useHtmlElementSerializer";
-import type { HtmlDesignPreset } from "../lib/presets";
+import { HtmlInspectorAccordion } from "./HtmlInspectorAccordion";
+import type { HtmlEditableElement, HtmlElementPatch } from "../models/htmlElementModel";
+import type { AddElementKind } from "../hooks/useHtmlElementSerializer";
 
 export function HtmlInspectorPanel(props: {
   selectedElement: HtmlEditableElement | null;
   elements: HtmlEditableElement[];
   selectedElementId: string | null;
   onSelectElement: (elementId: string) => void;
+  onDeselectElement: () => void;
   onPatchSelectedElement: (patch: HtmlElementPatch) => void;
-  projectTitle: string;
   stage: string;
-  selectedPreset: HtmlDesignPreset | null;
-  persistedPresetSelected: boolean;
-  generationStatus: string;
-  presetsCount: number;
-  hasUnsavedHtmlChanges: boolean;
+  onAddElement: (kind: AddElementKind) => void;
+  onDuplicateElement: (elementId: string) => void;
+  onDeleteElement: (elementId: string) => void;
+  onClearRichText: (elementId: string, plainText: string) => void;
+  onApplyFontToAllPages: (fontFamily: string) => void;
+  totalPages: number;
+  onRefinePage: (prompt: string) => void;
+  onRefineCarousel: (prompt: string) => void;
+  aiBusy: boolean;
+  aiStatusLabel: string;
+  aiError: string | null;
 }) {
+  const [activeTab, setActiveTab] = useState<"inspector" | "ai">("inspector");
+
   return (
-    <aside className="w-[320px] shrink-0 border-l border-slate-200 bg-white p-4 xl:w-[340px]">
+    <aside className="h-full w-full bg-white p-4">
       <div className="flex h-full min-h-0 flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-          <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
+          <button
+            type="button"
+            onClick={() => setActiveTab("inspector")}
+            className={[
+              "rounded-lg px-3 py-1.5 text-xs font-semibold",
+              activeTab === "inspector" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600",
+            ].join(" ")}
+          >
             Inspector
           </button>
           <button
             type="button"
-            disabled
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-400"
-            title="AI Designer is intentionally disabled in v1."
+            onClick={() => setActiveTab("ai")}
+            className={[
+              "rounded-lg px-3 py-1.5 text-xs font-semibold",
+              activeTab === "ai" ? "bg-slate-900 text-white" : "border border-slate-200 text-slate-600",
+            ].join(" ")}
           >
             AI Designer
           </button>
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          <HtmlElementEditor element={props.selectedElement} onPatch={props.onPatchSelectedElement} />
-          <HtmlElementList
-            elements={props.elements}
-            selectedElementId={props.selectedElementId}
-            onSelect={props.onSelectElement}
-          />
+          {activeTab === "inspector" ? (
+            <>
+              {props.stage === "editing" ? (
+                <HtmlInspectorAccordion
+                  elements={props.elements}
+                  selectedElementId={props.selectedElementId}
+                  onSelectElement={props.onSelectElement}
+                  onDeselectElement={props.onDeselectElement}
+                  onPatchSelectedElement={props.onPatchSelectedElement}
+                  onAddElement={props.onAddElement}
+                  onDuplicateElement={props.onDuplicateElement}
+                  onDeleteElement={props.onDeleteElement}
+                  onClearRichText={props.onClearRichText}
+                  onApplyFontToAllPages={props.onApplyFontToAllPages}
+                  totalPages={props.totalPages}
+                />
+              ) : null}
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-900">Project status</div>
-            <div className="mt-3 space-y-2 text-sm text-slate-600">
-              <div>Project: {props.projectTitle || "Untitled Project"}</div>
-              <div>Workflow stage: {props.stage}</div>
-              <div>Preset: {props.selectedPreset?.name || (props.persistedPresetSelected ? "Selected" : "Not selected")}</div>
-              <div>Generation: {props.generationStatus || "idle"}</div>
-              <div>Presets loaded: {props.presetsCount}</div>
-              <div>Unsaved changes: {props.hasUnsavedHtmlChanges ? "Yes" : "No"}</div>
-            </div>
-          </div>
-
-          <HtmlAiDesigner />
+            </>
+          ) : (
+            <HtmlAiDesigner
+              enabled={props.stage === "editing"}
+              busy={props.aiBusy}
+              statusLabel={props.aiStatusLabel}
+              error={props.aiError}
+              onSubmitPage={props.onRefinePage}
+              onSubmitCarousel={props.onRefineCarousel}
+            />
+          )}
         </div>
       </div>
     </aside>

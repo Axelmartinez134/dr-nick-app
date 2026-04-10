@@ -10,10 +10,24 @@ type Stage = 'todo' | 'dm_sent' | 'responded_needs_followup' | 'booked' | 'sent_
 
 type RowOut = {
   id: string;
+  createdAt: string | null;
   username: string;
   fullName: string | null;
   profilePicUrl: string | null;
   profilePicUrlHD: string | null;
+  instagramDmThreadUrl: string | null;
+  instagramDmThreadId: string | null;
+  instagramDmThreadDiscoveredAt: string | null;
+  instagramDmThreadLastState: string | null;
+  instagramDmThreadLastRecommendedAction: string | null;
+  instagramDmThreadLastClassifiedAt: string | null;
+  instagramDmThreadLastRunArtifactPath: string | null;
+  instagramDmLastExecutionState: string | null;
+  instagramDmLastExecutionAt: string | null;
+  instagramDmLastExecutionError: string | null;
+  instagramDmLastFollowupNumber: number | null;
+  instagramDmLastFollowupMessage: string | null;
+  instagramDmLastExecutionRunArtifactPath: string | null;
   aiScore: number | null;
   aiNiche: string | null;
   aiReason: string | null;
@@ -144,6 +158,19 @@ export async function GET(request: NextRequest) {
         'pipeline_added_at',
         'last_contact_date',
         'followup_sent_count',
+        'instagram_dm_thread_url',
+        'instagram_dm_thread_id',
+        'instagram_dm_thread_discovered_at',
+        'instagram_dm_thread_last_state',
+        'instagram_dm_thread_last_recommended_action',
+        'instagram_dm_thread_last_classified_at',
+        'instagram_dm_thread_last_run_artifact_path',
+        'instagram_dm_last_execution_state',
+        'instagram_dm_last_execution_at',
+        'instagram_dm_last_execution_error',
+        'instagram_dm_last_followup_number',
+        'instagram_dm_last_followup_message',
+        'instagram_dm_last_execution_run_artifact_path',
         'source_post_url',
         'created_project_id',
         'created_template_id',
@@ -187,10 +214,38 @@ function dedupeAndFilter(rows: any[], args: { search: string; stageFilter: Stage
     const enrichedRaw = r?.enriched_raw_json ?? null;
     out.push({
       id: String(r?.id || ''),
+      createdAt: typeof r?.created_at === 'string' ? r.created_at : r?.created_at ?? null,
       username: uname,
       fullName,
       profilePicUrl: s(r?.prospect_profile_pic_url) || s(r?.profile_pic_url_hd),
       profilePicUrlHD: s(r?.enriched_profile_pic_url_hd),
+      instagramDmThreadUrl: s(r?.instagram_dm_thread_url),
+      instagramDmThreadId: s(r?.instagram_dm_thread_id),
+      instagramDmThreadDiscoveredAt:
+        typeof r?.instagram_dm_thread_discovered_at === 'string'
+          ? r.instagram_dm_thread_discovered_at
+          : r?.instagram_dm_thread_discovered_at ?? null,
+      instagramDmThreadLastState: s(r?.instagram_dm_thread_last_state),
+      instagramDmThreadLastRecommendedAction: s(r?.instagram_dm_thread_last_recommended_action),
+      instagramDmThreadLastClassifiedAt:
+        typeof r?.instagram_dm_thread_last_classified_at === 'string'
+          ? r.instagram_dm_thread_last_classified_at
+          : r?.instagram_dm_thread_last_classified_at ?? null,
+      instagramDmThreadLastRunArtifactPath: s(r?.instagram_dm_thread_last_run_artifact_path),
+      instagramDmLastExecutionState: s(r?.instagram_dm_last_execution_state),
+      instagramDmLastExecutionAt:
+        typeof r?.instagram_dm_last_execution_at === 'string'
+          ? r.instagram_dm_last_execution_at
+          : r?.instagram_dm_last_execution_at ?? null,
+      instagramDmLastExecutionError: s(r?.instagram_dm_last_execution_error),
+      instagramDmLastFollowupNumber:
+        typeof r?.instagram_dm_last_followup_number === 'number' && Number.isFinite(r.instagram_dm_last_followup_number)
+          ? Math.max(1, Math.min(3, Math.floor(r.instagram_dm_last_followup_number)))
+          : r?.instagram_dm_last_followup_number === null || r?.instagram_dm_last_followup_number === undefined
+            ? null
+            : null,
+      instagramDmLastFollowupMessage: s(r?.instagram_dm_last_followup_message),
+      instagramDmLastExecutionRunArtifactPath: s(r?.instagram_dm_last_execution_run_artifact_path),
       aiScore: typeof r?.ai_score === 'number' && Number.isFinite(r.ai_score) ? Math.floor(r.ai_score) : null,
       aiNiche: s(r?.ai_niche),
       aiReason: s(r?.ai_reason),

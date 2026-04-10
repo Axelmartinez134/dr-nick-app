@@ -1,8 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { HtmlEditableElement } from "../hooks/useHtmlElementParser";
-import type { HtmlElementPatch } from "../hooks/useHtmlElementSerializer";
+import type { HtmlEditableElement, HtmlElementPatch } from "../models/htmlElementModel";
 
 function Field(props: { label: string; children: ReactNode }) {
   return (
@@ -10,6 +9,54 @@ function Field(props: { label: string; children: ReactNode }) {
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{props.label}</div>
       <div className="mt-1">{props.children}</div>
     </label>
+  );
+}
+
+function TransformFields(props: {
+  element: HtmlEditableElement;
+  onPatch: (patch: HtmlElementPatch) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Transform</div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Translate X">
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+            value={props.element.translateX}
+            onChange={(e) => props.onPatch({ translateX: e.target.value })}
+          />
+        </Field>
+        <Field label="Translate Y">
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+            value={props.element.translateY}
+            onChange={(e) => props.onPatch({ translateY: e.target.value })}
+          />
+        </Field>
+        <Field label="Width">
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+            value={props.element.width}
+            onChange={(e) => props.onPatch({ width: e.target.value })}
+          />
+        </Field>
+        <Field label="Height">
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+            value={props.element.height}
+            onChange={(e) => props.onPatch({ height: e.target.value })}
+          />
+        </Field>
+        <Field label="Rotate">
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
+            value={props.element.rotate}
+            onChange={(e) => props.onPatch({ rotate: e.target.value })}
+          />
+        </Field>
+      </div>
+    </div>
   );
 }
 
@@ -78,6 +125,22 @@ export function HtmlElementEditor(props: {
 
         {element.type === "image-slot" ? (
           <>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Slot Type</div>
+                <div className="text-xs font-medium text-slate-700">{element.slotType || "main"}</div>
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Slot ID</div>
+                <div className="truncate text-xs font-medium text-slate-700">{element.slotId || "—"}</div>
+              </div>
+              {element.searchQuery ? (
+                <div className="col-span-2 mt-1">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Search Query</div>
+                  <div className="truncate text-xs text-slate-600">{element.searchQuery}</div>
+                </div>
+              ) : null}
+            </div>
             <Field label="Background Image">
               <input
                 className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900"
@@ -164,6 +227,8 @@ export function HtmlElementEditor(props: {
             </Field>
           </div>
         ) : null}
+
+        <TransformFields element={element} onPatch={props.onPatch} />
       </div>
     </div>
   );

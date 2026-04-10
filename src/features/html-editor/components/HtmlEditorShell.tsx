@@ -5,6 +5,7 @@ import type { HtmlSlidePreviewHandle } from "./HtmlSlidePreview";
 import { EditorTopBar } from "@/features/editor/components/EditorTopBar";
 import { EditorSidebar } from "@/features/editor/components/EditorSidebar";
 import { SwipeFileModal } from "@/features/editor/components/SwipeFileModal";
+import { HtmlTemplatesBrowseModal } from "./HtmlTemplatesBrowseModal";
 import { useEditorSelector, useEditorStore } from "@/features/editor/store";
 import { supabase } from "@/app/components/auth/AuthContext";
 import { HtmlBottomPanel } from "./HtmlBottomPanel";
@@ -606,6 +607,18 @@ export function HtmlEditorShell() {
   }, [loadState, presets, selectedPresetId]);
 
   const currentProjectId = loadState.status === "ready" ? String(loadState.project?.id || "") : null;
+  const readyProjectId = loadState.status === "ready" ? String(loadState.project?.id || "").trim() || null : null;
+  const prevHtmlProjectIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loadState.status !== "ready") return;
+    const id = readyProjectId;
+    const prev = prevHtmlProjectIdRef.current;
+    if (prev !== null && id !== null && prev !== id) {
+      editorStore.setState({ htmlTemplatesBrowseModalOpen: false } as any);
+    }
+    prevHtmlProjectIdRef.current = id;
+  }, [editorStore, loadState.status, readyProjectId]);
   const { runGenerateCopy, copyProgress } = useHtmlGenerateCopy({
     projectId: currentProjectId,
     onCompleted: async () => {
@@ -1139,6 +1152,7 @@ export function HtmlEditorShell() {
         return;
       }
       if (event.key === "Escape" && selectedElementSelection) {
+        if ((editorStore.getState() as any).htmlTemplatesBrowseModalOpen) return;
         event.preventDefault();
         activePreviewRef.current?.flushInlineEdit();
         setSelectedElementSelection(null);
@@ -1222,10 +1236,16 @@ export function HtmlEditorShell() {
           }
         },
         onOpenSwipeFileModal: () => {
-          editorStore.setState({ swipeFileModalOpen: true } as any);
+          editorStore.setState({ swipeFileModalOpen: true, htmlTemplatesBrowseModalOpen: false } as any);
         },
         onCloseSwipeFileModal: () => {
           editorStore.setState({ swipeFileModalOpen: false } as any);
+        },
+        onOpenHtmlTemplatesBrowseModal: () => {
+          editorStore.setState({ htmlTemplatesBrowseModalOpen: true, swipeFileModalOpen: false } as any);
+        },
+        onCloseHtmlTemplatesBrowseModal: () => {
+          editorStore.setState({ htmlTemplatesBrowseModalOpen: false } as any);
         },
       },
     } as any);
@@ -1425,6 +1445,7 @@ export function HtmlEditorShell() {
         </div>
 
         <SwipeFileModal />
+        <HtmlTemplatesBrowseModal />
       </div>
     );
   }, [

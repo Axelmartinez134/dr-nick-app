@@ -45,6 +45,22 @@ function unique<T>(items: T[]): T[] {
   return Array.from(new Set(items));
 }
 
+export function getFontCssUrl(family: string): string | null {
+  const normalized = String(family || "")
+    .replace(/['"]/g, "")
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .find(Boolean);
+  if (!normalized) return null;
+  return SYSTEM_FONT_MAP[normalized]?.googleUrl ?? null;
+}
+
+export function getFontCssImport(family: string): string | null {
+  const url = getFontCssUrl(family);
+  if (!url) return null;
+  return `@import url('${url}');`;
+}
+
 export function optimizeHtmlFonts(html: string) {
   let nextHtml = String(html || "");
   const fontUrls: string[] = [];

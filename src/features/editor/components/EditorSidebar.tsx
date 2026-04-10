@@ -166,6 +166,45 @@ export function EditorSidebar() {
       {/* Saved Projects Card */}
       <SavedProjectsCard />
 
+      {/* HTML desktop: template hub (browse-only modal + future rows) */}
+      {isHtmlProject ? (
+        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-7 h-7 rounded-lg bg-sky-600 text-white text-sm flex items-center justify-center">◇</span>
+            <span className="text-sm font-semibold text-slate-900">Templates</span>
+          </div>
+          <div className="space-y-3">
+            <button
+              type="button"
+              className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+              disabled={switchingSlides || loading}
+              onClick={() => actions?.onOpenHtmlTemplatesBrowseModal?.()}
+            >
+              <div className="text-sm font-semibold text-slate-900">Browse templates</div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">Explore various designs and pick one you like</div>
+            </button>
+            <div
+              className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 opacity-60 cursor-not-allowed select-none"
+              aria-disabled="true"
+            >
+              <div className="text-sm font-semibold text-slate-600">Learn a Design Style</div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">
+                Capture a carousel you like and reuse its look (coming soon).
+              </div>
+            </div>
+            <div
+              className="rounded-lg border border-slate-100 bg-slate-50/80 p-3 opacity-60 cursor-not-allowed select-none"
+              aria-disabled="true"
+            >
+              <div className="text-sm font-semibold text-slate-600">Create Carousel Now</div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">
+                Describe a topic and let AI pick a layout (coming soon).
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Mobile-only: tools menu (Phase 1) */}
       {isMobile ? (
         <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm">

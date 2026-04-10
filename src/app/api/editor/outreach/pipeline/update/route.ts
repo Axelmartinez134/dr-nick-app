@@ -14,6 +14,19 @@ type Body = {
     pipelineStage?: Stage | null;
     lastContactDate?: string | null; // YYYY-MM-DD
     followupSentCount?: number | null; // 1..3 (null => unset)
+    instagramDmThreadUrl?: string | null;
+    instagramDmThreadId?: string | null;
+    instagramDmThreadDiscoveredAt?: string | null;
+    instagramDmThreadLastState?: string | null;
+    instagramDmThreadLastRecommendedAction?: string | null;
+    instagramDmThreadLastClassifiedAt?: string | null;
+    instagramDmThreadLastRunArtifactPath?: string | null;
+    instagramDmLastExecutionState?: string | null;
+    instagramDmLastExecutionAt?: string | null;
+    instagramDmLastExecutionError?: string | null;
+    instagramDmLastFollowupNumber?: number | null;
+    instagramDmLastFollowupMessage?: string | null;
+    instagramDmLastExecutionRunArtifactPath?: string | null;
     sourcePostUrl?: string | null;
     // allow storing created ids from "Create from reel"
     createdProjectId?: string | null;
@@ -121,6 +134,98 @@ export async function POST(request: NextRequest) {
     if (patchIn.lastContactDate === null) patch.last_contact_date = null;
     else if (isDateString(patchIn.lastContactDate)) patch.last_contact_date = patchIn.lastContactDate;
     else return NextResponse.json({ success: false, error: 'lastContactDate invalid' } satisfies Resp, { status: 400 });
+  }
+
+  if ('instagramDmThreadUrl' in patchIn) {
+    patch.instagram_dm_thread_url =
+      typeof patchIn.instagramDmThreadUrl === 'string' ? patchIn.instagramDmThreadUrl.trim() : patchIn.instagramDmThreadUrl ?? null;
+  }
+
+  if ('instagramDmThreadId' in patchIn) {
+    patch.instagram_dm_thread_id =
+      typeof patchIn.instagramDmThreadId === 'string' ? patchIn.instagramDmThreadId.trim() : patchIn.instagramDmThreadId ?? null;
+  }
+
+  if ('instagramDmThreadDiscoveredAt' in patchIn) {
+    const raw = patchIn.instagramDmThreadDiscoveredAt;
+    if (raw === null || raw === undefined || raw === '') patch.instagram_dm_thread_discovered_at = null;
+    else if (typeof raw === 'string') patch.instagram_dm_thread_discovered_at = raw;
+    else return NextResponse.json({ success: false, error: 'instagramDmThreadDiscoveredAt invalid' } satisfies Resp, { status: 400 });
+  }
+
+  if ('instagramDmThreadLastState' in patchIn) {
+    patch.instagram_dm_thread_last_state =
+      typeof patchIn.instagramDmThreadLastState === 'string'
+        ? patchIn.instagramDmThreadLastState.trim()
+        : patchIn.instagramDmThreadLastState ?? null;
+  }
+
+  if ('instagramDmThreadLastRecommendedAction' in patchIn) {
+    patch.instagram_dm_thread_last_recommended_action =
+      typeof patchIn.instagramDmThreadLastRecommendedAction === 'string'
+        ? patchIn.instagramDmThreadLastRecommendedAction.trim()
+        : patchIn.instagramDmThreadLastRecommendedAction ?? null;
+  }
+
+  if ('instagramDmThreadLastClassifiedAt' in patchIn) {
+    const raw = patchIn.instagramDmThreadLastClassifiedAt;
+    if (raw === null || raw === undefined || raw === '') patch.instagram_dm_thread_last_classified_at = null;
+    else if (typeof raw === 'string') patch.instagram_dm_thread_last_classified_at = raw;
+    else return NextResponse.json({ success: false, error: 'instagramDmThreadLastClassifiedAt invalid' } satisfies Resp, { status: 400 });
+  }
+
+  if ('instagramDmThreadLastRunArtifactPath' in patchIn) {
+    patch.instagram_dm_thread_last_run_artifact_path =
+      typeof patchIn.instagramDmThreadLastRunArtifactPath === 'string'
+        ? patchIn.instagramDmThreadLastRunArtifactPath.trim()
+        : patchIn.instagramDmThreadLastRunArtifactPath ?? null;
+  }
+
+  if ('instagramDmLastExecutionState' in patchIn) {
+    patch.instagram_dm_last_execution_state =
+      typeof patchIn.instagramDmLastExecutionState === 'string'
+        ? patchIn.instagramDmLastExecutionState.trim()
+        : patchIn.instagramDmLastExecutionState ?? null;
+  }
+
+  if ('instagramDmLastExecutionAt' in patchIn) {
+    const raw = patchIn.instagramDmLastExecutionAt;
+    if (raw === null || raw === undefined || raw === '') patch.instagram_dm_last_execution_at = null;
+    else if (typeof raw === 'string') patch.instagram_dm_last_execution_at = raw;
+    else return NextResponse.json({ success: false, error: 'instagramDmLastExecutionAt invalid' } satisfies Resp, { status: 400 });
+  }
+
+  if ('instagramDmLastExecutionError' in patchIn) {
+    patch.instagram_dm_last_execution_error =
+      typeof patchIn.instagramDmLastExecutionError === 'string'
+        ? patchIn.instagramDmLastExecutionError.trim()
+        : patchIn.instagramDmLastExecutionError ?? null;
+  }
+
+  if ('instagramDmLastFollowupNumber' in patchIn) {
+    const n = patchIn.instagramDmLastFollowupNumber;
+    if (n === null) patch.instagram_dm_last_followup_number = null;
+    else {
+      const x = typeof n === 'number' ? n : typeof n === 'string' ? Number(n) : NaN;
+      if (!Number.isFinite(x)) {
+        return NextResponse.json({ success: false, error: 'instagramDmLastFollowupNumber invalid' } satisfies Resp, { status: 400 });
+      }
+      patch.instagram_dm_last_followup_number = Math.max(1, Math.min(3, Math.floor(x)));
+    }
+  }
+
+  if ('instagramDmLastFollowupMessage' in patchIn) {
+    patch.instagram_dm_last_followup_message =
+      typeof patchIn.instagramDmLastFollowupMessage === 'string'
+        ? patchIn.instagramDmLastFollowupMessage.trim()
+        : patchIn.instagramDmLastFollowupMessage ?? null;
+  }
+
+  if ('instagramDmLastExecutionRunArtifactPath' in patchIn) {
+    patch.instagram_dm_last_execution_run_artifact_path =
+      typeof patchIn.instagramDmLastExecutionRunArtifactPath === 'string'
+        ? patchIn.instagramDmLastExecutionRunArtifactPath.trim()
+        : patchIn.instagramDmLastExecutionRunArtifactPath ?? null;
   }
 
   if ('sourcePostUrl' in patchIn) {

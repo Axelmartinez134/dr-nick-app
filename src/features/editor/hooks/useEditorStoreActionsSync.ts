@@ -875,10 +875,16 @@ export function useEditorStoreActionsSync(args: Args) {
       editorStore.setState({ outreachModalOpen: false } as any);
     },
     onOpenSwipeFileModal: () => {
-      editorStore.setState({ swipeFileModalOpen: true } as any);
+      editorStore.setState({ swipeFileModalOpen: true, htmlTemplatesBrowseModalOpen: false } as any);
     },
     onCloseSwipeFileModal: () => {
       editorStore.setState({ swipeFileModalOpen: false } as any);
+    },
+    onOpenHtmlTemplatesBrowseModal: () => {
+      editorStore.setState({ htmlTemplatesBrowseModalOpen: true, swipeFileModalOpen: false } as any);
+    },
+    onCloseHtmlTemplatesBrowseModal: () => {
+      editorStore.setState({ htmlTemplatesBrowseModalOpen: false } as any);
     },
     onOpenScriptChatModal: (projectId: string) => {
       const pid = String(projectId || "").trim();
@@ -1096,6 +1102,8 @@ export function useEditorStoreActionsSync(args: Args) {
       onCloseOutreachModal: () => implRef.current?.onCloseOutreachModal?.(),
       onOpenSwipeFileModal: () => implRef.current?.onOpenSwipeFileModal?.(),
       onCloseSwipeFileModal: () => implRef.current?.onCloseSwipeFileModal?.(),
+      onOpenHtmlTemplatesBrowseModal: () => implRef.current?.onOpenHtmlTemplatesBrowseModal?.(),
+      onCloseHtmlTemplatesBrowseModal: () => implRef.current?.onCloseHtmlTemplatesBrowseModal?.(),
       onOpenScriptChatModal: (projectId: string) => implRef.current?.onOpenScriptChatModal?.(projectId),
       onCloseScriptChatModal: () => implRef.current?.onCloseScriptChatModal?.(),
       onOpenPoppyPromptsLibrary: () => implRef.current?.onOpenPoppyPromptsLibrary?.(),

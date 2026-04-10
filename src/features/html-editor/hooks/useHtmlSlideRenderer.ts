@@ -7,7 +7,7 @@ export function useHtmlSlideRenderer(args: {
   html: string;
   aspectRatio?: HtmlAspectRatio;
   interactive?: boolean;
-  selectedEditableId?: string | null;
+  slideIndex?: number;
 }) {
   const aspectRatio = args.aspectRatio || "3:4";
   const dimensions = HTML_SLIDE_DIMENSIONS[aspectRatio];
@@ -18,9 +18,9 @@ export function useHtmlSlideRenderer(args: {
         html: args.html,
         aspectRatio,
         interactive: args.interactive,
-        selectedEditableId: args.selectedEditableId,
+        slideIndex: args.slideIndex,
       }),
-    [args.html, aspectRatio, args.interactive, args.selectedEditableId]
+    [args.html, aspectRatio, args.interactive, args.slideIndex]
   );
   const paddingBottom = `${(dimensions.height / dimensions.width) * 100}%`;
 

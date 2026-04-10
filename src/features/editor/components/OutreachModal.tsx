@@ -35,8 +35,105 @@ function getActiveAccountHeader(): Record<string, string> {
   }
 }
 
+function getActiveAccountId(): string {
+  try {
+    return typeof localStorage !== "undefined" ? String(localStorage.getItem("editor.activeAccountId") || "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 function sanitizeTemplateName(s: string): string {
   return String(s || "").trim().replace(/\s+/g, " ");
+}
+
+const LOCAL_WORKFLOW_BRIDGE_URL = "http://127.0.0.1:4471";
+type WorkflowPacingPreset = "moderate" | "conservative" | "ultra_cautious";
+
+const WORKFLOW_PACING_PRESETS: Record<
+  WorkflowPacingPreset,
+  {
+    label: string;
+    delayMsMin: number;
+    delayMsMax: number;
+    preSendDelayMsMin: number;
+    preSendDelayMsMax: number;
+    postSendDelayMsMin: number;
+    postSendDelayMsMax: number;
+  }
+> = {
+  moderate: {
+    label: "Moderate",
+    delayMsMin: 8000,
+    delayMsMax: 15000,
+    preSendDelayMsMin: 1500,
+    preSendDelayMsMax: 3500,
+    postSendDelayMsMin: 2000,
+    postSendDelayMsMax: 4000,
+  },
+  conservative: {
+    label: "Conservative",
+    delayMsMin: 12000,
+    delayMsMax: 22000,
+    preSendDelayMsMin: 2500,
+    preSendDelayMsMax: 5000,
+    postSendDelayMsMin: 2500,
+    postSendDelayMsMax: 5000,
+  },
+  ultra_cautious: {
+    label: "Ultra-cautious",
+    delayMsMin: 20000,
+    delayMsMax: 35000,
+    preSendDelayMsMin: 3500,
+    preSendDelayMsMax: 6500,
+    postSendDelayMsMin: 3500,
+    postSendDelayMsMax: 6500,
+  },
+};
+
+const THREAD_RESOLUTION_FAILURE_STATES = new Set([
+  'thread_resolution_failed_search',
+  'thread_resolution_failed_verification',
+]);
+
+function parseUtcYmdMs(rawYmd: string | null | undefined): number | null {
+  const raw = String(rawYmd || "").trim();
+  if (!raw) return null;
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d) || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const ms = Date.UTC(y, mo - 1, d);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function diffUtcDaysFromYmd(rawYmd: string | null | undefined): number | null {
+  const ts = parseUtcYmdMs(rawYmd);
+  if (ts === null) return null;
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const diffDays = Math.floor((todayUtc - ts) / (24 * 60 * 60 * 1000));
+  return Number.isFinite(diffDays) ? diffDays : null;
+}
+
+function diffUtcDaysFromIso(rawIso: string | null | undefined): number | null {
+  const raw = String(rawIso || "").trim();
+  if (!raw) return null;
+  const ts = Date.parse(raw);
+  if (!Number.isFinite(ts)) return null;
+  const date = new Date(ts);
+  const valueUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const diffDays = Math.floor((todayUtc - valueUtc) / (24 * 60 * 60 * 1000));
+  return Number.isFinite(diffDays) ? diffDays : null;
+}
+
+function isBridgeReachabilityError(message: string): boolean {
+  const raw = String(message || '').toLowerCase();
+  return raw.includes('failed to fetch') || raw.includes('fetch failed') || raw.includes('networkerror');
 }
 
 function normLabel(s: any): string {
@@ -51,11 +148,11 @@ export function OutreachModal() {
   const loadingTemplates = useEditorSelector((s: any) => !!(s as any).loadingTemplates);
   const templates = useEditorSelector((s: any) => (Array.isArray((s as any).templates) ? (s as any).templates : []));
 
-  const [tab, setTab] = useState<"single" | "following" | "pipeline">("single");
+  const [tab, setTab] = useState<"single" | "following" | "pipeline" | "automation">("single");
 
   // Column resizing (Scrape following + Pipeline tables)
   const LS_KEY_FOLLOWING_COLS = "editor_outreach_following_col_widths_v4";
-  const LS_KEY_PIPELINE_COLS = "editor_outreach_pipeline_col_widths_v4";
+  const LS_KEY_PIPELINE_COLS = "editor_outreach_pipeline_col_widths_v5";
   const LS_KEY_FILTERS = "editor_outreach_filters_v1";
   const readWidths = (key: string, defaults: Record<string, number>) => {
     try {
@@ -98,6 +195,8 @@ export function OutreachModal() {
     name: 220,
     handle: 140,
     link: 70,
+    thread: 140,
+    dmstate: 190,
     score: 90,
     following: 120,
     stage: 220,
@@ -118,7 +217,7 @@ export function OutreachModal() {
   }, [followingColDefaults, followingColWidths]);
   const totalPipelineTableWidthPx = useMemo(() => {
     const w = pipelineColWidths || pipelineColDefaults;
-    const ids = ["row", "photo", "name", "handle", "link", "score", "following", "stage", "followups", "last", "reel", "action"];
+    const ids = ["row", "photo", "name", "handle", "link", "thread", "dmstate", "score", "following", "stage", "followups", "last", "reel", "action"];
     return ids.reduce((sum, id) => sum + Math.max(40, Number((w as any)?.[id] || 0)), 0);
   }, [pipelineColDefaults, pipelineColWidths]);
   useEffect(() => {
@@ -137,7 +236,7 @@ export function OutreachModal() {
       if (!parsed || typeof parsed !== "object") return;
 
       const nextTab = String((parsed as any)?.tab || "").trim();
-      if (nextTab === "single" || nextTab === "following" || nextTab === "pipeline") setTab(nextTab as any);
+      if (nextTab === "single" || nextTab === "following" || nextTab === "pipeline" || nextTab === "automation") setTab(nextTab as any);
 
       const fs = String((parsed as any)?.followingSearch ?? "");
       setFollowingSearch(fs);
@@ -410,11 +509,174 @@ export function OutreachModal() {
   const [pipelineAddErrorByUsername, setPipelineAddErrorByUsername] = useState<Record<string, string>>({});
   const [pipelineCtx, setPipelineCtx] = useState<null | { username: string; x: number; y: number }>(null);
   const [pipelineDeleteBusyByUsername, setPipelineDeleteBusyByUsername] = useState<Record<string, true>>({});
+  const [pipelineWorkflowBucketFilter, setPipelineWorkflowBucketFilter] =
+    useState<outreachApi.LocalWorkflowBucket>("actionable");
+  const [localWorkflowBridgeStatus, setLocalWorkflowBridgeStatus] = useState<"unknown" | "online" | "offline">("unknown");
+  const [localWorkflowBridgeError, setLocalWorkflowBridgeError] = useState<string | null>(null);
+  const [automationChecklistBusy, setAutomationChecklistBusy] = useState(false);
+  const [automationChecklistError, setAutomationChecklistError] = useState<string | null>(null);
+  const [automationReadiness, setAutomationReadiness] = useState<outreachApi.LocalAutomationReadiness | null>(null);
+  const [localWorkflowMode, setLocalWorkflowMode] = useState<"dry_run" | "send_live">("dry_run");
+  const [localWorkflowBatchSize, setLocalWorkflowBatchSize] = useState<string>("10");
+  const [localWorkflowPacingPreset, setLocalWorkflowPacingPreset] = useState<WorkflowPacingPreset>("conservative");
+  const [localWorkflowPrepareBusy, setLocalWorkflowPrepareBusy] = useState(false);
+  const [localWorkflowLaunchBusy, setLocalWorkflowLaunchBusy] = useState(false);
+  const [localWorkflowCancelBusy, setLocalWorkflowCancelBusy] = useState(false);
+  const [localWorkflowPreview, setLocalWorkflowPreview] = useState<outreachApi.LocalWorkflowPreview | null>(null);
+  const [localWorkflowConfirmOpen, setLocalWorkflowConfirmOpen] = useState(false);
+  const [localWorkflowRunError, setLocalWorkflowRunError] = useState<string | null>(null);
+  const [localWorkflowActiveJobId, setLocalWorkflowActiveJobId] = useState<string | null>(null);
+  const [localWorkflowActiveJob, setLocalWorkflowActiveJob] = useState<outreachApi.LocalWorkflowJob | null>(null);
 
   const pipelineDidInitForOpenRef = useRef(false);
   const pipelineBusyRef = useRef(false);
   const pipelineSearchRef = useRef('');
   const pipelineStageFilterRef = useRef<outreachApi.PipelineStage | ''>('');
+
+  const localWorkflowPacing = useMemo(
+    () => WORKFLOW_PACING_PRESETS[localWorkflowPacingPreset],
+    [localWorkflowPacingPreset]
+  );
+
+  const localWorkflowRequestBase = useCallback(() => {
+    const accountId = getActiveAccountId();
+    if (!accountId) throw new Error('No active account selected.');
+    const parsedBatchSize = Number(localWorkflowBatchSize);
+    const batchSize = Number.isFinite(parsedBatchSize) ? Math.max(1, Math.min(250, Math.floor(parsedBatchSize))) : 10;
+    return {
+      baseUrl: LOCAL_WORKFLOW_BRIDGE_URL,
+      accountId,
+      bucket: pipelineWorkflowBucketFilter,
+      limit: batchSize,
+      offset: 0,
+      minDaysSinceLastContact: 4,
+      duplicateGuardHours: 72,
+      sendLive: localWorkflowMode === 'send_live',
+      maxSends: batchSize,
+      stopAfterFailures: 3,
+      delayMsMin: localWorkflowPacing.delayMsMin,
+      delayMsMax: localWorkflowPacing.delayMsMax,
+      preSendDelayMsMin: localWorkflowPacing.preSendDelayMsMin,
+      preSendDelayMsMax: localWorkflowPacing.preSendDelayMsMax,
+      postSendDelayMsMin: localWorkflowPacing.postSendDelayMsMin,
+      postSendDelayMsMax: localWorkflowPacing.postSendDelayMsMax,
+    } as const;
+  }, [localWorkflowBatchSize, localWorkflowMode, localWorkflowPacing, pipelineWorkflowBucketFilter]);
+
+  const refreshLocalWorkflowBridgeHealth = useCallback(async () => {
+    try {
+      await outreachApi.localWorkflowBridgeHealth({ baseUrl: LOCAL_WORKFLOW_BRIDGE_URL });
+      setLocalWorkflowBridgeStatus('online');
+      setLocalWorkflowBridgeError(null);
+    } catch (e: any) {
+      setLocalWorkflowBridgeStatus('offline');
+      setLocalWorkflowBridgeError(String(e?.message || e || 'Local bridge unavailable'));
+    }
+  }, []);
+
+  const refreshAutomationChecklist = useCallback(async () => {
+    setAutomationChecklistBusy(true);
+    setAutomationChecklistError(null);
+    try {
+      const readiness = await outreachApi.localAutomationReadiness({ baseUrl: LOCAL_WORKFLOW_BRIDGE_URL });
+      setAutomationReadiness(readiness);
+      setLocalWorkflowBridgeStatus(readiness?.bridge?.ok ? 'online' : 'offline');
+      setLocalWorkflowBridgeError(readiness?.bridge?.ok ? null : 'Local bridge unavailable');
+    } catch (e: any) {
+      const msg = String(e?.message || e || 'Failed to load automation checklist');
+      setAutomationChecklistError(msg);
+      setAutomationReadiness(null);
+      if (isBridgeReachabilityError(msg)) {
+        setLocalWorkflowBridgeStatus('offline');
+        setLocalWorkflowBridgeError(msg);
+      }
+    } finally {
+      setAutomationChecklistBusy(false);
+    }
+  }, []);
+
+  const automationReadyToRun = !!automationReadiness?.bridge?.ok && !!automationReadiness?.chrome_debugger?.ok;
+
+  const handlePrepareLocalWorkflow = useCallback(async () => {
+    if (localWorkflowPrepareBusy || localWorkflowLaunchBusy) return;
+    setLocalWorkflowPrepareBusy(true);
+    setLocalWorkflowRunError(null);
+    try {
+      const request = localWorkflowRequestBase();
+      const preview = await outreachApi.localWorkflowPreview(request);
+      setLocalWorkflowPreview(preview);
+      setLocalWorkflowConfirmOpen(true);
+      setLocalWorkflowBridgeStatus('online');
+      setLocalWorkflowBridgeError(null);
+    } catch (e: any) {
+      const msg = String(e?.message || e || 'Failed to prepare local workflow');
+      setLocalWorkflowRunError(msg);
+      if (isBridgeReachabilityError(msg)) {
+        setLocalWorkflowBridgeStatus('offline');
+        setLocalWorkflowBridgeError(msg);
+      } else {
+        setLocalWorkflowBridgeStatus('online');
+        setLocalWorkflowBridgeError(null);
+      }
+    } finally {
+      setLocalWorkflowPrepareBusy(false);
+    }
+  }, [localWorkflowLaunchBusy, localWorkflowPrepareBusy, localWorkflowRequestBase]);
+
+  const handleConfirmLocalWorkflowStart = useCallback(async () => {
+    if (!localWorkflowPreview || localWorkflowLaunchBusy) return;
+    setLocalWorkflowLaunchBusy(true);
+    setLocalWorkflowRunError(null);
+    try {
+      const request = localWorkflowRequestBase();
+      const started = await outreachApi.localWorkflowStart(request);
+      setLocalWorkflowActiveJobId(started.jobId);
+      setLocalWorkflowConfirmOpen(false);
+      setLocalWorkflowBridgeStatus('online');
+      setLocalWorkflowBridgeError(null);
+      const job = await outreachApi.localWorkflowJob({ baseUrl: LOCAL_WORKFLOW_BRIDGE_URL, jobId: started.jobId });
+      setLocalWorkflowActiveJob(job);
+    } catch (e: any) {
+      const msg = String(e?.message || e || 'Failed to start local workflow');
+      setLocalWorkflowRunError(msg);
+      if (isBridgeReachabilityError(msg)) {
+        setLocalWorkflowBridgeStatus('offline');
+        setLocalWorkflowBridgeError(msg);
+      } else {
+        setLocalWorkflowBridgeStatus('online');
+        setLocalWorkflowBridgeError(null);
+      }
+    } finally {
+      setLocalWorkflowLaunchBusy(false);
+    }
+  }, [localWorkflowLaunchBusy, localWorkflowPreview, localWorkflowRequestBase]);
+
+  const handleCancelLocalWorkflow = useCallback(async () => {
+    if (!localWorkflowActiveJobId || localWorkflowCancelBusy) return;
+    setLocalWorkflowCancelBusy(true);
+    setLocalWorkflowRunError(null);
+    try {
+      const job = await outreachApi.localWorkflowCancel({
+        baseUrl: LOCAL_WORKFLOW_BRIDGE_URL,
+        jobId: localWorkflowActiveJobId,
+      });
+      setLocalWorkflowActiveJob(job);
+      setLocalWorkflowBridgeStatus('online');
+      setLocalWorkflowBridgeError(null);
+    } catch (e: any) {
+      const msg = String(e?.message || e || 'Failed to cancel local workflow');
+      setLocalWorkflowRunError(msg);
+      if (isBridgeReachabilityError(msg)) {
+        setLocalWorkflowBridgeStatus('offline');
+        setLocalWorkflowBridgeError(msg);
+      } else {
+        setLocalWorkflowBridgeStatus('online');
+        setLocalWorkflowBridgeError(null);
+      }
+    } finally {
+      setLocalWorkflowCancelBusy(false);
+    }
+  }, [localWorkflowActiveJobId, localWorkflowCancelBusy]);
 
   const PIPELINE_STAGES = useMemo(
     () => ['todo', 'dm_sent', 'responded_needs_followup', 'booked', 'sent_contract', 'closed'] as const,
@@ -430,6 +692,52 @@ export function OutreachModal() {
       closed: 'Closed',
     } satisfies Record<outreachApi.PipelineStage, string>;
   }, []);
+  const dmThreadStateLabel = useMemo(
+    () =>
+      ({
+        safe_unseen_no_reply: 'Unseen',
+        safe_seen_no_reply: 'Seen',
+        review_replied_or_ongoing: 'Replied/ongoing',
+        review_ambiguous: 'Ambiguous',
+      }) satisfies Record<string, string>,
+    []
+  );
+  const dmThreadActionLabel = useMemo(
+    () =>
+      ({
+        candidate_followup: 'Candidate follow-up',
+        hold_waiting: 'Hold / waiting',
+        human_review: 'Human review',
+      }) satisfies Record<string, string>,
+    []
+  );
+  const dmExecutionStateLabel = useMemo(
+    () =>
+      ({
+        sent_followup: 'Sent',
+        sent_followup_persist_failed: 'Sent / persist issue',
+        blocked_live_recheck: 'Blocked',
+        blocked_initial_template_guard: 'Blocked / missing initial template',
+        send_failed: 'Send failed',
+        dry_run_ready: 'Dry run ready',
+        dry_run_failed: 'Dry run failed',
+        thread_resolution_failed_search: 'Resolve failed',
+        thread_resolution_failed_verification: 'Resolve verify failed',
+      }) satisfies Record<string, string>,
+    []
+  );
+  const pipelineWorkflowBucketLabel = useMemo(
+    () =>
+      ({
+        all: 'All rows',
+        actionable: 'Actionable',
+        ready_followup: 'Ready follow-up',
+        missing_thread: 'Missing thread',
+        manual_review: 'Manual review',
+        wait_window_not_met: 'Waiting',
+      }) satisfies Record<outreachApi.LocalWorkflowBucket, string>,
+    []
+  );
 
   const showFollowupsColumn =
     pipelineStageFilter === 'dm_sent' ||
@@ -515,6 +823,99 @@ export function OutreachModal() {
       })
       .map((x) => x.r);
   }, [isPipelineOverdue, parseYmdUtcMs, pipelineRows, pipelineSortMode]);
+
+  const pipelineWorkflowMetaByUsername = useMemo(() => {
+    const out: Record<
+      string,
+      {
+        bucket: outreachApi.LocalWorkflowBucket | 'data_issue' | 'followup_cap_reached';
+        nextAction: string;
+        nextFollowupNumber: number | null;
+        daysSinceContact: number | null;
+      }
+    > = {};
+    for (const row of pipelineRows) {
+      const username = String(row?.username || '').trim().toLowerCase();
+      if (!username) continue;
+      const followupSentCount =
+        typeof row?.followupSentCount === 'number' && Number.isFinite(row.followupSentCount)
+          ? Math.max(0, Math.floor(row.followupSentCount))
+          : 0;
+      const nextFollowupNumber = followupSentCount + 1;
+      const daysSinceContact =
+        diffUtcDaysFromYmd(row?.lastContactDate) ??
+        (nextFollowupNumber === 1 ? diffUtcDaysFromIso(row?.createdAt) : null);
+      const threadKnown = !!String(row?.instagramDmThreadUrl || '').trim();
+      const state = String(row?.instagramDmThreadLastState || '').trim();
+      const lastExecutionState = String(row?.instagramDmLastExecutionState || '').trim();
+      let bucket: outreachApi.LocalWorkflowBucket | 'data_issue' | 'followup_cap_reached' = 'manual_review';
+      let nextAction = 'Manual review';
+      if (nextFollowupNumber > 3) {
+        bucket = 'followup_cap_reached';
+        nextAction = 'Wait';
+      } else if (daysSinceContact === null || !Number.isFinite(daysSinceContact)) {
+        bucket = 'data_issue';
+        nextAction = 'Manual review';
+      } else if (daysSinceContact < 4) {
+        bucket = 'wait_window_not_met';
+        nextAction = 'Wait';
+      } else if (!threadKnown) {
+        if (THREAD_RESOLUTION_FAILURE_STATES.has(lastExecutionState)) {
+          bucket = 'manual_review';
+          nextAction = 'Manual review';
+        } else {
+          bucket = 'missing_thread';
+          nextAction = 'Resolve thread';
+        }
+      } else if (state === 'safe_unseen_no_reply' || state === 'safe_seen_no_reply') {
+        bucket = 'ready_followup';
+        nextAction = `Follow-up ${nextFollowupNumber}`;
+      } else if (state === 'review_replied_or_ongoing' || state === 'review_ambiguous') {
+        bucket = 'manual_review';
+        nextAction = 'Manual review';
+      }
+      out[username] = {
+        bucket,
+        nextAction,
+        nextFollowupNumber: nextFollowupNumber > 3 ? null : nextFollowupNumber,
+        daysSinceContact,
+      };
+    }
+    return out;
+  }, [pipelineRows]);
+
+  const pipelineWorkflowCounts = useMemo(() => {
+    const counts: Record<outreachApi.LocalWorkflowBucket, number> = {
+      all: pipelineRows.length,
+      actionable: 0,
+      ready_followup: 0,
+      missing_thread: 0,
+      manual_review: 0,
+      wait_window_not_met: 0,
+    };
+    for (const row of pipelineRows) {
+      const username = String(row?.username || '').trim().toLowerCase();
+      const bucket = pipelineWorkflowMetaByUsername[username]?.bucket;
+      if (bucket === 'ready_followup') counts.ready_followup += 1;
+      if (bucket === 'missing_thread') counts.missing_thread += 1;
+      if (bucket === 'manual_review') counts.manual_review += 1;
+      if (bucket === 'wait_window_not_met') counts.wait_window_not_met += 1;
+      if (bucket === 'ready_followup' || bucket === 'missing_thread') counts.actionable += 1;
+    }
+    return counts;
+  }, [pipelineRows, pipelineWorkflowMetaByUsername]);
+
+  const pipelineRowsWorkflowFiltered = useMemo(() => {
+    if (pipelineWorkflowBucketFilter === 'all') return pipelineRowsSorted;
+    return pipelineRowsSorted.filter((row) => {
+      const username = String(row?.username || '').trim().toLowerCase();
+      const bucket = pipelineWorkflowMetaByUsername[username]?.bucket;
+      if (pipelineWorkflowBucketFilter === 'actionable') {
+        return bucket === 'ready_followup' || bucket === 'missing_thread';
+      }
+      return bucket === pipelineWorkflowBucketFilter;
+    });
+  }, [pipelineRowsSorted, pipelineWorkflowBucketFilter, pipelineWorkflowMetaByUsername]);
 
   useEffect(() => {
     try {
@@ -616,6 +1017,23 @@ export function OutreachModal() {
     setCreateRowBusyUsernames(new Set());
     setCreateRowErrorByUsername({});
     setCreatedProjectIdByUsername({});
+    setPipelineWorkflowBucketFilter("actionable");
+    setLocalWorkflowBridgeStatus("unknown");
+    setLocalWorkflowBridgeError(null);
+    setAutomationChecklistBusy(false);
+    setAutomationChecklistError(null);
+    setAutomationReadiness(null);
+    setLocalWorkflowMode("dry_run");
+    setLocalWorkflowBatchSize("10");
+    setLocalWorkflowPacingPreset("conservative");
+    setLocalWorkflowPrepareBusy(false);
+    setLocalWorkflowLaunchBusy(false);
+    setLocalWorkflowCancelBusy(false);
+    setLocalWorkflowPreview(null);
+    setLocalWorkflowConfirmOpen(false);
+    setLocalWorkflowRunError(null);
+    setLocalWorkflowActiveJobId(null);
+    setLocalWorkflowActiveJob(null);
   }, [
     createBusy,
     enrichBusy,
@@ -2197,6 +2615,57 @@ export function OutreachModal() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!open || tab !== 'pipeline') return;
+    void refreshLocalWorkflowBridgeHealth();
+  }, [open, refreshLocalWorkflowBridgeHealth, tab]);
+
+  useEffect(() => {
+    if (!open || tab !== 'automation') return;
+    void refreshAutomationChecklist();
+  }, [open, refreshAutomationChecklist, tab]);
+
+  useEffect(() => {
+    if (!open || tab !== 'pipeline' || !localWorkflowActiveJobId) return;
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const poll = async () => {
+      try {
+        const job = await outreachApi.localWorkflowJob({
+          baseUrl: LOCAL_WORKFLOW_BRIDGE_URL,
+          jobId: localWorkflowActiveJobId,
+        });
+        if (cancelled) return;
+        setLocalWorkflowActiveJob(job);
+        setLocalWorkflowBridgeStatus('online');
+        setLocalWorkflowBridgeError(null);
+        if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+          await handlePipelineRefresh();
+          return;
+        }
+      } catch (e: any) {
+        if (cancelled) return;
+        const msg = String(e?.message || e || 'Failed to read local workflow status');
+        setLocalWorkflowRunError(msg);
+        if (isBridgeReachabilityError(msg)) {
+          setLocalWorkflowBridgeStatus('offline');
+          setLocalWorkflowBridgeError(msg);
+        } else {
+          setLocalWorkflowBridgeStatus('online');
+          setLocalWorkflowBridgeError(null);
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(() => void poll(), 3000);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [handlePipelineRefresh, localWorkflowActiveJobId, open, tab]);
+
   const handlePipelineFollowupAdvance = useCallback(
     (args: { username: string; next: 1 | 2 | 3 }) => {
       const uname = String(args.username || '').trim().toLowerCase();
@@ -3065,14 +3534,19 @@ export function OutreachModal() {
     }
   }, [open, canRunAll, anyBusy, baseTemplateId]);
 
-  const TabButton = (props: { id: "single" | "following" | "pipeline"; label: string }) => {
+  const TabButton = (props: { id: "single" | "following" | "pipeline" | "automation"; label: string }) => {
     const active = tab === props.id;
+    const isAutomation = props.id === "automation";
     return (
       <button
         type="button"
         className={[
           "h-9 px-3 rounded-xl text-sm font-semibold border shadow-sm transition-colors",
-          active ? "bg-black text-white border-black" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
+          active
+            ? "bg-black text-white border-black"
+            : isAutomation
+              ? "bg-slate-950 text-white border-slate-950 hover:bg-black"
+              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50",
         ].join(" ")}
         onClick={() => setTab(props.id)}
         disabled={anyBusy}
@@ -3201,8 +3675,155 @@ export function OutreachModal() {
             <TabButton id="single" label="Single profile" />
             <TabButton id="following" label="Scrape following" />
             <TabButton id="pipeline" label="Pipeline" />
+            <TabButton id="automation" label="Automation checklist" />
           </div>
 
+          {tab === 'automation' ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-900 bg-slate-950 p-5 text-white">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">Automation checklist</div>
+                    <div className="mt-1 text-sm text-slate-300">
+                      Use this tab as the local setup checklist before running Instagram automation from the Pipeline tab.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                        automationReadyToRun
+                          ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
+                          : 'border-amber-400/30 bg-amber-500/15 text-amber-100'
+                      }`}
+                    >
+                      Ready to run: {automationReadyToRun ? 'Yes' : 'No'}
+                    </span>
+                    <button
+                      type="button"
+                      className="h-9 px-4 rounded-xl border border-white/20 bg-white/10 text-sm font-semibold text-white hover:bg-white/15 disabled:opacity-60"
+                      onClick={() => void refreshAutomationChecklist()}
+                      disabled={automationChecklistBusy}
+                    >
+                      {automationChecklistBusy ? 'Checking…' : 'Refresh checklist'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bridge</div>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                        automationReadiness?.bridge?.ok
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-rose-200 bg-rose-50 text-rose-700'
+                      }`}
+                    >
+                      {automationReadiness?.bridge?.ok ? 'Ready' : 'Not ready'}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-700">
+                    {automationReadiness?.bridge?.ok
+                      ? `Bridge online at ${automationReadiness.bridge.host}:${automationReadiness.bridge.port}`
+                      : 'Start the localhost bridge before preparing a workflow run.'}
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Command: <code>npm run dm:start-local-bridge</code>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Automation Chrome</div>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                        automationReadiness?.chrome_debugger?.ok
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {automationReadiness?.chrome_debugger?.ok ? 'Debugger reachable' : 'Debugger not detected'}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-700">
+                    {automationReadiness?.chrome_debugger?.ok
+                      ? automationReadiness.chrome_debugger.browser || 'Chrome debugger is responding on port 9222.'
+                      : 'Open the dedicated automation Chrome profile with remote debugging enabled.'}
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Command: <code>open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="$HOME/.automation-chrome"</code>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Instagram session</div>
+                    <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700">
+                      Manual check
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-700">
+                    Make sure that same automation Chrome profile is already logged into Instagram before you run automation.
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    The UI does not auto-log you in or auto-verify the session yet.
+                  </div>
+                </div>
+              </div>
+
+              {automationChecklistError ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {automationChecklistError}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-900">How to use it</div>
+                <div className="mt-3 space-y-3 text-sm text-slate-700">
+                  <div>
+                    <div className="font-semibold text-slate-900">1. Start the local bridge</div>
+                    <div className="mt-1">Run <code>npm run dm:start-local-bridge</code> on this machine.</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-slate-900">2. Start the automation Chrome profile</div>
+                    <div className="mt-1">
+                      Use the dedicated Chrome profile on port <code>9222</code> and keep it logged into Instagram.
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-slate-900">3. Return to the Pipeline tab</div>
+                    <div className="mt-1">
+                      Prepare the run, review the confirmation modal, then start a dry run or live run.
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-slate-900">4. Monitor or cancel from the UI</div>
+                    <div className="mt-1">
+                      The active job card shows progress, latest log message, and a <code>Cancel run</code> button.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <div className="text-sm font-semibold text-slate-900">Using your computer while automation runs</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <div>Yes, you can still use other apps and your other screens while the automation runs.</div>
+                  <div>
+                    Best practice is to leave the dedicated automation Chrome profile alone and use a different browser window/profile for your own work.
+                  </div>
+                  <div>
+                    You can write emails, use other apps, and even use a separate normal Chrome session, but do not close or interfere with the automation Chrome window while a run is active.
+                  </div>
+                  <div>
+                    Also keep the machine awake and avoid quitting the localhost bridge during a run.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-700">Base template</div>
             <select
@@ -3223,6 +3844,7 @@ export function OutreachModal() {
               ))}
             </select>
           </div>
+          )}
 
           {tab === "single" ? (
             <>
@@ -4058,7 +4680,7 @@ export function OutreachModal() {
                 ) : null}
               </div>
             </>
-          ) : (
+          ) : tab === "pipeline" ? (
             <>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -4131,6 +4753,162 @@ export function OutreachModal() {
                         );
                       })}
                     </div>
+                    <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-700">Local DM workflow</div>
+                          <div className="text-[11px] text-slate-500">
+                            Filter visible leads, preview the exact run count, then confirm before the localhost runner starts.
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                              localWorkflowBridgeStatus === 'online'
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : localWorkflowBridgeStatus === 'offline'
+                                  ? 'border-rose-200 bg-rose-50 text-rose-700'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600'
+                            }`}
+                          >
+                            {localWorkflowBridgeStatus === 'online'
+                              ? 'Bridge online'
+                              : localWorkflowBridgeStatus === 'offline'
+                                ? 'Bridge offline'
+                                : 'Bridge unknown'}
+                          </span>
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50"
+                            onClick={() => void refreshLocalWorkflowBridgeHealth()}
+                          >
+                            Check bridge
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
+                        {(
+                          ['actionable', 'ready_followup', 'missing_thread', 'manual_review', 'wait_window_not_met', 'all'] as outreachApi.LocalWorkflowBucket[]
+                        ).map((bucket) => {
+                          const active = pipelineWorkflowBucketFilter === bucket;
+                          const count = pipelineWorkflowCounts[bucket] ?? 0;
+                          return (
+                            <button
+                              key={bucket}
+                              type="button"
+                              className={`h-8 px-3 rounded-xl border text-sm font-semibold shadow-sm transition-colors whitespace-nowrap ${
+                                active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-900 border-slate-200 hover:bg-slate-50'
+                              }`}
+                              onClick={() => setPipelineWorkflowBucketFilter(bucket)}
+                            >
+                              {pipelineWorkflowBucketLabel[bucket]}{' '}
+                              <span className={active ? 'text-white/80' : 'text-slate-500'}>
+                                ({Number(count || 0).toLocaleString()})
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:justify-between">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+                            Mode
+                            <select
+                              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                              value={localWorkflowMode}
+                              onChange={(e) => setLocalWorkflowMode(e.target.value === 'send_live' ? 'send_live' : 'dry_run')}
+                            >
+                              <option value="dry_run">Dry run</option>
+                              <option value="send_live">Send live</option>
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+                            Batch size
+                            <input
+                              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                              inputMode="numeric"
+                              value={localWorkflowBatchSize}
+                              onChange={(e) => setLocalWorkflowBatchSize(String(e.target.value || '').replace(/[^\d]/g, '').slice(0, 3))}
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-600">
+                            Pacing
+                            <select
+                              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 shadow-sm"
+                              value={localWorkflowPacingPreset}
+                              onChange={(e) =>
+                                setLocalWorkflowPacingPreset(
+                                  e.target.value === 'moderate' || e.target.value === 'ultra_cautious' ? (e.target.value as WorkflowPacingPreset) : 'conservative'
+                                )
+                              }
+                            >
+                              <option value="moderate">Moderate</option>
+                              <option value="conservative">Conservative</option>
+                              <option value="ultra_cautious">Ultra-cautious</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div className="flex flex-col items-start gap-2 xl:items-end">
+                          <div className="text-[11px] text-slate-500">
+                            Current run target: {pipelineWorkflowBucketLabel[pipelineWorkflowBucketFilter]} with {Number((pipelineWorkflowCounts as any)[pipelineWorkflowBucketFilter] || 0).toLocaleString()} visible row(s).
+                          </div>
+                          <button
+                            type="button"
+                            className="h-9 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                            disabled={localWorkflowPrepareBusy || localWorkflowLaunchBusy}
+                            onClick={() => void handlePrepareLocalWorkflow()}
+                          >
+                            {localWorkflowPrepareBusy ? 'Preparing…' : 'Prepare local workflow run'}
+                          </button>
+                        </div>
+                      </div>
+                      {localWorkflowBridgeError ? (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+                          {localWorkflowBridgeError} Run <code>npm run dm:start-local-bridge</code> on this machine, then click Check bridge.
+                        </div>
+                      ) : null}
+                      {localWorkflowRunError ? (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+                          {localWorkflowRunError}
+                        </div>
+                      ) : null}
+                      {localWorkflowActiveJob ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-xs font-semibold text-slate-700">
+                              Local job {localWorkflowActiveJob.id} · {localWorkflowActiveJob.status}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="text-[11px] text-slate-500">
+                                {localWorkflowActiveJob.progress.processed}/{localWorkflowActiveJob.progress.total} processed · {localWorkflowActiveJob.progress.successfulSends} sent
+                              </div>
+                              {localWorkflowActiveJob.status === 'queued' ||
+                              localWorkflowActiveJob.status === 'running' ||
+                              localWorkflowActiveJob.status === 'cancelling' ? (
+                                <button
+                                  type="button"
+                                  className="h-8 px-3 rounded-xl border border-rose-200 bg-white text-rose-700 text-sm font-semibold shadow-sm hover:bg-rose-50 disabled:opacity-60"
+                                  disabled={localWorkflowCancelBusy || localWorkflowActiveJob.status === 'cancelling'}
+                                  onClick={() => void handleCancelLocalWorkflow()}
+                                >
+                                  {localWorkflowActiveJob.status === 'cancelling'
+                                    ? 'Cancelling…'
+                                    : localWorkflowCancelBusy
+                                      ? 'Cancelling…'
+                                      : 'Cancel run'}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                          {localWorkflowActiveJob.progress.lastMessage ? (
+                            <div className="mt-1 text-[11px] text-slate-600">{localWorkflowActiveJob.progress.lastMessage}</div>
+                          ) : null}
+                          {localWorkflowActiveJob.error ? (
+                            <div className="mt-2 text-[11px] text-rose-600">{localWorkflowActiveJob.error}</div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 
@@ -4138,7 +4916,7 @@ export function OutreachModal() {
                   <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{pipelineError}</div>
                 ) : null}
 
-                {pipelineRows.length ? (
+                {pipelineRowsWorkflowFiltered.length ? (
                   <div className="mt-3 overflow-auto rounded-xl border border-slate-200 bg-white">
                     <table className="min-w-max text-sm table-fixed" style={{ width: `${totalPipelineTableWidthEffectivePx}px` }}>
                       <colgroup>
@@ -4147,6 +4925,8 @@ export function OutreachModal() {
                         <col style={{ width: `${pipelineColWidths.name}px` }} />
                         <col style={{ width: `${pipelineColWidths.handle}px` }} />
                         <col style={{ width: `${pipelineColWidths.link}px` }} />
+                        <col style={{ width: `${pipelineColWidths.thread}px` }} />
+                        <col style={{ width: `${pipelineColWidths.dmstate}px` }} />
                         <col style={{ width: `${pipelineColWidths.score}px` }} />
                         <col style={{ width: `${pipelineColWidths.following}px` }} />
                         <col style={{ width: `${pipelineColWidths.stage}px` }} />
@@ -4162,6 +4942,8 @@ export function OutreachModal() {
                           <ThResizable tableKey="pipeline" colId="name">Name</ThResizable>
                           <ThResizable tableKey="pipeline" colId="handle">Handle</ThResizable>
                           <ThResizable tableKey="pipeline" colId="link">Link</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="thread">Thread</ThResizable>
+                          <ThResizable tableKey="pipeline" colId="dmstate">DM State</ThResizable>
                           <ThResizable tableKey="pipeline" colId="score">Score</ThResizable>
                           <ThResizable tableKey="pipeline" colId="following">Followers</ThResizable>
                           <ThResizable tableKey="pipeline" colId="stage">Stage</ThResizable>
@@ -4194,7 +4976,7 @@ export function OutreachModal() {
                         </tr>
                       </thead>
                       <tbody>
-                        {pipelineRowsSorted.map((r, idx) => {
+                        {pipelineRowsWorkflowFiltered.map((r, idx) => {
                           const uname = String(r?.username || '').toLowerCase();
                           const handle = uname ? `@${uname}` : '—';
                           const editBusy = !!pipelineEditBusyByUsername[uname];
@@ -4205,6 +4987,27 @@ export function OutreachModal() {
                           const lastContactDraft = pipelineLastContactDraftByUsername[uname] ?? String(r?.lastContactDate || '');
                           const stageDraft = pipelineStageDraftByUsername[uname] ?? (r?.pipelineStage as any);
                           const overdue = isPipelineOverdue(r);
+                          const threadUrl = String((r as any)?.instagramDmThreadUrl || '').trim();
+                          const hasKnownThread = !!threadUrl;
+                          const dmStateRaw = String((r as any)?.instagramDmThreadLastState || '').trim();
+                          const dmActionRaw = String((r as any)?.instagramDmThreadLastRecommendedAction || '').trim();
+                          const dmClassifiedAtRaw = String((r as any)?.instagramDmThreadLastClassifiedAt || '').trim();
+                          const dmRunPathRaw = String((r as any)?.instagramDmThreadLastRunArtifactPath || '').trim();
+                          const dmStateLabel = dmStateRaw ? (dmThreadStateLabel as any)[dmStateRaw] || dmStateRaw : null;
+                          const dmActionLabel = dmActionRaw ? (dmThreadActionLabel as any)[dmActionRaw] || dmActionRaw : null;
+                          const dmExecutionStateRaw = String((r as any)?.instagramDmLastExecutionState || '').trim();
+                          const threadResolutionFailed = !hasKnownThread && THREAD_RESOLUTION_FAILURE_STATES.has(dmExecutionStateRaw);
+                          const dmExecutionAtRaw = String((r as any)?.instagramDmLastExecutionAt || '').trim();
+                          const dmExecutionErrorRaw = String((r as any)?.instagramDmLastExecutionError || '').trim();
+                          const dmExecutionRunPathRaw = String((r as any)?.instagramDmLastExecutionRunArtifactPath || '').trim();
+                          const dmExecutionFollowupRaw = (r as any)?.instagramDmLastFollowupNumber;
+                          const dmExecutionFollowup =
+                            typeof dmExecutionFollowupRaw === 'number' && Number.isFinite(dmExecutionFollowupRaw)
+                              ? Math.max(1, Math.min(3, Math.floor(dmExecutionFollowupRaw)))
+                              : null;
+                          const dmExecutionLabel = dmExecutionStateRaw
+                            ? (dmExecutionStateLabel as any)[dmExecutionStateRaw] || dmExecutionStateRaw
+                            : null;
                           const curFollowRaw = (r as any)?.followupSentCount;
                           const curFollow =
                             typeof curFollowRaw === 'number' && Number.isFinite(curFollowRaw) ? Math.max(1, Math.min(3, Math.floor(curFollowRaw))) : 0;
@@ -4253,6 +5056,108 @@ export function OutreachModal() {
                                       />
                                     </svg>
                                   </a>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                      hasKnownThread
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : threadResolutionFailed
+                                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}
+                                    title={
+                                      hasKnownThread
+                                        ? 'A reusable DM thread URL is stored for this lead'
+                                        : threadResolutionFailed
+                                          ? 'Latest local run failed to resolve a DM thread for this lead'
+                                          : 'No stored DM thread URL yet'
+                                    }
+                                  >
+                                    {hasKnownThread ? 'Known' : threadResolutionFailed ? 'Resolve failed' : 'Missing'}
+                                  </span>
+                                  {hasKnownThread ? (
+                                    <a
+                                      href={threadUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                                      title="Open stored DM thread"
+                                      aria-label={`Open stored DM thread for ${handle}`}
+                                    >
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M14 3h7v7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path d="M10 14L21 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        <path
+                                          d="M21 14v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                    </a>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2">
+                                {dmStateLabel || dmExecutionLabel ? (
+                                  <div
+                                    className="flex flex-col gap-1"
+                                    title={[
+                                      dmRunPathRaw ? `Run: ${dmRunPathRaw}` : '',
+                                      dmClassifiedAtRaw ? `Classified: ${dmClassifiedAtRaw}` : '',
+                                      dmExecutionRunPathRaw ? `Execution run: ${dmExecutionRunPathRaw}` : '',
+                                      dmExecutionAtRaw ? `Execution: ${dmExecutionAtRaw}` : '',
+                                      dmExecutionErrorRaw ? `Execution error: ${dmExecutionErrorRaw}` : '',
+                                    ]
+                                      .filter(Boolean)
+                                      .join('\n')}
+                                  >
+                                    {dmStateLabel ? (
+                                      <span
+                                        className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                          dmStateRaw === 'safe_unseen_no_reply'
+                                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                            : dmStateRaw === 'safe_seen_no_reply'
+                                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                              : dmStateRaw === 'review_replied_or_ongoing'
+                                                ? 'bg-violet-50 text-violet-700 border border-violet-200'
+                                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                        }`}
+                                      >
+                                        {dmStateLabel}
+                                      </span>
+                                    ) : null}
+                                    <span className="text-[11px] text-slate-500">{dmActionLabel || '—'}</span>
+                                    {dmExecutionLabel ? (
+                                      <div className="mt-1 flex flex-col gap-1">
+                                        <span
+                                          className={`inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                            dmExecutionStateRaw === 'sent_followup'
+                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                              : dmExecutionStateRaw === 'blocked_live_recheck'
+                                                ? 'bg-orange-50 text-orange-700 border border-orange-200'
+                                                : dmExecutionStateRaw === 'send_failed'
+                                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                          }`}
+                                        >
+                                          {dmExecutionLabel}
+                                          {dmExecutionFollowup ? ` F${dmExecutionFollowup}` : ''}
+                                        </span>
+                                        {dmExecutionErrorRaw ? (
+                                          <span className="text-[11px] text-rose-600">{dmExecutionErrorRaw}</span>
+                                        ) : dmExecutionAtRaw ? (
+                                          <span className="text-[11px] text-slate-500">{dmExecutionAtRaw}</span>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 ) : (
                                   <span className="text-slate-400">—</span>
                                 )}
@@ -4545,7 +5450,11 @@ export function OutreachModal() {
                     </table>
                   </div>
                 ) : (
-                  <div className="mt-2 text-sm text-slate-600">No pipeline leads yet.</div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    {pipelineRows.length
+                      ? 'No pipeline leads match the current workflow filter.'
+                      : 'No pipeline leads yet.'}
+                  </div>
                 )}
               </div>
 
@@ -4593,8 +5502,92 @@ export function OutreachModal() {
                 </div>
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
+        {localWorkflowConfirmOpen && localWorkflowPreview ? (
+          <div
+            className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 p-6"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget && !localWorkflowLaunchBusy) setLocalWorkflowConfirmOpen(false);
+            }}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Confirm local workflow run"
+            >
+              <div className="text-lg font-semibold text-slate-900">Confirm local workflow run</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Review the final count, mode, and pacing before the localhost runner starts.
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Selected leads</div>
+                  <div className="mt-1 text-2xl font-semibold text-slate-900">{localWorkflowPreview.total_selected.toLocaleString()}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Mode</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {localWorkflowMode === 'send_live' ? 'Send live' : 'Dry run'}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Bucket</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {pipelineWorkflowBucketLabel[pipelineWorkflowBucketFilter]}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pacing</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">
+                    {WORKFLOW_PACING_PRESETS[localWorkflowPacingPreset].label}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {localWorkflowPacing.delayMsMin / 1000}s to {localWorkflowPacing.delayMsMax / 1000}s between leads
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Preview</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Matching actionable rows: {localWorkflowPreview.total_matching.toLocaleString()} total, capped to batch size {localWorkflowPreview.limit.toLocaleString()}.
+                </div>
+                <div className="mt-2 text-[11px] text-slate-500">
+                  {localWorkflowPreview.selected_preview.length
+                    ? localWorkflowPreview.selected_preview
+                        .slice(0, 8)
+                        .map((row) => `@${row.username}`)
+                        .join(', ')
+                    : 'No rows selected.'}
+                </div>
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-semibold shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                  onClick={() => setLocalWorkflowConfirmOpen(false)}
+                  disabled={localWorkflowLaunchBusy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded-xl bg-slate-900 text-white text-sm font-semibold shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                  onClick={() => void handleConfirmLocalWorkflowStart()}
+                  disabled={localWorkflowLaunchBusy || localWorkflowPreview.total_selected <= 0}
+                >
+                  {localWorkflowLaunchBusy
+                    ? 'Starting…'
+                    : localWorkflowMode === 'send_live'
+                      ? 'Start live run'
+                      : 'Start dry run'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

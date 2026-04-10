@@ -612,6 +612,17 @@ function applyElementUpdate(payload){
     });
     el.style.height=patch.height;
   }
+  if(
+    el.tagName.toLowerCase()==='span'&&(
+      typeof patch.translateX==='string'||
+      typeof patch.translateY==='string'||
+      typeof patch.rotate==='string'||
+      typeof patch.width==='string'||
+      typeof patch.height==='string'
+    )
+  ){
+    el.style.display='inline-block';
+  }
   if(typeof patch.deleted==='boolean'){
     if(patch.deleted){
       el.setAttribute('data-html-deleted','true');

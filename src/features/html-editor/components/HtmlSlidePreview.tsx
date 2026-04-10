@@ -23,7 +23,7 @@ type Props = {
   slideIndex?: number;
   html: string;
   title: string;
-  aspectRatio?: "1:1" | "3:4" | "4:5" | "16:9";
+  aspectRatio?: "1:1" | "3:4" | "4:5" | "9:16" | "16:9";
   interactive?: boolean;
   documentKey?: string;
   elements?: HtmlEditableElement[];
