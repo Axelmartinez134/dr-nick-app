@@ -24,6 +24,10 @@
     "dm:import-threads": "node scripts/instagram_dm/import_discovered_threads.mjs"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
+    "gsap": "^3.14.2",
+    "lucide-react": "^0.575.0",
+    "tailwind-merge": "^3.5.0",
     "@anthropic-ai/sdk": "^0.71.2",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.50.0",

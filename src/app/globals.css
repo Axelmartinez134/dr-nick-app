@@ -34,3 +34,144 @@ body {
   pointer-events: none;
   cursor: default !important;
 }
+
+/* --- ViralCarousels marketing (/home): design tokens + animations --- */
+@theme {
+  --color-void: #0d0d0d;
+  --color-electric-coral: #ff4d00;
+  --color-ultraviolet: #6c5ce7;
+  --color-cloud: #f8f7f4;
+  --color-charcoal: #1a1a1a;
+  --color-slate: #6b7280;
+
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-instrument-serif: "Instrument Serif", serif;
+  --font-inter: "Inter", sans-serif;
+  --font-space-mono: "Space Mono", monospace;
+
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-2xl: 2.5rem;
+  --radius-3xl: 3rem;
+
+  @keyframes swipe {
+    0%,
+    25% {
+      transform: translateX(0);
+    }
+    33%,
+    58% {
+      transform: translateX(-100%);
+    }
+    66%,
+    91% {
+      transform: translateX(-200%);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes pop-in {
+    0% {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+    50% {
+      transform: scale(1.1);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+.marketing-theme {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-void);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  color: #fff;
+}
+
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+}
+
+.magnetic-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.magnetic-btn:hover {
+  transform: scale(1.03);
+}
+
+.magnetic-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: transform 0.3s ease;
+  z-index: 0;
+}
+
+.magnetic-btn:hover::before {
+  transform: translateX(100%);
+}
+
+.magnetic-btn > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Match body to marketing page while /home is mounted */
+html.marketing-scroll body {
+  background-color: var(--color-void);
+  color: #fff;
+}
+
+/* Scrollbar only while /home is mounted (see MarketingBodyClass) */
+html.marketing-scroll ::-webkit-scrollbar {
+  width: 8px;
+}
+
+html.marketing-scroll ::-webkit-scrollbar-track {
+  background: var(--color-void);
+}
+
+html.marketing-scroll ::-webkit-scrollbar-thumb {
+  background: var(--color-slate);
+  border-radius: 4px;
+}
+
+html.marketing-scroll ::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
