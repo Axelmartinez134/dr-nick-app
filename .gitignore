@@ -43,3 +43,13 @@ next-env.d.ts
 # local Instagram DM spike output
 scripts/instagram_dm/output/*
 !scripts/instagram_dm/output/.gitkeep
+
+# network capture files (can be 50-100MB+)
+*.har
+
+# scraped/exported HTML bundles and extracted assets
+mirr-extracted/
+Mirr*/
+
+# nested repo clones (should never be committed)
+viral-carousels/
