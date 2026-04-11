@@ -1,7 +1,0 @@
-{
-  "url": "https://www.mirra.my/api/v1/media/upload-url",
-  "method": "POST",
-  "request_body": "{\"fileName\":\"Screenshot 2026-04-03 at 5.46.15\u202fPM.png\",\"fileType\":\"image/png\",\"fileSize\":282969}",
-  "response_status": 200,
-  "response_body": "{\"uploadUrl\":\"https://mirra-storage.1ec18ee194ebe359564a014da925a266.r2.cloudflarestorage.com/media/posts/8792c228-72a8-46b2-9ce8-b0d17fd3474f.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=42573bfc0cef828b6f2c682898134fc5%2F20260404%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260404T215640Z&X-Amz-Expires=3600&X-Amz-Signature=f85cc87a761f334799efcff4514497927f6c8d0a2faa38d47071ea79a6ac8ae0&X-Amz-SignedHeaders=host&x-amz-checksum-crc32=AAAAAA%3D%3D&x-amz-sdk-checksum-algorithm=CRC32&x-id=PutObject\",\"token\":\"\",\"path\":\"media/posts/8792c228-72a8-46b2-9ce8-b0d17fd3474f.png\",\"storagePath\":\"posts/8792c228-72a8-46b2-9ce8-b0d17fd3474f.png\"}"
-}

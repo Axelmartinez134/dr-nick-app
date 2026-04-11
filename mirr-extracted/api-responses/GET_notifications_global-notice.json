@@ -1,7 +1,0 @@
-{
-  "url": "https://www.mirra.my/api/v1/notifications/global-notice",
-  "method": "GET",
-  "request_body": null,
-  "response_status": 200,
-  "response_body": "{\"notice\":null}"
-}

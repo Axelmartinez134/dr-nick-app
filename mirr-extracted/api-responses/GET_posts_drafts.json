@@ -1,7 +1,0 @@
-{
-  "url": "https://www.mirra.my/api/v1/posts/drafts",
-  "method": "GET",
-  "request_body": null,
-  "response_status": 200,
-  "response_body": "{\"drafts\":[],\"total\":0,\"page\":1,\"limit\":20,\"totalPages\":0,\"hasNextPage\":false,\"hasPrevPage\":false}"
-}

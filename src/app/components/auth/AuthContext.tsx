@@ -322,8 +322,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         localStorage.removeItem('editor.activeAccountId')
         localStorage.removeItem('supabase.auth.token')
-        const projectRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1]
-        if (projectRef) localStorage.removeItem(`sb-${projectRef}-auth-token`)
+        localStorage.removeItem('sb-pobkamvdnbxhmyfwbnsj-auth-token')
         sessionStorage.clear()
         
         // Clear any cookies

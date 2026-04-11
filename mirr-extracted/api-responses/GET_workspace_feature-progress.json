@@ -1,7 +1,0 @@
-{
-  "url": "https://www.mirra.my/api/v1/workspace/feature-progress",
-  "method": "GET",
-  "request_body": null,
-  "response_status": 200,
-  "response_body": "{\"carousel\":true,\"shorts\":false,\"ideaPlanning\":false,\"allCompleted\":false,\"quests\":{\"carousel_first_use\":{\"completed\":true,\"rewarded\":true,\"reward\":15},\"shorts_first_use\":{\"completed\":false,\"rewarded\":false,\"reward\":15},\"idea_first_use\":{\"completed\":false,\"rewarded\":false,\"reward\":30}},\"totalReward\":60,\"earnedReward\":15}"
-}

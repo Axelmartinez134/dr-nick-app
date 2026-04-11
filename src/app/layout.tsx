@@ -36,12 +36,8 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Mono&display=swap"
         />
         {/* Supabase Storage/CDN perf hints */}
-        {process.env.NEXT_PUBLIC_SUPABASE_URL && (
-          <>
-            <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_SUPABASE_URL} />
-            <link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL} crossOrigin="anonymous" />
-          </>
-        )}
+        <link rel="dns-prefetch" href="https://pobkamvdnbxhmyfwbnsj.supabase.co" />
+        <link rel="preconnect" href="https://pobkamvdnbxhmyfwbnsj.supabase.co" crossOrigin="anonymous" />
         {/* YouTube perf hints (poster/iframe assets) */}
         <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
         <link rel="preconnect" href="https://www.youtube-nocookie.com" crossOrigin="anonymous" />
