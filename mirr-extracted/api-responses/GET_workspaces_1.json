@@ -1,0 +1,7 @@
+{
+  "url": "https://www.mirra.my/api/v1/workspaces",
+  "method": "GET",
+  "request_body": null,
+  "response_status": 200,
+  "response_body": "{\"workspaces\":[{\"id\":\"5fba167c-a7c9-4e4d-8646-0cb71fda4717\",\"name\":\"Personal Workspace\",\"slug\":\"u-82f8b41c-3966-4128-9a42-8d81e44b3298\",\"role\":\"admin\",\"ownerUserId\":\"82f8b41c-3966-4128-9a42-8d81e44b3298\",\"usage\":{\"plan\":\"free-trial\",\"ai\":{\"remaining\":75,\"total\":0},\"members\":{\"current\":1,\"max\":3},\"accounts\":{\"current\":0,\"max\":5}}}],\"activeWorkspaceId\":\"5fba167c-a7c9-4e4d-8646-0cb71fda4717\"}"
+}

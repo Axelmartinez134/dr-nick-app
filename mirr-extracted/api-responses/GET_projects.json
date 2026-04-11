@@ -1,0 +1,7 @@
+{
+  "url": "https://www.mirra.my/api/v1/projects",
+  "method": "GET",
+  "request_body": null,
+  "response_status": 200,
+  "response_body": "{\"projects\":[{\"id\":\"b6f67aa3-65cb-45bf-ab48-a5a5e2e40ecf\",\"workspaceId\":\"5fba167c-a7c9-4e4d-8646-0cb71fda4717\",\"name\":\"General\",\"slug\":\"general\"}],\"activeProjectId\":\"b6f67aa3-65cb-45bf-ab48-a5a5e2e40ecf\"}"
+}

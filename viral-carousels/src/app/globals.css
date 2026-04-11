@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+@theme {
+  --color-void: #0D0D0D;
+  --color-electric-coral: #FF4D00;
+  --color-ultraviolet: #6C5CE7;
+  --color-cloud: #F8F7F4;
+  --color-charcoal: #1A1A1A;
+  --color-slate: #6B7280;
+
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-instrument-serif: "Instrument Serif", serif;
+  --font-inter: "Inter", sans-serif;
+  --font-space-mono: "Space Mono", monospace;
+
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-2xl: 2.5rem;
+  --radius-3xl: 3rem;
+
+  @keyframes swipe {
+
+    0%,
+    25% {
+      transform: translateX(0);
+    }
+
+    33%,
+    58% {
+      transform: translateX(-100%);
+    }
+
+    66%,
+    91% {
+      transform: translateX(-200%);
+    }
+
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes pop-in {
+    0% {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+
+    50% {
+      transform: scale(1.1);
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+
+
+.marketing-theme {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-void);
+  font-family: var(--font-inter);
+  color: #fff;
+  /* `overflow-x: hidden` removed to ensure no scroll constraints are accidentally applied to the main viewport. */
+}
+
+/* Global noise overlay */
+.noise-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+}
+
+/* Magnetic Button Base & Animation utilities */
+.magnetic-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.magnetic-btn:hover {
+  transform: scale(1.03);
+}
+
+.magnetic-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: transform 0.3s ease;
+  z-index: 0;
+}
+
+.magnetic-btn:hover::before {
+  transform: translateX(100%);
+}
+
+.magnetic-btn>* {
+  position: relative;
+  z-index: 1;
+}
+
+/* Custom scrollbar for webkit */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-void);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-slate);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4B5563;
+}

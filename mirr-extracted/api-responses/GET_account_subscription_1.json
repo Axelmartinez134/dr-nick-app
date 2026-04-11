@@ -1,0 +1,7 @@
+{
+  "url": "https://www.mirra.my/api/v1/account/subscription",
+  "method": "GET",
+  "request_body": null,
+  "response_status": 200,
+  "response_body": "{\"subscription\":{\"status\":\"active\",\"currentPeriodEnd\":\"2026-04-12 08:30:16.966+00\",\"plan\":\"free-trial\",\"cancelAtPeriodEnd\":false,\"cancelAt\":null},\"quota\":{\"ai\":{\"remaining\":75,\"total\":60,\"used\":0},\"accounts\":{\"current\":0,\"max\":5},\"members\":{\"current\":1,\"max\":3}},\"trial\":{\"isEligible\":false,\"isActive\":true,\"startDate\":\"2026-04-04 20:30:17.195+00\",\"endDate\":\"2026-04-12 08:30:16.966+00\"},\"lastChanceTrial\":{\"eligible\":false,\"alreadyUsed\":false},\"planTier\":\"free-trial\",\"features\":{\"canCreateMoreAccounts\":true,\"canInviteMoreMembers\":true,\"hasAIQuotaRemaining\":true}}"
+}

@@ -1,0 +1,7 @@
+{
+  "url": "https://www.mirra.my/api/v1/social-accounts/project-accounts",
+  "method": "GET",
+  "request_body": null,
+  "response_status": 200,
+  "response_body": "{\"socialAccounts\":[],\"success\":true}"
+}

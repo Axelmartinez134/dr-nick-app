@@ -1,0 +1,7 @@
+{
+  "url": "https://www.mirra.my/api/v1/media/confirm-upload",
+  "method": "POST",
+  "request_body": "{\"storagePath\":\"posts/8792c228-72a8-46b2-9ce8-b0d17fd3474f.png\",\"fileType\":\"image\"}",
+  "response_status": 200,
+  "response_body": "{\"url\":\"https://storage.mirra.my/media/posts/8792c228-72a8-46b2-9ce8-b0d17fd3474f.png\",\"type\":\"image\"}"
+}
