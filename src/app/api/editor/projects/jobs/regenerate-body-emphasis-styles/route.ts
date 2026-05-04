@@ -125,7 +125,7 @@ RANGE RULES (HARD):
   }
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

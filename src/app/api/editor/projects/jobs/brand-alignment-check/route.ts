@@ -201,9 +201,10 @@ async function callAnthropic(opts: { systemPrompt: string; userMessage: string }
   const model = 'claude-sonnet-4-5-20250929';
 
   const ac = new AbortController();
-  // This endpoint can be slower than caption regen because the "system prompt" can be large
-  // and we request a structured JSON object. Keep under maxDuration (60s) but allow more room.
-  const timeout = setTimeout(() => ac.abort(), 55_000);
+  // Per-call safety-net abort. This is well below the route's maxDuration (400s)
+  // and gives Anthropic plenty of headroom on slow days while still releasing the
+  // connection if a fetch genuinely hangs.
+  const timeout = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

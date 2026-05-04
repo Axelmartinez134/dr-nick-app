@@ -326,7 +326,7 @@ async function callPoppy(prompt: string, args: { poppyConversationUrl: string })
   const modelFromUrl = String(url.searchParams.get('model') || '').trim();
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch(url.toString(), {
       method: 'POST',
@@ -377,7 +377,7 @@ async function callAnthropicParse(opts: {
   const userText = `${schema}\n\nData to structure:\n${opts.rawToParse}`;
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -455,7 +455,7 @@ RANGE RULES (HARD):
 - Less is more; do not emphasize everything.`;
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -543,7 +543,7 @@ async function callAnthropicGenerateFromReel(opts: {
     .join('\n');
 
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 45_000);
+  const t = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
   }
 
   const ac = new AbortController();
-  const timeout = setTimeout(() => ac.abort(), 45_000);
+  const timeout = setTimeout(() => ac.abort(), 300_000);
 
   try {
     console.log('[Generate Image Prompts] 🤖 Calling Claude...');

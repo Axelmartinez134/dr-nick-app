@@ -29,7 +29,7 @@ async function callAnthropicCaption(opts: { systemPrompt: string; userMessage: s
   const model = 'claude-sonnet-4-5-20250929';
 
   const ac = new AbortController();
-  const timeout = setTimeout(() => ac.abort(), 45_000);
+  const timeout = setTimeout(() => ac.abort(), 300_000);
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
