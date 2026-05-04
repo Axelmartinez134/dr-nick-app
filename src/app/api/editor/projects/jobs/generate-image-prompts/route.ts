@@ -4,7 +4,7 @@ import { getAuthedSupabase, resolveActiveAccountId, DEFAULT_IMAGE_GEN_PROMPT } f
 import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 400;
 
 type Body = {
   projectId: string;

@@ -9,7 +9,7 @@ import { computeDefaultUploadedImagePlacement } from '@/lib/templatePlacement';
 import sharp from 'sharp';
 
 export const runtime = 'nodejs';
-export const maxDuration = 180; // 3 minutes for image generation + RemoveBG
+export const maxDuration = 400;
 
 const BUCKET = 'carousel-project-images' as const;
 

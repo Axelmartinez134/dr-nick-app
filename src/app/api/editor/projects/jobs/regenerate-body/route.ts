@@ -4,7 +4,7 @@ import { getAuthedSupabase, resolveActiveAccountId } from '../../../_utils';
 import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 400;
 
 type Body = {
   projectId: string;

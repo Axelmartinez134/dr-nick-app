@@ -5,7 +5,7 @@ import { loadEffectiveTemplateTypeSettings } from '../../_effective';
 import { DIGEST_CAROUSEL_EXPANSION_INSTRUCTION } from '../../../../daily-digest/_utils';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 400;
 
 type Body = {
   projectId: string;
