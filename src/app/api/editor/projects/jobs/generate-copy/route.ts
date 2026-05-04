@@ -131,6 +131,68 @@ function extractJsonObject(text: string): any {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Debug instrumentation
+// ---------------------------------------------------------------------------
+// We wrap every external call (Poppy, Anthropic, Supabase) and every
+// validation/parse step in withStep() so a failure surfaces with a precise
+// step name + elapsed time + abort/fail classification, rather than the
+// opaque "This operation was aborted" we used to see.
+//
+// AbortError shape: name === 'AbortError', message === 'This operation was aborted'.
+// Either of the per-call 45s AbortControllers (callPoppy /
+// callAnthropicParse / callAnthropicEmphasisRanges /
+// callAnthropicGenerateFromReel) OR a Vercel platform timeout will surface
+// with that signature. The step name + elapsedMs lets us tell them apart.
+
+class StepError extends Error {
+  step: string;
+  elapsedMs: number;
+  isAbort: boolean;
+  originalCause: any;
+  constructor(step: string, elapsedMs: number, isAbort: boolean, original: any) {
+    const reason = isAbort
+      ? `aborted after ${elapsedMs}ms (likely the 45s per-call AbortController on this step, or the route's maxDuration ceiling)`
+      : `failed after ${elapsedMs}ms: ${original?.message || String(original)}`;
+    super(`[step:${step}] ${reason}`);
+    this.name = 'StepError';
+    this.step = step;
+    this.elapsedMs = elapsedMs;
+    this.isAbort = isAbort;
+    this.originalCause = original;
+  }
+}
+
+async function withStep<T>(stepName: string, fn: () => Promise<T>): Promise<T> {
+  const t0 = Date.now();
+  console.log(`[Generate Copy] ▶️ step="${stepName}" start`);
+  try {
+    const result = await fn();
+    const elapsed = Date.now() - t0;
+    console.log(`[Generate Copy] ✅ step="${stepName}" ok in ${elapsed}ms`);
+    return result;
+  } catch (e: any) {
+    if (e instanceof StepError) {
+      // Already tagged by an inner withStep — don't re-wrap.
+      throw e;
+    }
+    const elapsed = Date.now() - t0;
+    const isAbort =
+      e?.name === 'AbortError' || /aborted/i.test(String(e?.message || ''));
+    console.error(
+      `[Generate Copy] ❌ step="${stepName}" ${isAbort ? 'ABORT' : 'FAIL'} after ${elapsed}ms`,
+      {
+        name: e?.name,
+        message: e?.message,
+        code: e?.code,
+        cause: e?.cause?.message || e?.cause,
+        stack: e?.stack,
+      }
+    );
+    throw new StepError(stepName, elapsed, isAbort, e);
+  }
+}
+
 function assertValidPayload(payload: any, templateTypeId: 'regular' | 'enhanced') {
   const slides = payload?.slides;
   const caption = payload?.caption;
@@ -869,14 +931,18 @@ export async function POST(request: NextRequest) {
         throw new Error('Missing reel transcript. Transcription must finish before generating copy.');
       }
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:claude' });
-      const generated = await callAnthropicGenerateFromReel({
-        templateTypeId,
-        poppyPromptRaw: composedPromptRaw,
-        bestPractices,
-        reelCaption,
-        reelTranscript,
-      });
-      payload = extractJsonObject(generated.rawText);
+      const generated = await withStep('callAnthropicGenerateFromReel', () =>
+        callAnthropicGenerateFromReel({
+          templateTypeId,
+          poppyPromptRaw: composedPromptRaw,
+          bestPractices,
+          reelCaption,
+          reelTranscript,
+        })
+      );
+      payload = await withStep('extractJsonObject:reel', async () =>
+        extractJsonObject(generated.rawText)
+      );
     } else {
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:poppy' });
       try {
@@ -888,43 +954,57 @@ export async function POST(request: NextRequest) {
       } catch {
         // ignore logging failures
       }
-      const poppy = await callPoppy(composedPrompt, { poppyConversationUrl });
+      const poppy = await withStep('callPoppy', () =>
+        callPoppy(composedPrompt, { poppyConversationUrl })
+      );
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:parse' });
-      const parsed = await callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText });
-      payload = extractJsonObject(parsed.rawText);
+      const parsed = await withStep('callAnthropicParse', () =>
+        callAnthropicParse({ templateTypeId, rawToParse: poppy.rawText })
+      );
+      payload = await withStep('extractJsonObject:parsed', async () =>
+        extractJsonObject(parsed.rawText)
+      );
     }
 
     if (templateTypeId === 'html') {
-      const htmlCopyDraft = assertValidHtmlPayload(payload);
+      const htmlCopyDraft = await withStep('assertValidHtmlPayload', async () =>
+        assertValidHtmlPayload(payload)
+      );
 
       await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:save' });
 
-      await Promise.all(
-        htmlCopyDraft.slides.map((slide, idx) => {
-          const [firstLine = '', ...remainingLines] = normalizeHtmlTextLines(slide.textLines);
-          return supabase
-            .from('carousel_project_slides')
-            .update({
-              headline: firstLine || null,
-              body: remainingLines.join('\n'),
-              input_snapshot: null,
-            })
-            .eq('project_id', project.id)
-            .eq('slide_index', idx);
-        })
-      );
+      await withStep('db:saveHtmlSlides', async () => {
+        await Promise.all(
+          htmlCopyDraft.slides.map((slide, idx) => {
+            const [firstLine = '', ...remainingLines] = normalizeHtmlTextLines(slide.textLines);
+            return supabase
+              .from('carousel_project_slides')
+              .update({
+                headline: firstLine || null,
+                body: remainingLines.join('\n'),
+                input_snapshot: null,
+              })
+              .eq('project_id', project.id)
+              .eq('slide_index', idx);
+          })
+        );
+      });
 
-      await supabase
-        .from('carousel_projects')
-        .update({
-          title: htmlCopyDraft.projectTitle,
-        })
-        .eq('id', project.id);
+      await withStep('db:saveProjectTitle', async () => {
+        await supabase
+          .from('carousel_projects')
+          .update({
+            title: htmlCopyDraft.projectTitle,
+          })
+          .eq('id', project.id);
+      });
 
-      await supabase
-        .from('carousel_generation_jobs')
-        .update({ status: 'completed', finished_at: new Date().toISOString(), error: null })
-        .eq('id', jobId);
+      await withStep('db:markJobCompleted:html', async () => {
+        await supabase
+          .from('carousel_generation_jobs')
+          .update({ status: 'completed', finished_at: new Date().toISOString(), error: null })
+          .eq('id', jobId);
+      });
 
       return NextResponse.json({
         success: true,
@@ -936,7 +1016,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    assertValidPayload(payload, templateTypeId);
+    await withStep('assertValidPayload', async () =>
+      assertValidPayload(payload, templateTypeId)
+    );
 
     const slides = payload.slides as Array<{ headline?: string; body: string }>;
     const caption = payload.caption as string;
@@ -947,52 +1029,67 @@ export async function POST(request: NextRequest) {
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:emphasis' });
     const headlineStyleRangesBySlide: InlineStyleRange[][] =
       templateTypeId === 'enhanced'
-        ? await callAnthropicEmphasisRanges({
-            slideTexts: slides.map((s) => String(s.headline || '')),
-            instructionText: emphasisInstruction,
-          })
+        ? await withStep('callAnthropicEmphasisRanges:headlines', () =>
+            callAnthropicEmphasisRanges({
+              slideTexts: slides.map((s) => String(s.headline || '')),
+              instructionText: emphasisInstruction,
+            })
+          )
         : Array.from({ length: 6 }, () => []);
-    const bodyStyleRangesBySlide: InlineStyleRange[][] = await callAnthropicEmphasisRanges({
-      slideTexts: slides.map((s) => String(s.body || '')),
-      instructionText: emphasisInstruction,
-    });
+    const bodyStyleRangesBySlide: InlineStyleRange[][] = await withStep(
+      'callAnthropicEmphasisRanges:bodies',
+      () =>
+        callAnthropicEmphasisRanges({
+          slideTexts: slides.map((s) => String(s.body || '')),
+          instructionText: emphasisInstruction,
+        })
+    );
 
     // Persist slides (overwrite everything model)
     await updateJobProgress(supabase, jobId, { status: 'running', error: 'progress:save' });
 
     // Preserve any existing per-line override state stored in input_snapshot (Phase 4).
-    const { data: existingInputs } = await supabase
-      .from('carousel_project_slides')
-      .select('slide_index, input_snapshot')
-      .eq('project_id', project.id);
+    const existingInputs = await withStep('db:loadExistingInputSnapshots', async () => {
+      const { data } = await supabase
+        .from('carousel_project_slides')
+        .select('slide_index, input_snapshot')
+        .eq('project_id', project.id);
+      return data;
+    });
     const existingByIdx = new Map<number, any>();
     (existingInputs || []).forEach((r: any) => {
       if (typeof r?.slide_index === 'number') existingByIdx.set(r.slide_index, r?.input_snapshot || null);
     });
 
-    await Promise.all(
-      slides.map((s, idx) => {
-        const patch: any = {
-          headline: templateTypeId === 'enhanced' ? (s.headline || '') : null,
-          body: s.body || '',
-        };
-        const prev = existingByIdx.get(idx) || null;
-        patch.input_snapshot = {
-          ...(prev && typeof prev === 'object' ? prev : {}),
-          headlineStyleRanges: templateTypeId === 'enhanced' ? (headlineStyleRangesBySlide[idx] || []) : [],
-          bodyStyleRanges: bodyStyleRangesBySlide[idx] || [],
-        };
-        return supabase.from('carousel_project_slides').update(patch).eq('project_id', project.id).eq('slide_index', idx);
-      })
-    );
+    await withStep('db:saveSlides', async () => {
+      await Promise.all(
+        slides.map((s, idx) => {
+          const patch: any = {
+            headline: templateTypeId === 'enhanced' ? (s.headline || '') : null,
+            body: s.body || '',
+          };
+          const prev = existingByIdx.get(idx) || null;
+          patch.input_snapshot = {
+            ...(prev && typeof prev === 'object' ? prev : {}),
+            headlineStyleRanges: templateTypeId === 'enhanced' ? (headlineStyleRangesBySlide[idx] || []) : [],
+            bodyStyleRanges: bodyStyleRangesBySlide[idx] || [],
+          };
+          return supabase.from('carousel_project_slides').update(patch).eq('project_id', project.id).eq('slide_index', idx);
+        })
+      );
+    });
 
     // Persist caption (project-level)
-    await supabase.from('carousel_projects').update({ caption }).eq('id', project.id);
+    await withStep('db:saveCaption', async () => {
+      await supabase.from('carousel_projects').update({ caption }).eq('id', project.id);
+    });
 
-    await supabase
-      .from('carousel_generation_jobs')
-      .update({ status: 'completed', finished_at: new Date().toISOString(), error: null })
-      .eq('id', jobId);
+    await withStep('db:markJobCompleted', async () => {
+      await supabase
+        .from('carousel_generation_jobs')
+        .update({ status: 'completed', finished_at: new Date().toISOString(), error: null })
+        .eq('id', jobId);
+    });
 
     return NextResponse.json({
       success: true,
@@ -1008,14 +1105,49 @@ export async function POST(request: NextRequest) {
         bodyStyleRanges: bodyStyleRangesBySlide[idx] || [],
       })),
     });
-  } catch (e) {
+  } catch (e: any) {
+    const isStep = e instanceof StepError;
+    const step = isStep ? e.step : 'unknown';
+    const isAbort = isStep ? e.isAbort : false;
+    const elapsedMs = isStep ? e.elapsedMs : null;
     const msg = e instanceof Error ? e.message : 'Generate copy failed';
+    const originalCause = isStep
+      ? e.originalCause?.message || (typeof e.originalCause === 'string' ? e.originalCause : null)
+      : null;
+    const originalName = isStep ? e.originalCause?.name : e?.name;
+
+    console.error(
+      `[Generate Copy] 💥 Job ${jobId} FAILED — step="${step}" abort=${isAbort}${elapsedMs != null ? ` elapsedMs=${elapsedMs}` : ''} originalName=${originalName || 'unknown'}`,
+      {
+        message: msg,
+        templateTypeId,
+        accountId,
+        projectId: project.id,
+        isReelOrigin,
+        originalCause,
+        stack: e?.stack,
+      }
+    );
+
+    // Persist a richer error string on the job row so we can debug from DB too.
+    const dbErrorMsg = isStep
+      ? `${msg}${originalCause ? ` | cause: ${originalCause}` : ''}`
+      : msg;
     await supabase
       .from('carousel_generation_jobs')
-      .update({ status: 'failed', finished_at: new Date().toISOString(), error: msg })
+      .update({ status: 'failed', finished_at: new Date().toISOString(), error: dbErrorMsg })
       .eq('id', jobId);
+
     const status = msg.toLowerCase().includes('missing reel transcript') ? 400 : 500;
-    return NextResponse.json({ success: false, error: msg, jobId }, { status });
+    return NextResponse.json(
+      {
+        success: false,
+        error: msg,
+        jobId,
+        debug: { step, isAbort, elapsedMs, originalName, originalCause },
+      },
+      { status }
+    );
   }
 }
 
